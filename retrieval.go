@@ -63,7 +63,7 @@ type GraphNode struct {
 	// 0.0 when the ranker inputs were unavailable (no QueryEmbedding and
 	// no UpdatedAt). Callers may inspect or sort by it, but the canonical
 	// ordering rule is the internal re-rank after scan.
-	RankingScore float32 `json:"ranking_score,omitempty"`
+	RankingScore float32 `json:"ranking_score"`
 }
 
 type RetrievalResult struct {
