@@ -6,35 +6,29 @@ metadata:
   hermes:
     tags: [memory, graph, vector-search, sqlite]
     category: memory
-    config:
-      - key: hermem.url
-        description: Hermem server URL
-        default: "http://localhost:8420"
-        prompt: "Hermem server URL (e.g. http://localhost:8420)"
 required_environment_variables:
   - name: HERMEM_URL
-    help: "Set HERMEM_URL if Hermem runs on a non-default address"
-    required_for: connecting to Hermem server
+    help: "Optional: override Hermem server base URL when using HTTP server mode"
+    required_for: HTTP server mode only
 ---
 
 # Hermem — Graph Memory Skill
 
-Lightweight graph memory system that stores facts as entities connected by typed edges, with vector embeddings for semantic search.
+Lightweight graph memory via the Hermem CLI binary. Use CLI mode by default. HTTP server mode is optional.
 
 ## When to Use
 
 - User asks to remember something for future sessions
-- User asks "what do you know about X?"
+- User asks \"what do you know about X?\"
 - You need to recall past conversations or facts
 - You want to store structured knowledge (facts, opinions, experiences, observations)
 
-## Prerequisites
+## Default Mode: CLI
 
-Hermem server must be running:
+Use the Hermem CLI binary shipped in `~/.hermes/bin/hermem`. No server is required.
 
 ```bash
-# Start the server (from the hermem project directory)
-./hermem -server -port 8420
+~/.hermes/bin/hermem ...
 ```
 
 ## Memory Categories
@@ -50,97 +44,66 @@ Hermem server must be running:
 
 ### 1. Store a fact
 
-Use `hermem_store` tool:
+Use the `store` subcommand with JSON on stdin.
 
-```
-hermem_store(content="User prefers dark mode in all editors", category="opinion")
-hermem_store(content="Project uses Go 1.22 with Chi router", category="world")
-hermem_store(content="Deployed v2.1 to production on 2026-01-15", category="experience")
+```bash
+~/.hermes/bin/hermem store <<'JSON'
+{"id":"my-fact","category":"opinion","content":"User prefers dark mode in all editors"}
+JSON
 ```
 
 ### 2. Search memory
 
-Use `hermem_search` for vector similarity search:
+Use the `search` subcommand.
 
-```
-hermem_search(query="What does the user prefer for editors?")
-hermem_search(query="deployment history", limit=5)
+```bash
+~/.hermes/bin/hermem search <<'JSON'
+{"query":"editor preference","top_k":5}
+JSON
 ```
 
 ### 3. Full context retrieval
 
-Use `hermem_query` for the complete pipeline (search + graph walk + markdown):
+Use the `query` subcommand for the complete pipeline (search + graph walk + markdown).
 
-```
-hermem_query(query="Tell me about the user's preferences")
+```bash
+~/.hermes/bin/hermem query <<'JSON'
+{"query":"Tell me about the user's preferences"}
+JSON
 ```
 
-This returns markdown-formatted context grouped by category (WORLD, OPINION, EXPERIENCE, OBSERVATION) — ready to inject into your response.
+This returns markdown-formatted context grouped by category (WORLD, OPINION, EXPERIENCE, OBSERVATION).
 
 ### 4. Ingest conversations
 
-After each conversation turn, the `sync_turn` function automatically sends dialog to Hermem for entity extraction. No manual action needed if the memory provider plugin is active.
+After each conversation turn, the provider's `sync_turn` path ingests the dialog. For manual backfill:
 
-## API Reference
-
-If you need to call Hermem directly via HTTP:
-
-### Health check
 ```bash
-curl http://localhost:8420/health
+~/.hermes/bin/hermem ingest <<'JSON'
+{"dialog":"User: What is Go?\nAssistant: Go is a statically typed language."}
+JSON
 ```
 
-### Store entity
+## Optional: HTTP Server Mode
+
+If you need a shared service, start it separately.
+
 ```bash
-curl -X POST http://localhost:8420/store \
-  -H "Content-Type: application/json" \
-  -d '{"id":"my-fact","category":"world","content":"Paris is the capital of France"}'
+./hermem serve 8420
+export HERMEM_URL=http://localhost:8420
 ```
 
-### Vector search
-```bash
-curl -X POST http://localhost:8420/search \
-  -H "Content-Type: application/json" \
-  -d '{"query":"capital of France","top_k":5}'
-```
-
-### Full query (search + graph walk)
-```bash
-curl -X POST http://localhost:8420/query \
-  -H "Content-Type: application/json" \
-  -d '{"query":"Tell me about France"}'
-```
-
-### Ingest dialog
-```bash
-curl -X POST http://localhost:8420/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"dialog":"User: What is Go?\nAssistant: Go is a statically typed language."}'
-```
-
-## Pitfalls
-
-- Hermem server must be running before using the tools
-- Default URL is `http://localhost:8420` — set `HERMEM_URL` env var if different
-- Entities with similar content (>88% cosine similarity) are merged automatically
-- Graph walk depth defaults to 2 hops — increase via `max_depth` parameter
+When `HERMEM_URL` is set, the provider and direct tooling will switch to HTTP automatically.
 
 ## Verification
 
-Check Hermem is working:
-
 ```bash
-# 1. Health check
-curl http://localhost:8420/health
-# Should return: {"status":"ok"}
+# Run from the hermem project directory
+~/.hermes/bin/hermem store <<'JSON'
+{"id":"smoke","category":"world","content":"Hermem smoke test"}
+JSON
 
-# 2. Store and retrieve
-curl -X POST http://localhost:8420/store \
-  -H "Content-Type: application/json" \
-  -d '{"id":"test","category":"world","content":"Hermem is working"}'
-
-curl -X POST http://localhost:8420/query \
-  -H "Content-Type: application/json" \
-  -d '{"query":"Is Hermem working?"}'
-# Should return markdown with the stored fact
+~/.hermes/bin/hermem query <<'JSON'
+{"query":"smoke test"}
+JSON
 ```
