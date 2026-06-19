@@ -67,11 +67,19 @@ func (w *IngestionWorker) processEntity(entity ExtractedEntity) error {
 		return fmt.Errorf("failed to find similar entity: %w", err)
 	}
 
+	entityID := entity.ID
 	if existing != nil {
-		return w.mergeEntities(existing, entity, embedding)
+		entityID = existing.ID
+		err = w.mergeEntities(existing, entity, embedding)
+	} else {
+		err = w.createEntity(entity, embedding)
 	}
 
-	return w.createEntity(entity, embedding)
+	if err != nil {
+		return err
+	}
+
+	return w.createEdges(entityID, entity.Relations)
 }
 
 func (w *IngestionWorker) findSimilarEntity(embedding []float32) (*Entity, error) {
