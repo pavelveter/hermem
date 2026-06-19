@@ -168,12 +168,24 @@ func (e *OllamaLLMExtractor) chat(ctx context.Context, req *chatRequest) (*chatR
 
 	var lastErr error
 	backoff := ollamaBackoffBase
-	for attempt := 1; attempt <= ollamaRetries; attempt++ {
-		slog.Debug("ollama attempt",
+	attemptsUsed := 0
+	defer func() {
+		// Single-event post-call summary at Debug (level-filter as
+		// throttle per TODO §5.3). Replaces the per-attempt loop log
+		// that would emit one line per retry attempt.
+		outcome := "ok"
+		if lastErr != nil {
+			outcome = "error"
+		}
+		slog.Debug("ollama call complete",
+			"event", "ollama_call",
 			"model", e.Model,
-			"attempt", attempt,
-			"max_attempts", ollamaRetries,
+			"attempts_used", attemptsUsed,
+			"outcome", outcome,
 		)
+	}()
+	for attempt := 1; attempt <= ollamaRetries; attempt++ {
+		attemptsUsed = attempt
 		if attempt > 1 {
 			select {
 			case <-time.After(backoff):

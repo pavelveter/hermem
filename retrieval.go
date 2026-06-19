@@ -236,12 +236,16 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 	// the "level-filter as throttle" pattern from TODO §5.3 — one log
 	// line per retrieval, not one per row (which would balloon at the
 	// configured MaxRetrievedNodes=100 ceiling).
+	capTruncated := 0
+	if opts.MaxRetrievedNodes > 0 {
+		capTruncated = len(ranked) - opts.MaxRetrievedNodes
+	}
 	slog.Debug("retrieval complete",
 		"event", "retrieval_complete",
 		"seed_count", len(seedIDs),
 		"total_ranked", len(ranked),
 		"effective_depth", effectiveDepth,
-		"soft_cap_hit", opts.MaxRetrievedNodes > 0 && len(ranked) >= opts.MaxRetrievedNodes,
+		"soft_cap_truncated", capTruncated,
 	)
 
 	// Sort once by composite score (descending). SQL return order is
