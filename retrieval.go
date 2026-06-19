@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -229,6 +230,19 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating graph rows: %w", err)
 	}
+
+	// Single-event summary log emitted at Debug so it stays out of
+	// production output by default but is visible on demand. This is
+	// the "level-filter as throttle" pattern from TODO §5.3 — one log
+	// line per retrieval, not one per row (which would balloon at the
+	// configured MaxRetrievedNodes=100 ceiling).
+	slog.Debug("retrieval complete",
+		"event", "retrieval_complete",
+		"seed_count", len(seedIDs),
+		"total_ranked", len(ranked),
+		"effective_depth", effectiveDepth,
+		"soft_cap_hit", opts.MaxRetrievedNodes > 0 && len(ranked) >= opts.MaxRetrievedNodes,
+	)
 
 	// Sort once by composite score (descending). SQL return order is
 	// the tied-break fallback (deterministic via depth ASC, category ASC

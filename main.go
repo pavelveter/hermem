@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -173,7 +174,10 @@ func main() {
 		http.HandleFunc("/retrieve", srv.HandleRetrieve)
 		http.HandleFunc("/ingest", srv.HandleIngest)
 		http.HandleFunc("/query", srv.HandleQuery)
-		fmt.Printf("Hermem server listening on :%s\n", port)
+		slog.Info("hermem server listening",
+			"event", "server_ready",
+			"port", port,
+		)
 		log.Fatal(http.ListenAndServe(":"+port, nil))
 
 	default:
