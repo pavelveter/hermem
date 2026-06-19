@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -74,13 +75,13 @@ func main() {
 	switch cmd {
 	case "store":
 		var req struct {
-			ID       string    `json:"id"`
-			Category string    `json:"category"`
-			Content  string    `json:"content"`
+			ID        string    `json:"id"`
+			Category  string    `json:"category"`
+			Content   string    `json:"content"`
 			Embedding []float32 `json:"embedding,omitempty"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.ID == "" || req.Category == "" || req.Content == "" {
 			log.Fatal("id, category, content required")
@@ -103,8 +104,8 @@ func main() {
 			Query string `json:"query"`
 			TopK  int    `json:"top_k"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.Query == "" {
 			log.Fatal("query required")
@@ -126,8 +127,8 @@ func main() {
 		var req struct {
 			Query string `json:"query"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.Query == "" {
 			log.Fatal("query required")
@@ -147,8 +148,8 @@ func main() {
 		var req struct {
 			Dialog string `json:"dialog"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.Dialog == "" {
 			log.Fatal("dialog required")

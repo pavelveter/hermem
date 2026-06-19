@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -85,54 +86,80 @@ func TestIntegration(t *testing.T) {
 }
 
 func TestTiming(t *testing.T) {
+	// Bench at three cohort sizes so the README ## Performance table
+	// shows how the in-memory cosine scales with entity count. The
+	// smallest cohort keeps a strict < 5ms regression gate; the
+	// larger cohorts are informational only (the README consumes them
+	// verbatim via the `PERF  N=…` lines below).
+	cohorts := []int{1000, 3000, 6000}
+
 	db, err := InitDB("timing-test.db")
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
+	defer os.Remove("timing-test.db")
 	defer db.Close()
 
-	// Create test data
-	for i := 0; i < 1000; i++ {
-		entity := Entity{
+	// Pre-allocate every entity up front so each cohort's measurement
+	// window excludes the per-row StoreEntity overhead, which would
+	// otherwise dominate at every cohort boundary and skew the
+	// reported timings.
+	entities := make([]Entity, cohorts[len(cohorts)-1])
+	for i := range entities {
+		entities[i] = Entity{
 			ID:       fmt.Sprintf("timing-fact-%d", i),
 			Category: "world",
 			Content:  fmt.Sprintf("Test fact number %d", i),
 			Embedding: []float32{
-				float32(i) / 1000.0,
+				float32(i%1000) / 1000.0,
 				float32(i%100) / 100.0,
 				float32(i%10) / 10.0,
 			},
 		}
-		if err := StoreEntityWithEmbedding(db, entity); err != nil {
-			t.Fatalf("Failed to store entity: %v", err)
-		}
 	}
 
-	// Test retrieval timing
 	queryEmbedding := []float32{0.5, 0.5, 0.5}
-	
-	start := time.Now()
-	_, err = SearchByVector(db, queryEmbedding, 10)
-	if err != nil {
-		t.Fatalf("Failed to search: %v", err)
+
+	type cohortResult struct {
+		n         int
+		search    time.Duration
+		retrieval time.Duration
 	}
-	searchDuration := time.Since(start)
+	results := make([]cohortResult, 0, len(cohorts))
+	seeded := 0
 
-	start = time.Now()
-	_, err = RetrieveContext(db, []string{"timing-fact-0"}, RetrieveContextOptions{MaxDepth: 2})
-	if err != nil {
-		t.Fatalf("Failed to retrieve context: %v", err)
+	for _, n := range cohorts {
+		for i := seeded; i < n; i++ {
+			if err := StoreEntityWithEmbedding(db, entities[i]); err != nil {
+				t.Fatalf("Failed to seed entity %d: %v", i, err)
+			}
+		}
+		seeded = n
+
+		searchStart := time.Now()
+		if _, err := SearchByVector(db, queryEmbedding, 10); err != nil {
+			t.Fatalf("Failed to search at N=%d: %v", n, err)
+		}
+		searchDur := time.Since(searchStart)
+
+		retrStart := time.Now()
+		if _, err := RetrieveContext(db, []string{"timing-fact-0"}, RetrieveContextOptions{MaxDepth: 2}); err != nil {
+			t.Fatalf("Failed to retrieve at N=%d: %v", n, err)
+		}
+		retrDur := time.Since(retrStart)
+
+		results = append(results, cohortResult{n: n, search: searchDur, retrieval: retrDur})
+		fmt.Printf("PERF  N=%-5d  search=%-12s  retrieve=%s\n", n, searchDur, retrDur)
 	}
-	retrievalDuration := time.Since(start)
 
-	fmt.Printf("Vector search: %v\n", searchDuration)
-	fmt.Printf("Retrieval: %v\n", retrievalDuration)
-
-	if searchDuration > 5*time.Millisecond {
-		t.Errorf("Vector search took longer than 5ms (%v)", searchDuration)
+	// Strictness gate: keep the legacy < 5ms assertion at N=1000
+	// where the original test was tuned. Larger cohorts are reported
+	// but not asserted; physical scaling is asserted via the search
+	// algorithm being O(N) by construction (cosine over every row).
+	if results[0].search > 5*time.Millisecond {
+		t.Errorf("Vector search at N=1000 took longer than 5ms (%v)", results[0].search)
 	}
-
-	if retrievalDuration > 5*time.Millisecond {
-		t.Errorf("Retrieval took longer than 5ms (%v)", retrievalDuration)
+	if results[0].retrieval > 5*time.Millisecond {
+		t.Errorf("Retrieval at N=1000 took longer than 5ms (%v)", results[0].retrieval)
 	}
 }
