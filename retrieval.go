@@ -15,10 +15,10 @@ type GraphNode struct {
 }
 
 type RetrievalResult struct {
-	SeedNodes   []GraphNode
-	WorldFacts  []string
-	Opinions    []string
-	Experiences []string
+	SeedNodes    []GraphNode
+	WorldFacts   []string
+	Opinions     []string
+	Experiences  []string
 	Observations []string
 }
 
@@ -38,6 +38,8 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 		args[i] = id
 	}
 
+	args = append(args, maxDepth)
+
 	query := fmt.Sprintf(`
 		WITH RECURSIVE graph_walk AS (
 			SELECT 
@@ -50,54 +52,64 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 			
 			UNION ALL
 			
-		SELECT 
-			e.id, e.category, e.content, e.updated_at,
-			gw.depth + 1,
-			gw.id as parent_id,
-			ed.relation_type
-		FROM graph_walk gw
-		JOIN edges ed ON (ed.source_id = gw.id OR ed.target_id = gw.id)
-		JOIN entities e ON (
-			CASE 
-				WHEN ed.source_id = gw.id THEN ed.target_id = e.id
-				ELSE ed.source_id = e.id
-			END
+			SELECT 
+				e.id, e.category, e.content, e.updated_at,
+				gw.depth + 1,
+				gw.id as parent_id,
+				ed.relation_type
+			FROM graph_walk gw
+			JOIN edges ed ON (ed.source_id = gw.id OR ed.target_id = gw.id)
+			JOIN entities e ON (
+				CASE 
+					WHEN ed.source_id = gw.id THEN ed.target_id = e.id
+					ELSE ed.source_id = e.id
+				END
+			)
+			WHERE gw.depth < ? AND e.id != gw.id
 		)
-		WHERE gw.depth < ? AND e.id != gw.id
-		)
-		SELECT DISTINCT
-			id, category, content, updated_at,
-			depth, parent_id, relation_type
+		SELECT DISTINCT id, category, content, updated_at, depth, parent_id, relation_type
 		FROM graph_walk
-		ORDER BY depth, category, id
+		ORDER BY depth ASC, category ASC
 	`, strings.Join(placeholders, ","))
-
-	args = append(args, maxDepth)
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute graph walk: %w", err)
+		return nil, fmt.Errorf("failed to execute graph retrieval: %w", err)
 	}
 	defer rows.Close()
 
-	result := &RetrievalResult{}
-	seenIDs := make(map[string]bool)
+	result := &RetrievalResult{
+		SeedNodes:    []GraphNode{},
+		WorldFacts:   []string{},
+		Opinions:     []string{},
+		Experiences:  []string{},
+		Observations: []string{},
+	}
+
+	seenContents := make(map[string]bool)
 
 	for rows.Next() {
 		var node GraphNode
 		if err := rows.Scan(
-			&node.Entity.ID, &node.Entity.Category, &node.Entity.Content,
-			&node.Entity.UpdatedAt, &node.Depth, &node.ParentID, &node.RelationType,
+			&node.Entity.ID,
+			&node.Entity.Category,
+			&node.Entity.Content,
+			&node.Entity.UpdatedAt,
+			&node.Depth,
+			&node.ParentID,
+			&node.RelationType,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan graph node: %w", err)
 		}
 
-		if seenIDs[node.Entity.ID] {
+		if node.Depth == 0 {
+			result.SeedNodes = append(result.SeedNodes, node)
+		}
+
+		if seenContents[node.Entity.Content] {
 			continue
 		}
-		seenIDs[node.Entity.ID] = true
-
-		result.SeedNodes = append(result.SeedNodes, node)
+		seenContents[node.Entity.Content] = true
 
 		switch node.Entity.Category {
 		case "world":
@@ -112,7 +124,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, fmt.Errorf("error iterating graph rows: %w", err)
 	}
 
 	return result, nil
@@ -124,7 +136,6 @@ func FormatContextMarkdown(result *RetrievalResult) string {
 	}
 
 	var sb strings.Builder
-
 	sb.WriteString("# Hindsight Context\n\n")
 
 	if len(result.WorldFacts) > 0 {
