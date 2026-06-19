@@ -27,6 +27,11 @@ func GenerateResponse(db *sql.DB, embedder Embedder, opts RetrieveContextOptions
 		seedIDs = append(seedIDs, res.Entity.ID)
 	}
 
+	// Reuse the same embedding for the re-rank so the score reflects
+	// similarity to exactly the question that drove the seed selection.
+	// Safe mutation: opts is the value-type copy owned by GenerateResponse,
+	// not the caller's struct.
+	opts.QueryEmbedding = queryEmbedding
 	contextResult, err := RetrieveContext(db, seedIDs, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve context: %w", err)
