@@ -80,6 +80,13 @@ func main() {
 			log.Fatal("id, category, content required")
 		}
 		entity := Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}
+		if len(entity.Embedding) == 0 {
+			embedding, err := embedder.Embed(entity.Content)
+			if err != nil {
+				log.Fatalf("Failed to embed: %v", err)
+			}
+			entity.Embedding = embedding
+		}
 		if err := StoreEntityWithEmbedding(db, entity); err != nil {
 			log.Fatalf("Failed to store: %v", err)
 		}

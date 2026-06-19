@@ -70,15 +70,11 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 }
 
 func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
-	if len(entity.Embedding) == 0 {
-		_, err := db.Exec(`
-			INSERT OR REPLACE INTO entities (id, category, content, updated_at)
-			VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-		`, entity.ID, entity.Category, entity.Content)
-		return err
+	var embeddingBytes []byte
+	if len(entity.Embedding) > 0 {
+		embeddingBytes = EmbeddingToBytes(entity.Embedding)
 	}
 
-	embeddingBytes := EmbeddingToBytes(entity.Embedding)
 	_, err := db.Exec(`
 		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
