@@ -126,16 +126,16 @@ Dialog:`
 
 	var result ExtractionResult
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		// Fallback: if LLM returned non-JSON, create a single world entity
-		return &ExtractionResult{
-			Entities: []ExtractedEntity{
-				{
-					ID:       fmt.Sprintf("entity-%d", hashString(dialog)%100000),
-					Category: "world",
-					Content:  strings.TrimSpace(dialog),
-				},
-			},
-		}, nil
+		// LLM output is expected to be JSON. Surface the parse failure so the
+		// ingester (caller of ExtractEntities) can decide policy: skip,
+		// retry, or fail the request. Truncate the raw content to avoid
+		// unbounded error strings in HTTP responses and log records.
+		raw := content
+		const maxRaw = 200
+		if len(raw) > maxRaw {
+			raw = raw[:maxRaw] + "...<truncated>"
+		}
+		return nil, fmt.Errorf("extractor: parse LLM JSON response: %w (raw content: %s)", err, raw)
 	}
 
 	if result.Entities == nil {
@@ -145,13 +145,3 @@ Dialog:`
 	return &result, nil
 }
 
-func hashString(s string) int {
-	h := 0
-	for _, c := range s {
-		h = 31*h + int(c)
-	}
-	if h < 0 {
-		return -h
-	}
-	return h
-}
