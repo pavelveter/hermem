@@ -151,10 +151,118 @@ hermem/
 ├── vector.go        # Vector search, entity storage
 ├── retrieval.go     # Recursive CTE graph walk, markdown formatting
 ├── ingestion.go     # Ingestion worker, entity extraction, deduplication
-├── main.go          # Demo / entry point
+├── server.go        # HTTP API server
+├── main.go          # Entry point (demo or server mode)
 ├── hermem.ini       # Sample config file
-└── verify_test.go   # Integration and timing tests
+├── verify_test.go   # Integration and timing tests
+└── plugins/
+    └── memory/
+        └── hermem/  # Hermes Agent memory provider plugin
+            ├── __init__.py
+            └── plugin.yaml
 ```
+
+## HTTP API Server
+
+Run Hermem as an HTTP service for integration with Hermes Agent or other systems:
+
+```bash
+./hermem -server -port 8420
+```
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/store` | POST | Store an entity |
+| `/search` | POST | Vector similarity search |
+| `/retrieve` | POST | Graph walk from seed IDs |
+| `/ingest` | POST | Ingest dialog text |
+| `/query` | POST | Full pipeline: search + graph walk + markdown |
+
+### Examples
+
+**Store an entity:**
+```bash
+curl -X POST http://localhost:8420/store \
+  -H "Content-Type: application/json" \
+  -d '{"id":"paris","category":"world","content":"Paris is the capital of France"}'
+```
+
+**Search:**
+```bash
+curl -X POST http://localhost:8420/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"capital of France","top_k":5}'
+```
+
+**Full query (search + graph walk + markdown):**
+```bash
+curl -X POST http://localhost:8420/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"Tell me about France"}'
+```
+
+**Ingest dialog:**
+```bash
+curl -X POST http://localhost:8420/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"dialog":"User: What is Go?\nAssistant: Go is a statically typed language."}'
+```
+
+## Hermes Agent Integration
+
+Hermem ships with a memory provider plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+
+### Install the plugin
+
+```bash
+# Copy plugin to Hermes plugins directory
+cp -r plugins/memory/hermem ~/.hermes/plugins/memory/
+
+# Or symlink for development
+ln -s $(pwd)/plugins/memory/hermem ~/.hermes/plugins/memory/hermem
+```
+
+### Start Hermem server
+
+```bash
+./hermem -server -port 8420
+# Or with custom config
+./hermem -server -port 8420 -config /path/to/hermem.ini
+```
+
+### Configure Hermes
+
+Add to `~/.hermes/config.yaml`:
+
+```yaml
+memory:
+  provider: hermem
+```
+
+Set the server URL (optional, defaults to `http://localhost:8420`):
+
+```bash
+export HERMEM_URL=http://localhost:8420
+```
+
+### Plugin tools
+
+The plugin exposes three tools to the Hermes agent:
+
+| Tool | Description |
+|------|-------------|
+| `hermem_search` | Search graph memory by vector similarity |
+| `hermem_store` | Store a fact in graph memory |
+| `hermem_query` | Full pipeline: search + graph walk + markdown context |
+
+### How it works with Hermes
+
+1. **prefetch**: Before each turn, Hermes calls `hermem_query` to retrieve relevant context from the graph
+2. **sync_turn**: After each turn, the conversation is sent to `/ingest` for entity extraction
+3. **Tools**: The agent can explicitly search or store memories via tool calls
 
 ## How it works
 

@@ -2,9 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	"hash/fnv"
 	"log"
+	"net/http"
 )
 
 type MockEmbedder struct{}
@@ -46,6 +48,10 @@ func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, 
 }
 
 func main() {
+	serverMode := flag.Bool("server", false, "run as HTTP API server")
+	port := flag.String("port", "8420", "server port")
+	flag.Parse()
+
 	cfg, err := LoadConfig("hermem.ini")
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -59,6 +65,23 @@ func main() {
 
 	embedder := cfg.NewEmbedder()
 	extractor := &SimpleLLMExtractor{}
+
+	if *serverMode {
+		srv := NewServer(db, embedder, extractor)
+
+		http.HandleFunc("/health", srv.HandleHealth)
+		http.HandleFunc("/store", srv.HandleStore)
+		http.HandleFunc("/search", srv.HandleSearch)
+		http.HandleFunc("/retrieve", srv.HandleRetrieve)
+		http.HandleFunc("/ingest", srv.HandleIngest)
+		http.HandleFunc("/query", srv.HandleQuery)
+
+		addr := ":" + *port
+		fmt.Printf("Hermem server listening on %s\n", addr)
+		log.Fatal(http.ListenAndServe(addr, nil))
+		return
+	}
+
 	worker := NewIngestionWorker(db, extractor, embedder)
 
 	dialog := `User: What is the capital of France?
