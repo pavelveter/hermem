@@ -418,14 +418,31 @@ total latency).
 
 ## Performance
 
-Tested on a local SQLite database:
+Measured by `go test -v -run TestTiming -count=1 ./...`. The
+test seeds a single SQLite DB incrementally and prints one
+`PERF  N=<n>  search=<dur>  retrieve=<dur>` line per cohort.
+Numbers are machine-dependent; re-run the test to refresh.
 
-| Operation | Time |
-|-----------|------|
-| Vector search (1000 entities) | ~2.3ms |
-| Graph walk (depth 2) | ~0.2ms |
+| Entities | Vector search | Graph walk (depth 2) |
+|---------:|---------------:|---------------------:|
+| 1,000    |  1.4 ms        |  0.2 ms              |
+| 3,000    |  4.4 ms        |  0.2 ms              |
+| 6,000    |  8.9 ms        |  0.2 ms              |
 
-The system handles up to ~20k entities with in-memory cosine similarity. Beyond that, consider switching to `sqlite-vec` for indexed vector search.
+Scaling: vector search is **O(N)** because every entity's
+embedding is scanned in memory and cosine similarity is
+computed against the query vector (no ANN index). Graph walk
+is dominated by the SQLite recursive-CTE setup cost, which is
+essentially depth-bounded rather than size-bound in this
+benchmark — the seeded graph currently has **no edges between
+entities**, so `RetrieveContext` returns just the single seed
+node regardless of total N. To bench realistic graph-walk
+throughput, the seed loop would need to create a small-world
+topology (e.g. chain or random fan-out); that's a follow-up.
+
+The system handles up to ~20k entities with in-memory cosine
+similarity. Beyond that, consider switching to `sqlite-vec` for
+indexed vector search.
 
 ## Testing
 
