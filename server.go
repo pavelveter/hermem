@@ -38,10 +38,10 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func NewServer(db *sql.DB, embedder Embedder, extractor LLMExtractor) *Server {
+func NewServer(db *sql.DB, embedder Embedder, extractor LLMExtractor, dedupThreshold float32) *Server {
 	return &Server{
 		db:       db,
-		worker:   NewIngestionWorker(db, extractor, embedder),
+		worker:   NewIngestionWorker(db, extractor, embedder, dedupThreshold),
 		embedder: embedder,
 	}
 }

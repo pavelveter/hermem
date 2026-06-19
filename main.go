@@ -142,7 +142,7 @@ func main() {
 		if req.Dialog == "" {
 			log.Fatal("dialog required")
 		}
-		worker := NewIngestionWorker(db, extractor, embedder)
+		worker := NewIngestionWorker(db, extractor, embedder, cfg.DedupThreshold)
 		if err := worker.ProcessDialog(req.Dialog); err != nil {
 			log.Fatalf("Ingest failed: %v", err)
 		}
@@ -153,7 +153,7 @@ func main() {
 		if len(os.Args) > 2 {
 			port = os.Args[2]
 		}
-		srv := NewServer(db, embedder, extractor)
+		srv := NewServer(db, embedder, extractor, cfg.DedupThreshold)
 		http.HandleFunc("/health", srv.HandleHealth)
 		http.HandleFunc("/store", srv.HandleStore)
 		http.HandleFunc("/search", srv.HandleSearch)

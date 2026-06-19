@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +15,13 @@ type Config struct {
 	Model        string
 	DBPath       string
 	ExtractModel string
+	// DedupThreshold is the cosine-similarity floor above which an
+	// incoming entity is considered a duplicate of an existing one and
+	// is merged rather than inserted. Cosine similarity lives in [0, 1]
+	// (unit-length dot product); 0.88 means "very close in vector space"
+	// and is empirically a good default for short factual text.
+	// Lower for noisier inputs; raise to merge only near-duplicates.
+	DedupThreshold float32
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -21,7 +30,8 @@ func LoadConfig(path string) (*Config, error) {
 		URL:          "http://localhost:11434",
 		Model:        "nomic-embed-text",
 		DBPath:       "hermem.db",
-		ExtractModel: "qwen2.5-coder:7b",
+		ExtractModel:    "qwen2.5-coder:7b",
+		DedupThreshold: 0.88,
 	}
 
 	f, err := os.Open(path)
@@ -69,6 +79,12 @@ func LoadConfig(path string) (*Config, error) {
 			cfg.DBPath = val
 		case "extraction.model":
 			cfg.ExtractModel = val
+		case "ingestion.dedup_threshold":
+			if v, err := strconv.ParseFloat(val, 32); err == nil {
+				cfg.DedupThreshold = float32(v)
+			} else {
+				log.Printf("config: invalid ingestion.dedup_threshold %q, keeping default %.2f: %v", val, cfg.DedupThreshold, err)
+			}
 		}
 	}
 
