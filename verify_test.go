@@ -58,7 +58,7 @@ func TestIntegration(t *testing.T) {
 
 	// Test 3: Retrieve context should return both facts
 	seedIDs := []string{fact1.ID}
-	retrievalResult, err := RetrieveContext(db, seedIDs, 2)
+	retrievalResult, err := RetrieveContext(db, seedIDs, RetrieveContextOptions{MaxDepth: 2})
 	if err != nil {
 		t.Fatalf("Failed to retrieve context: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestTiming(t *testing.T) {
 	searchDuration := time.Since(start)
 
 	start = time.Now()
-	_, err = RetrieveContext(db, []string{"timing-fact-0"}, 2)
+	_, err = RetrieveContext(db, []string{"timing-fact-0"}, RetrieveContextOptions{MaxDepth: 2})
 	if err != nil {
 		t.Fatalf("Failed to retrieve context: %v", err)
 	}

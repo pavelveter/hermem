@@ -200,7 +200,7 @@ for _, r := range results {
 
 ```go
 // Find seed nodes by vector search, then walk the graph 2 hops deep
-result, err := RetrieveContext(db, seedIDs, 2)
+result, err := RetrieveContext(db, seedIDs, RetrieveContextOptions{MaxDepth: 2})
 
 // Format as markdown for injection into LLM prompt
 markdown := FormatContextMarkdown(result)

@@ -32,6 +32,10 @@ dedup_threshold = 0.92
 
 [database]
 path = /tmp/hermem-test.db
+
+[retrieval]
+depth_ceiling = 3
+max_nodes = 50
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write ini: %v", err)
@@ -54,6 +58,8 @@ path = /tmp/hermem-test.db
 		{"ExtractModel", cfg.ExtractModel, "gpt-4o-mini"},
 		{"DedupThreshold", cfg.DedupThreshold, float32(0.92)},
 		{"DBPath", cfg.DBPath, "/tmp/hermem-test.db"},
+		{"MaxDepthCeiling", cfg.MaxDepthCeiling, 3},
+		{"MaxRetrievedNodes", cfg.MaxRetrievedNodes, 50},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
@@ -88,6 +94,12 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.DBPath != "hermem.db" {
 		t.Errorf("DBPath default: got %q, want hermem.db", cfg.DBPath)
+	}
+	if cfg.MaxDepthCeiling != 5 {
+		t.Errorf("MaxDepthCeiling default: got %d, want 5", cfg.MaxDepthCeiling)
+	}
+	if cfg.MaxRetrievedNodes != 100 {
+		t.Errorf("MaxRetrievedNodes default: got %d, want 100", cfg.MaxRetrievedNodes)
 	}
 }
 
