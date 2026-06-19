@@ -6,24 +6,6 @@ import (
 	"strings"
 )
 
-type ExtractedEntity struct {
-	ID        string `json:"id"`
-	Category  string `json:"category"`
-	Content   string `json:"content"`
-	Relations []struct {
-		TargetID     string `json:"target_id"`
-		RelationType string `json:"relation_type"`
-	} `json:"relations"`
-}
-
-type ExtractionResult struct {
-	Entities []ExtractedEntity `json:"entities"`
-}
-
-type LLMExtractor interface {
-	ExtractEntities(dialog string) (*ExtractionResult, error)
-}
-
 type IngestionWorker struct {
 	db          *sql.DB
 	extractor   LLMExtractor
@@ -119,10 +101,7 @@ func (w *IngestionWorker) mergeEntities(existing *Entity, newEntity ExtractedEnt
 	return StoreEntityWithEmbedding(w.db, *existing)
 }
 
-func (w *IngestionWorker) createEdges(entityID string, relations []struct {
-	TargetID     string `json:"target_id"`
-	RelationType string `json:"relation_type"`
-}) error {
+func (w *IngestionWorker) createEdges(entityID string, relations []Relation) error {
 	for _, rel := range relations {
 		_, err := w.db.Exec(`
 			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)

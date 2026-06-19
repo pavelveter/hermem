@@ -9,6 +9,30 @@ import (
 	"strings"
 )
 
+// Relation is a typed edge between two extracted entities.
+type Relation struct {
+	TargetID     string `json:"target_id"`
+	RelationType string `json:"relation_type"`
+}
+
+// ExtractedEntity is a single knowledge unit returned by an LLM extractor.
+type ExtractedEntity struct {
+	ID        string     `json:"id"`
+	Category  string     `json:"category"`
+	Content   string     `json:"content"`
+	Relations []Relation `json:"relations"`
+}
+
+// ExtractionResult is the structured payload returned by an LLMExtractor.
+type ExtractionResult struct {
+	Entities []ExtractedEntity `json:"entities"`
+}
+
+// LLMExtractor turns dialog text into structured entities.
+type LLMExtractor interface {
+	ExtractEntities(dialog string) (*ExtractionResult, error)
+}
+
 type OllamaLLMExtractor struct {
 	BaseURL string
 	Model   string
