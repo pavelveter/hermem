@@ -54,6 +54,63 @@ const (
 	ollamaBackoffMax  = 2 * time.Second
 )
 
+// validCategories is the allowlist of entity categories the LLM
+// extractor produces. The system prompt mirrors these so the model emits
+// only these values; runtime filtering is the safety net for prompts
+// that ignore the schema.
+var validCategories = map[string]bool{
+	"world":      true,
+	"opinion":    true,
+	"experience": true,
+	"observation": true,
+}
+
+// validRelationTypes is the allowlist of relation labels the LLM
+// extractor produces. Keeping the set small and descriptive prevents
+// graph pollution from one-off relation labels like "thinks_about_v2".
+var validRelationTypes = map[string]bool{
+	"prefers":     true,
+	"uses":        true,
+	"mentions":    true,
+	"related_to":  true,
+	"part_of":     true,
+	"causes":      true,
+	"contradicts": true,
+}
+
+// filterEntities drops entities whose category is outside the allowlist
+// and drops relations whose relation_type is outside the allowlist.
+// Empty/whitespace-only relations are also dropped. Surviving entities
+// retain a nil-clamped Relations slice so JSON output stays stable.
+func filterEntities(in []ExtractedEntity) []ExtractedEntity {
+	out := make([]ExtractedEntity, 0, len(in))
+	for _, e := range in {
+		if !validCategories[e.Category] {
+			continue
+		}
+		e.Relations = filterRelations(e.Relations)
+		out = append(out, e)
+	}
+	return out
+}
+
+// filterRelations applies TWO independent rules per incoming relation:
+// (1) TargetID must be non-empty (defensive against dangling edges that
+// SQLite's INSERT OR IGNORE would silently accept), and
+// (2) RelationType must be in validRelationTypes (graph-pollution guard).
+// Either failure drops the relation; surviving relations retain their
+// declared target_id untouched (no cross-entity resolution happens here).
+func filterRelations(in []Relation) []Relation {
+	out := make([]Relation, 0, len(in))
+	for _, r := range in {
+		if r.TargetID == "" || !validRelationTypes[r.RelationType] {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 type OllamaLLMExtractor struct {
 	BaseURL string
 	Model   string
@@ -186,18 +243,21 @@ func (e *OllamaLLMExtractor) ExtractEntities(dialog string) (*ExtractionResult, 
 
 	systemPrompt := `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
 
-Categories:
+Categories (use EXACTLY these strings, no others):
 - world: facts, definitions, objective knowledge
 - opinion: preferences, beliefs, subjective views
 - experience: past events, interactions, what happened
 - observation: patterns noticed, anomalies, insights
 
+Allowed relation_type values (use EXACTLY these strings, no others):
+"prefers", "uses", "mentions", "related_to", "part_of", "causes", "contradicts"
+
 Rules:
 1. Extract atomic, self-contained entities
 2. Each entity needs a unique kebab-case id
-3. Relations connect entities with descriptive types like "prefers", "uses", "mentions", "related_to"
+3. Relations connect entities with one of the allowed relation_type strings
 4. Only include clear, useful knowledge
-5. Return ONLY valid JSON matching this schema:
+5. Return ONLY valid JSON matching this exact schema:
 {"entities":[{"id":"string","category":"world|opinion|experience|observation","content":"string","relations":[{"target_id":"string","relation_type":"string"}]}]}
 
 Dialog:`
@@ -237,6 +297,8 @@ Dialog:`
 	if result.Entities == nil {
 		result.Entities = []ExtractedEntity{}
 	}
+
+	result.Entities = filterEntities(result.Entities)
 
 	return &result, nil
 }
