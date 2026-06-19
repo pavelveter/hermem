@@ -2,7 +2,7 @@
 set -e
 
 # Hermem installer for Hermes Agent
-# Usage: curl -fsSL https://raw.githubusercontent.com/hermem/hermem/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/pavelveter/hermem/main/install.sh | bash
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 HERMEM_BIN_DIR="$HERMES_HOME/bin"

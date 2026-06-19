@@ -23,7 +23,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 
 ```bash
 # Clone and build
-git clone <repo-url>
+git clone https://github.com/pavelveter/hermem.git
 cd hermem
 go build -o hermem .
 
