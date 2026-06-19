@@ -3,26 +3,9 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 )
-
-type ExtractedEntity struct {
-	ID        string `json:"id"`
-	Category  string `json:"category"`
-	Content   string `json:"content"`
-	Relations []struct {
-		TargetID     string `json:"target_id"`
-		RelationType string `json:"relation_type"`
-	} `json:"relations"`
-}
-
-type ExtractionResult struct {
-	Entities []ExtractedEntity `json:"entities"`
-}
-
-type LLMExtractor interface {
-	ExtractEntities(dialog string) (*ExtractionResult, error)
-}
 
 type IngestionWorker struct {
 	db          *sql.DB
@@ -31,12 +14,15 @@ type IngestionWorker struct {
 	dedupThresh float32
 }
 
-func NewIngestionWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder) *IngestionWorker {
+// NewIngestionWorker builds a worker that dedups incoming entities
+// against existing ones when their cosine similarity is >= dedupThreshold.
+// The threshold is owned by Config so it can be tuned per deployment.
+func NewIngestionWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32) *IngestionWorker {
 	return &IngestionWorker{
 		db:          db,
 		extractor:   extractor,
 		embedder:    embedder,
-		dedupThresh: 0.88,
+		dedupThresh: dedupThreshold,
 	}
 }
 
@@ -119,10 +105,7 @@ func (w *IngestionWorker) mergeEntities(existing *Entity, newEntity ExtractedEnt
 	return StoreEntityWithEmbedding(w.db, *existing)
 }
 
-func (w *IngestionWorker) createEdges(entityID string, relations []struct {
-	TargetID     string `json:"target_id"`
-	RelationType string `json:"relation_type"`
-}) error {
+func (w *IngestionWorker) createEdges(entityID string, relations []Relation) error {
 	for _, rel := range relations {
 		_, err := w.db.Exec(`
 			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
@@ -139,11 +122,15 @@ type MemoryMessage struct {
 	Dialog string
 }
 
-func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, ch <-chan MemoryMessage) {
-	worker := NewIngestionWorker(db, extractor, embedder)
+func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, ch <-chan MemoryMessage) {
+	worker := NewIngestionWorker(db, extractor, embedder, dedupThreshold)
 	for msg := range ch {
 		if err := worker.ProcessDialog(msg.Dialog); err != nil {
-			fmt.Printf("Error processing dialog in background: %v\n", err)
+			slog.Error("dialog processing failed",
+				"event", "ingest_failed",
+				"err", err,
+				"dialog_len", len(msg.Dialog),
+			)
 		}
 	}
 }

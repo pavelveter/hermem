@@ -2,7 +2,7 @@
   <img src="banner.jpg" alt="Hermem" width="600">
 </p>
 
-# Hermem — Hindsight Lite
+# Hermem
 
 A lightweight, zero-dependency graph memory system for LLM agents. Stores facts as a directed graph in SQLite with vector embeddings for semantic retrieval.
 
@@ -14,7 +14,7 @@ A lightweight, zero-dependency graph memory system for LLM agents. Stores facts 
 User Query ──> [Embedder] ──> [Vector Search] ──> Top-K Seeds ──> [CTE Graph Walk] ──> Markdown Context
 ```
 
-The system stores knowledge as entities (nodes) connected by typed edges. Each entity belongs to one of four Hindsight categories:
+The system stores knowledge as entities (nodes) connected by typed edges. Each entity belongs to one of four memory categories:
 
 | Category | Purpose |
 |----------|---------|
@@ -165,13 +165,23 @@ path = hermem.db
 
 ### Defaults
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `provider` | `ollama` | Embedder backend |
-| `url` | `http://localhost:11434` | API endpoint |
-| `model` | `nomic-embed-text` | Embedding model name |
-| `key` | *(empty)* | API key (OpenAI only) |
-| `path` | `hermem.db` | SQLite database file |
+Every key is optional; missing keys fall back to the defaults below.
+
+| Section.key | Default | Description |
+|-------------|---------|-------------|
+| `embedder.provider` | `ollama` | Embedder backend (`ollama` \| `openai`). |
+| `embedder.url` | `http://localhost:11434` | API endpoint. |
+| `embedder.model` | `nomic-embed-text` | Embedding model name. |
+| `embedder.key` | *(empty)* | API key (OpenAI only). |
+| `extraction.model` | `qwen2.5-coder:7b` | LLM model used by `OllamaLLMExtractor`. |
+| `extraction.temperature` | `0.1` | Sampler temperature passed to `/api/chat`. |
+| `ingestion.dedup_threshold` | `0.88` | Cosine floor for merge-during-ingest (see Deduplication, below). |
+| `retrieval.depth_ceiling` | `5` | Hard clamp on requested `max_depth`. |
+| `retrieval.max_nodes` | `100` | Soft cap on `RetrieveContext` output size. |
+| `database.path` | `hermem.db` | SQLite database file. |
+
+Invalid integer / float parse values are logged at warning level and
+the corresponding default is kept; the server still boots.
 
 ## Usage
 
@@ -200,7 +210,7 @@ for _, r := range results {
 
 ```go
 // Find seed nodes by vector search, then walk the graph 2 hops deep
-result, err := RetrieveContext(db, seedIDs, 2)
+result, err := RetrieveContext(db, seedIDs, RetrieveContextOptions{MaxDepth: 2})
 
 // Format as markdown for injection into LLM prompt
 markdown := FormatContextMarkdown(result)
@@ -226,19 +236,27 @@ The ingestion worker:
 
 ```
 hermem/
-├── db.go            # SQLite schema, embedding serialization, cosine similarity
-├── config.go        # INI config loader
-├── embedder.go      # Embedder interface (Ollama / OpenAI)
-├── vector.go        # Vector search, entity storage
-├── retrieval.go     # Recursive CTE graph walk, markdown formatting
-├── ingestion.go     # Ingestion worker, entity extraction, deduplication
-├── server.go        # HTTP API server
-├── main.go          # Entry point (demo or server mode)
-├── hermem.ini       # Sample config file
-├── verify_test.go   # Integration and timing tests
+├── db.go                # SQLite schema, embedding serialization, cosine similarity
+├── config.go            # INI config loader
+├── embedder.go          # Embedder interface (Ollama / OpenAI)
+├── extractor.go         # LLMExtractor interface + Ollama chat w/ retry + allowlist filtering
+├── vector.go            # Vector search, entity storage
+├── retrieval.go         # Recursive CTE graph walk, ranking, markdown formatting
+├── ingestion.go         # Ingestion worker, entity extraction, deduplication
+├── server.go            # HTTP API server + strict JSON decoder
+├── main.go              # Entry point (CLI subcommands + serve)
+├── hermem.ini           # Sample config file
+├── helpers_test.go      # Shared :memory: SQLite + stub mocks for the test suite
+├── config_test.go       # LoadConfig defaults-on-missing, parse-every-key, invalid-vals
+├── vector_test.go       # Byte-round-trip, cosine edges, store upsert/null, search order + top-K + null-skip, BenchmarkSearchByVector{100,1000,5000}
+├── retrieval_test.go    # Cycle guard, depth ceiling, soft cap, re-ranking, FormatContextMarkdown, BenchmarkRetrieveContext{depth=1,2,3}
+├── ingestion_test.go    # stub LLMExtractor + Embedder; dedup merge / append merge / embed-error / extractor-error paths
+├── extractor_test.go    # filterEntities/filterRelations allowlists; Ollama parse-error + 5xx-retry + 4xx-no-retry via httptest
+├── server_test.go       # Table-driven strict-decode (valid/unknown_field/invalid_type/empty_body/trailing_data) on all POST endpoints + method gate
+├── verify_test.go       # File-backed integration + timing smoke (kept for backward-compat)
 └── plugins/
     └── memory/
-        └── hermem/  # Hermes Agent memory provider plugin
+        └── hermem/      # Hermes Agent memory provider plugin
             ├── __init__.py
             └── plugin.yaml
 ```
@@ -372,29 +390,104 @@ Entities are stored in a flat SQLite table with a BLOB column for embeddings (ra
 1. Query embedding is generated for the user's input
 2. Vector search finds the top-K most similar seed entities
 3. A recursive CTE walks the graph from seed nodes up to `maxDepth` hops
-4. Results are grouped by Hindsight category and formatted as markdown
+4. Results are grouped by memory category and formatted as markdown
 
 ### Deduplication
 
-When ingesting new facts, the system checks if a similar entity already exists (cosine similarity > 0.88). If found, the new content is appended to the existing entity instead of creating a duplicate.
+When ingesting new facts, the ingestion worker reads the top-1
+candidate by cosine similarity; if the score is at or above the
+`[ingestion] dedup_threshold` (default `0.88`, configurable; cosine
+similarity ∈ [0, 1] for unit-length embeddings), the new content is
+merged into the existing entity (concatenated with `"; "` if not
+already substring-contained), re-embedded, and persisted. Otherwise a
+new row is created and the relations from the extraction are appended
+as `INSERT OR IGNORE` edges (composite-PK dedup on
+`(source_id, target_id, relation_type)`).
+
+### Extraction validation
+
+`OllamaLLMExtractor` enforces a hardcoded allowlist of categories
+(`world` / `opinion` / `experience` / `observation`) and relation
+types (`prefers` / `uses` / `mentions` / `related_to` / `part_of` /
+`causes` / `contradicts`) at parse time via `filterEntities` and
+`filterRelations`. Out-of-allowlist values are silently dropped
+rather than aborting the ingest, so a partially-correct LLM output
+still yields graph-safe entities. The 5xx-retry / 4xx-no-retry path
+is retry-budgeted (3 attempts, exponential backoff 200ms→2s, capped
+total latency).
 
 ## Performance
 
-Tested on a local SQLite database:
+Measured by `go test -v -run TestTiming -count=1 ./...`. The
+test seeds a single SQLite file-backed DB incrementally for
+entities and rebuilds the edges table from scratch per cohort
+**against the cohort's `n`**, so the seeded graph is
+characteristic of N at every measurement slice. Numbers are
+machine-dependent; re-run the test to refresh.
 
-| Operation | Time |
-|-----------|------|
-| Vector search (1000 entities) | ~2.3ms |
-| Graph walk (depth 2) | ~0.2ms |
+### Topology
 
-The system handles up to ~20k entities with in-memory cosine similarity. Beyond that, consider switching to `sqlite-vec` for indexed vector search.
+Each entity has **~8 edges on average**:
+- **5 forward chain edges** to `(i+1..i+5)` when target < n,
+  relation_type `next` — gives locality along the chain
+- **3 hash-based long-range edges**, target
+  `((i+1) * mult) % n` for `mult ∈ {7, 11, 13}`, relation_type
+  `long-range` — breaks locality so fan-out grows with depth
+
+The SQLite recursive CTE walks edges bidirectionally
+(`source_id = gw.id OR target_id = gw.id`), so a forward-only
+edge is enough for the walk to find the reverse connection.
+
+### Numbers
+
+| Entities | Vector search | Graph walk (depth 2, middle seed) |
+|---------:|--------------:|----------------------------------:|
+| 1,000    |  1.4 ms       |   43 ms                           |
+| 3,000    |  4.5 ms       |  111 ms                           |
+| 6,000    |  8.9 ms       |  237 ms                           |
+
+Captured on a current Apple M1 machine; cross-platform
+jitter is expected.
+
+### Scaling
+
+- **Vector search** is **O(N)** in entity count (full cosine
+  scan over every embedding); N=3000 lands at ~3.2× the
+  N=1000 cost, N=6000 at ~6.5×, in line with the algorithm.
+- **Graph walk** is dominated by SQLite's recursive-CTE JOIN
+  cost over edges. Fan-out grows with N because long-range
+  targets uniformly fill the `[0, n)` pool (DELETE + rebuild
+  keeps the topology characteristic of the cohort); visited-
+  fact set size and CTE depth-times-iterations both scale
+  roughly linearly with edge count.
+
+The system handles up to ~20k entities with in-memory cosine
+similarity. Beyond that, consider switching to `sqlite-vec`
+for indexed vector search.
 
 ## Testing
 
 ```bash
+go test -count=1 ./...                # full suite (50+ tests + 6 benchmarks; ~2s)
+go test -v -count=1 -run TestServer ./...   # strict-decode table only
+go test -bench='Benchmark(SearchByVector|RetrieveContext)' -benchtime=1x -run=^$   # perf sanity
 go test -v -run TestIntegration
 go test -v -run TestTiming
 ```
+
+The per-package tests (`config_test.go`, `vector_test.go`,
+`retrieval_test.go`, `ingestion_test.go`, `extractor_test.go`,
+`server_test.go`) use `helpers_test.go → memDB(t)` (`:memory:`
+SQLite + `stubEmbedder`/`stubExtractor` mocks); `verify_test.go` is
+file-backed so its `TestTiming` exercises the real `PRAGMA journal_mode
+= WAL` path.
+
+## Documentation
+
+For the full operator runbook — CLI mode and server mode side-by-side,
+request/response reference, the strict-decode error model, DB schema
+notes, embedding-model/dimension gotchas, and operational pitfalls —
+see **[USAGE.md](USAGE.md)**.
 
 ## License
 

@@ -1,17 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 )
 
-func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, error) {
+func GenerateResponse(db *sql.DB, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
 	queryEmbedding, err := embedder.Embed(userQuery)
 	if err != nil {
 		return "", fmt.Errorf("failed to embed query: %w", err)
@@ -27,7 +29,12 @@ func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, 
 		seedIDs = append(seedIDs, res.Entity.ID)
 	}
 
-	contextResult, err := RetrieveContext(db, seedIDs, 2)
+	// Reuse the same embedding for the re-rank so the score reflects
+	// similarity to exactly the question that drove the seed selection.
+	// Safe mutation: opts is the value-type copy owned by GenerateResponse,
+	// not the caller's struct.
+	opts.QueryEmbedding = queryEmbedding
+	contextResult, err := RetrieveContext(db, seedIDs, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve context: %w", err)
 	}
@@ -68,13 +75,13 @@ func main() {
 	switch cmd {
 	case "store":
 		var req struct {
-			ID       string    `json:"id"`
-			Category string    `json:"category"`
-			Content  string    `json:"content"`
+			ID        string    `json:"id"`
+			Category  string    `json:"category"`
+			Content   string    `json:"content"`
 			Embedding []float32 `json:"embedding,omitempty"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.ID == "" || req.Category == "" || req.Content == "" {
 			log.Fatal("id, category, content required")
@@ -97,8 +104,8 @@ func main() {
 			Query string `json:"query"`
 			TopK  int    `json:"top_k"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.Query == "" {
 			log.Fatal("query required")
@@ -120,13 +127,18 @@ func main() {
 		var req struct {
 			Query string `json:"query"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.Query == "" {
 			log.Fatal("query required")
 		}
-		context, err := GenerateResponse(db, embedder, req.Query)
+		opts := RetrieveContextOptions{
+			MaxDepth:          2,
+			DepthCeiling:      cfg.MaxDepthCeiling,
+			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+		}
+		context, err := GenerateResponse(db, embedder, opts, req.Query)
 		if err != nil {
 			log.Fatalf("Query failed: %v", err)
 		}
@@ -136,13 +148,13 @@ func main() {
 		var req struct {
 			Dialog string `json:"dialog"`
 		}
-		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
-			log.Fatalf("Invalid JSON: %v", err)
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
 		}
 		if req.Dialog == "" {
 			log.Fatal("dialog required")
 		}
-		worker := NewIngestionWorker(db, extractor, embedder)
+		worker := NewIngestionWorker(db, extractor, embedder, cfg.DedupThreshold)
 		if err := worker.ProcessDialog(req.Dialog); err != nil {
 			log.Fatalf("Ingest failed: %v", err)
 		}
@@ -153,14 +165,20 @@ func main() {
 		if len(os.Args) > 2 {
 			port = os.Args[2]
 		}
-		srv := NewServer(db, embedder, extractor)
+		srv := NewServer(db, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
+			DepthCeiling:      cfg.MaxDepthCeiling,
+			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+		})
 		http.HandleFunc("/health", srv.HandleHealth)
 		http.HandleFunc("/store", srv.HandleStore)
 		http.HandleFunc("/search", srv.HandleSearch)
 		http.HandleFunc("/retrieve", srv.HandleRetrieve)
 		http.HandleFunc("/ingest", srv.HandleIngest)
 		http.HandleFunc("/query", srv.HandleQuery)
-		fmt.Printf("Hermem server listening on :%s\n", port)
+		slog.Info("server ready",
+			"event", "server_ready",
+			"port", port,
+		)
 		log.Fatal(http.ListenAndServe(":"+port, nil))
 
 	default:
