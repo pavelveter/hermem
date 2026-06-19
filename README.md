@@ -39,27 +39,58 @@ go build -o hermem .
 
 ## Configuration
 
-### Embedder
+All settings are read from `hermem.ini` (INI format). If the file doesn't exist, defaults are used.
 
-By default, the embedder connects to a local Ollama instance. To use OpenAI instead:
+### hermem.ini
 
-```go
-// Ollama (default)
-embedder := NewOllamaEmbedder("http://localhost:11434", "nomic-embed-text")
+```ini
+[embedder]
+provider = ollama          # "ollama" or "openai"
+url = http://localhost:11434
+model = nomic-embed-text
+key =                      # API key for OpenAI (not needed for Ollama)
 
-// OpenAI
-embedder := NewOpenAIEmbedder("https://api.openai.com/v1", "sk-...", "text-embedding-3-small")
+[database]
+path = hermem.db
 ```
 
-### Database
+### Provider examples
 
-The database is initialized automatically on first run. Default path: `hermem.db`.
-
-```go
-db, err := InitDB("path/to/your.db")
+**Ollama (default):**
+```ini
+[embedder]
+provider = ollama
+url = http://localhost:11434
+model = nomic-embed-text
 ```
 
-WAL mode and `PRAGMA synchronous = NORMAL` are enabled by default for performance.
+**OpenAI:**
+```ini
+[embedder]
+provider = openai
+url = https://api.openai.com/v1
+model = text-embedding-3-small
+key = sk-your-api-key-here
+```
+
+**Custom OpenAI-compatible endpoint (vLLM, LiteLLM, etc.):**
+```ini
+[embedder]
+provider = openai
+url = http://localhost:8000/v1
+model = your-model-name
+key = your-key
+```
+
+### Defaults
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `provider` | `ollama` | Embedder backend |
+| `url` | `http://localhost:11434` | API endpoint |
+| `model` | `nomic-embed-text` | Embedding model name |
+| `key` | *(empty)* | API key (OpenAI only) |
+| `path` | `hermem.db` | SQLite database file |
 
 ## Usage
 
@@ -115,11 +146,13 @@ The ingestion worker:
 ```
 hermem/
 ├── db.go            # SQLite schema, embedding serialization, cosine similarity
+├── config.go        # INI config loader
 ├── embedder.go      # Embedder interface (Ollama / OpenAI)
 ├── vector.go        # Vector search, entity storage
 ├── retrieval.go     # Recursive CTE graph walk, markdown formatting
 ├── ingestion.go     # Ingestion worker, entity extraction, deduplication
 ├── main.go          # Demo / entry point
+├── hermem.ini       # Sample config file
 └── verify_test.go   # Integration and timing tests
 ```
 
