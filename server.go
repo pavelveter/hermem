@@ -139,6 +139,11 @@ func (s *Server) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 
 	opts := s.retrievalOpts
 	opts.MaxDepth = req.MaxDepth
+	// HandleRetrieve does NOT compute an embedding server-side: the request
+	// body is only seed IDs, so opts.QueryEmbedding stays nil and the re-rank
+	// falls back to recency-only (sim component fixed at 0). A future change
+	// could accept a `query` field on RetrieveRequest and embed here to get
+	// full vector similarity.
 	result, err := RetrieveContext(s.db, req.SeedIDs, opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
