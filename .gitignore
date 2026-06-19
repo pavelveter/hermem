@@ -33,3 +33,8 @@ go.work.sum
 # OS files
 .DS_Store
 Thumbs.db
+
+# Agent documentation (not part of the project)
+AGENTS.md
+andrey-karpathy-skills.md
+TODO.md
