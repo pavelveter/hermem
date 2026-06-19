@@ -86,6 +86,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 		Observations: []string{},
 	}
 
+	seenIDs := make(map[string]bool)
 	seenContents := make(map[string]bool)
 
 	for rows.Next() {
@@ -100,6 +101,12 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 			&node.RelationType,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan graph node: %w", err)
+		}
+
+		if !seenIDs[node.Entity.ID] {
+			seenIDs[node.Entity.ID] = true
+		} else {
+			continue
 		}
 
 		if node.Depth == 0 {
