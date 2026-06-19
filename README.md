@@ -396,6 +396,13 @@ go test -v -run TestIntegration
 go test -v -run TestTiming
 ```
 
+## Documentation
+
+For the full operator runbook — CLI mode and server mode side-by-side,
+request/response reference, the strict-decode error model, DB schema
+notes, embedding-model/dimension gotchas, and operational pitfalls —
+see **[USAGE.md](USAGE.md)**.
+
 ## License
 
 MIT
