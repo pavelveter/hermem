@@ -106,6 +106,10 @@ url = http://localhost:11434
 model = nomic-embed-text
 key =                      # API key for OpenAI (not needed for Ollama)
 
+[extraction]
+model = qwen2.5-coder:7b
+temperature = 0.1
+
 [database]
 path = hermem.db
 ```
@@ -118,6 +122,13 @@ path = hermem.db
 provider = ollama
 url = http://localhost:11434
 model = nomic-embed-text
+
+[extraction]
+model = qwen2.5-coder:7b
+temperature = 0.1
+
+[database]
+path = hermem.db
 ```
 
 **OpenAI:**
@@ -126,7 +137,14 @@ model = nomic-embed-text
 provider = openai
 url = https://api.openai.com/v1
 model = text-embedding-3-small
-key = sk-your-api-key-here
+key = sk-you...here
+
+[extraction]
+model = gpt-4o-mini
+temperature = 0.1
+
+[database]
+path = hermem.db
 ```
 
 **Custom OpenAI-compatible endpoint (vLLM, LiteLLM, etc.):**
@@ -136,6 +154,13 @@ provider = openai
 url = http://localhost:8000/v1
 model = your-model-name
 key = your-key
+
+[extraction]
+model = your-chat-model
+temperature = 0.1
+
+[database]
+path = hermem.db
 ```
 
 ### Defaults
