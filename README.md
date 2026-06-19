@@ -42,7 +42,7 @@ go build -o hermem .
 One command installs everything — binary, plugin, and config:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hermem/hermem/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pavelveter/hermem/main/install.sh | bash
 ```
 
 Or install manually:
@@ -274,7 +274,7 @@ Hermem ships with a memory provider plugin for [Hermes Agent](https://github.com
 ### Install with script (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hermem/hermem/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pavelveter/hermem/main/install.sh | bash
 ```
 
 ### Install manually
