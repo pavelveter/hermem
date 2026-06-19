@@ -55,7 +55,7 @@ Status legend: `[ ]` pending · `[>]` in progress · `[x]` done
 
 - [ ] README must show: 1) `go build`, 2) `hermem init`, 3) CLI-first flow, 4) SQLite schema with annotations, 5) Operational notes (Ollama, GPU, vectors).
 - [ ] Document the DB path and embedding dimensions required by the configured model.
-- [ ] Add a `USAGE.md` with server-mode and CLI-mode runbooks side by side.
+- [x] Add a `USAGE.md` with server-mode and CLI-mode runbooks side by side.
 
 ---
 
