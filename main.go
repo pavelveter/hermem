@@ -174,7 +174,7 @@ func main() {
 		http.HandleFunc("/retrieve", srv.HandleRetrieve)
 		http.HandleFunc("/ingest", srv.HandleIngest)
 		http.HandleFunc("/query", srv.HandleQuery)
-		slog.Info("hermem server listening",
+		slog.Info("server ready",
 			"event", "server_ready",
 			"port", port,
 		)
