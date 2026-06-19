@@ -1,0 +1,7 @@
+name: hermem
+version: 0.1.0
+description: Hermem memory provider — lightweight graph memory via HTTP
+author: hermem
+memory_provider: true
+dependencies:
+  - requests
