@@ -14,7 +14,7 @@ A lightweight, zero-dependency graph memory system for LLM agents. Stores facts 
 User Query ──> [Embedder] ──> [Vector Search] ──> Top-K Seeds ──> [CTE Graph Walk] ──> Markdown Context
 ```
 
-The system stores knowledge as entities (nodes) connected by typed edges. Each entity belongs to one of four Hindsight categories:
+The system stores knowledge as entities (nodes) connected by typed edges. Each entity belongs to one of four memory categories:
 
 | Category | Purpose |
 |----------|---------|
@@ -372,7 +372,7 @@ Entities are stored in a flat SQLite table with a BLOB column for embeddings (ra
 1. Query embedding is generated for the user's input
 2. Vector search finds the top-K most similar seed entities
 3. A recursive CTE walks the graph from seed nodes up to `maxDepth` hops
-4. Results are grouped by Hindsight category and formatted as markdown
+4. Results are grouped by memory category and formatted as markdown
 
 ### Deduplication
 

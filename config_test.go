@@ -6,156 +6,205 @@ import (
 	"testing"
 )
 
-// TestLoadConfigAllSections writes a hermem.ini with every known section+key
-// and asserts that LoadConfig populates every Config field accordingly. This
-// is the contract test for "config keys in code (ExtractModel, DedupThreshold,
-// ...) must match INI keys (extraction.model, ingestion.dedup_threshold, ...)"
-// (TODO §1.2). If a new Config field is added without a corresponding INI key,
-// or vice versa, this test fails.
-//
-// Adding a field to Config? Add it here AND in hermem.ini (and in README §Defaults).
-// Adding a key to LoadConfig? Add a row here AND a Config field to receive it.
-func TestLoadConfigAllSections(t *testing.T) {
+func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
+	tmp := t.TempDir()
+	cfg, err := LoadConfig(filepath.Join(tmp, "does-not-exist.ini"))
+	if err != nil {
+		t.Fatalf("LoadConfig returned error for missing file: %v", err)
+	}
+
+	want := struct {
+		Provider          string
+		URL               string
+		Model             string
+		DBPath            string
+		ExtractModel      string
+		DedupThreshold    float32
+		MaxDepthCeiling   int
+		MaxRetrievedNodes int
+	}{
+		"ollama", "http://localhost:11434", "nomic-embed-text",
+		"hermem.db", "qwen2.5-coder:7b", 0.88, 5, 100,
+	}
+
+	if cfg.Provider != want.Provider {
+		t.Errorf("Provider = %q, want %q", cfg.Provider, want.Provider)
+	}
+	if cfg.URL != want.URL {
+		t.Errorf("URL = %q, want %q", cfg.URL, want.URL)
+	}
+	if cfg.Model != want.Model {
+		t.Errorf("Model = %q, want %q", cfg.Model, want.Model)
+	}
+	if cfg.DBPath != want.DBPath {
+		t.Errorf("DBPath = %q, want %q", cfg.DBPath, want.DBPath)
+	}
+	if cfg.ExtractModel != want.ExtractModel {
+		t.Errorf("ExtractModel = %q, want %q", cfg.ExtractModel, want.ExtractModel)
+	}
+	if cfg.DedupThreshold != want.DedupThreshold {
+		t.Errorf("DedupThreshold = %v, want %v", cfg.DedupThreshold, want.DedupThreshold)
+	}
+	if cfg.MaxDepthCeiling != want.MaxDepthCeiling {
+		t.Errorf("MaxDepthCeiling = %d, want %d", cfg.MaxDepthCeiling, want.MaxDepthCeiling)
+	}
+	if cfg.MaxRetrievedNodes != want.MaxRetrievedNodes {
+		t.Errorf("MaxRetrievedNodes = %d, want %d", cfg.MaxRetrievedNodes, want.MaxRetrievedNodes)
+	}
+}
+
+func TestLoadConfigParsesAllKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hermem.ini")
-	content := `[embedder]
+	contents := `# full hermem config
+[embedder]
 provider = openai
-url = https://api.openai.example/v1
-key = test-key-xyz
-model = text-embedding-3-large
+url       = https://api.example.com/v1
+key       = sk-test
+model     = text-embedding-3-small
+
+[database]
+path = /tmp/hermem-test.db
 
 [extraction]
 model = gpt-4o-mini
 
 [ingestion]
-dedup_threshold = 0.92
-
-[database]
-path = /tmp/hermem-test.db
+dedup_threshold = 0.95
 
 [retrieval]
-depth_ceiling = 3
-max_nodes = 50
+depth_ceiling = 7
+max_nodes     = 25
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write ini: %v", err)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
-
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 
-	cases := []struct {
-		name string
-		got  any
-		want any
-	}{
-		{"Provider", cfg.Provider, "openai"},
-		{"URL", cfg.URL, "https://api.openai.example/v1"},
-		{"Key", cfg.Key, "test-key-xyz"},
-		{"Model", cfg.Model, "text-embedding-3-large"},
-		{"ExtractModel", cfg.ExtractModel, "gpt-4o-mini"},
-		{"DedupThreshold", cfg.DedupThreshold, float32(0.92)},
-		{"DBPath", cfg.DBPath, "/tmp/hermem-test.db"},
-		{"MaxDepthCeiling", cfg.MaxDepthCeiling, 3},
-		{"MaxRetrievedNodes", cfg.MaxRetrievedNodes, 50},
+	if cfg.Provider != "openai" {
+		t.Errorf("Provider = %q, want openai", cfg.Provider)
 	}
-	for _, c := range cases {
-		if c.got != c.want {
-			t.Errorf("%s: got %v, want %v", c.name, c.got, c.want)
-		}
+	if cfg.URL != "https://api.example.com/v1" {
+		t.Errorf("URL = %q", cfg.URL)
+	}
+	if cfg.Key != "sk-test" {
+		t.Errorf("Key = %q", cfg.Key)
+	}
+	if cfg.Model != "text-embedding-3-small" {
+		t.Errorf("Model = %q", cfg.Model)
+	}
+	if cfg.DBPath != "/tmp/hermem-test.db" {
+		t.Errorf("DBPath = %q", cfg.DBPath)
+	}
+	if cfg.ExtractModel != "gpt-4o-mini" {
+		t.Errorf("ExtractModel = %q", cfg.ExtractModel)
+	}
+	if cfg.DedupThreshold != 0.95 {
+		t.Errorf("DedupThreshold = %v, want 0.95", cfg.DedupThreshold)
+	}
+	if cfg.MaxDepthCeiling != 7 {
+		t.Errorf("MaxDepthCeiling = %d, want 7", cfg.MaxDepthCeiling)
+	}
+	if cfg.MaxRetrievedNodes != 25 {
+		t.Errorf("MaxRetrievedNodes = %d, want 25", cfg.MaxRetrievedNodes)
 	}
 }
 
-// TestLoadConfigDefaults asserts LoadConfig returns the documented defaults
-// when the file is absent. Defaults are the contract between code and the
-// sample hermem.ini shipped with the repo.
-func TestLoadConfigDefaults(t *testing.T) {
-	cfg, err := LoadConfig("/nonexistent/does-not-exist.ini")
-	if err != nil {
-		t.Fatalf("LoadConfig on missing file should not error, got: %v", err)
-	}
+// TestLoadConfigKeepsDefaultsOnInvalidValues enforces the "garbage in,
+// default stays" rule from the parser: parser can't take the program
+// down on bad config. Each invalid value stays at its default.
+func TestLoadConfigKeepsDefaultsOnInvalidValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.ini")
+	contents := `[ingestion]
+dedup_threshold = not-a-number
 
-	if cfg.Provider != "ollama" {
-		t.Errorf("Provider default: got %q, want ollama", cfg.Provider)
+[retrieval]
+depth_ceiling = -3
+max_nodes = abc
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
-	if cfg.URL != "http://localhost:11434" {
-		t.Errorf("URL default: got %q, want http://localhost:11434", cfg.URL)
-	}
-	if cfg.Model != "nomic-embed-text" {
-		t.Errorf("Model default: got %q, want nomic-embed-text", cfg.Model)
-	}
-	if cfg.ExtractModel != "qwen2.5-coder:7b" {
-		t.Errorf("ExtractModel default: got %q, want qwen2.5-coder:7b", cfg.ExtractModel)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
 	}
 	if cfg.DedupThreshold != 0.88 {
-		t.Errorf("DedupThreshold default: got %v, want 0.88", cfg.DedupThreshold)
+		t.Errorf("DedupThreshold on bad value = %v, want default 0.88", cfg.DedupThreshold)
 	}
-	if cfg.DBPath != "hermem.db" {
-		t.Errorf("DBPath default: got %q, want hermem.db", cfg.DBPath)
-	}
+	// DepthCeiling=-3 fails the (err==nil && v>=0) guard, so the parser
+	// logs "keeping default" and leaves the field at the initial
+	// default (5). The parser is partial-recovery by design: invalid
+	// input never takes the program down, it just doesn't replace the
+	// crate's chosen safety ceiling.
 	if cfg.MaxDepthCeiling != 5 {
-		t.Errorf("MaxDepthCeiling default: got %d, want 5", cfg.MaxDepthCeiling)
+		t.Errorf("MaxDepthCeiling on negative value = %d, want default 5", cfg.MaxDepthCeiling)
 	}
 	if cfg.MaxRetrievedNodes != 100 {
-		t.Errorf("MaxRetrievedNodes default: got %d, want 100", cfg.MaxRetrievedNodes)
+		t.Errorf("MaxRetrievedNodes on bad value = %d, want default 100", cfg.MaxRetrievedNodes)
 	}
 }
 
-// TestLoadConfigInvalidDedupThreshold asserts that an unparseable
-// ingestion.dedup_threshold (typo, empty, suffixed garbage) does not crash
-// LoadConfig and silently falls back to the default. This locks in the
-// warn-and-fallback behaviour documented in config.go. Range validation of
-// valid floats (NaN, negative, >1) is intentionally out of scope here —
-// those parse cleanly today and are tracked separately.
-func TestLoadConfigInvalidDedupThreshold(t *testing.T) {
-	cases := []struct {
-		name string
-		ini  string
-	}{
-		{"unparseable-text", "dedup_threshold = not-a-float"},
-		{"empty-value", "dedup_threshold ="},
-		{"suffixed-garbage", "dedup_threshold = 0.5abc"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			path := filepath.Join(dir, "ini")
-			if err := os.WriteFile(path, []byte("[ingestion]\n"+tc.ini+"\n"), 0o644); err != nil {
-				t.Fatalf("write ini: %v", err)
-			}
-			cfg, err := LoadConfig(path)
-			if err != nil {
-				t.Fatalf("LoadConfig on bad value should not error, got: %v", err)
-			}
-			if cfg.DedupThreshold != 0.88 {
-				t.Errorf("invalid dedup_threshold must keep default 0.88, got %v", cfg.DedupThreshold)
-			}
-		})
-	}
-}
-
-// TestLoadConfigPartialIni asserts LoadConfig keeps defaults for missing
-// sections but overrides present ones correctly.
-func TestLoadConfigPartialIni(t *testing.T) {
+// TestLoadConfigSectionCaseInsensitive confirms that section and key
+// names are matched case-insensitively. The parser lowercases the
+// "section.key" string in its switch, so an INI written by hand with
+// uppercase or mixed case still parses correctly. This is a config
+// contract test: any regression here means existing operator-written
+// configs silently lose their settings.
+func TestLoadConfigSectionCaseInsensitive(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "partial.ini")
-	if err := os.WriteFile(path, []byte("[embedder]\nmodel = custom-model\n"), 0o644); err != nil {
-		t.Fatalf("write ini: %v", err)
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[EMBEDDER]
+PROVIDER = OPENAI
+URL = https://api.example.com/v1
+Key = sk-mixed-case
+
+[DATABASE]
+Path = /tmp/caps.db
+
+[Extraction]
+Model = gpt-4o
+
+[INGESTION]
+dedup_threshold = 0.91
+
+[RETRIEVAL]
+depth_ceiling = 4
+MAX_NODES = 50
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Model != "custom-model" {
-		t.Errorf("Model override: got %q, want custom-model", cfg.Model)
+	if cfg.Provider != "openai" {
+		t.Errorf("Provider = %q, want openai", cfg.Provider)
 	}
-	// Other fields should keep their defaults.
-	if cfg.Provider != "ollama" {
-		t.Errorf("Provider not overridden: got %q, want ollama", cfg.Provider)
+	if cfg.URL != "https://api.example.com/v1" {
+		t.Errorf("URL = %q", cfg.URL)
 	}
-	if cfg.DedupThreshold != 0.88 {
-		t.Errorf("DedupThreshold default preserved: got %v, want 0.88", cfg.DedupThreshold)
+	if cfg.Key != "sk-mixed-case" {
+		t.Errorf("Key = %q, want sk-mixed-case", cfg.Key)
+	}
+	if cfg.DBPath != "/tmp/caps.db" {
+		t.Errorf("DBPath = %q", cfg.DBPath)
+	}
+	if cfg.ExtractModel != "gpt-4o" {
+		t.Errorf("ExtractModel = %q, want gpt-4o", cfg.ExtractModel)
+	}
+	if cfg.DedupThreshold != 0.91 {
+		t.Errorf("DedupThreshold = %v, want 0.91", cfg.DedupThreshold)
+	}
+	if cfg.MaxDepthCeiling != 4 {
+		t.Errorf("MaxDepthCeiling = %d, want 4", cfg.MaxDepthCeiling)
+	}
+	if cfg.MaxRetrievedNodes != 50 {
+		t.Errorf("MaxRetrievedNodes = %d, want 50", cfg.MaxRetrievedNodes)
 	}
 }

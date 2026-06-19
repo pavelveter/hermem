@@ -294,7 +294,7 @@ func FormatContextMarkdown(result *RetrievalResult) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("# Hindsight Context\n\n")
+	sb.WriteString("# Memory Context\n\n")
 
 	writeBucket(&sb, "WORLD", result.WorldFacts)
 	writeBucket(&sb, "OPINION", result.Opinions)
