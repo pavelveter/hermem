@@ -31,6 +31,58 @@ go build -o hermem .
 ./hermem
 ```
 
+## Installation
+
+### For Hermes Agent (recommended)
+
+One command installs everything — binary, plugin, and config:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hermem/hermem/main/install.sh | bash
+```
+
+Or install manually:
+
+```bash
+# 1. Build the binary
+go build -o hermem .
+
+# 2. Copy binary to ~/.hermes/bin/
+mkdir -p ~/.hermes/bin
+cp hermem ~/.hermes/bin/
+
+# 3. Copy plugin to ~/.hermes/hermes-agent/plugins/memory/
+cp -r plugins/memory/hermem ~/.hermes/hermes-agent/plugins/memory/
+
+# 4. Copy config
+cp hermem.ini ~/.hermes/hermem.ini
+
+# 5. Set provider in ~/.hermes/config.yaml
+# memory.provider: hermem
+
+# 6. Restart Hermes
+hermes gateway restart
+```
+
+### Standalone (without Hermes)
+
+```bash
+# Build
+go build -o hermem .
+
+# Copy to PATH
+cp hermem /usr/local/bin/
+
+# Configure
+cp hermem.ini /etc/hermem.ini  # or anywhere
+
+# Run CLI
+echo '{"query":"What is Go?"}' | hermem query
+
+# Or run as server
+hermem serve 8420
+```
+
 ## Dependencies
 
 - Go 1.21+
@@ -215,36 +267,52 @@ curl -X POST http://localhost:8420/ingest \
 
 Hermem ships with a memory provider plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
-### Install the plugin
+### Install with script (recommended)
 
 ```bash
-# Copy plugin to Hermes plugins directory
-cp -r plugins/memory/hermem ~/.hermes/plugins/memory/
-
-# Or symlink for development
-ln -s $(pwd)/plugins/memory/hermem ~/.hermes/plugins/memory/hermem
+curl -fsSL https://raw.githubusercontent.com/hermem/hermem/main/install.sh | bash
 ```
 
-### Start Hermem server
+### Install manually
 
 ```bash
-./hermem -server -port 8420
-# Or with custom config
-./hermem -server -port 8420 -config /path/to/hermem.ini
+# 1. Build the binary
+go build -o hermem .
+
+# 2. Copy binary
+mkdir -p ~/.hermes/bin
+cp hermem ~/.hermes/bin/
+
+# 3. Copy plugin
+mkdir -p ~/.hermes/hermes-agent/plugins/memory
+cp -r plugins/memory/hermem ~/.hermes/hermes-agent/plugins/memory/
+
+# 4. Copy config
+cp hermem.ini ~/.hermes/hermem.ini
+
+# 5. Set provider
+sed -i '' 's/^  provider:.*/  provider: hermem/' ~/.hermes/config.yaml
+
+# 6. Restart Hermes
+hermes gateway restart
 ```
 
-### Configure Hermes
-
-Add to `~/.hermes/config.yaml`:
-
-```yaml
-memory:
-  provider: hermem
-```
-
-Set the server URL (optional, defaults to `http://localhost:8420`):
+### Verify installation
 
 ```bash
+hermes memory
+# Should show:
+#   Provider:  hermem
+#   Plugin:    installed ✓
+#   Status:    available ✓
+```
+
+### Start Hermem server (optional)
+
+The plugin works in CLI mode by default (no server needed). For server mode:
+
+```bash
+~/.hermes/bin/hermem serve 8420
 export HERMEM_URL=http://localhost:8420
 ```
 
