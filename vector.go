@@ -31,9 +31,8 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 	for rows.Next() {
 		var entity Entity
 		var embeddingBytes []byte
-		var updatedAt []byte
 
-		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &updatedAt); err != nil {
+		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan entity: %w", err)
 		}
 

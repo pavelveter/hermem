@@ -50,18 +50,20 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 			
 			UNION ALL
 			
-			SELECT 
-				e.id, e.category, e.content, e.updated_at,
-				gw.depth + 1,
-				gw.id as parent_id,
-				ed.relation_type
-			FROM entities e
-			JOIN edges ed ON (
-				(ed.source_id = gw.id AND ed.target_id = e.id) OR 
-				(ed.target_id = gw.id AND ed.source_id = e.id)
-			)
-			JOIN graph_walk gw ON 1=1
-			WHERE gw.depth < ? AND e.id != gw.id
+		SELECT 
+			e.id, e.category, e.content, e.updated_at,
+			gw.depth + 1,
+			gw.id as parent_id,
+			ed.relation_type
+		FROM graph_walk gw
+		JOIN edges ed ON (ed.source_id = gw.id OR ed.target_id = gw.id)
+		JOIN entities e ON (
+			CASE 
+				WHEN ed.source_id = gw.id THEN ed.target_id = e.id
+				ELSE ed.source_id = e.id
+			END
+		)
+		WHERE gw.depth < ? AND e.id != gw.id
 		)
 		SELECT DISTINCT
 			id, category, content, updated_at,
