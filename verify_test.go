@@ -65,11 +65,11 @@ func TestIntegration(t *testing.T) {
 
 	foundFact1 := false
 	foundFact2 := false
-	for _, content := range retrievalResult.WorldFacts {
-		if content == fact1.Content {
+	for _, fact := range retrievalResult.WorldFacts {
+		if fact.Content == fact1.Content {
 			foundFact1 = true
 		}
-		if content == fact2.Content {
+		if fact.Content == fact2.Content {
 			foundFact2 = true
 		}
 	}

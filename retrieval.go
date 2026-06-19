@@ -53,25 +53,38 @@ func computeRankingScore(queryEmbedding []float32, nodeEmbedding []byte, updated
 }
 
 type GraphNode struct {
-	Entity       Entity
-	Relations    []Edge
-	Depth        int
-	ParentID     string
-	RelationType string
+	Entity       Entity `json:"entity"`
+	Relations    []Edge `json:"relations,omitempty"`
+	Depth        int    `json:"depth"`
+	ParentID     string `json:"parent_id"`
+	RelationType string `json:"relation_type,omitempty"`
 	// RankingScore is the deterministic composite score used for ordering
 	// category-bucket output. It is computed as 0.7*sim + 0.3*recency.
 	// 0.0 when the ranker inputs were unavailable (no QueryEmbedding and
 	// no UpdatedAt). Callers may inspect or sort by it, but the canonical
 	// ordering rule is the internal re-rank after scan.
-	RankingScore float32
+	RankingScore float32 `json:"ranking_score,omitempty"`
 }
 
 type RetrievalResult struct {
 	SeedNodes    []GraphNode
-	WorldFacts   []string
-	Opinions     []string
-	Experiences  []string
-	Observations []string
+	WorldFacts   []RetrievedFact
+	Opinions     []RetrievedFact
+	Experiences  []RetrievedFact
+	Observations []RetrievedFact
+}
+
+// RetrievedFact is one re-ranked item in a category bucket. For nodes
+// reached via the graph walk (Depth > 0) ParentID and RelationType are
+// populated so downstream consumers (FormatContextMarkdown,
+// response-generator prompts) can render why this fact was pulled in,
+// not just what it says. For seed nodes (Depth == 0) ParentID and
+// RelationType are empty strings.
+type RetrievedFact struct {
+	Content      string `json:"content"`
+	ParentID     string `json:"parent_id,omitempty"`
+	RelationType string `json:"relation_type,omitempty"`
+	Depth        int    `json:"depth"`
 }
 
 // RetrieveContextOptions controls graph-walk bounds for a single
@@ -155,10 +168,10 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 
 	result := &RetrievalResult{
 		SeedNodes:    []GraphNode{},
-		WorldFacts:   []string{},
-		Opinions:     []string{},
-		Experiences:  []string{},
-		Observations: []string{},
+		WorldFacts:   []RetrievedFact{},
+		Opinions:     []RetrievedFact{},
+		Experiences:  []RetrievedFact{},
+		Observations: []RetrievedFact{},
 	}
 
 	seenIDs := make(map[string]bool)
@@ -232,15 +245,22 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 		}
 		seenContents[rn.node.Entity.Content] = true
 
+		fact := RetrievedFact{
+			Content:      rn.node.Entity.Content,
+			ParentID:     rn.node.ParentID,
+			RelationType: rn.node.RelationType,
+			Depth:        rn.node.Depth,
+		}
+
 		switch rn.node.Entity.Category {
 		case "world":
-			result.WorldFacts = append(result.WorldFacts, rn.node.Entity.Content)
+			result.WorldFacts = append(result.WorldFacts, fact)
 		case "opinion":
-			result.Opinions = append(result.Opinions, rn.node.Entity.Content)
+			result.Opinions = append(result.Opinions, fact)
 		case "experience":
-			result.Experiences = append(result.Experiences, rn.node.Entity.Content)
+			result.Experiences = append(result.Experiences, fact)
 		case "observation":
-			result.Observations = append(result.Observations, rn.node.Entity.Content)
+			result.Observations = append(result.Observations, fact)
 		}
 	}
 
@@ -255,37 +275,29 @@ func FormatContextMarkdown(result *RetrievalResult) string {
 	var sb strings.Builder
 	sb.WriteString("# Hindsight Context\n\n")
 
-	if len(result.WorldFacts) > 0 {
-		sb.WriteString("## WORLD\n")
-		for _, fact := range result.WorldFacts {
-			sb.WriteString(fmt.Sprintf("- %s\n", fact))
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(result.Opinions) > 0 {
-		sb.WriteString("## OPINION\n")
-		for _, opinion := range result.Opinions {
-			sb.WriteString(fmt.Sprintf("- %s\n", opinion))
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(result.Experiences) > 0 {
-		sb.WriteString("## EXPERIENCE\n")
-		for _, exp := range result.Experiences {
-			sb.WriteString(fmt.Sprintf("- %s\n", exp))
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(result.Observations) > 0 {
-		sb.WriteString("## OBSERVATION\n")
-		for _, obs := range result.Observations {
-			sb.WriteString(fmt.Sprintf("- %s\n", obs))
-		}
-		sb.WriteString("\n")
-	}
+	writeBucket(&sb, "WORLD", result.WorldFacts)
+	writeBucket(&sb, "OPINION", result.Opinions)
+	writeBucket(&sb, "EXPERIENCE", result.Experiences)
+	writeBucket(&sb, "OBSERVATION", result.Observations)
 
 	return sb.String()
+}
+
+// writeBucket renders one re-ranked category slice. For facts reached
+// through the graph (Depth > 0) the line includes the relation type
+// and parent ID, so the prompt recipient can trace why the fact was
+// pulled in. Seed facts (Depth == 0) render as plain content.
+func writeBucket(sb *strings.Builder, heading string, facts []RetrievedFact) {
+	if len(facts) == 0 {
+		return
+	}
+	sb.WriteString("## " + heading + "\n")
+	for _, f := range facts {
+		if f.Depth > 0 && f.ParentID != "" {
+			sb.WriteString(fmt.Sprintf("- %s (via '%s' from %s)\n", f.Content, f.RelationType, f.ParentID))
+		} else {
+			sb.WriteString(fmt.Sprintf("- %s\n", f.Content))
+		}
+	}
+	sb.WriteString("\n")
 }
