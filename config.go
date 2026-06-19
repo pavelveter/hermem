@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -32,6 +34,13 @@ type Config struct {
 	MaxRetrievedNodes int
 }
 
+// LoadConfig parses hermem.ini from `path` exactly as given — no
+// resolution to the binary's directory. Production entry points
+// (server, CLI main) should call LoadConfigFromBinaryDir instead;
+// this lower-level helper is preserved so tests can inject a known
+// path without faking os.Executable(). A bare filename like
+// "hermem.ini" here is CWD-relative — that's the footgun this
+// helper exists to surface, not to fix.
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
 		Provider:          "ollama",
@@ -124,4 +133,58 @@ func (c *Config) NewEmbedder() Embedder {
 
 func (c *Config) NewExtractor() LLMExtractor {
 	return NewOllamaLLMExtractor(c.URL, c.ExtractModel)
+}
+
+// LoadConfigFromBinaryDir is the production entry point: it resolves
+// hermem.ini relative to the currently-running executable via
+// os.Executable(), so the binary behaves identically regardless of
+// the caller's working directory. A `~/.hermes/bin/hermem store`
+// invocation lands the same way whether run from its install
+// directory, from a cron job's CWD, or from a fresh shell.
+//
+// A missing ini triggers the same default-config-on-missing policy
+// used by LoadConfig (no error, defaults propagated) so an absent
+// file is non-fatal — deployments without a hermem.ini still boot
+// with the built-in defaults.
+func LoadConfigFromBinaryDir() (*Config, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("locate executable: %w", err)
+	}
+	return LoadConfigFromDir(filepath.Dir(exePath))
+}
+
+// LoadConfigFromDir loads hermem.ini from `dir`. Exported so tests
+// can drive the same code path without faking os.Executable() (the
+// stdlib doesn't allow that to be replaced at test time).
+func LoadConfigFromDir(dir string) (*Config, error) {
+	return LoadConfig(filepath.Join(dir, "hermem.ini"))
+}
+
+// resolveDBPath interprets cfg.DBPath in a hermem-binary-aware way:
+// absolute paths are returned unchanged so operators can pin the DB
+// to /var/lib/hermem/ or similar; relative paths are joined to the
+// binary's directory so the DB is colocated with the binary, not
+// the caller's working directory.
+//
+// Note: os.Executable reports the kernel-resolved path, not the
+// symlink path. A binary installed via a symlink (e.g.
+// /usr/local/bin/hermem -> /opt/hermem-real/hermem) reads its
+// ini and writes its DB in /opt/hermem-real/, not /usr/local/bin/.
+// We deliberately do NOT follow the symlink: it matches Go stdlib
+// semantics and avoids platform-specific os.Readlink logic. If an
+// operator needs symlink-following, that's a future PR.
+//
+// On os.Executable failure the original path is returned unchanged
+// so InitDB surfaces the original failure mode rather than masking
+// it behind a binary-resolution error.
+func resolveDBPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	exePath, err := os.Executable()
+	if err != nil {
+		return p
+	}
+	return filepath.Join(filepath.Dir(exePath), p)
 }

@@ -56,12 +56,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg, err := LoadConfig("hermem.ini")
+	cfg, err := LoadConfigFromBinaryDir()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	db, err := InitDB(cfg.DBPath)
+	db, err := InitDB(resolveDBPath(cfg.DBPath))
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}

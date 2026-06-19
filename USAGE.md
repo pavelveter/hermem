@@ -97,10 +97,19 @@ max_nodes     = 100               # soft cap on nodes per RetrieveContext
 
 ### Lookup order
 
-1. Path given via the `HERMEM_INI` env var (not yet wired — left as a
-   TODO; current implementation reads `./hermem.ini` from the CWD).
-2. `./hermem.ini` in the process working directory.
-3. Built-in defaults.
+1. `hermem.ini` next to the binary executable (resolved via
+   `os.Executable()` → `filepath.Dir(exe)` → joined with
+   `hermem.ini`). Both `hermem store` and `hermem serve` read from
+   this location regardless of the caller's working directory, so a
+   deployed `~/.hermes/bin/hermem` finds its config the same way from
+   `~`, from a cron job's CWD, or from a fresh shell.
+2. Built-in defaults (non-fatal when the file is absent —
+   `LoadConfigFromDir` returns the defaults with `err == nil`).
+
+`HERMEM_INI` env-var override and `--config <path>` flag are
+deliberately **not wired** in this release; the binary's directory
+*is* the config location. Both remain tracked as TODO items for a
+future "operator portable between installs" change.
 
 ### Embedder dimension gotcha
 
