@@ -7,8 +7,8 @@ import (
 )
 
 type SearchResult struct {
-	Entity     Entity
-	Similarity float32
+	Entity     Entity  `json:"entity"`
+	Similarity float32 `json:"similarity"`
 }
 
 func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchResult, error) {

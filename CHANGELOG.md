@@ -19,13 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `NewIngestionWorker`, `NewServer`, and `MemoryWorker` accept `dedupThreshold float32` from `Config` instead of hardcoding `0.88`.
 - `MemoryWorker` channel parameter moved to the trailing position so future tunables can be appended without reshuffling callers.
 - Parser-extracted JSON decode errors now carry a (truncated) preview of the raw LLM content so log lines stay bounded.
+- `GET /retrieve` JSON output: per-category buckets (`world_facts`, `opinions`, `experiences`, `observations`) are now objects of `{content, parent_id, relation_type, depth}` rather than plain strings. Seed nodes (`depth=0`) carry empty `parent_id`/`relation_type`, omitted via `omitempty`. `FormatContextMarkdown` output for `/query` is unchanged.
+- `GET /search` JSON output: `SearchResult` keys are now `entity` and `similarity` (snake_case) instead of the Go-default PascalCase. Same payload, stable wire shape.
 
 ### Removed
-- Ad-hoc hash fallback in `OllamaLLMExtractor`: when the LLM returns non-JSON, callers previously received a synthetic single-`world` entity with an integer-hashed id. The synthetic path is gone; parse failures are surfaced as errors.
+- Ad-hoc hash fallback in `OllamaLLMExtractor`: when the LLM returns non-JSON, callers previously received a synthetic single-`world` entity with an integer-hashed id. The synthetic path is gone; parse failures are surfaced as errors. **`hermem ingest` now exits non-zero on parse failures and `POST /ingest` returns HTTP 500 — update any external automation that was relying on the silent fallback.**
 - `hashString` helper in `extractor.go` (was only used by the removed fallback).
 
 ### Fixed
 - `RetrieveContext` (recursive CTE) now deduplicates the result set by entity id so cyclic graphs no longer inflate node counts. This is in addition to the pre-existing content-level dedup.
 
-### Removed
-- Ad-hoc hash fallback in `OllamaLLMExtractor`: when the LLM returns non-JSON, callers previously received a synthetic single-`world` entity with an integer-hashed id. The synthetic path is gone; parse failures are surfaced as errors. **`hermem ingest` now exits non-zero on parse failures and `POST /ingest` returns HTTP 500 — update any external automation that was relying on the silent fallback.**
+### Notes
+- Per-section / INI-key coverage test enforces config contract — adding a Config field without an INI key (or vice versa) fails `go test ./...`.
