@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `RetrieveContext` (recursive CTE) now deduplicates the result set by entity id so cyclic graphs no longer inflate node counts. This is in addition to the pre-existing content-level dedup.
+- Config (`hermem.ini`) and SQLite DB path are now resolved relative to the binary executable via `os.Executable()` rather than the process working directory. A deployed `~/.hermes/bin/hermem` therefore finds its config the same way from `~`, from `/tmp`, or any other CWD, and a stray `hermem.db` no longer leaks into a transient CWD. New helpers in `config.go`: `LoadConfigFromBinaryDir` (production entry point), `LoadConfigFromDir(dir)` (test-injectable; the stdlib doesn't allow mocking `os.Executable()` at test time), and `resolveDBPath(p)` which honours absolute `[database] path` overrides (only relative paths are joined to the binary's directory). Two new `config_test.go` cases cover the binary-dir copy and the missing-INI default path; the `os.IsNotExist` → defaults policy is preserved, so deployments without a hermem.ini still boot cleanly. Acceptance criterion `~/.hermes/bin/hermem store works when run from any directory` is satisfied; an empty CWD no longer creates a stray `hermem.db`.
 
 ### Notes
 - Per-section / INI-key coverage test enforces config contract — adding a Config field without an INI key (or vice versa) fails `go test ./...`.

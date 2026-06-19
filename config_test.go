@@ -208,3 +208,61 @@ MAX_NODES = 50
 		t.Errorf("MaxRetrievedNodes = %d, want 50", cfg.MaxRetrievedNodes)
 	}
 }
+
+// TestLoadConfigFromDir_Found drives the same code path as the
+// production entry point LoadConfigFromBinaryDir, but with a
+// caller-supplied directory so os.Executable() doesn't have to
+// be faked (stdlib doesn't allow that). Verifies the binary-dir
+// resolution contract: hermem.ini next to the binary is loaded,
+// overriding defaults.
+func TestLoadConfigFromDir_Found(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[embedder]
+url = http://bin-dir-host:9999
+model = bin-dir-model
+
+[database]
+path = bin-dir.db
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := LoadConfigFromDir(dir)
+	if err != nil {
+		t.Fatalf("LoadConfigFromDir: %v", err)
+	}
+	if cfg.URL != "http://bin-dir-host:9999" {
+		t.Errorf("URL = %q, want http://bin-dir-host:9999", cfg.URL)
+	}
+	if cfg.Model != "bin-dir-model" {
+		t.Errorf("Model = %q, want bin-dir-model", cfg.Model)
+	}
+	if cfg.DBPath != "bin-dir.db" {
+		t.Errorf("DBPath = %q, want bin-dir.db", cfg.DBPath)
+	}
+}
+
+// TestLoadConfigFromDir_MissingReturnsDefaults confirms that an
+// absent hermem.ini near the binary silently falls back to the
+// built-in defaults (matching LoadConfig's existing policy),
+// rather than surfacing an error and aborting startup. This is
+// the operator-facing guarantee behind the acceptance criterion
+// "an empty CWD no longer creates a stray hermem.db" — the
+// binary boots cleanly with defaults even without ini.
+func TestLoadConfigFromDir_MissingReturnsDefaults(t *testing.T) {
+	dir := t.TempDir() // intentionally no hermem.ini in here
+	cfg, err := LoadConfigFromDir(dir)
+	if err != nil {
+		t.Fatalf("LoadConfigFromDir: %v", err)
+	}
+	if cfg.URL != "http://localhost:11434" {
+		t.Errorf("URL = %q, want default http://localhost:11434", cfg.URL)
+	}
+	if cfg.Model != "nomic-embed-text" {
+		t.Errorf("Model = %q, want default nomic-embed-text", cfg.Model)
+	}
+	if cfg.DBPath != "hermem.db" {
+		t.Errorf("DBPath = %q, want default hermem.db", cfg.DBPath)
+	}
+}

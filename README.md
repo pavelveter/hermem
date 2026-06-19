@@ -77,10 +77,11 @@ go build -o hermem .
 # Copy to PATH
 cp hermem /usr/local/bin/
 
-# Configure
-cp hermem.ini /etc/hermem.ini  # or anywhere
+# Configure: place hermem.ini *next to the binary* so the
+# binary-dir resolution picks it up from any working directory.
+sudo cp hermem.ini /usr/local/bin/hermem.ini
 
-# Run CLI
+# Run CLI (works regardless of cwd)
 echo '{"query":"What is Go?"}' | hermem query
 
 # Or run as server
@@ -95,7 +96,11 @@ hermem serve 8420
 
 ## Configuration
 
-All settings are read from `hermem.ini` (INI format). If the file doesn't exist, defaults are used.
+All settings are read from `hermem.ini` **next to the binary executable**
+(`os.Executable()`-resolved), so `~/.hermes/bin/hermem store` behaves
+the same regardless of the caller's working directory — a stray
+`hermem.db` no longer leaks into a transient CWD. INI format.
+If the file doesn't exist, defaults are used.
 
 ### hermem.ini
 
