@@ -21,18 +21,21 @@ func (m *MockEmbedder) Embed(text string) ([]float32, error) {
 }
 
 func main() {
-	db, err := InitDB("hermem.db")
+	cfg, err := LoadConfig("hermem.ini")
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	db, err := InitDB(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
-	// Test ingestion worker
+	embedder := cfg.NewEmbedder()
 	extractor := &SimpleLLMExtractor{}
-	embedder := &MockEmbedder{}
 	worker := NewIngestionWorker(db, extractor, embedder)
 
-	// Simulate dialog processing
 	dialog := `User: What is the capital of France?
 Assistant: The capital of France is Paris.
 User: Tell me about Paris
@@ -44,7 +47,6 @@ Assistant: Paris is a beautiful city with many museums.`
 
 	fmt.Println("Dialog processed successfully")
 
-	// Test retrieval after ingestion
 	queryEmbedding := []float32{0.1, 0.2, 0.3}
 	searchResults, err := SearchByVector(db, queryEmbedding, 5)
 	if err != nil {
