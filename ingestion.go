@@ -13,12 +13,15 @@ type IngestionWorker struct {
 	dedupThresh float32
 }
 
-func NewIngestionWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder) *IngestionWorker {
+// NewIngestionWorker builds a worker that dedups incoming entities
+// against existing ones when their cosine similarity is >= dedupThreshold.
+// The threshold is owned by Config so it can be tuned per deployment.
+func NewIngestionWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32) *IngestionWorker {
 	return &IngestionWorker{
 		db:          db,
 		extractor:   extractor,
 		embedder:    embedder,
-		dedupThresh: 0.88,
+		dedupThresh: dedupThreshold,
 	}
 }
 
@@ -118,8 +121,8 @@ type MemoryMessage struct {
 	Dialog string
 }
 
-func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, ch <-chan MemoryMessage) {
-	worker := NewIngestionWorker(db, extractor, embedder)
+func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, ch <-chan MemoryMessage) {
+	worker := NewIngestionWorker(db, extractor, embedder, dedupThreshold)
 	for msg := range ch {
 		if err := worker.ProcessDialog(msg.Dialog); err != nil {
 			fmt.Printf("Error processing dialog in background: %v\n", err)
