@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="banner.jpg" alt="Hermem" width="600">
+</p>
+
 # Hermem — Hindsight Lite
 
 A lightweight, zero-dependency graph memory system for LLM agents. Stores facts as a directed graph in SQLite with vector embeddings for semantic retrieval.
