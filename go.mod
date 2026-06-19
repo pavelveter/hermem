@@ -1,4 +1,4 @@
-module github.com/hermem/hermem
+module github.com/pavelveter/hermem
 
 go 1.26.4
 
