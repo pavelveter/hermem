@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -125,7 +126,11 @@ func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupTh
 	worker := NewIngestionWorker(db, extractor, embedder, dedupThreshold)
 	for msg := range ch {
 		if err := worker.ProcessDialog(msg.Dialog); err != nil {
-			fmt.Printf("Error processing dialog in background: %v\n", err)
+			slog.Error("dialog processing failed",
+				"event", "ingest_failed",
+				"err", err,
+				"dialog_len", len(msg.Dialog),
+			)
 		}
 	}
 }

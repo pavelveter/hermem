@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-section / INI-key coverage test (`config_test.go`) that writes a hermem.ini with every known key and asserts `LoadConfig` populates every `Config` field, plus a parse-failure test for `ingestion.dedup_threshold`.
 - Doc comments on the extraction contract types (`Relation`, `ExtractedEntity`, `ExtractionResult`, `LLMExtractor`).
 - `log.Printf` warning on `ingestion.dedup_threshold` parse failure so misconfigured deployments are visible rather than silently reverting to the default.
+- `log/slog` package-internal logger replaces direct `fmt.Printf` for error and status events. Per-call `event` field for filtering: `ingest_failed`, `server_ready`, `ollama_attempt_retry`, `retrieval_complete`. Per-row graph telemetry is suppressed by default — one summary event per retrieval acts as the level-based throttle for TODO §5.3.
 
 ### Changed
 - `LLMExtractor`, `ExtractionResult`, `ExtractedEntity` unified in `extractor.go`; `ingestion.go` only consumes them. Single source of truth for the extraction contract.
@@ -31,3 +32,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 - Per-section / INI-key coverage test enforces config contract — adding a Config field without an INI key (or vice versa) fails `go test ./...`.
+- Request-id propagation from HTTP handlers through DB calls to LLM traces (TODO §5.4) is deliberately deferred — log events have no shared correlation ID yet; downstream log aggregation must not assume cross-event linkage.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -168,6 +169,11 @@ func (e *OllamaLLMExtractor) chat(ctx context.Context, req *chatRequest) (*chatR
 	var lastErr error
 	backoff := ollamaBackoffBase
 	for attempt := 1; attempt <= ollamaRetries; attempt++ {
+		slog.Debug("ollama attempt",
+			"model", e.Model,
+			"attempt", attempt,
+			"max_attempts", ollamaRetries,
+		)
 		if attempt > 1 {
 			select {
 			case <-time.After(backoff):
@@ -190,6 +196,11 @@ func (e *OllamaLLMExtractor) chat(ctx context.Context, req *chatRequest) (*chatR
 		if err != nil {
 			// Network/timeout: surface as retryable.
 			lastErr = err
+			slog.Warn("ollama attempt failed, will retry",
+				"model", e.Model,
+				"attempt", attempt,
+				"err", err.Error(),
+			)
 			continue
 		}
 
@@ -198,6 +209,11 @@ func (e *OllamaLLMExtractor) chat(ctx context.Context, req *chatRequest) (*chatR
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			lastErr = fmt.Errorf("extractor: ollama HTTP %d", resp.StatusCode)
+			slog.Warn("ollama returned 5xx, will retry",
+				"model", e.Model,
+				"attempt", attempt,
+				"status", resp.StatusCode,
+			)
 			continue
 		}
 
