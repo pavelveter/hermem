@@ -7,19 +7,21 @@ import (
 )
 
 type Config struct {
-	Provider string // "ollama" or "openai"
-	URL      string
-	Key      string
-	Model    string
-	DBPath   string
+	Provider     string
+	URL          string
+	Key          string
+	Model        string
+	DBPath       string
+	ExtractModel string
 }
 
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
-		Provider: "ollama",
-		URL:      "http://localhost:11434",
-		Model:    "nomic-embed-text",
-		DBPath:   "hermem.db",
+		Provider:     "ollama",
+		URL:          "http://localhost:11434",
+		Model:        "nomic-embed-text",
+		DBPath:       "hermem.db",
+		ExtractModel: "qwen2.5-coder:7b",
 	}
 
 	f, err := os.Open(path)
@@ -54,24 +56,19 @@ func LoadConfig(path string) (*Config, error) {
 		key := strings.TrimSpace(line[:eqIdx])
 		val := strings.TrimSpace(line[eqIdx+1:])
 
-		if section == "embedder" || section == "" {
-			switch strings.ToLower(key) {
-			case "provider":
-				cfg.Provider = strings.ToLower(val)
-			case "url":
-				cfg.URL = val
-			case "key":
-				cfg.Key = val
-			case "model":
-				cfg.Model = val
-			}
-		}
-
-		if section == "database" || section == "" {
-			switch strings.ToLower(key) {
-			case "path":
-				cfg.DBPath = val
-			}
+		switch strings.ToLower(section + "." + key) {
+		case "embedder.provider":
+			cfg.Provider = strings.ToLower(val)
+		case "embedder.url":
+			cfg.URL = val
+		case "embedder.key":
+			cfg.Key = val
+		case "embedder.model":
+			cfg.Model = val
+		case "database.path":
+			cfg.DBPath = val
+		case "extraction.model":
+			cfg.ExtractModel = val
 		}
 	}
 
@@ -85,4 +82,8 @@ func (c *Config) NewEmbedder() Embedder {
 	default:
 		return NewOllamaEmbedder(c.URL, c.Model)
 	}
+}
+
+func (c *Config) NewExtractor() LLMExtractor {
+	return NewOllamaLLMExtractor(c.URL, c.ExtractModel)
 }

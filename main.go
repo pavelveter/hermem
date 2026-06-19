@@ -61,7 +61,7 @@ func main() {
 	defer db.Close()
 
 	embedder := cfg.NewEmbedder()
-	extractor := &SimpleLLMExtractor{}
+	extractor := cfg.NewExtractor()
 
 	cmd := os.Args[1]
 
