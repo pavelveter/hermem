@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -18,6 +19,30 @@ func (m *MockEmbedder) Embed(text string) ([]float32, error) {
 		float32((hash>>8)&0xFF) / 255.0,
 		float32((hash>>16)&0xFF) / 255.0,
 	}, nil
+}
+
+func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, error) {
+	queryEmbedding, err := embedder.Embed(userQuery)
+	if err != nil {
+		return "", fmt.Errorf("failed to embed query: %w", err)
+	}
+
+	searchResults, err := SearchByVector(db, queryEmbedding, 3)
+	if err != nil {
+		return "", fmt.Errorf("failed to search: %w", err)
+	}
+
+	var seedIDs []string
+	for _, res := range searchResults {
+		seedIDs = append(seedIDs, res.Entity.ID)
+	}
+
+	contextResult, err := RetrieveContext(db, seedIDs, 2)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve context: %w", err)
+	}
+
+	return FormatContextMarkdown(contextResult), nil
 }
 
 func main() {
@@ -45,16 +70,18 @@ Assistant: Paris is a beautiful city with many museums.`
 		log.Fatalf("Failed to process dialog: %v", err)
 	}
 
-	fmt.Println("Dialog processed successfully")
+	fmt.Println("Dialog ingested successfully")
 
-	queryEmbedding := []float32{0.1, 0.2, 0.3}
-	searchResults, err := SearchByVector(db, queryEmbedding, 5)
+	userQuery := "Tell me about France"
+	context, err := GenerateResponse(db, embedder, userQuery)
 	if err != nil {
-		log.Fatalf("Failed to search: %v", err)
+		log.Fatalf("Failed to generate response: %v", err)
 	}
 
-	fmt.Println("\n=== Vector Search Results After Ingestion ===")
-	for _, r := range searchResults {
-		fmt.Printf("ID: %s, Similarity: %.3f, Content: %s\n", r.Entity.ID, r.Similarity, r.Entity.Content)
+	fmt.Printf("\n=== Context for: %q ===\n", userQuery)
+	if context == "" {
+		fmt.Println("(no context found)")
+	} else {
+		fmt.Println(context)
 	}
 }
