@@ -2,26 +2,14 @@ package main
 
 import (
 	"database/sql"
-	"flag"
+	"encoding/json"
 	"fmt"
-	"hash/fnv"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 )
-
-type MockEmbedder struct{}
-
-func (m *MockEmbedder) Embed(text string) ([]float32, error) {
-	h := fnv.New32a()
-	h.Write([]byte(text))
-	hash := h.Sum32()
-
-	return []float32{
-		float32(hash&0xFF) / 255.0,
-		float32((hash>>8)&0xFF) / 255.0,
-		float32((hash>>16)&0xFF) / 255.0,
-	}, nil
-}
 
 func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, error) {
 	queryEmbedding, err := embedder.Embed(userQuery)
@@ -47,10 +35,19 @@ func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, 
 	return FormatContextMarkdown(contextResult), nil
 }
 
+func readInput() string {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		log.Fatalf("Failed to read stdin: %v", err)
+	}
+	return strings.TrimSpace(string(data))
+}
+
 func main() {
-	serverMode := flag.Bool("server", false, "run as HTTP API server")
-	port := flag.String("port", "8420", "server port")
-	flag.Parse()
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store    Store a fact (JSON on stdin)\n  search   Search memory (JSON on stdin)\n  query    Full pipeline: search + graph walk (JSON on stdin)\n  ingest   Ingest dialog (JSON on stdin)\n  serve    Run HTTP server\n")
+		os.Exit(1)
+	}
 
 	cfg, err := LoadConfig("hermem.ini")
 	if err != nil {
@@ -66,45 +63,101 @@ func main() {
 	embedder := cfg.NewEmbedder()
 	extractor := &SimpleLLMExtractor{}
 
-	if *serverMode {
-		srv := NewServer(db, embedder, extractor)
+	cmd := os.Args[1]
 
+	switch cmd {
+	case "store":
+		var req struct {
+			ID       string    `json:"id"`
+			Category string    `json:"category"`
+			Content  string    `json:"content"`
+			Embedding []float32 `json:"embedding,omitempty"`
+		}
+		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
+			log.Fatalf("Invalid JSON: %v", err)
+		}
+		if req.ID == "" || req.Category == "" || req.Content == "" {
+			log.Fatal("id, category, content required")
+		}
+		entity := Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}
+		if err := StoreEntityWithEmbedding(db, entity); err != nil {
+			log.Fatalf("Failed to store: %v", err)
+		}
+		fmt.Println(`{"status":"ok"}`)
+
+	case "search":
+		var req struct {
+			Query string `json:"query"`
+			TopK  int    `json:"top_k"`
+		}
+		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
+			log.Fatalf("Invalid JSON: %v", err)
+		}
+		if req.Query == "" {
+			log.Fatal("query required")
+		}
+		if req.TopK <= 0 {
+			req.TopK = 5
+		}
+		embedding, err := embedder.Embed(req.Query)
+		if err != nil {
+			log.Fatalf("Embed failed: %v", err)
+		}
+		results, err := SearchByVector(db, embedding, req.TopK)
+		if err != nil {
+			log.Fatalf("Search failed: %v", err)
+		}
+		json.NewEncoder(os.Stdout).Encode(results)
+
+	case "query":
+		var req struct {
+			Query string `json:"query"`
+		}
+		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
+			log.Fatalf("Invalid JSON: %v", err)
+		}
+		if req.Query == "" {
+			log.Fatal("query required")
+		}
+		context, err := GenerateResponse(db, embedder, req.Query)
+		if err != nil {
+			log.Fatalf("Query failed: %v", err)
+		}
+		json.NewEncoder(os.Stdout).Encode(map[string]string{"context": context})
+
+	case "ingest":
+		var req struct {
+			Dialog string `json:"dialog"`
+		}
+		if err := json.Unmarshal([]byte(readInput()), &req); err != nil {
+			log.Fatalf("Invalid JSON: %v", err)
+		}
+		if req.Dialog == "" {
+			log.Fatal("dialog required")
+		}
+		worker := NewIngestionWorker(db, extractor, embedder)
+		if err := worker.ProcessDialog(req.Dialog); err != nil {
+			log.Fatalf("Ingest failed: %v", err)
+		}
+		fmt.Println(`{"status":"ok"}`)
+
+	case "serve":
+		port := "8420"
+		if len(os.Args) > 2 {
+			port = os.Args[2]
+		}
+		srv := NewServer(db, embedder, extractor)
 		http.HandleFunc("/health", srv.HandleHealth)
 		http.HandleFunc("/store", srv.HandleStore)
 		http.HandleFunc("/search", srv.HandleSearch)
 		http.HandleFunc("/retrieve", srv.HandleRetrieve)
 		http.HandleFunc("/ingest", srv.HandleIngest)
 		http.HandleFunc("/query", srv.HandleQuery)
+		fmt.Printf("Hermem server listening on :%s\n", port)
+		log.Fatal(http.ListenAndServe(":"+port, nil))
 
-		addr := ":" + *port
-		fmt.Printf("Hermem server listening on %s\n", addr)
-		log.Fatal(http.ListenAndServe(addr, nil))
-		return
-	}
-
-	worker := NewIngestionWorker(db, extractor, embedder)
-
-	dialog := `User: What is the capital of France?
-Assistant: The capital of France is Paris.
-User: Tell me about Paris
-Assistant: Paris is a beautiful city with many museums.`
-
-	if err := worker.ProcessDialog(dialog); err != nil {
-		log.Fatalf("Failed to process dialog: %v", err)
-	}
-
-	fmt.Println("Dialog ingested successfully")
-
-	userQuery := "Tell me about France"
-	context, err := GenerateResponse(db, embedder, userQuery)
-	if err != nil {
-		log.Fatalf("Failed to generate response: %v", err)
-	}
-
-	fmt.Printf("\n=== Context for: %q ===\n", userQuery)
-	if context == "" {
-		fmt.Println("(no context found)")
-	} else {
-		fmt.Println(context)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
+		os.Exit(1)
 	}
 }
