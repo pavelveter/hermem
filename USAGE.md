@@ -242,7 +242,7 @@ paths). Pipe stderr to your log aggregator.
 | GET    | `/health`  | —                              | `{"status":"ok"}`        |
 | POST   | `/store`   | `StoreRequest`                 | `{"status":"ok"}`        |
 | POST   | `/search`  | `SearchRequest`                | `[{entity, similarity}]` |
-| POST   | `/retrieve`| `RetrieveRequest`              | `RetrievalResult`        |
+| POST   | `/retrieve`| `RetrieveRequest`              | `RetrievalResult` (PascalCase keys — see §8 note) |
 | POST   | `/ingest`  | `IngestRequest`                | `{"status":"ok"}`        |
 | POST   | `/query`   | `QueryRequest`                 | `{"context": "..."}`     |
 
@@ -301,9 +301,14 @@ curl -X POST http://localhost:8420/retrieve \
 ```
 
 `max_depth` is silently clamped to `[retrieval].depth_ceiling`.
-Response is the full `RetrievalResult`: `seed_nodes`,
-`observations[]`, and the four category buckets (`world`, `opinion`,
-`experience`, `observation`).
+Response is the full `RetrievalResult` — see §8 for the
+authoritative wire shape. **Known inconsistency:** `RetrievalResult`
+struct fields do not yet have explicit `json:"..."` tags, so the
+HTTP wire shape currently uses Go's default PascalCase keys
+(`SeedNodes`, `WorldFacts`, `Opinions`, `Experiences`,
+`Observations`). A future PR will convert these to snake_case
+(planned: `seed_nodes`, `world_facts` / `opinions` / `experiences`
+/ `observations`) for parity with the `/search` wire shape.
 
 ### `/ingest`
 
@@ -405,14 +410,41 @@ struct field unless noted.
 
 ```json
 {
-  "seed_nodes":   [{"entity":{...},"depth":0}, ...],
-  "observations": ["Paris is the capital of France", "..."],
-  "world":        ["..."],
-  "opinion":      ["..."],
-  "experience":   ["..."],
-  "observation":  ["..."]
+  "SeedNodes": [
+    {
+      "entity":        {"id":"paris","category":"world","content":"Paris is the capital of France","embedding":[...], "updated_at":"..."},
+      "relations":     [],
+      "depth":         0,
+      "parent_id":     "",
+      "relation_type": "",
+      "ranking_score": 0.9134
+    }
+  ],
+  "WorldFacts":   [{"content":"Paris is the capital of France","parent_id":"france","relation_type":"part_of","depth":1}],
+  "Opinions":     [],
+  "Experiences":  [],
+  "Observations": []
 }
 ```
+
+Each per-category bucket (`WorldFacts` / `Opinions` / `Experiences` /
+`Observations`) is `[]RetrievedFact` — i.e. an array of
+`{content, parent_id, relation_type, depth}` objects. Empty buckets
+remain in the output as `[]` (not absent) so consumers can iterate
+without nil-checking. `parent_id` and `relation_type` are `omitempty`:
+seed-reached facts (`depth == 0`) emit them as empty strings; graph-walk
+facts (`depth > 0`) carry them populated so the calling agent can see
+why each fact was pulled in. `SeedNodes` is `[]GraphNode` with full
+`entity` + composite score.
+
+**Known wire-shape inconsistency:** `RetrievalResult` has no explicit
+`json:"..."` tags, so all five top-level keys above marshal with Go's
+default PascalCase. `/search` already uses snake_case via
+`SearchResult`'s explicit tags; the `/retrieve` conversion is tracked
+as a documented TODO item. PascalCase is stable for now — the next
+PR will introduce snake_case (`seed_nodes`, `world_facts`, `opinions`,
+`experiences`, `observations`) and call out the breaking change in
+`CHANGELOG ## [Unreleased] ### Changed`.
 
 (Use `FormatContextMarkdown` server-side or the wrapper at
 `/query` to render to LLM-ready markdown.)
@@ -467,11 +499,11 @@ $ curl -s -X POST localhost:8420/search -d '{"query":"x","topK":3}'
 
 # Wrong type
 $ curl -s -X POST localhost:8420/search -d '{"query":"x","top_k":"three"}'
-{"error":"json: cannot unmarshal string into int","code":"invalid_type","field":"top_k"}
+{"error":"invalid type for field \"top_k\" (got string, want uint8)","code":"invalid_type","field":"top_k"}
 
 # Empty body
 $ curl -s -X POST localhost:8420/search -d ''
-{"error":"empty request body","code":"empty_body"}
+{"error":"request body is empty","code":"empty_body"}
 
 # Trailing data
 $ curl -s -X POST localhost:8420/store -d '{"id":"a","category":"world","content":"x"}{"id":"b","category":"world","content":"y"}'
@@ -495,31 +527,34 @@ A single SQLite file with two tables. The schema lives in
 
 ### `entities`
 
-| Column      | SQLite type | Notes                                                 |
-|-------------|-------------|-------------------------------------------------------|
-| `id`        | TEXT PK     | Stable identifier.                                    |
-| `category`  | TEXT        | One of `world`/`opinion`/`experience`/`observation`.  |
-| `content`   | TEXT        | Free text.                                            |
-| `embedding` | BLOB        | `len(embedding) * 4` raw little-endian float32 bytes. |
-| `created_at`| INTEGER     | Unix epoch seconds.                                   |
+| Column       | SQLite type | Notes                                                 |
+|--------------|-------------|-------------------------------------------------------|
+| `id`         | TEXT PK     | Stable identifier.                                    |
+| `category`   | TEXT        | One of `world`/`opinion`/`experience`/`observation`.  |
+| `content`    | TEXT        | Free text.                                            |
+| `embedding`  | BLOB        | `len(embedding) * 4` raw little-endian float32 bytes. |
+| `updated_at` | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
 
 Entity IDs are primary keys — repeated `store` calls upsert (the row
-is replaced; edges are not deleted). Re-storing the same `id` overwrites
-the embedded content; cosine math remains valid because the float32
-stride does not change.
+is replaced; edges are not deleted). The DB is configured with
+`PRAGMA journal_mode = WAL` and `PRAGMA synchronous = NORMAL` in
+`InitDB` for better concurrent performance. Re-storing the same `id`
+overwrites the embedded content; cosine math remains valid because
+the float32 stride does not change.
 
 ### `edges`
 
 | Column          | SQLite type | Notes                                               |
 |-----------------|-------------|-----------------------------------------------------|
-| `source_id`     | TEXT        | FK → `entities.id`.                                 |
-| `target_id`     | TEXT        | FK → `entities.id`.                                 |
-| `relation_type` | TEXT        | `prefers`, `uses`, `mentions`, `related_to`, …      |
-| `weight`        | REAL        | Default 1.0.                                        |
-| `created_at`    | INTEGER     | Unix epoch seconds.                                 |
+| `source_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
+| `target_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
+| `relation_type` | TEXT        | `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts` (canonical allowlist enforced by `filterRelations` in `extractor.go`). |
 
 Composite PK `(source_id, target_id, relation_type)` means duplicate
-edges auto-dedupe on insert.
+edges auto-dedupe on insert. There is no `weight` or timestamp column
+on edges — weight is implicit (always 1.0 in the current model) and
+edge provenance is recovered via `RetrievedFact.parent_id` /
+`relation_type` from the graph walk.
 
 ### Migrations
 
@@ -567,9 +602,14 @@ silently produce wrong cosine scores.
   concurrent requests, but the underlying SQLite write path is
   serialised by SQLite itself. For high-write workloads consider
   batching through `/ingest` instead of N×`/store`.
-- **Slog output.** Logs go to stderr. Fields of interest:
-  `event`, `entity_id`, `depth`, `cost_ms`, `model_name`,
-  `embedding_dim`. Pipe to a JSON-aware log shipper.
+- **Slog output.** Logs go to stderr via `log/slog`. The exact field
+  set per event is:
+  - `server_ready`            — `port`
+  - `ingest_failed`           — `err`, `dialog_len`
+  - `ollama_call`             — `model`, `attempts_used`, `outcome` (emitted at Debug; pre-retry `ollama_attempt_retry` Warn lines surface only mid-loop)
+  - `retrieval_complete`      — `seed_count`, `total_ranked`, `effective_depth`, `cap_active` (emitted at Debug — the level filter is the throttle)
+  No `entity_id` / `embedding_dim` / `cost_ms` fields are emitted yet
+  (TODO §5). Pipe stderr to a JSON-aware log shipper.
 - **Graceful shutdown.** `SIGINT`/`SIGTERM` will halt in-flight
   HTTP handlers immediately. There is no drain phase; clients may
   observe truncated responses. Wrap with `nginx`/`caddy` if you

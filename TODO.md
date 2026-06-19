@@ -26,6 +26,7 @@ Status legend: `[ ]` pending · `[>]` in progress · `[x]` done
 - [ ] Configurable `max_depth` hard ceiling and soft pagination when depth budget is large.
 - [ ] Add a deterministic re-ranking layer after graph traversal: `(vector_similarity × 0.7) + (recency × 0.3)` instead of bare depth ordering.
 - [ ] Surface `parent_id` + `relation_type` in the final retrieval result shape consumed by the response generator.
+- [ ] Convert `RetrievalResult` to snake_case wire JSON (add explicit `json:"..."` tags: `seed_nodes`, `world_facts`, `opinions`, `experiences`, `observations`) so `/retrieve` matches the `/search` wire discipline. Document as a breaking change in CHANGELOG `### Changed` because existing consumers reading PascalCase keys will break.
 
 ## 4. Tests and CI
 
