@@ -2,15 +2,14 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
 
 type ExtractedEntity struct {
-	ID       string   `json:"id"`
-	Category string   `json:"category"`
-	Content  string   `json:"content"`
+	ID        string `json:"id"`
+	Category  string `json:"category"`
+	Content   string `json:"content"`
 	Relations []struct {
 		TargetID     string `json:"target_id"`
 		RelationType string `json:"relation_type"`
@@ -52,7 +51,6 @@ func (w *IngestionWorker) ProcessDialog(dialog string) error {
 			return fmt.Errorf("failed to process entity %s: %w", entity.ID, err)
 		}
 	}
-
 	return nil
 }
 
@@ -67,9 +65,9 @@ func (w *IngestionWorker) processEntity(entity ExtractedEntity) error {
 		return fmt.Errorf("failed to find similar entity: %w", err)
 	}
 
-	entityID := entity.ID
+	targetID := entity.ID
 	if existing != nil {
-		entityID = existing.ID
+		targetID = existing.ID
 		err = w.mergeEntities(existing, entity, embedding)
 	} else {
 		err = w.createEntity(entity, embedding)
@@ -79,67 +77,46 @@ func (w *IngestionWorker) processEntity(entity ExtractedEntity) error {
 		return err
 	}
 
-	return w.createEdges(entityID, entity.Relations)
+	return w.createEdges(targetID, entity.Relations)
 }
 
 func (w *IngestionWorker) findSimilarEntity(embedding []float32) (*Entity, error) {
-	rows, err := w.db.Query(`
-		SELECT id, category, content, embedding, updated_at
-		FROM entities
-		WHERE embedding IS NOT NULL
-	`)
+	results, err := SearchByVector(w.db, embedding, 1)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var bestMatch *Entity
-	var bestSimilarity float32
-
-	for rows.Next() {
-		var entity Entity
-		var embeddingBytes []byte
-
-		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt); err != nil {
-			return nil, err
-		}
-
-		if len(embeddingBytes) == 0 {
-			continue
-		}
-
-		entityEmbedding := BytesToEmbedding(embeddingBytes)
-		if entityEmbedding == nil {
-			continue
-		}
-
-		similarity := CosineSimilarity(embedding, entityEmbedding)
-		if similarity > w.dedupThresh && similarity > bestSimilarity {
-			bestMatch = &entity
-			bestSimilarity = similarity
-		}
+	if len(results) > 0 && results[0].Similarity >= w.dedupThresh {
+		return &results[0].Entity, nil
 	}
-
-	return bestMatch, rows.Err()
-}
-
-func (w *IngestionWorker) mergeEntities(existing *Entity, newEntity ExtractedEntity, embedding []float32) error {
-	mergedContent := existing.Content + " | " + newEntity.Content
-
-	_, err := w.db.Exec(`
-		UPDATE entities
-		SET content = ?, embedding = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, mergedContent, EmbeddingToBytes(embedding), existing.ID)
-	return err
+	return nil, nil
 }
 
 func (w *IngestionWorker) createEntity(entity ExtractedEntity, embedding []float32) error {
-	_, err := w.db.Exec(`
-		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, entity.ID, entity.Category, entity.Content, EmbeddingToBytes(embedding))
-	return err
+	dbEntity := Entity{
+		ID:        entity.ID,
+		Category:  entity.Category,
+		Content:   entity.Content,
+		Embedding: embedding,
+	}
+	return StoreEntityWithEmbedding(w.db, dbEntity)
+}
+
+func (w *IngestionWorker) mergeEntities(existing *Entity, newEntity ExtractedEntity, newEmbedding []float32) error {
+	mergedContent := existing.Content
+	if !strings.Contains(existing.Content, newEntity.Content) {
+		mergedContent = existing.Content + "; " + newEntity.Content
+	}
+
+	updatedEmbedding, err := w.embedder.Embed(mergedContent)
+	if err != nil {
+		return fmt.Errorf("failed to re-embed merged content: %w", err)
+	}
+
+	existing.Content = mergedContent
+	existing.Embedding = updatedEmbedding
+
+	return StoreEntityWithEmbedding(w.db, *existing)
 }
 
 func (w *IngestionWorker) createEdges(entityID string, relations []struct {
@@ -152,7 +129,7 @@ func (w *IngestionWorker) createEdges(entityID string, relations []struct {
 			VALUES (?, ?, ?)
 		`, entityID, rel.TargetID, rel.RelationType)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to insert edge %s -> %s: %w", entityID, rel.TargetID, err)
 		}
 	}
 	return nil
@@ -164,22 +141,19 @@ type MemoryMessage struct {
 
 func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, ch <-chan MemoryMessage) {
 	worker := NewIngestionWorker(db, extractor, embedder)
-
 	for msg := range ch {
 		if err := worker.ProcessDialog(msg.Dialog); err != nil {
-			fmt.Printf("Error processing dialog: %v\n", err)
+			fmt.Printf("Error processing dialog in background: %v\n", err)
 		}
 	}
 }
 
-type SimpleLLMExtractor struct {
-	// In a real implementation, this would call an LLM API
-}
+type SimpleLLMExtractor struct{}
 
 func (e *SimpleLLMExtractor) ExtractEntities(dialog string) (*ExtractionResult, error) {
 	result := &ExtractionResult{}
-
 	lines := strings.Split(dialog, "\n")
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -195,12 +169,4 @@ func (e *SimpleLLMExtractor) ExtractEntities(dialog string) (*ExtractionResult, 
 	}
 
 	return result, nil
-}
-
-func ParseExtractionResult(data []byte) (*ExtractionResult, error) {
-	var result ExtractionResult
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
 }
