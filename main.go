@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, error) {
+func GenerateResponse(db *sql.DB, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
 	queryEmbedding, err := embedder.Embed(userQuery)
 	if err != nil {
 		return "", fmt.Errorf("failed to embed query: %w", err)
@@ -27,7 +27,7 @@ func GenerateResponse(db *sql.DB, embedder Embedder, userQuery string) (string, 
 		seedIDs = append(seedIDs, res.Entity.ID)
 	}
 
-	contextResult, err := RetrieveContext(db, seedIDs, 2)
+	contextResult, err := RetrieveContext(db, seedIDs, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve context: %w", err)
 	}
@@ -126,7 +126,12 @@ func main() {
 		if req.Query == "" {
 			log.Fatal("query required")
 		}
-		context, err := GenerateResponse(db, embedder, req.Query)
+		opts := RetrieveContextOptions{
+			MaxDepth:          2,
+			DepthCeiling:      cfg.MaxDepthCeiling,
+			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+		}
+		context, err := GenerateResponse(db, embedder, opts, req.Query)
 		if err != nil {
 			log.Fatalf("Query failed: %v", err)
 		}
@@ -153,7 +158,10 @@ func main() {
 		if len(os.Args) > 2 {
 			port = os.Args[2]
 		}
-		srv := NewServer(db, embedder, extractor, cfg.DedupThreshold)
+		srv := NewServer(db, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
+			DepthCeiling:      cfg.MaxDepthCeiling,
+			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+		})
 		http.HandleFunc("/health", srv.HandleHealth)
 		http.HandleFunc("/store", srv.HandleStore)
 		http.HandleFunc("/search", srv.HandleSearch)

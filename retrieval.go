@@ -22,13 +22,32 @@ type RetrievalResult struct {
 	Observations []string
 }
 
-func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResult, error) {
+// RetrieveContextOptions controls graph-walk bounds for a single
+// RetrieveContext call. All fields are optional (zero values are safe
+// and mean "use the library defaults / no cap").
+type RetrieveContextOptions struct {
+	// MaxDepth is the caller's requested depth (<=0 defaults to 2).
+	// The actual walk uses min(MaxDepth, DepthCeiling).
+	MaxDepth int
+	// DepthCeiling clamps MaxDepth; <=0 disables the clamp.
+	DepthCeiling int
+	// MaxRetrievedNodes soft-caps the total unique entities returned;
+	// <=0 disables. May be exceeded by at most one row because the cap
+	// is checked after seenIDs updates the running count.
+	MaxRetrievedNodes int
+}
+
+func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	if len(seedIDs) == 0 {
 		return &RetrievalResult{}, nil
 	}
 
-	if maxDepth <= 0 {
-		maxDepth = 2
+	effectiveDepth := opts.MaxDepth
+	if effectiveDepth <= 0 {
+		effectiveDepth = 2
+	}
+	if opts.DepthCeiling > 0 && effectiveDepth > opts.DepthCeiling {
+		effectiveDepth = opts.DepthCeiling
 	}
 
 	placeholders := make([]string, len(seedIDs))
@@ -38,7 +57,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 		args[i] = id
 	}
 
-	args = append(args, maxDepth)
+	args = append(args, effectiveDepth)
 
 	query := fmt.Sprintf(`
 		WITH RECURSIVE graph_walk AS (
@@ -107,6 +126,16 @@ func RetrieveContext(db *sql.DB, seedIDs []string, maxDepth int) (*RetrievalResu
 			seenIDs[node.Entity.ID] = true
 		} else {
 			continue
+		}
+
+		// Soft cap: stop scanning once we've collected MaxRetrievedNodes
+		// unique entities. The check fires after seenIDs updates the
+		// running count but BEFORE the row is added to SeedNodes or the
+		// category buckets, so the output is bounded at exactly N entities
+		// (the trigger row is dropped). The residue seenIDs entry is local
+		// to this function and never escapes.
+		if opts.MaxRetrievedNodes > 0 && len(seenIDs) > opts.MaxRetrievedNodes {
+			break
 		}
 
 		if node.Depth == 0 {

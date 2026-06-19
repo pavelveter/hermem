@@ -8,9 +8,10 @@ import (
 )
 
 type Server struct {
-	db      *sql.DB
-	worker  *IngestionWorker
-	embedder Embedder
+	db            *sql.DB
+	worker        *IngestionWorker
+	embedder      Embedder
+	retrievalOpts RetrieveContextOptions
 }
 
 type StoreRequest struct {
@@ -38,11 +39,12 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func NewServer(db *sql.DB, embedder Embedder, extractor LLMExtractor, dedupThreshold float32) *Server {
+func NewServer(db *sql.DB, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions) *Server {
 	return &Server{
-		db:       db,
-		worker:   NewIngestionWorker(db, extractor, embedder, dedupThreshold),
-		embedder: embedder,
+		db:            db,
+		worker:        NewIngestionWorker(db, extractor, embedder, dedupThreshold),
+		embedder:      embedder,
+		retrievalOpts: retrievalOpts,
 	}
 }
 
@@ -135,7 +137,9 @@ func (s *Server) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 		req.MaxDepth = 2
 	}
 
-	result, err := RetrieveContext(s.db, req.SeedIDs, req.MaxDepth)
+	opts := s.retrievalOpts
+	opts.MaxDepth = req.MaxDepth
+	result, err := RetrieveContext(s.db, req.SeedIDs, opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -190,7 +194,7 @@ func (s *Server) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		req.TopK = 3
 	}
 
-	context, err := GenerateResponse(s.db, s.embedder, req.Query)
+	context, err := GenerateResponse(s.db, s.embedder, s.retrievalOpts, req.Query)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

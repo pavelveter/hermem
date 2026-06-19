@@ -22,16 +22,26 @@ type Config struct {
 	// and is empirically a good default for short factual text.
 	// Lower for noisier inputs; raise to merge only near-duplicates.
 	DedupThreshold float32
+	// MaxDepthCeiling is the hard upper bound on requested graph-walk
+	// depth. Calls asking for a larger depth get silently clamped so a
+	// pathological request cannot blow up the server. 0 disables the cap.
+	MaxDepthCeiling int
+	// MaxRetrievedNodes is a soft cap on the total nodes returned by a
+	// single RetrieveContext call, protecting response size and memory
+	// against dense graph walks. 0 disables the cap.
+	MaxRetrievedNodes int
 }
 
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
-		Provider:     "ollama",
-		URL:          "http://localhost:11434",
-		Model:        "nomic-embed-text",
-		DBPath:       "hermem.db",
-		ExtractModel:    "qwen2.5-coder:7b",
-		DedupThreshold: 0.88,
+		Provider:          "ollama",
+		URL:               "http://localhost:11434",
+		Model:             "nomic-embed-text",
+		DBPath:            "hermem.db",
+		ExtractModel:      "qwen2.5-coder:7b",
+		DedupThreshold:    0.88,
+		MaxDepthCeiling:   5,
+		MaxRetrievedNodes: 100,
 	}
 
 	f, err := os.Open(path)
@@ -84,6 +94,18 @@ func LoadConfig(path string) (*Config, error) {
 				cfg.DedupThreshold = float32(v)
 			} else {
 				log.Printf("config: invalid ingestion.dedup_threshold %q, keeping default %.2f: %v", val, cfg.DedupThreshold, err)
+			}
+		case "retrieval.depth_ceiling":
+			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
+				cfg.MaxDepthCeiling = v
+			} else {
+				log.Printf("config: invalid retrieval.depth_ceiling %q, keeping default %d: %v", val, cfg.MaxDepthCeiling, err)
+			}
+		case "retrieval.max_nodes":
+			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
+				cfg.MaxRetrievedNodes = v
+			} else {
+				log.Printf("config: invalid retrieval.max_nodes %q, keeping default %d: %v", val, cfg.MaxRetrievedNodes, err)
 			}
 		}
 	}
