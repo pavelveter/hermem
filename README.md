@@ -419,30 +419,51 @@ total latency).
 ## Performance
 
 Measured by `go test -v -run TestTiming -count=1 ./...`. The
-test seeds a single SQLite DB incrementally and prints one
-`PERF  N=<n>  search=<dur>  retrieve=<dur>` line per cohort.
-Numbers are machine-dependent; re-run the test to refresh.
+test seeds a single SQLite file-backed DB incrementally for
+entities and rebuilds the edges table from scratch per cohort
+**against the cohort's `n`**, so the seeded graph is
+characteristic of N at every measurement slice. Numbers are
+machine-dependent; re-run the test to refresh.
 
-| Entities | Vector search | Graph walk (depth 2) |
-|---------:|---------------:|---------------------:|
-| 1,000    |  1.4 ms        |  0.2 ms              |
-| 3,000    |  4.4 ms        |  0.2 ms              |
-| 6,000    |  8.9 ms        |  0.2 ms              |
+### Topology
 
-Scaling: vector search is **O(N)** because every entity's
-embedding is scanned in memory and cosine similarity is
-computed against the query vector (no ANN index). Graph walk
-is dominated by the SQLite recursive-CTE setup cost, which is
-essentially depth-bounded rather than size-bound in this
-benchmark — the seeded graph currently has **no edges between
-entities**, so `RetrieveContext` returns just the single seed
-node regardless of total N. To bench realistic graph-walk
-throughput, the seed loop would need to create a small-world
-topology (e.g. chain or random fan-out); that's a follow-up.
+Each entity has **~8 edges on average**:
+- **5 forward chain edges** to `(i+1..i+5)` when target < n,
+  relation_type `next` — gives locality along the chain
+- **3 hash-based long-range edges**, target
+  `((i+1) * mult) % n` for `mult ∈ {7, 11, 13}`, relation_type
+  `long-range` — breaks locality so fan-out grows with depth
+
+The SQLite recursive CTE walks edges bidirectionally
+(`source_id = gw.id OR target_id = gw.id`), so a forward-only
+edge is enough for the walk to find the reverse connection.
+
+### Numbers
+
+| Entities | Vector search | Graph walk (depth 2, middle seed) |
+|---------:|--------------:|----------------------------------:|
+| 1,000    |  1.4 ms       |   43 ms                           |
+| 3,000    |  4.5 ms       |  111 ms                           |
+| 6,000    |  8.9 ms       |  237 ms                           |
+
+Captured on a current Apple M1 machine; cross-platform
+jitter is expected.
+
+### Scaling
+
+- **Vector search** is **O(N)** in entity count (full cosine
+  scan over every embedding); N=3000 lands at ~3.2× the
+  N=1000 cost, N=6000 at ~6.5×, in line with the algorithm.
+- **Graph walk** is dominated by SQLite's recursive-CTE JOIN
+  cost over edges. Fan-out grows with N because long-range
+  targets uniformly fill the `[0, n)` pool (DELETE + rebuild
+  keeps the topology characteristic of the cohort); visited-
+  fact set size and CTE depth-times-iterations both scale
+  roughly linearly with edge count.
 
 The system handles up to ~20k entities with in-memory cosine
-similarity. Beyond that, consider switching to `sqlite-vec` for
-indexed vector search.
+similarity. Beyond that, consider switching to `sqlite-vec`
+for indexed vector search.
 
 ## Testing
 
