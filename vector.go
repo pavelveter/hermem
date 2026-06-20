@@ -113,6 +113,39 @@ func AddEdgeWithAutoCreate(db *sql.DB, embedder Embedder, src, dst, rel string) 
 	return AddEdge(db, src, dst, rel)
 }
 
+func AutoLinkEdges(db *sql.DB, embedder Embedder, newID string, newEmbedding []float32) error {
+	if len(newEmbedding) == 0 {
+		return fmt.Errorf("cannot auto-link: embedding is empty for %s", newID)
+	}
+
+	results, err := SearchByVector(db, newEmbedding, 3)
+	if err != nil {
+		return fmt.Errorf("auto-link search: %w", err)
+	}
+
+	var inserted int
+	for _, r := range results {
+		if inserted >= 3 {
+			break
+		}
+		if r.Entity.ID == newID {
+			continue
+		}
+		if r.Similarity <= 0.85 {
+			continue
+		}
+		_, err := db.Exec(`
+			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
+			VALUES (?, ?, 'related_to')
+		`, newID, r.Entity.ID)
+		if err != nil {
+			return fmt.Errorf("auto-link insert: %w", err)
+		}
+		inserted++
+	}
+	return nil
+}
+
 func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 	var embeddingBytes []byte
 	if len(entity.Embedding) > 0 {
@@ -123,5 +156,9 @@ func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`, entity.ID, entity.Category, entity.Content, embeddingBytes)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
