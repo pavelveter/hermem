@@ -42,7 +42,7 @@ type LLMExtractor interface {
 const (
 	// ollamaRequestTimeout caps a single HTTP attempt. Combined with the
 	// retry budget it bounds the worst-case ExtractEntities latency.
-	ollamaRequestTimeout = 10 * time.Second
+	ollamaRequestTimeout = 300 * time.Second
 
 	// ollamaRetries is the total number of chat attempts (first try +
 	// retries). 3 keeps a sync HTTP path responsive on transient Ollama
