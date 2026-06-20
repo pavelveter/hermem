@@ -140,6 +140,7 @@ one-shot read-process-print.
 | `store` | `{id, category, content, …}`     | `{"status":"ok"}`                |
 | `search`| `{query, top_k?}`                | `[{entity, similarity}, …]`      |
 | `query` | `{query}`                        | `{"context": "<markdown>"}`      |
+| `edge`  | `{source_id, target_id, relation_type, auto_create?}` | `{"status":"ok"}` |
 | `ingest`| `{dialog}`                       | `{"status":"ok"}`                |
 | `serve` | (no stdin; takes optional port)  | logs to stderr                   |
 
@@ -195,6 +196,20 @@ echo '{"query":"Tell me about France"}' | ./hermem query
 `MaxDepth` for the graph walk uses the value from `[retrieval]`
 (`depth_ceiling` is the hard clamp; the CLI always uses 2 by
 default).
+
+### `edge`
+
+Create an edge between two existing entities. Optional `auto_create`
+(default `false`) will auto-create missing entities as placeholder
+nodes (`category=world`, `content=id`) before linking.
+
+```bash
+# Both entities must already exist:
+echo '{"source_id":"user-likes-coffee","target_id":"espresso","relation_type":"likes"}' | ./hermem edge
+
+# Auto-create missing entities on the fly:
+echo '{"source_id":"user-likes-coffee","target_id":"new-concept","relation_type":"related_to","auto_create":true}' | ./hermem edge
+```
 
 ### `ingest`
 
@@ -252,6 +267,7 @@ paths). Pipe stderr to your log aggregator.
 | POST   | `/store`   | `StoreRequest`                 | `{"status":"ok"}`        |
 | POST   | `/search`  | `SearchRequest`                | `[{entity, similarity}]` |
 | POST   | `/retrieve`| `RetrieveRequest`              | `RetrievalResult` (PascalCase keys — see §8 note) |
+| POST   | `/edge`    | `EdgeRequest`                  | `{"status":"ok"}`        |
 | POST   | `/ingest`  | `IngestRequest`                | `{"status":"ok"}`        |
 | POST   | `/query`   | `QueryRequest`                 | `{"context": "..."}`     |
 
@@ -386,6 +402,15 @@ struct field unless noted.
 |--------------|----------|----------|------------------------------------------------|
 | `seed_ids`   | string[] | yes      | IDs of the nodes to start the walk from.       |
 | `max_depth`  | int      | no       | Default 2; clamped to `[retrieval].depth_ceiling`. |
+
+### `EdgeRequest` (`/edge`, CLI `edge`)
+
+| Field           | Type    | Required | Notes                                          |
+|-----------------|---------|----------|------------------------------------------------|
+| `source_id`     | string  | yes      | Source entity ID.                              |
+| `target_id`     | string  | yes      | Target entity ID.                              |
+| `relation_type` | string  | yes      | One of: `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts`. |
+| `auto_create`   | bool    | no       | Default `false`. When `true`, missing entities are auto-created as `category=world` placeholders with embeddings. |
 
 ### `IngestRequest` (`/ingest`, CLI `ingest`)
 

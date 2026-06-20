@@ -88,6 +88,31 @@ func AddEdge(db *sql.DB, src, dst, rel string) error {
 	return nil
 }
 
+func AddEdgeWithAutoCreate(db *sql.DB, embedder Embedder, src, dst, rel string) error {
+	for _, id := range []string{src, dst} {
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM entities WHERE id = ?)", id).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check entity %q: %w", id, err)
+		}
+		if !exists {
+			embedding, err := embedder.Embed(id)
+			if err != nil {
+				return fmt.Errorf("failed to embed placeholder entity %q: %w", id, err)
+			}
+			if err := StoreEntityWithEmbedding(db, Entity{
+				ID:        id,
+				Category:  "world",
+				Content:   id,
+				Embedding: embedding,
+			}); err != nil {
+				return fmt.Errorf("failed to store placeholder entity %q: %w", id, err)
+			}
+		}
+	}
+	return AddEdge(db, src, dst, rel)
+}
+
 func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 	var embeddingBytes []byte
 	if len(entity.Embedding) > 0 {
