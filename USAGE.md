@@ -151,7 +151,9 @@ The CLI uses the **same strict JSON contract as the HTTP server**
 ### `store`
 
 Upsert an entity. The embedder is consulted automatically if
-`embedding` is omitted from the payload.
+`embedding` is omitted from the payload. After storing, edges are
+automatically created to up to 3 existing entities with cosine
+similarity > 0.85 (relation type `related_to`).
 
 ```bash
 echo '{
