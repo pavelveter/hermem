@@ -69,6 +69,25 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 	return results, nil
 }
 
+func AddEdge(db *sql.DB, src, dst, rel string) error {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM entities WHERE id IN (?, ?)", src, dst).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check entity existence: %w", err)
+	}
+	if count != 2 {
+		return fmt.Errorf("both source and target entities must exist (found %d of 2)", count)
+	}
+	_, err = db.Exec(`
+		INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
+		VALUES (?, ?, ?)
+	`, src, dst, rel)
+	if err != nil {
+		return fmt.Errorf("failed to insert edge: %w", err)
+	}
+	return nil
+}
+
 func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 	var embeddingBytes []byte
 	if len(entity.Embedding) > 0 {

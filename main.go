@@ -52,7 +52,7 @@ func readInput() string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store    Store a fact (JSON on stdin)\n  search   Search memory (JSON on stdin)\n  query    Full pipeline: search + graph walk (JSON on stdin)\n  ingest   Ingest dialog (JSON on stdin)\n  serve    Run HTTP server\n")
+		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store    Store a fact (JSON on stdin)\n  search   Search memory (JSON on stdin)\n  query    Full pipeline: search + graph walk (JSON on stdin)\n  edge     Add an edge (JSON on stdin)\n  ingest   Ingest dialog (JSON on stdin)\n  serve    Run HTTP server\n")
 		os.Exit(1)
 	}
 
@@ -144,6 +144,26 @@ func main() {
 		}
 		json.NewEncoder(os.Stdout).Encode(map[string]string{"context": context})
 
+	case "edge":
+		var req struct {
+			SourceID     string `json:"source_id"`
+			TargetID     string `json:"target_id"`
+			RelationType string `json:"relation_type"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
+			log.Fatal("source_id, target_id, relation_type required")
+		}
+		if !validRelationTypes[req.RelationType] {
+			log.Fatalf("invalid relation_type: %s", req.RelationType)
+		}
+		if err := AddEdge(db, req.SourceID, req.TargetID, req.RelationType); err != nil {
+			log.Fatalf("Failed to add edge: %v", err)
+		}
+		fmt.Println(`{"status":"ok"}`)
+
 	case "ingest":
 		var req struct {
 			Dialog string `json:"dialog"`
@@ -175,6 +195,7 @@ func main() {
 		http.HandleFunc("/retrieve", srv.HandleRetrieve)
 		http.HandleFunc("/ingest", srv.HandleIngest)
 		http.HandleFunc("/query", srv.HandleQuery)
+		http.HandleFunc("/edge", srv.HandleEdge)
 		slog.Info("server ready",
 			"event", "server_ready",
 			"port", port,

@@ -38,6 +38,12 @@ type IngestRequest struct {
 	Dialog string `json:"dialog"`
 }
 
+type EdgeRequest struct {
+	SourceID     string `json:"source_id"`
+	TargetID     string `json:"target_id"`
+	RelationType string `json:"relation_type"`
+}
+
 // ErrorResponse carries a human message plus an optional (code, field)
 // pair so clients can route the rejection without parsing prose. Both
 // optional fields are omitempty so non-strict errors (method-not-allowed,
@@ -255,6 +261,36 @@ func (s *Server) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"context": context})
+}
+
+func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req EdgeRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
+		writeError(w, http.StatusBadRequest, "source_id, target_id, relation_type required")
+		return
+	}
+
+	if !validRelationTypes[req.RelationType] {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid relation_type: %s", req.RelationType))
+		return
+	}
+
+	if err := AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
