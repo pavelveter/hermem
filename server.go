@@ -42,6 +42,7 @@ type EdgeRequest struct {
 	SourceID     string `json:"source_id"`
 	TargetID     string `json:"target_id"`
 	RelationType string `json:"relation_type"`
+	AutoCreate   bool   `json:"auto_create"`
 }
 
 // ErrorResponse carries a human message plus an optional (code, field)
@@ -285,7 +286,13 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType); err != nil {
+	var err error
+	if req.AutoCreate {
+		err = AddEdgeWithAutoCreate(s.db, s.embedder, req.SourceID, req.TargetID, req.RelationType)
+	} else {
+		err = AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType)
+	}
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

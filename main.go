@@ -149,6 +149,7 @@ func main() {
 			SourceID     string `json:"source_id"`
 			TargetID     string `json:"target_id"`
 			RelationType string `json:"relation_type"`
+			AutoCreate   bool   `json:"auto_create"`
 		}
 		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
 			log.Fatalf("invalid request: %s", msg)
@@ -159,8 +160,14 @@ func main() {
 		if !validRelationTypes[req.RelationType] {
 			log.Fatalf("invalid relation_type: %s", req.RelationType)
 		}
-		if err := AddEdge(db, req.SourceID, req.TargetID, req.RelationType); err != nil {
-			log.Fatalf("Failed to add edge: %v", err)
+		if req.AutoCreate {
+			if err := AddEdgeWithAutoCreate(db, embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {
+				log.Fatalf("Failed to add edge: %v", err)
+			}
+		} else {
+			if err := AddEdge(db, req.SourceID, req.TargetID, req.RelationType); err != nil {
+				log.Fatalf("Failed to add edge: %v", err)
+			}
 		}
 		fmt.Println(`{"status":"ok"}`)
 
