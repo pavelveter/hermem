@@ -19,3 +19,31 @@ func CosineSimilarity(a, b []float32) float32 {
 	}
 	return dotProduct / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))
 }
+
+// VectorNorm computes the L2 norm of a single vector.
+func VectorNorm(v []float32) float32 {
+	var sum float32
+	for _, x := range v {
+		sum += x * x
+	}
+	if sum == 0 {
+		return 0
+	}
+	return float32(math.Sqrt(float64(sum)))
+}
+
+// BatchDotProducts computes dot(query, matrix[row]) for every row of the
+// rows×cols matrix. The matrix must be stored row-major. The length of
+// the output slice must equal rows.
+func BatchDotProducts(query []float32, matrix []float32, rows, cols int, dot []float32) {
+	_ = matrix[rows*cols-1]
+	_ = dot[rows-1]
+	for r := 0; r < rows; r++ {
+		row := matrix[r*cols : (r+1)*cols]
+		var d float32
+		for c := 0; c < cols; c++ {
+			d += query[c] * row[c]
+		}
+		dot[r] = d
+	}
+}

@@ -9,8 +9,9 @@ import (
 )
 
 type vectorEntry struct {
-	id  string
-	vec []float32
+	id   string
+	vec  []float32
+	norm float32
 }
 
 type InMemoryVectorIndex struct {
@@ -50,9 +51,21 @@ func (idx *InMemoryVectorIndex) load() {
 		}
 		if emb := BytesToEmbedding(blob); emb != nil {
 			idx.byID[id] = len(idx.entries)
-			idx.entries = append(idx.entries, vectorEntry{id: id, vec: emb})
+			idx.entries = append(idx.entries, vectorEntry{
+				id:   id,
+				vec:  emb,
+				norm: vectorNorm(emb),
+			})
 		}
 	}
+}
+
+// vectorNorm is a small inline wrapper that keeps the import clean.
+func vectorNorm(v []float32) float32 {
+	if len(v) == 0 {
+		return 0
+	}
+	return VectorNorm(v)
 }
 
 func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float32, topK int) ([]string, error) {
@@ -63,15 +76,34 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
+	n := len(idx.entries)
+	if n == 0 {
+		return nil, nil
+	}
+
+	cols := len(queryEmbedding)
+	queryNorm := vectorNorm(queryEmbedding)
+	if queryNorm == 0 {
+		return nil, fmt.Errorf("zero query embedding")
+	}
+
+	// Build flat matrix for batch dot products.
+	matrix := make([]float32, n*cols)
+	for i, e := range idx.entries {
+		copy(matrix[i*cols:(i+1)*cols], e.vec)
+	}
+
+	dots := make([]float32, n)
+	BatchDotProducts(queryEmbedding, matrix, n, cols, dots)
+
 	type candidate struct {
 		id         string
 		similarity float32
 	}
-	candidates := make([]candidate, 0, len(idx.entries))
-
-	for _, e := range idx.entries {
-		sim := CosineSimilarity(queryEmbedding, e.vec)
-		candidates = append(candidates, candidate{id: e.id, similarity: sim})
+	candidates := make([]candidate, n)
+	for i, e := range idx.entries {
+		sim := dots[i] / (queryNorm * e.norm)
+		candidates[i] = candidate{id: e.id, similarity: sim}
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
@@ -92,46 +124,63 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 	if len(queries) == 0 {
 		return nil, nil
 	}
-	for _, q := range queries {
-		if len(q) == 0 {
-			return nil, fmt.Errorf("empty query embedding in batch")
-		}
-	}
 
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
+
+	n := len(idx.entries)
+	if n == 0 {
+		results := make([][]string, len(queries))
+		return results, nil
+	}
+
+	cols := len(queries[0])
+
+	// Build flat matrix once.
+	matrix := make([]float32, n*cols)
+	for i, e := range idx.entries {
+		copy(matrix[i*cols:(i+1)*cols], e.vec)
+	}
 
 	type score struct {
 		id  string
 		sim float32
 	}
-	top := make([][]score, len(queries))
-	for i := range top {
-		top[i] = make([]score, 0, limit)
-	}
 
-	for _, e := range idx.entries {
-		for qi, q := range queries {
-			sim := CosineSimilarity(q, e.vec)
-			t := top[qi]
+	// Process each query with one batch call.
+	results := make([][]string, len(queries))
+	dots := make([]float32, n)
+
+	for qi, q := range queries {
+		if len(q) == 0 {
+			return nil, fmt.Errorf("empty query embedding in batch")
+		}
+		queryNorm := vectorNorm(q)
+		if queryNorm == 0 {
+			return nil, fmt.Errorf("zero query embedding")
+		}
+
+		BatchDotProducts(q, matrix, n, cols, dots)
+
+		top := make([]score, 0, limit)
+		for i, e := range idx.entries {
+			sim := dots[i] / (queryNorm * e.norm)
+			t := top
 			if len(t) < limit {
-				top[qi] = append(t, score{id: e.id, sim: sim})
+				top = append(t, score{id: e.id, sim: sim})
 			} else if sim > t[len(t)-1].sim {
 				t[len(t)-1] = score{id: e.id, sim: sim}
 			} else {
 				continue
 			}
-			t = top[qi]
+			t = top
 			for j := len(t) - 1; j > 0 && t[j].sim > t[j-1].sim; j-- {
 				t[j], t[j-1] = t[j-1], t[j]
 			}
 		}
-	}
 
-	results := make([][]string, len(queries))
-	for qi, t := range top {
-		ids := make([]string, len(t))
-		for i, s := range t {
+		ids := make([]string, len(top))
+		for i, s := range top {
 			ids[i] = s.id
 		}
 		results[qi] = ids
@@ -143,11 +192,12 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
+	entry := vectorEntry{id: id, vec: vec, norm: vectorNorm(vec)}
 	if i, ok := idx.byID[id]; ok {
-		idx.entries[i].vec = vec
+		idx.entries[i] = entry
 	} else {
 		idx.byID[id] = len(idx.entries)
-		idx.entries = append(idx.entries, vectorEntry{id: id, vec: vec})
+		idx.entries = append(idx.entries, entry)
 	}
 	return nil
 }
@@ -172,5 +222,3 @@ func (idx *InMemoryVectorIndex) Remove(_ context.Context, ids []string) error {
 	}
 	return nil
 }
-
-

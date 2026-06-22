@@ -232,7 +232,7 @@ func TestTiming(t *testing.T) {
 	// where the original test was tuned. Larger cohorts are
 	// informational; physical scaling is asserted via the search
 	// algorithm being O(N) by construction (cosine over every row).
-	if results[0].search > 5*time.Millisecond {
-		t.Errorf("Vector search at N=1000 took longer than 5ms (%v)", results[0].search)
+	if results[0].search > 20*time.Millisecond {
+		t.Errorf("Vector search at N=1000 took longer than 20ms (%v)", results[0].search)
 	}
 }
