@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -17,7 +18,15 @@ var (
 	embedDim     int
 
 	currentVectorIndex VectorIndex = &InMemoryVectorIndex{}
+	metricsWorker      *AsyncMetricsWorker
 )
+
+func InitMetricsWorker(db *sql.DB) *AsyncMetricsWorker {
+	w := NewAsyncMetricsWorker(db, 5000, 100, 100*time.Millisecond)
+	w.Start()
+	metricsWorker = w
+	return w
+}
 
 type SearchResult struct {
 	Entity     Entity  `json:"entity"`
@@ -108,11 +117,9 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 		results = results[:topK]
 	}
 	if len(results) > 0 {
-		accessed := make([]string, len(results))
-		for i, r := range results {
-			accessed[i] = r.Entity.ID
+		for _, r := range results {
+			metricsWorker.Touch(r.Entity.ID)
 		}
-		enqueueTouch(db, accessed)
 	}
 	return results, nil
 }

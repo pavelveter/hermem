@@ -73,6 +73,8 @@ func main() {
 	defer db.Close()
 
 	currentVectorIndex = newVectorIndex(cfg.VectorBackend, db, cfg.VectorDim)
+	metricsWorker = InitMetricsWorker(db)
+	defer metricsWorker.Stop()
 
 	embedder := cfg.NewEmbedder()
 	extractor := cfg.NewExtractor()
