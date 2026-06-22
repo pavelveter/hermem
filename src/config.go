@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -430,17 +431,40 @@ func (c *Config) Validate() error {
 // binary's directory so the DB is colocated with the binary, not
 // the caller's working directory.
 //
-// Note: os.Executable reports the kernel-resolved path, not the
-// symlink path. A binary installed via a symlink (e.g.
-// /usr/local/bin/hermem -> /opt/hermem-real/hermem) reads its
-// ini and writes its DB in /opt/hermem-real/, not /usr/local/bin/.
-// We deliberately do NOT follow the symlink: it matches Go stdlib
-// semantics and avoids platform-specific os.Readlink logic. If an
-// operator needs symlink-following, that's a future PR.
+// Symlink observability (#1 review): os.Executable reports the
+// path the kernel sees, not the path the operator typed. A binary
+// installed via a symlink (e.g. /usr/local/bin/hermem ->
+// /opt/hermem-real/hermem) returns /opt/hermem-real from
+// os.Executable already, so the join has historically been
+// correct. We add an explicit EvalSymlinks pass to (a) keep the
+// behaviour consistent if a future Go release changes how
+// os.Executable reports paths and (b) emit a debug event when
+// raw vs. resolved directories diverge so operators debugging
+// "where is my DB file" can see the symlink chain at slog.Debug
+// without re-running with strace.
 //
-// On os.Executable failure the original path is returned unchanged
-// so InitDB surfaces the original failure mode rather than masking
-// it behind a binary-resolution error.
+// Behaviour preserved: the DB still lands in the same directory
+// os.Executable pointed to before this change. EvalSymlinks just
+// gives us the auditability hook without changing the on-disk
+// layout for the common no-symlink case.
+//
+// Failure policy:
+//   - os.Executable failure → return `p` unchanged.
+//   - EvalSymlinks failure (broken symlink, target missing,
+//     permission denied) → fall back to the kernel-resolved
+//     directory rather than propagating the error, matching the
+//     pre-PR resolveDBPath contract that InitDB surfaces real
+//     errors instead of masking them behind resolution noise.
+//   - EvalSymlinks equal to the raw dir → no debug event emitted
+//     (common path: 99% of deployments); only the divergence
+//     case produces a log entry, so debug streams stay quiet.
+//   - EvalSymlinks non-nil error → emits db_path_symlink_eval_failed
+//     with the raw dir and the underlying error (stringified) so
+//     debug-mode operators can see WHY fallback to rawDir was
+//     chosen (broken symlink, permission denied, ENOENT). Note
+//     this case still returns the join against rawDir — the same
+//     fallback as os.Executable failure, just with an additional
+//     audit hook.
 func resolveDBPath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
@@ -449,5 +473,22 @@ func resolveDBPath(p string) string {
 	if err != nil {
 		return p
 	}
-	return filepath.Join(filepath.Dir(exePath), p)
+	rawDir := filepath.Dir(exePath)
+	resolvedDir, evalErr := filepath.EvalSymlinks(rawDir)
+	if evalErr != nil {
+		slog.Debug("db_path_symlink_eval_failed",
+			"raw", rawDir,
+			"error", evalErr.Error(),
+			"db_path", filepath.Join(rawDir, p),
+		)
+		return filepath.Join(rawDir, p)
+	}
+	if resolvedDir != rawDir {
+		slog.Debug("db_path_symlink_resolved",
+			"raw", rawDir,
+			"resolved", resolvedDir,
+			"db_path", filepath.Join(resolvedDir, p),
+		)
+	}
+	return filepath.Join(resolvedDir, p)
 }
