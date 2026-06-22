@@ -15,9 +15,6 @@ type IngestionWorker struct {
 	dedupThresh float32
 }
 
-// NewIngestionWorker builds a worker that dedups incoming entities
-// against existing ones when their cosine similarity is >= dedupThreshold.
-// The threshold is owned by Config so it can be tuned per deployment.
 func NewIngestionWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32) *IngestionWorker {
 	return &IngestionWorker{
 		db:          db,
@@ -33,48 +30,113 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 		return fmt.Errorf("failed to extract entities: %w", err)
 	}
 
+	type item struct {
+		entity    ExtractedEntity
+		embedding []float32
+	}
+	items := make([]item, 0, len(result.Entities))
+
 	for _, entity := range result.Entities {
-		if err := w.processEntity(ctx, entity); err != nil {
-			return fmt.Errorf("failed to process entity %s: %w", entity.ID, err)
+		embedding, err := w.embedder.Embed(ctx, entity.Content)
+		if err != nil {
+			slog.Error("entity processing failed, continuing",
+				"event", "entity_failed",
+				"entity_id", entity.ID,
+				"err", err,
+			)
+			continue
+		}
+		items = append(items, item{entity: entity, embedding: embedding})
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
+
+	embeddings := make([][]float32, len(items))
+	for i, it := range items {
+		embeddings[i] = it.embedding
+	}
+
+	allIDs, err := currentVectorIndex.SearchBatch(ctx, embeddings, 1)
+	if err != nil {
+		return fmt.Errorf("batch similar search failed: %w", err)
+	}
+
+	for i, it := range items {
+		targetID := it.entity.ID
+		existing, err := w.findMatch(it.embedding, allIDs[i], it.entity.ID)
+		if err != nil {
+			slog.Error("entity processing failed, continuing",
+				"event", "entity_failed",
+				"entity_id", it.entity.ID,
+				"err", err,
+			)
+			continue
+		}
+
+		if existing != nil {
+			targetID = existing.ID
+			err = w.mergeEntities(ctx, existing, it.entity, it.embedding)
+		} else {
+			err = w.createEntity(it.entity, it.embedding)
+		}
+		if err != nil {
+			slog.Error("entity processing failed, continuing",
+				"event", "entity_failed",
+				"entity_id", it.entity.ID,
+				"err", err,
+			)
+			continue
+		}
+
+		if err := w.createEdges(targetID, it.entity.Relations); err != nil {
+			slog.Error("entity processing failed, continuing",
+				"event", "entity_failed",
+				"entity_id", it.entity.ID,
+				"err", err,
+			)
 		}
 	}
 	return nil
 }
 
-func (w *IngestionWorker) processEntity(ctx context.Context, entity ExtractedEntity) error {
-	embedding, err := w.embedder.Embed(ctx, entity.Content)
+func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, selfID string) (*Entity, error) {
+	if len(similarIDs) == 0 {
+		return nil, nil
+	}
+
+	// If the top match is the entity itself (from a re-embed), skip it
+	candidateID := similarIDs[0]
+	if candidateID == selfID {
+		if len(similarIDs) < 2 {
+			return nil, nil
+		}
+		candidateID = similarIDs[1]
+	}
+
+	var entity Entity
+	var embeddingBytes []byte
+	err := w.db.QueryRow(
+		`SELECT id, category, content, embedding, updated_at FROM entities WHERE id = ?`,
+		candidateID,
+	).Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to embed content: %w", err)
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to fetch candidate %q: %w", candidateID, err)
 	}
 
-	existing, err := w.findSimilarEntity(embedding)
-	if err != nil {
-		return fmt.Errorf("failed to find similar entity: %w", err)
+	sim := float32(0)
+	if len(embeddingBytes) > 0 {
+		if emb := BytesToEmbedding(embeddingBytes); emb != nil {
+			sim = CosineSimilarity(embedding, emb)
+		}
 	}
 
-	targetID := entity.ID
-	if existing != nil {
-		targetID = existing.ID
-		err = w.mergeEntities(ctx, existing, entity, embedding)
-	} else {
-		err = w.createEntity(entity, embedding)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return w.createEdges(targetID, entity.Relations)
-}
-
-func (w *IngestionWorker) findSimilarEntity(embedding []float32) (*Entity, error) {
-	results, err := SearchByVector(w.db, embedding, 1)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(results) > 0 && results[0].Similarity >= w.dedupThresh {
-		return &results[0].Entity, nil
+	if sim >= w.dedupThresh {
+		return &entity, nil
 	}
 	return nil, nil
 }
