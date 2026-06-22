@@ -29,7 +29,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **OpenAI-compatible** — works with Ollama or any OpenAI-compatible API
 - **Separate embedder/extractor providers** — Ollama for embeddings, OpenAI for extraction (or vice versa)
 - **Pluggable vector search** — `InMemoryVectorIndex` (default, zero-dependency) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
-- **Vector search** — `InMemoryVectorIndex` with pre-built flat matrix + dot-product batch scan
+- **Accelerate SIMD** — `cblas_sgemv` via CGo for AMX-optimised batch dot products on Apple Silicon
 - **Automatic retention** — configurable GC loop archives stale observation nodes
 - **API key auth** — optional `X-API-Key` middleware
 - **Structured logging** — `log/slog` with event fields + `request_id` tracing
@@ -107,7 +107,7 @@ hermem serve 8420
 ## Dependencies
 
 - Go 1.21+
-- CGO enabled (required by `github.com/mattn/go-sqlite3`; pure-Go `modernc.org/sqlite` pending)
+- CGO enabled (required by `github.com/mattn/go-sqlite3` + Accelerate on darwin; pure-Go `modernc.org/sqlite` pending)
 - One of: Ollama running locally, or an OpenAI API key
 - (Optional) `sqlite-vec` — statically linked via `github.com/asg017/sqlite-vec-go-bindings/cgo` when `[database] backend = sqlite-vec`
 
@@ -318,7 +318,8 @@ hermem/
 │   ├── vector.go            # VectorIndex interface + wrappers
 │   ├── vector_inmemory.go   # InMemoryVectorIndex — RAM-cached cosine scan
 │   ├── vector_sqlitevec.go  # SqliteVecIndex — vec0 KNN (build tag)
-│   ├── cosine.go            # CosineSimilarity — pure Go, cross-platform
+│   ├── cosine.go            # CosineSimilarity — pure Go fallback (!darwin)
+│   ├── cosine_darwin.go     # CosineSimilarity — Apple Accelerate AMX (darwin)
 │   ├── retrieval.go         # Recursive CTE graph walk, ranking, markdown
 │   ├── ingestion.go         # Ingestion worker, entity extraction, dedup
 │   ├── server.go            # HTTP API server + strict JSON decoder
@@ -512,20 +513,20 @@ edge is enough for the walk to find the reverse connection.
 
 Benchmarked on Apple M1 Pro (768D embeddings, `topK=10`, 3 runs, medians):
 
-| N | In-Memory (flat matrix + batch) | sqlite-vec (KNN index) | B/op (mem / vec) |
-|--:|--------------------------------:|-----------------------:|------------------:|
-| 100 | **59 µs** | 639 µs | 108 KB / 114 KB |
-| 1,000 | **155 µs** | 1.49 ms | 119 KB / 114 KB |
-| 5,000 | **1.27 ms** | 5.55 ms | 168 KB / 114 KB |
-| 10,000 | **1.93 ms** | 9.57 ms | 230 KB / 114 KB |
+| N | In-Memory (flatMatrix + Accelerate) | sqlite-vec (KNN index) | B/op (mem / vec) |
+|--:|-------------------------------------:|-----------------------:|------------------:|
+| 100 | **60 µs** | 291 µs | 108 KB / 114 KB |
+| 1,000 | **170 µs** | 949 µs | 119 KB / 114 KB |
+| 5,000 | **2.1 ms** | 4.4 ms | 168 KB / 114 KB |
+| 10,000 | **1.9 ms** | 9.0 ms | 230 KB / 114 KB |
 
 ### Scaling
 
 - **In-Memory** (`InMemoryVectorIndex`, default) — pre-built
-  `flatMatrix` row-major in RAM, batch dot-product scan (pure Go).
-  Constant 318 allocs/op regardless of N (no per-search matrix
-  rebuild). At 10K entities ~1.9 ms. Good for datasets up to ~50K
-  entities on consumer hardware.
+  `flatMatrix` row-major in RAM, single `cblas_sgemv` call via Apple
+  Accelerate (AMX co-processor). Constant 318 allocs/op regardless
+  of N — no per-search matrix rebuild. At 10K entities ~1.9 ms.
+  Good for datasets up to ~50K entities on consumer hardware.
 - **sqlite-vec** (`SqliteVecIndex`, `[database] backend = sqlite-vec`)
   — indexed KNN via `vec0` virtual table. Constant 363 allocs/op,
   ~114 KB/op flat allocation. SQLite query overhead (plan, MATCH,
