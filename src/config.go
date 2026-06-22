@@ -1,14 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/ini.v1"
 )
 
 type Config struct {
@@ -48,6 +47,10 @@ type Config struct {
 	// APIKey validates X-API-Key on all HTTP endpoints.
 	// Empty string disables auth (localhost dev default).
 	APIKey string
+	// EmbedderTimeout caps each embedder HTTP request.
+	EmbedderTimeout time.Duration
+	// ExtractTimeout caps each LLM extractor HTTP request.
+	ExtractTimeout time.Duration
 	// Retention controls automatic archival of stale nodes.
 	// world facts are permanent; observation nodes past ObservationTTL
 	// are flagged archived and excluded from graph walks.
@@ -73,13 +76,15 @@ func LoadConfig(path string) (*Config, error) {
 		URL:               "http://localhost:11434",
 		Model:             "nomic-embed-text",
 		DBPath:            "hermem.db",
-		ExtractModel:       "qwen2.5-coder:7b",
+		ExtractModel:      "qwen2.5-coder:7b",
 		ExtractTemperature: 0.1,
-		DedupThreshold:     0.88,
+		DedupThreshold:    0.88,
 		MaxDepthCeiling:   5,
 		MaxRetrievedNodes: 100,
 		VectorBackend:     "in-memory",
 		VectorDim:         768,
+		EmbedderTimeout:   30 * time.Second,
+		ExtractTimeout:    300 * time.Second,
 		Retention: RetentionPolicy{
 			ObservationTTL:  90 * 24 * time.Hour,
 			RunInterval:     1 * time.Hour,
@@ -96,117 +101,136 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	section := ""
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if idx := strings.IndexAny(line, "#;"); idx > 0 {
-			line = line[:idx]
-		}
-		line = strings.TrimSpace(line)
-
-		if line == "" {
-			continue
-		}
-
-		if line[0] == '[' && line[len(line)-1] == ']' {
-			section = line[1 : len(line)-1]
-			continue
-		}
-
-		eqIdx := strings.IndexByte(line, '=')
-		if eqIdx < 0 {
-			continue
-		}
-
-		key := strings.TrimSpace(line[:eqIdx])
-		val := strings.TrimSpace(line[eqIdx+1:])
-
-		switch strings.ToLower(section + "." + key) {
-		case "embedder.provider":
-			cfg.Provider = strings.ToLower(val)
-		case "embedder.url":
-			cfg.URL = val
-		case "embedder.key":
-			cfg.Key = val
-		case "embedder.model":
-			cfg.Model = val
-		case "database.path":
-			cfg.DBPath = val
-		case "database.backend":
-			cfg.VectorBackend = strings.ToLower(val)
-		case "server.api_key":
-			cfg.APIKey = val
-		case "vector.dim":
-			if v, err := strconv.Atoi(val); err == nil && v > 0 {
-				cfg.VectorDim = v
-			} else {
-				log.Printf("config: invalid vector.dim %q, keeping default %d: %v", val, cfg.VectorDim, err)
-			}
-		case "extraction.model":
-			cfg.ExtractModel = val
-		case "extraction.provider":
-			cfg.ExtractProvider = strings.ToLower(val)
-		case "extraction.url":
-			cfg.ExtractURL = val
-		case "extraction.key":
-			cfg.ExtractKey = val
-		case "extraction.temperature":
-			if v, err := strconv.ParseFloat(val, 32); err == nil {
-				cfg.ExtractTemperature = float32(v)
-			} else {
-				log.Printf("config: invalid extraction.temperature %q, keeping default %.2f: %v", val, cfg.ExtractTemperature, err)
-			}
-		case "ingestion.dedup_threshold":
-			if v, err := strconv.ParseFloat(val, 32); err == nil {
-				cfg.DedupThreshold = float32(v)
-			} else {
-				log.Printf("config: invalid ingestion.dedup_threshold %q, keeping default %.2f: %v", val, cfg.DedupThreshold, err)
-			}
-		case "retrieval.depth_ceiling":
-			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
-				cfg.MaxDepthCeiling = v
-			} else {
-				log.Printf("config: invalid retrieval.depth_ceiling %q, keeping default %d: %v", val, cfg.MaxDepthCeiling, err)
-			}
-		case "retrieval.max_nodes":
-			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
-				cfg.MaxRetrievedNodes = v
-			} else {
-				log.Printf("config: invalid retrieval.max_nodes %q, keeping default %d: %v", val, cfg.MaxRetrievedNodes, err)
-			}
-		case "retention.observation_ttl":
-			if d, err := time.ParseDuration(val); err == nil && d > 0 {
-				cfg.Retention.ObservationTTL = d
-			} else {
-				log.Printf("config: invalid retention.observation_ttl %q, keeping default %v: %v", val, cfg.Retention.ObservationTTL, err)
-			}
-		case "retention.run_interval":
-			if d, err := time.ParseDuration(val); err == nil && d > 0 {
-				cfg.Retention.RunInterval = d
-			} else {
-				log.Printf("config: invalid retention.run_interval %q, keeping default %v: %v", val, cfg.Retention.RunInterval, err)
-			}
-		case "retention.batch_size":
-			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
-				cfg.Retention.DeleteBatchSize = v
-			} else {
-				log.Printf("config: invalid retention.batch_size %q, keeping default %d: %v", val, cfg.Retention.DeleteBatchSize, err)
-			}
-		}
+	iniFile, err := ini.Load(f)
+	if err != nil {
+		return nil, fmt.Errorf("parse ini: %w", err)
 	}
 
-	return cfg, scanner.Err()
+	// sec looks up a section case-insensitively.
+	// keyIn returns an *ini.Key matched case-insensitively, or nil.
+	keyIn := func(s *ini.Section, name string) *ini.Key {
+		if s == nil {
+			return nil
+		}
+		for _, k := range s.Keys() {
+			if strings.EqualFold(k.Name(), name) {
+				return k
+			}
+		}
+		return nil
+	}
+	sec := func(name string) *ini.Section {
+		name = strings.ToLower(name)
+		for _, s := range iniFile.Sections() {
+			if strings.ToLower(s.Name()) == name {
+				return s
+			}
+		}
+		return nil
+	}
+
+	getStr := func(section, key string) (string, bool) {
+		k := keyIn(sec(section), key)
+		if k == nil {
+			return "", false
+		}
+		return k.String(), true
+	}
+	getInt := func(section, key string, defaultVal int, minVal int) int {
+		k := keyIn(sec(section), key)
+		if k == nil {
+			return defaultVal
+		}
+		v, err := k.Int()
+		if err != nil || v < minVal {
+			return defaultVal
+		}
+		return v
+	}
+	getFloat32 := func(section, key string, defaultVal float32) float32 {
+		k := keyIn(sec(section), key)
+		if k == nil {
+			return defaultVal
+		}
+		v, err := k.Float64()
+		if err != nil {
+			return defaultVal
+		}
+		return float32(v)
+	}
+	getDuration := func(section, key string, defaultVal time.Duration) time.Duration {
+		k := keyIn(sec(section), key)
+		if k == nil {
+			return defaultVal
+		}
+		v, err := k.Duration()
+		if err != nil {
+			return defaultVal
+		}
+		return v
+	}
+
+	if v, ok := getStr("embedder", "provider"); ok {
+		cfg.Provider = strings.ToLower(v)
+	}
+	if v, ok := getStr("embedder", "url"); ok {
+		cfg.URL = v
+	}
+	if v, ok := getStr("embedder", "key"); ok {
+		cfg.Key = v
+	}
+	if v, ok := getStr("embedder", "model"); ok {
+		cfg.Model = v
+	}
+
+	if v, ok := getStr("database", "path"); ok {
+		cfg.DBPath = v
+	}
+	if v, ok := getStr("database", "backend"); ok {
+		cfg.VectorBackend = strings.ToLower(v)
+	}
+
+	if v, ok := getStr("server", "api_key"); ok {
+		cfg.APIKey = v
+	}
+
+	cfg.VectorDim = getInt("vector", "dim", cfg.VectorDim, 1)
+
+	if v, ok := getStr("extraction", "provider"); ok {
+		cfg.ExtractProvider = strings.ToLower(v)
+	}
+	if v, ok := getStr("extraction", "url"); ok {
+		cfg.ExtractURL = v
+	}
+	if v, ok := getStr("extraction", "key"); ok {
+		cfg.ExtractKey = v
+	}
+	if v, ok := getStr("extraction", "model"); ok {
+		cfg.ExtractModel = v
+	}
+	cfg.ExtractTemperature = getFloat32("extraction", "temperature", cfg.ExtractTemperature)
+
+	cfg.DedupThreshold = getFloat32("ingestion", "dedup_threshold", cfg.DedupThreshold)
+
+	cfg.MaxDepthCeiling = getInt("retrieval", "depth_ceiling", cfg.MaxDepthCeiling, 0)
+	cfg.MaxRetrievedNodes = getInt("retrieval", "max_nodes", cfg.MaxRetrievedNodes, 0)
+
+	cfg.Retention.ObservationTTL = getDuration("retention", "observation_ttl", cfg.Retention.ObservationTTL)
+	cfg.Retention.RunInterval = getDuration("retention", "run_interval", cfg.Retention.RunInterval)
+	cfg.Retention.DeleteBatchSize = getInt("retention", "batch_size", cfg.Retention.DeleteBatchSize, 0)
+
+	cfg.EmbedderTimeout = getDuration("embedder", "timeout", cfg.EmbedderTimeout)
+	cfg.ExtractTimeout = getDuration("extraction", "timeout", cfg.ExtractTimeout)
+
+	return cfg, nil
 }
 
 func (c *Config) NewEmbedder() Embedder {
 	switch c.Provider {
 	case "openai":
-		return NewOpenAIEmbedder(c.URL, c.Key, c.Model)
+		return NewOpenAIEmbedder(c.URL, c.Key, c.Model, c.EmbedderTimeout)
 	default:
-		return NewOllamaEmbedder(c.URL, c.Model)
+		return NewOllamaEmbedder(c.URL, c.Model, c.EmbedderTimeout)
 	}
 }
 
@@ -216,9 +240,9 @@ func (c *Config) NewExtractor() LLMExtractor {
 	key := orDefault(c.ExtractKey, c.Key)
 	switch provider {
 	case "openai":
-		return NewOpenAILLMExtractor(url, key, c.ExtractModel, c.ExtractTemperature)
+		return NewOpenAILLMExtractor(url, key, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout)
 	default:
-		return NewOllamaLLMExtractor(url, c.ExtractModel, c.ExtractTemperature)
+		return NewOllamaLLMExtractor(url, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout)
 	}
 }
 

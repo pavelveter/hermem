@@ -15,9 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `id_map` table in core schema (replaces per-backend `vec_id_map`).
 - Retention config parsing: `retention.observation_ttl`, `retention.run_interval`, `retention.batch_size`.
 - `InMemoryVectorIndex.flatMatrix` — pre-built row-major matrix, maintained incrementally on Store/Remove; eliminates per-search matrix rebuild.
+- `embedder.timeout` and `extraction.timeout` config keys (default 30s / 300s).
+- Vector normalization at ingest — embeddings stored as unit vectors, Search skips norm division.
+- Graceful shutdown: HTTP drain → GC cancel → metrics flush → DB close, in order.
 
 ### Changed
 - All `.go` files moved to `src/` — build path is now `./src`.
+- INI parser replaced with `gopkg.in/ini.v1` (production-grade, handles quoting, multiline, comments).
+- `NewOllamaEmbedder`, `NewOpenAIEmbedder`, `NewOllamaLLMExtractor`, `NewOpenAILLMExtractor` signatures accept `timeout.Duration`.
 - `InMemoryVectorIndex.Search` uses snapshot pattern (RLock → local vars → unlock before compute) for concurrent safety without serializing searches.
 - `SearchBatch` reuses `flatMatrix` for all queries in a batch.
 

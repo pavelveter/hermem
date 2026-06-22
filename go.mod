@@ -6,3 +6,5 @@ require (
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
 	github.com/mattn/go-sqlite3 v1.14.46
 )
+
+require gopkg.in/ini.v1 v1.67.3 // indirect

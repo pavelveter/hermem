@@ -221,8 +221,11 @@ func main() {
 		})
 
 		gcCtx, gcCancel := context.WithCancel(ctx)
-		defer gcCancel()
-		go GarbageCollector(gcCtx, db, vi, cfg.Retention)
+		gcDone := make(chan struct{})
+		go func() {
+			GarbageCollector(gcCtx, db, vi, cfg.Retention)
+			close(gcDone)
+		}()
 
 		mux := http.NewServeMux()
 		mux.HandleFunc("/health", srv.HandleHealth)
@@ -259,11 +262,18 @@ func main() {
 
 		<-quit
 		slog.Info("shutting down...", "event", "server_shutdown")
+
+		// 1. Stop accepting requests
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Fatalf("server forced shutdown: %v", err)
+			slog.Error("http shutdown", "event", "shutdown_error", "error", err)
 		}
+		cancel()
+
+		// 2. Cancel GC and wait for cycle to finish
+		gcCancel()
+		<-gcDone
+
 		slog.Info("server stopped", "event", "server_stopped")
 
 	default:

@@ -123,7 +123,7 @@ type OllamaLLMExtractor struct {
 	client *http.Client
 }
 
-func NewOllamaLLMExtractor(baseURL, model string, temperature float32) *OllamaLLMExtractor {
+func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout time.Duration) *OllamaLLMExtractor {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
@@ -133,12 +133,15 @@ func NewOllamaLLMExtractor(baseURL, model string, temperature float32) *OllamaLL
 	if temperature == 0 {
 		temperature = 0.1
 	}
+	if timeout <= 0 {
+		timeout = ollamaRequestTimeout
+	}
 	return &OllamaLLMExtractor{
 		BaseURL:     baseURL,
 		Model:       model,
 		Temperature: temperature,
 		client: &http.Client{
-			Timeout: ollamaRequestTimeout,
+			Timeout: timeout,
 		},
 	}
 }
@@ -290,7 +293,7 @@ type OpenAILLMExtractor struct {
 	client *http.Client
 }
 
-func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32) *OpenAILLMExtractor {
+func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, timeout time.Duration) *OpenAILLMExtractor {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -300,13 +303,16 @@ func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32) *
 	if temperature == 0 {
 		temperature = 0.1
 	}
+	if timeout <= 0 {
+		timeout = ollamaRequestTimeout
+	}
 	return &OpenAILLMExtractor{
 		BaseURL:     baseURL,
 		APIKey:      apiKey,
 		Model:       model,
 		Temperature: temperature,
 		client: &http.Client{
-			Timeout: ollamaRequestTimeout,
+			Timeout: timeout,
 		},
 	}
 }
