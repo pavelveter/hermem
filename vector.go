@@ -3,15 +3,20 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
+	"strings"
 	"sync"
 )
 
 var (
 	embedDimOnce sync.Once
 	embedDim     int
+
+	currentVectorIndex VectorIndex = &InMemoryVectorIndex{}
 )
 
 type SearchResult struct {
@@ -19,61 +24,88 @@ type SearchResult struct {
 	Similarity float32 `json:"similarity"`
 }
 
+type VectorIndex interface {
+	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
+	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
+	Store(ctx context.Context, id string, vec []float32) error
+}
+
+type vectorIndexFactory func(db *sql.DB, dim int) VectorIndex
+
+var vectorIndexFactories = map[string]vectorIndexFactory{
+	"in-memory": func(db *sql.DB, _ int) VectorIndex {
+		return NewInMemoryVectorIndex(db)
+	},
+}
+
+func newVectorIndex(backend string, db *sql.DB, dim int) VectorIndex {
+	if f, ok := vectorIndexFactories[backend]; ok {
+		return f(db, dim)
+	}
+	slog.Warn("vector backend not found, falling back to in-memory",
+		"event", "vector_backend_fallback",
+		"requested", backend,
+	)
+	return &InMemoryVectorIndex{db: db}
+}
+
 func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchResult, error) {
 	if len(queryEmbedding) == 0 {
 		return nil, fmt.Errorf("empty query embedding")
 	}
 
-	rows, err := db.Query(`
-		SELECT id, category, content, embedding, updated_at 
-		FROM entities 
-		WHERE embedding IS NOT NULL
-	`)
+	ids, err := currentVectorIndex.Search(context.Background(), queryEmbedding, topK)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query entities: %w", err)
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT id, category, content, embedding, updated_at
+		FROM entities WHERE id IN (%s)
+	`, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch entities: %w", err)
 	}
 	defer rows.Close()
 
 	var results []SearchResult
-
 	for rows.Next() {
 		var entity Entity
 		var embeddingBytes []byte
-
 		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan entity: %w", err)
 		}
-
-		if len(embeddingBytes) == 0 {
-			continue
+		sim := float32(0)
+		if len(embeddingBytes) > 0 {
+			if emb := BytesToEmbedding(embeddingBytes); emb != nil {
+				sim = CosineSimilarity(queryEmbedding, emb)
+			}
 		}
-
-		entityEmbedding := BytesToEmbedding(embeddingBytes)
-		if entityEmbedding == nil {
-			continue
-		}
-
-		similarity := CosineSimilarity(queryEmbedding, entityEmbedding)
 		results = append(results, SearchResult{
 			Entity:     entity,
-			Similarity: similarity,
+			Similarity: sim,
 		})
 	}
-
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, fmt.Errorf("error iterating entities: %w", err)
 	}
 
-	// Sort by similarity (descending)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Similarity > results[j].Similarity
 	})
-
-	// Return top K results
 	if topK > 0 && len(results) > topK {
 		results = results[:topK]
 	}
-
 	return results, nil
 }
 
@@ -174,7 +206,6 @@ func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 		checkEmbeddingDim(len(entity.Embedding))
 		embeddingBytes = EmbeddingToBytes(entity.Embedding)
 	}
-
 	_, err := db.Exec(`
 		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -182,6 +213,44 @@ func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 	if err != nil {
 		return err
 	}
-
+	if len(entity.Embedding) > 0 {
+		return currentVectorIndex.Store(context.Background(), entity.ID, entity.Embedding)
+	}
 	return nil
+}
+
+func EmbeddingToBytes(embedding []float32) []byte {
+	buf := make([]byte, len(embedding)*4)
+	for i, v := range embedding {
+		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	}
+	return buf
+}
+
+func BytesToEmbedding(data []byte) []float32 {
+	if len(data)%4 != 0 {
+		return nil
+	}
+	embedding := make([]float32, len(data)/4)
+	for i := range embedding {
+		bits := binary.LittleEndian.Uint32(data[i*4 : i*4+4])
+		embedding[i] = math.Float32frombits(bits)
+	}
+	return embedding
+}
+
+func CosineSimilarity(a, b []float32) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return 0
+	}
+	var dotProduct, normA, normB float32
+	for i := range a {
+		dotProduct += a[i] * b[i]
+		normA += a[i] * a[i]
+		normB += b[i] * b[i]
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dotProduct / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))
 }

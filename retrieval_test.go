@@ -233,7 +233,7 @@ func BenchmarkRetrieveContext2Hop(b *testing.B) { benchmarkRetrieveContext(b, 2)
 func BenchmarkRetrieveContext3Hop(b *testing.B) { benchmarkRetrieveContext(b, 3) }
 
 func benchmarkRetrieveContext(b *testing.B, depth int) {
-	db, err := InitDB(":memory:")
+	db, err := InitDB(":memory:", 768)
 	if err != nil {
 		b.Fatalf("InitDB: %v", err)
 	}

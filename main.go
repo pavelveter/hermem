@@ -65,11 +65,13 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	db, err := InitDB(resolveDBPath(cfg.DBPath))
+	db, err := InitDB(resolveDBPath(cfg.DBPath), cfg.VectorDim)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
+
+	currentVectorIndex = newVectorIndex(cfg.VectorBackend, db, cfg.VectorDim)
 
 	embedder := cfg.NewEmbedder()
 	extractor := cfg.NewExtractor()
@@ -216,8 +218,11 @@ func main() {
 		mux.HandleFunc("/edge", srv.HandleEdge)
 
 		httpServer := &http.Server{
-			Addr:    ":" + port,
-			Handler: requestIDMiddleware(slogMiddleware(mux)),
+			Addr:         ":" + port,
+			Handler:      requestIDMiddleware(slogMiddleware(mux)),
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 120 * time.Second,
+			IdleTimeout:  120 * time.Second,
 		}
 
 		quit := make(chan os.Signal, 1)

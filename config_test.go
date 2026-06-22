@@ -23,9 +23,12 @@ func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
 		DedupThreshold     float32
 		MaxDepthCeiling    int
 		MaxRetrievedNodes  int
+		VectorBackend      string
+		VectorDim          int
 	}{
 		"ollama", "http://localhost:11434", "nomic-embed-text",
 		"hermem.db", "qwen2.5-coder:7b", 0.1, 0.88, 5, 100,
+		"in-memory", 768,
 	}
 
 	if cfg.Provider != want.Provider {
@@ -55,6 +58,12 @@ func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
 	if cfg.MaxRetrievedNodes != want.MaxRetrievedNodes {
 		t.Errorf("MaxRetrievedNodes = %d, want %d", cfg.MaxRetrievedNodes, want.MaxRetrievedNodes)
 	}
+	if cfg.VectorBackend != want.VectorBackend {
+		t.Errorf("VectorBackend = %q, want %q", cfg.VectorBackend, want.VectorBackend)
+	}
+	if cfg.VectorDim != want.VectorDim {
+		t.Errorf("VectorDim = %d, want %d", cfg.VectorDim, want.VectorDim)
+	}
 }
 
 func TestLoadConfigParsesAllKeys(t *testing.T) {
@@ -77,9 +86,12 @@ path = /tmp/hermem-test.db
 	[ingestion]
 dedup_threshold = 0.95
 
-[retrieval]
-depth_ceiling = 7
-max_nodes     = 25
+	[retrieval]
+	depth_ceiling = 7
+	max_nodes     = 25
+
+	[vector]
+	dim = 1536
 `
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -118,6 +130,12 @@ max_nodes     = 25
 	}
 	if cfg.MaxRetrievedNodes != 25 {
 		t.Errorf("MaxRetrievedNodes = %d, want 25", cfg.MaxRetrievedNodes)
+	}
+	if cfg.VectorBackend != "in-memory" {
+		t.Errorf("VectorBackend = %q, want in-memory", cfg.VectorBackend)
+	}
+	if cfg.VectorDim != 1536 {
+		t.Errorf("VectorDim = %d, want 1536", cfg.VectorDim)
 	}
 }
 
@@ -184,6 +202,9 @@ dedup_threshold = 0.91
 [RETRIEVAL]
 depth_ceiling = 4
 MAX_NODES = 50
+
+[VECTOR]
+DIM = 512
 `
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -218,6 +239,33 @@ MAX_NODES = 50
 	}
 	if cfg.MaxRetrievedNodes != 50 {
 		t.Errorf("MaxRetrievedNodes = %d, want 50", cfg.MaxRetrievedNodes)
+	}
+	if cfg.VectorDim != 512 {
+		t.Errorf("VectorDim = %d, want 512", cfg.VectorDim)
+	}
+}
+
+func TestLoadConfigVectorBackend(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[database]
+backend = sqlite-vec
+
+[vector]
+dim = 1024
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.VectorBackend != "sqlite-vec" {
+		t.Errorf("VectorBackend = %q, want sqlite-vec", cfg.VectorBackend)
+	}
+	if cfg.VectorDim != 1024 {
+		t.Errorf("VectorDim = %d, want 1024", cfg.VectorDim)
 	}
 }
 

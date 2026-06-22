@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (PR7b)
+### Added (PR8 — sqlite-vec)
+- `VectorIndex` interface with two backends: `InMemoryVectorIndex` (default, zero-dependency) and `SqliteVecIndex` (sqlite-vec vec0 virtual table for indexed KNN). Selected via `[database] backend` config key.
+- `SqliteVecIndex`: stores vectors in a `vec0` virtual table; search uses indexed KNN (`WHERE embedding MATCH ? ORDER BY distance LIMIT ?`), reducing search complexity from O(N) to O(log N). Entity-ID → vec0 rowid mapping via deterministic FNV-1a hash.
+- `[vector] dim` config key (default `768`) sets the embedding dimension for the `vec0` virtual table. Must match the model's output dimension.
+- `sqlite-vec` Go binding (`github.com/asg017/sqlite-vec-go-bindings/cgo`): statically linked, replaces hand-written `EmbeddingToBytes` serialization with `SerializeFloat32()`.
+- `newVectorIndex(backend)` factory in `vector.go` dispatches on config; `currentVectorIndex` global delegates `SearchByVector` and `StoreEntityWithEmbedding` transparently.
+
+### Changed (PR8)
+- `InitDB` signature: now takes `vectorDim int` as second parameter to create the `vec0` virtual table with the correct dimension.
+- `EmbeddingToBytes` now delegates to `sqlite_vec.SerializeFloat32()` for canonical binary format compatibility.
+- Tests: `memDB(t)` and all direct `InitDB` calls pass the dimension parameter. Config tests cover `[database] backend` and `[vector] dim` parsing.
+
+### Docs (PR8)
+- `README.md`: updated features, config defaults table, performance section (sqlite-vec vs in-memory), dependencies.
+- `USAGE.md`: new "Vector backend" section comparing `in-memory` and `sqlite-vec`, `vec_entities` schema docs, updated file-reference table.
+- `hermem.ini`: `[vector]` section with `dim` example.
+- `CHANGELOG.md`: this entry.
+
+
 - `context.Context` propagation through `Embedder.Embed(ctx, text)`, `LLMExtractor.ExtractEntities(ctx, dialog)`, `IngestionWorker.ProcessDialog(ctx)`, `MemoryWorker(ctx)`, `AddEdgeWithAutoCreate(ctx)`, `GenerateResponse(ctx)`, `AutoLinkEdges(ctx)`. HTTP handlers pass `r.Context()` downstream.
 - Graceful shutdown: `SIGINT`/`SIGTERM` → `http.Server.Shutdown` with 10-second drain timeout.
 - Request-ID middleware: every HTTP response gets `X-Request-ID` header; `request_id` flows into `slog` events.

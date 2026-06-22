@@ -264,7 +264,11 @@ func truncate(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
 	}
-	return s[:max] + "...<truncated>"
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "...<truncated>"
 }
 
 // OpenAILLMExtractor extracts entities via the OpenAI Chat Completions API.
