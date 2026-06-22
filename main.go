@@ -207,6 +207,10 @@ func main() {
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
 		})
 
+		gcCtx, gcCancel := context.WithCancel(ctx)
+		defer gcCancel()
+		go GarbageCollector(gcCtx, db, cfg.Retention)
+
 		mux := http.NewServeMux()
 		mux.HandleFunc("/health", srv.HandleHealth)
 		mux.HandleFunc("/metrics", metricsHandler)
