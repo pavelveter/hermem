@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (PR7b)
+- `context.Context` propagation through `Embedder.Embed(ctx, text)`, `LLMExtractor.ExtractEntities(ctx, dialog)`, `IngestionWorker.ProcessDialog(ctx)`, `MemoryWorker(ctx)`, `AddEdgeWithAutoCreate(ctx)`, `GenerateResponse(ctx)`, `AutoLinkEdges(ctx)`. HTTP handlers pass `r.Context()` downstream.
+- Graceful shutdown: `SIGINT`/`SIGTERM` → `http.Server.Shutdown` with 10-second drain timeout.
+- Request-ID middleware: every HTTP response gets `X-Request-ID` header; `request_id` flows into `slog` events.
+- `/metrics` endpoint: `expvar` counters (`hermem_stores_total`, `hermem_searches_total`, `hermem_retrieves_total`, `hermem_ingests_total`, `hermem_queries_total`, `hermem_edges_total`, `hermem_errors_total`).
+- OpenAI-compatible extractor: `NewOpenAILLMExtractor` + `OpenAILLMExtractor`, selected via `provider = openai` in config (reuses `[embedder] provider` key for simplicity). Retry/backoff parity with Ollama extractor.
+- Embedding dimension validation: `checkEmbeddingDim()` called on every `StoreEntityWithEmbedding`. Warns via `slog.Warn` on mismatch.
+- `AutoLinkEdges` on `/store` HTTP endpoint (previously CLI-only). Auto-link failure is non-fatal (logged as Warn).
+- `Dockerfile`: multi-stage build (`golang:1.26-alpine` → `alpine:3.21`), non-root user `hermem`, port `8420`.
+- Edge example in USAGE.md fixed from `likes` to `prefers`.
+
+### Changed (PR7b)
+- `RetrievalResult` JSON tags: all top-level keys are now `snake_case` (`seed_nodes`, `world_facts`, `opinions`, `experiences`, `observations`). Breaking change for consumers reading PascalCase keys.**
+- `NewOllamaLLMExtractor` signature now includes `temperature float32` as third parameter.
+- `Config.NewExtractor` dispatches on `provider`: `"openai"` → `NewOpenAILLMExtractor`, default → `NewOllamaLLMExtractor`.
+
+### Removed (PR7b)
+
+### Fixed (PR7b)
+
+### Notes (PR7b)
+- Request-IDs flow through `slog` events via `requestIDMiddleware` → `context.WithValue`. Every middleware-wrapped handler emits `request_start` and `request_end` debug events with `request_id`, `method`, `path`, `duration_ms`.
+- Embedding dimension validation is non-fatal (tolerant of heterogeneous embedding models).
+
+---
+
 ### Added
 - Per-package unit tests (TODO §4) covering 40+ test functions + 6 benchmarks across 6 new files: `config_test.go`, `vector_test.go`, `retrieval_test.go`, `ingestion_test.go`, `extractor_test.go`, plus the shared `helpers_test.go`. stdlib-only mocks: `stubExtractor` / `stubEmbedder` / `statefulExtractor` implement `LLMExtractor` and `Embedder` interfaces; `httptest.NewServer` mocks `/api/chat` for retry semantics; `:memory:` SQLite via `InitDB(":memory:")` for speed (verify_test.go keeps file-based DBs for the timing test). §4 items satisfied: cycle-injection test on `RetrieveContext` (contract-level: finite, bounded result on A↔B graph), mock for `LLMExtractor` so `IngestionWorker` can be tested without Ollama, dedup-threshold + content-append merge path tests, and benchmarks (`BenchmarkSearchByVector{100,1000,5000}`, `BenchmarkRetrieveContext{depth=1,2,3}`). JSON parse errors + 5xx retry + 4xx-no-retry are all covered for the Ollama HTTP path.
 - `Relation` named type in `extractor.go` for typed extraction edges.

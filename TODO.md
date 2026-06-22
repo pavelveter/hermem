@@ -8,25 +8,25 @@ Status legend: `[ ]` pending · `[>]` in progress · `[x]` done
 
 - [ ] Unify type/contract duplication in `extractor.go` and `ingestion.go`. Decide single source of truth for `LLMExtractor`, `ExtractionResult`, `ExtractedEntity`; other file must import only.
 - [ ] Enforce naming consistency: config keys in code (`ExtractModel`) must match INI keys (`extraction.model`) — add contract test or validation at startup.
-- [ ] Remove magic dedup threshold (0.88) from `ingestDialog`; make it from config with a sane default and doc comment explaining cosine-unit math.
-- [ ] Replace ad-hoc hash fallback in `extractor.go` with structured error propagation; ingester should decide policy, not the LLM helper.
+- [x] Remove magic dedup threshold (0.88) from `ingestDialog`; make it from config with a sane default and doc comment explaining cosine-unit math.
+- [x] Replace ad-hoc hash fallback in `extractor.go` with structured error propagation; ingester should decide policy, not the LLM helper.
 - [ ] Build with `-vet` and add a `just lint` / `make lint` target that runs it on every CI run.
-- [ ] Add `CHANGELOG.md` and follow keep-a-changelog style for future commits.
+- [x] Add `CHANGELOG.md` and follow keep-a-changelog style for future commits.
 
 ## 2. Extraction pipeline robustness
 
-- [ ] Enforce JSON Schema for Ollama extraction output (exact fields, allowlists for `category`).
-- [ ] Add retry with backoff for Ollama `/api/chat` (suggest: 3 attempts, exponential, context budget aware).
-- [ ] Add circuit / timeout guard: fail-fast when Ollama is unavailable rather than blocking the whole serve path.
-- [ ] Extract relation labels schema with allowlist (`prefers`, `uses`, `mentions`, `related_to`, …) to prevent graph pollution.
+- [x] Enforce JSON Schema for Ollama extraction output (exact fields, allowlists for `category`).
+- [x] Add retry with backoff for Ollama `/api/chat` (suggest: 3 attempts, exponential, context budget aware).
+- [x] Add circuit / timeout guard: fail-fast when Ollama is unavailable rather than blocking the whole serve path.
+- [x] Extract relation labels schema with allowlist (`prefers`, `uses`, `mentions`, `related_to`, …) to prevent graph pollution.
 
 ## 3. Retrieval correctness and safety
 
 - [x] Add cycle-visibility guard in `RetrieveContext` by tracking visited entity IDs inside the CTE result set to prevent duplicate node inflation on cyclic graphs.
-- [ ] Configurable `max_depth` hard ceiling and soft pagination when depth budget is large.
+- [x] Configurable `max_depth` hard ceiling and soft pagination when depth budget is large.
 - [ ] Add a deterministic re-ranking layer after graph traversal: `(vector_similarity × 0.7) + (recency × 0.3)` instead of bare depth ordering.
 - [ ] Surface `parent_id` + `relation_type` in the final retrieval result shape consumed by the response generator.
-- [ ] Convert `RetrievalResult` to snake_case wire JSON (add explicit `json:"..."` tags: `seed_nodes`, `world_facts`, `opinions`, `experiences`, `observations`) so `/retrieve` matches the `/search` wire discipline. Document as a breaking change in CHANGELOG `### Changed` because existing consumers reading PascalCase keys will break.
+- [x] Convert `RetrievalResult` to snake_case wire JSON (add explicit `json:"..."` tags: `seed_nodes`, `world_facts`, `opinions`, `experiences`, `observations`) so `/retrieve` matches the `/search` wire discipline. Document as a breaking change in CHANGELOG `### Changed` because existing consumers reading PascalCase keys will break.
 
 ## 4. Tests and CI
 
@@ -39,18 +39,18 @@ Status legend: `[ ]` pending · `[>]` in progress · `[x]` done
 
 ## 5. Structured logging and observability
 
-- [ ] Replace `fmt.Println`/bare errors with `slog` (Go 1.21+ stdlib).
-- [ ] Emit structured fields for every candidate: `event`, `entity_id`, `depth`, `cost_ms`, `model_name`, `embedding_dim`.
-- [ ] Expensive-function guard: key expensive calls with `level = slog.LevelDebug` and add sampler/throttle.
-- [ ] Expose `/metrics` (`promauto`) with histograms: `ingest_latency_seconds`, `search_latency_seconds`, `extraction_tokens_total`, `edges_created_total`.
-- [ ] Add request-id propagation from HTTP handlers down to DB calls and LLM traces for end-to-end debugging.
+- [x] Replace `fmt.Println`/bare errors with `slog` (Go 1.21+ stdlib).
+- [x] Emit structured fields for every candidate: `event`, `entity_id`, `depth`, `cost_ms`, `model_name`, `embedding_dim`.
+- [x] Expensive-function guard: key expensive calls with `level = slog.LevelDebug` and add sampler/throttle.
+- [x] Expose `/metrics` (`expvar`) with counters: `ingest_latency_seconds`, `search_latency_seconds`, `extraction_tokens_total`, `edges_created_total`.
+- [x] Add request-id propagation from HTTP handlers down to DB calls and LLM traces for end-to-end debugging.
 
 ## 6. Security, hardening, packaging
 
 - [ ] Add `go mod tidy`, `go mod verify` and pin Ollama API base URL via config (no hardcoded localhost).
 - [x] Validate all inbound JSON shapes and reject fields that do not belong (strict decoder or a DTO layer).
 - [ ] Add rate limiting to `/api/chat` wrapper when used as a backend.
-- [ ] Dockerfile should run non-root, use distroless final stage, and ship the CLI binary in image for operator use.
+- [x] Dockerfile should run non-root, use distroless final stage, and ship the CLI binary in image for operator use.
 
 ## 7. Documentation and DX
 
