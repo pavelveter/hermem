@@ -118,6 +118,7 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req StoreRequest
 	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
 		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
@@ -156,6 +157,7 @@ func (s *Server) HandleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req SearchRequest
 	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
 		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
@@ -195,6 +197,7 @@ func (s *Server) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req RetrieveRequest
 	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
 		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
@@ -230,6 +233,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req IngestRequest
 	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
 		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
@@ -257,6 +261,7 @@ func (s *Server) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req SearchRequest
 	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
 		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
@@ -289,6 +294,7 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req EdgeRequest
 	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
 		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)

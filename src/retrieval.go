@@ -42,7 +42,9 @@ type rankedNode struct {
 func computeRankingScore(queryEmbedding []float32, nodeEmbedding []byte, updatedAt time.Time) float32 {
 	var sim float32
 	if len(queryEmbedding) > 0 && len(nodeEmbedding) > 0 {
-		sim = CosineSimilarity(queryEmbedding, BytesToEmbedding(nodeEmbedding))
+		if emb, err := DecodeVector(nodeEmbedding, len(queryEmbedding)); err == nil {
+			sim = CosineSimilarity(queryEmbedding, emb)
+		}
 	}
 	var recency float32 = 1
 	if !updatedAt.IsZero() {

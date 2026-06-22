@@ -91,7 +91,7 @@ func SearchByVector(db *sql.DB, vi VectorIndex, queryEmbedding []float32, topK i
 		}
 		sim := float32(0)
 		if len(embeddingBytes) > 0 {
-			if emb := BytesToEmbedding(embeddingBytes); emb != nil {
+			if emb, err := DecodeVector(embeddingBytes, len(queryEmbedding)); err == nil {
 				sim = CosineSimilarity(queryEmbedding, emb)
 			}
 		}

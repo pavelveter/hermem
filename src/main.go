@@ -48,6 +48,13 @@ func GenerateResponse(ctx context.Context, db *sql.DB, vi VectorIndex, embedder 
 }
 
 func readInput() string {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		log.Fatalf("Failed to stat stdin: %v", err)
+	}
+	if (stat.Mode() & os.ModeCharDevice) != 0 {
+		log.Fatal("this command expects JSON piped into stdin (not a terminal)")
+	}
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		log.Fatalf("Failed to read stdin: %v", err)
@@ -64,6 +71,9 @@ func main() {
 	cfg, err := LoadConfigFromBinaryDir()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
 	}
 
 	db, err := InitDB(resolveDBPath(cfg.DBPath), cfg.VectorDim)
@@ -224,7 +234,7 @@ func main() {
 		mux.HandleFunc("/query", srv.HandleQuery)
 		mux.HandleFunc("/edge", srv.HandleEdge)
 
-		middlewareStack := requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux)))
+		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 
 		httpServer := &http.Server{
 			Addr:         ":" + port,
