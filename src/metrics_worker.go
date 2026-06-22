@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 )
@@ -149,15 +148,9 @@ func flushAccessedBatch(ctx context.Context, db *sql.DB, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
+	phs, args := inClauseArgs(ids)
 	_, err := db.ExecContext(ctx,
-		"UPDATE entities SET last_accessed_at = CURRENT_TIMESTAMP WHERE id IN ("+
-			strings.Join(placeholders, ",")+")", args...)
+		"UPDATE entities SET last_accessed_at = CURRENT_TIMESTAMP WHERE id IN ("+phs+")", args...)
 	if err != nil {
 		return fmt.Errorf("bulk update entities: %w", err)
 	}

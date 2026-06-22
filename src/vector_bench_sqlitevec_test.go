@@ -14,11 +14,11 @@ func BenchmarkSqliteVecSearch(b *testing.B) {
 			if err != nil {
 				b.Fatalf("InitDB: %v", err)
 			}
-			currentVectorIndex = newVectorIndex("sqlite-vec", db, 768)
+			vi := newVectorIndex("sqlite-vec", db, 768)
 			defer db.Close()
 
 			for i := 0; i < n; i++ {
-				if err := StoreEntityWithEmbedding(db, Entity{
+				if err := StoreEntityWithEmbedding(db, vi, Entity{
 					ID:        fmt.Sprintf("vec-%d", i),
 					Category:  "world",
 					Content:   fmt.Sprintf("fact-%d", i),
@@ -32,7 +32,7 @@ func BenchmarkSqliteVecSearch(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, err := SearchByVector(db, q, 10); err != nil {
+				if _, err := SearchByVector(db, vi, q, 10); err != nil {
 					b.Fatalf("search: %v", err)
 				}
 			}

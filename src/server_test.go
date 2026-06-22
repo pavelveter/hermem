@@ -18,9 +18,9 @@ import (
 // main.go mux, switched by r.URL.Path.
 func setupTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	db := memDB(t)
+	db, vi := memDB(t)
 	srv := NewServer(
-		db,
+		db, vi,
 		&stubEmbedder{},
 		&stubExtractor{resp: &ExtractionResult{Entities: nil}},
 		0.99,

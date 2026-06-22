@@ -13,7 +13,7 @@ func TestIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	currentVectorIndex = newVectorIndex("in-memory", db, 768)
+	vi := newVectorIndex("in-memory", db, 768)
 	defer db.Close()
 
 	// Test 1: Store fact and link to another node
@@ -31,11 +31,11 @@ func TestIntegration(t *testing.T) {
 		Embedding: []float32{0.15, 0.25, 0.35},
 	}
 
-	if err := StoreEntityWithEmbedding(db, fact1); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, fact1); err != nil {
 		t.Fatalf("Failed to store fact1: %v", err)
 	}
 
-	if err := StoreEntityWithEmbedding(db, fact2); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, fact2); err != nil {
 		t.Fatalf("Failed to store fact2: %v", err)
 	}
 
@@ -50,7 +50,7 @@ func TestIntegration(t *testing.T) {
 
 	// Test 2: Vector search should find both facts
 	queryEmbedding := []float32{0.1, 0.2, 0.3}
-	results, err := SearchByVector(db, queryEmbedding, 10)
+	results, err := SearchByVector(db, vi, queryEmbedding, 10)
 	if err != nil {
 		t.Fatalf("Failed to search: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestTiming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	currentVectorIndex = newVectorIndex("in-memory", db, 768)
+	vi := newVectorIndex("in-memory", db, 768)
 	defer os.Remove("timing-test.db")
 	defer db.Close()
 
@@ -157,7 +157,7 @@ func TestTiming(t *testing.T) {
 	for _, n := range cohorts {
 		// Seed entities incrementally per cohort.
 		for i := seeded; i < n; i++ {
-			if err := StoreEntityWithEmbedding(db, entities[i]); err != nil {
+			if err := StoreEntityWithEmbedding(db, vi, entities[i]); err != nil {
 				t.Fatalf("Failed to seed entity %d: %v", i, err)
 			}
 		}
@@ -208,7 +208,7 @@ func TestTiming(t *testing.T) {
 
 		// Vector search: O(N) cosine scan over embeddings.
 		searchStart := time.Now()
-		if _, err := SearchByVector(db, queryEmbedding, 10); err != nil {
+		if _, err := SearchByVector(db, vi, queryEmbedding, 10); err != nil {
 			t.Fatalf("Failed to search at N=%d: %v", n, err)
 		}
 		searchDur := time.Since(searchStart)

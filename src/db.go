@@ -30,7 +30,7 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(4)
 
 	if _, err := db.Exec("PRAGMA journal_mode = WAL;"); err != nil {
 		db.Close()
@@ -40,6 +40,11 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	if _, err := db.Exec("PRAGMA synchronous = NORMAL;"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
+	}
+
+	if _, err := db.Exec("PRAGMA busy_timeout = 5000;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to set busy_timeout: %w", err)
 	}
 
 	if _, err := db.Exec("PRAGMA auto_vacuum = INCREMENTAL;"); err != nil {

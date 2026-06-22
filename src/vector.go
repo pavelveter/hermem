@@ -17,8 +17,7 @@ var (
 	embedDimOnce sync.Once
 	embedDim     int
 
-	currentVectorIndex VectorIndex = &InMemoryVectorIndex{}
-	metricsWorker      *AsyncMetricsWorker
+	metricsWorker *AsyncMetricsWorker
 )
 
 func InitMetricsWorker(db *sql.DB) *AsyncMetricsWorker {
@@ -59,12 +58,12 @@ func newVectorIndex(backend string, db *sql.DB, dim int) VectorIndex {
 	return &InMemoryVectorIndex{db: db}
 }
 
-func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchResult, error) {
+func SearchByVector(db *sql.DB, vi VectorIndex, queryEmbedding []float32, topK int) ([]SearchResult, error) {
 	if len(queryEmbedding) == 0 {
 		return nil, fmt.Errorf("empty query embedding")
 	}
 
-	ids, err := currentVectorIndex.Search(context.Background(), queryEmbedding, topK)
+	ids, err := vi.Search(context.Background(), queryEmbedding, topK)
 	if err != nil {
 		return nil, err
 	}
@@ -72,17 +71,12 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 		return nil, nil
 	}
 
-	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
+	phs, args := inClauseArgs(ids)
 
 	rows, err := db.Query(fmt.Sprintf(`
 		SELECT id, category, content, embedding, updated_at, last_accessed_at
 		FROM entities WHERE id IN (%s) AND archived = 0
-	`, strings.Join(placeholders, ",")), args...)
+	`, phs), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch entities: %w", err)
 	}
@@ -143,7 +137,7 @@ func AddEdge(db *sql.DB, src, dst, rel string) error {
 	return nil
 }
 
-func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, embedder Embedder, src, dst, rel string) error {
+func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi VectorIndex, embedder Embedder, src, dst, rel string) error {
 	for _, id := range []string{src, dst} {
 		var exists bool
 		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM entities WHERE id = ?)", id).Scan(&exists)
@@ -155,7 +149,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, embedder Embedder, s
 			if err != nil {
 				return fmt.Errorf("failed to embed placeholder entity %q: %w", id, err)
 			}
-			if err := StoreEntityWithEmbedding(db, Entity{
+			if err := StoreEntityWithEmbedding(db, vi, Entity{
 				ID:        id,
 				Category:  "world",
 				Content:   id,
@@ -168,12 +162,12 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, embedder Embedder, s
 	return AddEdge(db, src, dst, rel)
 }
 
-func AutoLinkEdges(ctx context.Context, db *sql.DB, embedder Embedder, newID string, newEmbedding []float32) error {
+func AutoLinkEdges(ctx context.Context, db *sql.DB, vi VectorIndex, embedder Embedder, newID string, newEmbedding []float32) error {
 	if len(newEmbedding) == 0 {
 		return fmt.Errorf("cannot auto-link: embedding is empty for %s", newID)
 	}
 
-	results, err := SearchByVector(db, newEmbedding, 3)
+	results, err := SearchByVector(db, vi, newEmbedding, 3)
 	if err != nil {
 		return fmt.Errorf("auto-link search: %w", err)
 	}
@@ -215,7 +209,7 @@ func checkEmbeddingDim(dim int) {
 	}
 }
 
-func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
+func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, entity Entity) error {
 	var embeddingBytes []byte
 	if len(entity.Embedding) > 0 {
 		checkEmbeddingDim(len(entity.Embedding))
@@ -229,9 +223,21 @@ func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 		return err
 	}
 	if len(entity.Embedding) > 0 {
-		return currentVectorIndex.Store(context.Background(), entity.ID, entity.Embedding)
+		return vi.Store(context.Background(), entity.ID, entity.Embedding)
 	}
 	return nil
+}
+
+// inClauseArgs builds N "?" placeholders and an args slice for SQL
+// IN (...) queries. Avoids raw string concatenation of SQL fragments.
+func inClauseArgs(ids []string) (string, []interface{}) {
+	phs := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		phs[i] = "?"
+		args[i] = id
+	}
+	return strings.Join(phs, ","), args
 }
 
 func EmbeddingToBytes(embedding []float32) []byte {

@@ -5,11 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 )
 
-func GarbageCollector(ctx context.Context, db *sql.DB, policy RetentionPolicy) {
+func GarbageCollector(ctx context.Context, db *sql.DB, vi VectorIndex, policy RetentionPolicy) {
 	if policy.RunInterval <= 0 {
 		return
 	}
@@ -21,7 +20,7 @@ func GarbageCollector(ctx context.Context, db *sql.DB, policy RetentionPolicy) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			n, err := archiveStale(ctx, db, policy)
+			n, err := archiveStale(ctx, db, vi, policy)
 			if err != nil {
 				slog.Error("GC cycle failed", "event", "gc_error", "err", err)
 				continue
@@ -37,7 +36,7 @@ func GarbageCollector(ctx context.Context, db *sql.DB, policy RetentionPolicy) {
 	}
 }
 
-func archiveStale(ctx context.Context, db *sql.DB, policy RetentionPolicy) (int, error) {
+func archiveStale(ctx context.Context, db *sql.DB, vi VectorIndex, policy RetentionPolicy) (int, error) {
 	if policy.ObservationTTL <= 0 {
 		return 0, nil
 	}
@@ -78,21 +77,15 @@ func archiveStale(ctx context.Context, db *sql.DB, policy RetentionPolicy) (int,
 	}
 
 	// Mark as archived in SQLite
-	placeholders := make([]string, len(ids))
-	updateArgs := make([]interface{}, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		updateArgs[i] = id
-	}
+	phs, args := inClauseArgs(ids)
 	_, err = db.ExecContext(ctx, fmt.Sprintf(
-		"UPDATE entities SET archived = 1 WHERE id IN (%s)", strings.Join(placeholders, ",")),
-		updateArgs...)
+		"UPDATE entities SET archived = 1 WHERE id IN (%s)", phs), args...)
 	if err != nil {
 		return 0, fmt.Errorf("archive stale: %w", err)
 	}
 
 	// Evict from in-memory vector index
-	if err := currentVectorIndex.Remove(ctx, ids); err != nil {
+	if err := vi.Remove(ctx, ids); err != nil {
 		slog.Warn("vector index remove failed",
 			"event", "gc_vector_remove_error",
 			"err", err,
