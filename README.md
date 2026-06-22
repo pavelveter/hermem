@@ -41,7 +41,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 # Clone and build
 git clone https://github.com/pavelveter/hermem.git
 cd hermem
-go build -o hermem .
+go build -o hermem ./src
 
 # Run the demo (creates hermem.db)
 ./hermem
@@ -61,7 +61,7 @@ Or install manually:
 
 ```bash
 # 1. Build the binary
-go build -o hermem .
+go build -o hermem ./src
 
 # 2. Copy binary to ~/.hermes/bin/
 mkdir -p ~/.hermes/bin
@@ -84,7 +84,7 @@ hermes gateway restart
 
 ```bash
 # Build
-go build -o hermem .
+go build -o hermem ./src
 
 # Copy to PATH
 cp hermem /usr/local/bin/
@@ -348,7 +348,7 @@ curl -fsSL https://raw.githubusercontent.com/pavelveter/hermem/main/install.sh |
 
 ```bash
 # 1. Build the binary
-go build -o hermem .
+go build -o hermem ./src
 
 # 2. Copy binary
 mkdir -p ~/.hermes/bin

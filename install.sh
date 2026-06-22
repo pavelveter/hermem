@@ -26,7 +26,7 @@ fi
 
 # Build binary
 echo "Building hermem..."
-go build -o hermem .
+go build -o hermem ./src
 
 # Install binary
 echo "Installing binary to $HERMEM_BIN_DIR..."

@@ -42,6 +42,11 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
 	}
 
+	if _, err := db.Exec("PRAGMA auto_vacuum = INCREMENTAL;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to set auto_vacuum mode: %w", err)
+	}
+
 	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS entities (
 			id TEXT PRIMARY KEY,
