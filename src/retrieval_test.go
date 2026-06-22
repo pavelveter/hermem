@@ -78,6 +78,147 @@ func TestRetrieveContextCycleGuard(t *testing.T) {
 	}
 }
 
+// TestRetrieveContext3CycleGuard verifies end-to-end that a
+// deliberate 3-cycle A→B→C→A returns exactly 3 unique entities via
+// the public RetrieveContext API. The test is a stronger cycle
+// fixture than TestRetrieveContextCycleGuard's 2-node A↔B: at
+// depth-cap=100 and a 3-step cycle, any cycle in graph_walk would
+// repeatedly visit A, B, and C every 3 depths. With the visited-
+// column cycle guard in the CTE, the recursion terminates once
+// each node has been visited.
+//
+// End-to-end assertion: SELECT DISTINCT collapses the inflated CTE
+// rows anyway, so the public-output check is met by both pre-fix
+// and post-fix paths. Pair with TestGraphWalk3CycleDirectProbe
+// which probes the inner CTE without DISTINCT to verify the actual
+// SQL guard.
+func TestRetrieveContext3CycleGuard(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "A", Category: "world", Content: "node A", Embedding: []float32{1, 0, 0}},
+		{ID: "B", Category: "world", Content: "node B", Embedding: []float32{0, 1, 0}},
+		{ID: "C", Category: "world", Content: "node C", Embedding: []float32{0, 0, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+	}
+	if _, err := db.Exec(
+		`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('A','B','related_to'), ('B','C','related_to'), ('C','A','related_to')`,
+	); err != nil {
+		t.Fatalf("edges: %v", err)
+	}
+
+	res, err := RetrieveContext(db, []string{"A"}, RetrieveContextOptions{
+		MaxDepth:     100,
+		DepthCeiling: 100,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+
+	facts := map[string]bool{}
+	for _, sn := range res.SeedNodes {
+		facts[sn.Entity.Content] = true
+	}
+	for _, f := range res.WorldFacts {
+		facts[f.Content] = true
+	}
+	for _, want := range []string{"node A", "node B", "node C"} {
+		if !facts[want] {
+			t.Errorf("expected %q in result, missing; facts=%v", want, facts)
+		}
+	}
+	if len(facts) != 3 {
+		t.Errorf("unique fact count = %d, want 3 (cycle inflated)", len(facts))
+	}
+}
+
+// TestGraphWalk3CycleDirectProbe exercises the cycle guard at the
+// SQL layer. We replicate graph_walk's CTE WITHOUT the SELECT
+// DISTINCT projection so the row count reveals SQLite's internal
+// fan-out. With the visited-column guard, a 3-cycle at depth-cap
+// =100 yields 5 rows; without the guard, the same query would
+// generate ~depthCap/3 + 1 ≈ 34 rows.
+//
+// Bound analysis (depth-cap=100, edges A→B, B→C, C→A traversing
+// undirected via the source_id OR target_id join):
+//   - depth 0: A (1 row, path ',A,')
+//   - depth 1: from A — A→B reaches B, C→A reaches C (2 rows)
+//   - depth 2: from B (path ',A,B,') — B→C reaches C; from C
+//     (path ',A,C,') — B→C reaches B (2 rows)
+//   - depth 3+: every path has already visited its expansion target
+//     so the instr() guard rejects further rows.
+//
+// The SELECT DISTINCT at the end of retrieval.go's query collapses
+// these 5 rows down to 3 unique entities (A, B, C), so
+// TestRetrieveContext3CycleGuard plus this probe pair exercise
+// both the user-visible and the SQL-engine behaviours.
+//
+// This test must mirror retrieval.go's graph_walk CTE shape: if
+// production changes the column list, the WHERE clause, or the
+// depth-cap binding site, this test must update in lockstep or it
+// will silently probe the wrong structure.
+func TestGraphWalk3CycleDirectProbe(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "A", Category: "world", Content: "node A", Embedding: []float32{1, 0, 0}},
+		{ID: "B", Category: "world", Content: "node B", Embedding: []float32{0, 1, 0}},
+		{ID: "C", Category: "world", Content: "node C", Embedding: []float32{0, 0, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+	}
+	if _, err := db.Exec(
+		`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('A','B','related_to'), ('B','C','related_to'), ('C','A','related_to')`,
+	); err != nil {
+		t.Fatalf("edges: %v", err)
+	}
+
+	const depthCap = 100
+	var rowCount int
+	err := db.QueryRow(`
+		WITH RECURSIVE graph_walk AS (
+			SELECT
+				e.id, 0 as depth,
+				char(31) || e.id || char(31) as visited
+			FROM entities e
+			WHERE e.id = 'A' AND e.archived = 0
+			UNION ALL
+			SELECT
+				e.id, gw.depth + 1,
+				gw.visited || e.id || char(31) as visited
+			FROM graph_walk gw
+			JOIN edges ed ON (ed.source_id = gw.id OR ed.target_id = gw.id)
+			JOIN entities e ON (
+				CASE
+					WHEN ed.source_id = gw.id THEN ed.target_id = e.id
+					ELSE ed.source_id = e.id
+				END
+			)
+			WHERE gw.depth < ?
+				AND instr(gw.visited, char(31) || e.id || char(31)) = 0
+				AND e.archived = 0
+		)
+		SELECT COUNT(*) FROM graph_walk
+	`, depthCap).Scan(&rowCount)
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	// Post-fix bound: 5 rows (1 seed + 2 depth-1 + 2 depth-2; instr
+	// guard rejects further expansion). Pre-fix bound at
+	// depthCap=100 was ~100/3 + 1 ≈ 34 rows.
+	if rowCount != 5 {
+		t.Errorf("graph_walk row count at depth-cap=%d for 3-cycle = %d, want 5 (cycle guard failed; pre-fix would be ~%d)",
+			depthCap, rowCount, depthCap/3+1)
+	}
+}
+
 // TestRetrieveContextDepthCeilingClamps verifies that MaxDepth=5 with
 // DepthCeiling=2 effectively walks depth 2, excluding deeper nodes.
 func TestRetrieveContextDepthCeilingClamps(t *testing.T) {
