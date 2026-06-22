@@ -23,6 +23,17 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 | `experience` | Past events, interactions, what happened |
 | `observation` | Patterns noticed, anomalies, derived insights |
 
+## Features
+
+- **CLI + HTTP server** — single binary, two modes
+- **OpenAI-compatible** — works with Ollama or any OpenAI-compatible API
+- **Structured logging** — `log/slog` with event fields
+- **Request tracing** — every HTTP response gets `X-Request-ID`
+- **Metrics** — `/metrics` endpoint via `expvar`
+- **Graceful shutdown** — drains in-flight requests on SIGINT/SIGTERM
+- **Strict JSON validation** — unknown fields rejected with structured errors
+- **Docker** — multi-stage build, non-root user
+
 ## Quick Start
 
 ```bash

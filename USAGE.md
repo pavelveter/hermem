@@ -207,7 +207,7 @@ nodes (`category=world`, `content=id`) before linking.
 
 ```bash
 # Both entities must already exist:
-echo '{"source_id":"user-likes-coffee","target_id":"espresso","relation_type":"likes"}' | ./hermem edge
+echo '{"source_id":"user-likes-coffee","target_id":"espresso","relation_type":"prefers"}' | ./hermem edge
 
 # Auto-create missing entities on the fly:
 echo '{"source_id":"user-likes-coffee","target_id":"new-concept","relation_type":"related_to","auto_create":true}' | ./hermem edge
@@ -265,10 +265,11 @@ paths). Pipe stderr to your log aggregator.
 
 | Method | Path       | Body                           | Returns                  |
 |--------|------------|--------------------------------|--------------------------|
-| GET    | `/health`  | —                              | `{"status":"ok"}`        |
+| GET    | `/health`  | —                            | `{"status":"ok"}`        |
+| GET    | `/metrics` | —                            | expvar JSON               |
 | POST   | `/store`   | `StoreRequest`                 | `{"status":"ok"}`        |
 | POST   | `/search`  | `SearchRequest`                | `[{entity, similarity}]` |
-| POST   | `/retrieve`| `RetrieveRequest`              | `RetrievalResult` (PascalCase keys — see §8 note) |
+| POST   | `/retrieve`| `RetrieveRequest`              | `RetrievalResult` (snake_case keys) |
 | POST   | `/edge`    | `EdgeRequest`                  | `{"status":"ok"}`        |
 | POST   | `/ingest`  | `IngestRequest`                | `{"status":"ok"}`        |
 | POST   | `/query`   | `QueryRequest`                 | `{"context": "..."}`     |
@@ -329,13 +330,10 @@ curl -X POST http://localhost:8420/retrieve \
 
 `max_depth` is silently clamped to `[retrieval].depth_ceiling`.
 Response is the full `RetrievalResult` — see §8 for the
-authoritative wire shape. **Known inconsistency:** `RetrievalResult`
-struct fields do not yet have explicit `json:"..."` tags, so the
-HTTP wire shape currently uses Go's default PascalCase keys
-(`SeedNodes`, `WorldFacts`, `Opinions`, `Experiences`,
-`Observations`). A future PR will convert these to snake_case
-(planned: `seed_nodes`, `world_facts` / `opinions` / `experiences`
-/ `observations`) for parity with the `/search` wire shape.
+authoritative wire shape. **Breaking change:** As of PR7b the
+top-level keys are snake_case (`seed_nodes`, `world_facts`,
+`opinions`, `experiences`, `observations`). Consumers reading
+PascalCase keys must update.
 
 ### `/ingest`
 
@@ -446,7 +444,7 @@ struct field unless noted.
 
 ```json
 {
-  "SeedNodes": [
+  "seed_nodes": [
     {
       "entity":        {"id":"paris","category":"world","content":"Paris is the capital of France","embedding":[...], "updated_at":"..."},
       "relations":     [],
@@ -456,31 +454,22 @@ struct field unless noted.
       "ranking_score": 0.9134
     }
   ],
-  "WorldFacts":   [{"content":"Paris is the capital of France","parent_id":"france","relation_type":"part_of","depth":1}],
-  "Opinions":     [],
-  "Experiences":  [],
-  "Observations": []
+  "world_facts":   [{"content":"Paris is the capital of France","parent_id":"france","relation_type":"part_of","depth":1}],
+  "opinions":     [],
+  "experiences":  [],
+  "observations": []
 }
 ```
 
-Each per-category bucket (`WorldFacts` / `Opinions` / `Experiences` /
-`Observations`) is `[]RetrievedFact` — i.e. an array of
+Each per-category bucket (`world_facts` / `opinions` / `experiences` /
+`observations`) is `[]RetrievedFact` — i.e. an array of
 `{content, parent_id, relation_type, depth}` objects. Empty buckets
 remain in the output as `[]` (not absent) so consumers can iterate
 without nil-checking. `parent_id` and `relation_type` are `omitempty`:
 seed-reached facts (`depth == 0`) emit them as empty strings; graph-walk
 facts (`depth > 0`) carry them populated so the calling agent can see
-why each fact was pulled in. `SeedNodes` is `[]GraphNode` with full
+why each fact was pulled in. `seed_nodes` is `[]GraphNode` with full
 `entity` + composite score.
-
-**Known wire-shape inconsistency:** `RetrievalResult` has no explicit
-`json:"..."` tags, so all five top-level keys above marshal with Go's
-default PascalCase. `/search` already uses snake_case via
-`SearchResult`'s explicit tags; the `/retrieve` conversion is tracked
-as a documented TODO item. PascalCase is stable for now — the next
-PR will introduce snake_case (`seed_nodes`, `world_facts`, `opinions`,
-`experiences`, `observations`) and call out the breaking change in
-`CHANGELOG ## [Unreleased] ### Changed`.
 
 (Use `FormatContextMarkdown` server-side or the wrapper at
 `/query` to render to LLM-ready markdown.)
@@ -646,10 +635,7 @@ silently produce wrong cosine scores.
   - `retrieval_complete`      — `seed_count`, `total_ranked`, `effective_depth`, `cap_active` (emitted at Debug — the level filter is the throttle)
   No `entity_id` / `embedding_dim` / `cost_ms` fields are emitted yet
   (TODO §5). Pipe stderr to a JSON-aware log shipper.
-- **Graceful shutdown.** `SIGINT`/`SIGTERM` will halt in-flight
-  HTTP handlers immediately. There is no drain phase; clients may
-  observe truncated responses. Wrap with `nginx`/`caddy` if you
-  need zero-downtime reloads.
+- **Graceful shutdown.** Server drains in-flight requests on `SIGINT`/`SIGTERM` with a 10-second timeout, then exits cleanly. Use `kill <pid>` or `systemctl stop hermem`.
 - **Backups.** The DB is a single SQLite file. `sqlite3 hermem.db
   ".backup hermem.db.bak"` while the server is running is safe
   (SQLite's online backup API). Plain `cp hermem.db hermem.db.bak`
