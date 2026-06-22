@@ -113,24 +113,29 @@ func filterRelations(in []Relation) []Relation {
 }
 
 type OllamaLLMExtractor struct {
-	BaseURL string
-	Model   string
+	BaseURL     string
+	Model       string
+	Temperature float32
 
 	// client owns the HTTP transport so retries reuse the TCP connection
 	// and per-request timeout is enforced consistently.
 	client *http.Client
 }
 
-func NewOllamaLLMExtractor(baseURL, model string) *OllamaLLMExtractor {
+func NewOllamaLLMExtractor(baseURL, model string, temperature float32) *OllamaLLMExtractor {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
 	if model == "" {
 		model = "qwen2.5-coder:7b"
 	}
+	if temperature == 0 {
+		temperature = 0.1
+	}
 	return &OllamaLLMExtractor{
-		BaseURL: baseURL,
-		Model:   model,
+		BaseURL:     baseURL,
+		Model:       model,
+		Temperature: temperature,
 		client: &http.Client{
 			Timeout: ollamaRequestTimeout,
 		},
@@ -299,7 +304,7 @@ Dialog:`
 		Stream: false,
 		Format: "json",
 		Options: map[string]any{
-			"temperature": 0.1,
+			"temperature": e.Temperature,
 		},
 	}
 

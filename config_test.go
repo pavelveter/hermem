@@ -14,17 +14,18 @@ func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
 	}
 
 	want := struct {
-		Provider          string
-		URL               string
-		Model             string
-		DBPath            string
-		ExtractModel      string
-		DedupThreshold    float32
-		MaxDepthCeiling   int
-		MaxRetrievedNodes int
+		Provider           string
+		URL                string
+		Model              string
+		DBPath             string
+		ExtractModel       string
+		ExtractTemperature float32
+		DedupThreshold     float32
+		MaxDepthCeiling    int
+		MaxRetrievedNodes  int
 	}{
 		"ollama", "http://localhost:11434", "nomic-embed-text",
-		"hermem.db", "qwen2.5-coder:7b", 0.88, 5, 100,
+		"hermem.db", "qwen2.5-coder:7b", 0.1, 0.88, 5, 100,
 	}
 
 	if cfg.Provider != want.Provider {
@@ -41,6 +42,9 @@ func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
 	}
 	if cfg.ExtractModel != want.ExtractModel {
 		t.Errorf("ExtractModel = %q, want %q", cfg.ExtractModel, want.ExtractModel)
+	}
+	if cfg.ExtractTemperature != want.ExtractTemperature {
+		t.Errorf("ExtractTemperature = %v, want %v", cfg.ExtractTemperature, want.ExtractTemperature)
 	}
 	if cfg.DedupThreshold != want.DedupThreshold {
 		t.Errorf("DedupThreshold = %v, want %v", cfg.DedupThreshold, want.DedupThreshold)
@@ -66,10 +70,11 @@ model     = text-embedding-3-small
 [database]
 path = /tmp/hermem-test.db
 
-[extraction]
-model = gpt-4o-mini
+	[extraction]
+	model = gpt-4o-mini
+	temperature = 0.05
 
-[ingestion]
+	[ingestion]
 dedup_threshold = 0.95
 
 [retrieval]
@@ -100,7 +105,10 @@ max_nodes     = 25
 		t.Errorf("DBPath = %q", cfg.DBPath)
 	}
 	if cfg.ExtractModel != "gpt-4o-mini" {
-		t.Errorf("ExtractModel = %q", cfg.ExtractModel)
+		t.Errorf("ExtractModel = %q, want gpt-4o-mini", cfg.ExtractModel)
+	}
+	if cfg.ExtractTemperature != 0.05 {
+		t.Errorf("ExtractTemperature = %v, want 0.05", cfg.ExtractTemperature)
 	}
 	if cfg.DedupThreshold != 0.95 {
 		t.Errorf("DedupThreshold = %v, want 0.95", cfg.DedupThreshold)
@@ -166,10 +174,11 @@ Key = sk-mixed-case
 [DATABASE]
 Path = /tmp/caps.db
 
-[Extraction]
-Model = gpt-4o
+	[Extraction]
+	Model = gpt-4o
+	Temperature = 0.2
 
-[INGESTION]
+	[INGESTION]
 dedup_threshold = 0.91
 
 [RETRIEVAL]
@@ -197,6 +206,9 @@ MAX_NODES = 50
 	}
 	if cfg.ExtractModel != "gpt-4o" {
 		t.Errorf("ExtractModel = %q, want gpt-4o", cfg.ExtractModel)
+	}
+	if cfg.ExtractTemperature != 0.2 {
+		t.Errorf("ExtractTemperature = %v, want 0.2", cfg.ExtractTemperature)
 	}
 	if cfg.DedupThreshold != 0.91 {
 		t.Errorf("DedupThreshold = %v, want 0.91", cfg.DedupThreshold)
