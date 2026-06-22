@@ -79,6 +79,16 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create meta table: %w", err)
 	}
 
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS id_map (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entity_id TEXT UNIQUE NOT NULL
+		)
+	`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to create id_map table: %w", err)
+	}
+
 	if err := migrateSchema(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("schema migration: %w", err)
@@ -106,6 +116,22 @@ func migrateSchema(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func ensureEntityID(db *sql.DB, entityID string) (int64, error) {
+	var rowID int64
+	err := db.QueryRow("SELECT id FROM id_map WHERE entity_id = ?", entityID).Scan(&rowID)
+	if err == nil {
+		return rowID, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, fmt.Errorf("query id_map: %w", err)
+	}
+	res, err := db.Exec("INSERT INTO id_map (entity_id) VALUES (?)", entityID)
+	if err != nil {
+		return 0, fmt.Errorf("insert id_map: %w", err)
+	}
+	return res.LastInsertId()
 }
 
 func checkMeta(db *sql.DB, dim int) error {

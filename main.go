@@ -38,6 +38,7 @@ func GenerateResponse(ctx context.Context, db *sql.DB, embedder Embedder, opts R
 	// Safe mutation: opts is the value-type copy owned by GenerateResponse,
 	// not the caller's struct.
 	opts.QueryEmbedding = queryEmbedding
+	opts.Ctx = ctx
 	contextResult, err := RetrieveContext(db, seedIDs, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve context: %w", err)
@@ -221,9 +222,11 @@ func main() {
 		mux.HandleFunc("/query", srv.HandleQuery)
 		mux.HandleFunc("/edge", srv.HandleEdge)
 
+		middlewareStack := requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux)))
+
 		httpServer := &http.Server{
 			Addr:         ":" + port,
-			Handler:      requestIDMiddleware(slogMiddleware(mux)),
+			Handler:      middlewareStack,
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 120 * time.Second,
 			IdleTimeout:  120 * time.Second,

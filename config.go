@@ -42,6 +42,9 @@ type Config struct {
 	// Only relevant when VectorBackend = "sqlite-vec".
 	// Must match the actual output dimension of the configured embedder model.
 	VectorDim int
+	// APIKey validates X-API-Key on all HTTP endpoints.
+	// Empty string disables auth (localhost dev default).
+	APIKey string
 	// Retention controls automatic archival of stale nodes.
 	// world facts are permanent; observation nodes past ObservationTTL
 	// are flagged archived and excluded from graph walks.
@@ -126,6 +129,8 @@ func LoadConfig(path string) (*Config, error) {
 			cfg.DBPath = val
 		case "database.backend":
 			cfg.VectorBackend = strings.ToLower(val)
+		case "server.api_key":
+			cfg.APIKey = val
 		case "vector.dim":
 			if v, err := strconv.Atoi(val); err == nil && v > 0 {
 				cfg.VectorDim = v
