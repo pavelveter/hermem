@@ -693,6 +693,42 @@ func TestRetrieveContextCompositeScorerReceivesCachedQueryNorm(t *testing.T) {
 	}
 }
 
+// TestCompositeScoreDirect unit-tests the closed-form numeric
+// surface behind the default scoring formula. The formula lives in
+// compositeScore(sim, recency, depth float32) and resolves the
+// package-level constants rankVectorWeight / rankRecencyWeight /
+// rankDepthPenaltyPerUnit — no magic numbers inside the helper
+// itself, so any future tweak to one of those constants propagates
+// here and these fixtures catch the change without having to
+// recompute fixtures in TestCompositeScorerDefaultDepthPenalty.
+//
+//	compositeScore(0.5, 1.0, 0) = 0.7*0.5 + 0.3*1.0 - 0.05*0
+//	                              = 0.35 + 0.30 - 0.00 = 0.65
+//	compositeScore(0.6, 1.0, 3) = 0.7*0.6 + 0.3*1.0 - 0.05*3
+//	                              = 0.42 + 0.30 - 0.15 = 0.57
+//	compositeScore(0.0, 1.0, 4) = 0.7*0.0 + 0.3*1.0 - 0.05*4
+//	                              = 0.00 + 0.30 - 0.20 = 0.10
+func TestCompositeScoreDirect(t *testing.T) {
+	cases := []struct {
+		name                string
+		sim, recency, depth float32
+		want                float32
+	}{
+		{"seed_aligned_fresh", 0.5, 1.0, 0, 0.65},
+		{"deep_aligned_fresh", 0.6, 1.0, 3, 0.57},
+		{"orthogonal_4_hop", 0.0, 1.0, 4, 0.10},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := compositeScore(c.sim, c.recency, c.depth)
+			if !float32AlmostEqual(got, c.want) {
+				t.Errorf("compositeScore(%v, %v, %v) = %v, want %v (constants drift?)",
+					c.sim, c.recency, c.depth, got, c.want)
+			}
+		})
+	}
+}
+
 // TestCompositeScorerNil uses an explicit CompositeScorer that returns 0
 // to verify nil scorers resolve to defaultCompositeScorer without
 // an explicit nil-guard (i.e. two-semantically-identical retrievals

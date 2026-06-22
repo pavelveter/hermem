@@ -117,9 +117,30 @@ func defaultCompositeScorer(
 			recency = float32(math.Exp(-float64(hoursOld) / float64(rankRecencyHalfLifeHours)))
 		}
 	}
+	return compositeScore(sim, recency, float32(node.Depth))
+}
+
+// compositeScore combines vector similarity and recency decay with a
+// per-depth penalty into the default scoring formula:
+//
+//	score = rankVectorWeight*sim
+//	      + rankRecencyWeight*recency
+//	      - rankDepthPenaltyPerUnit*depth
+//
+// Reference resolution only — no magic numbers. All three weights
+// come from package-level constants, so a tweak to
+// rankVectorWeight / rankRecencyWeight / rankDepthPenaltyPerUnit
+// propagates to this formula and the unit-test fixtures in
+// TestCompositeScoreDirect form the immediate numeric surface.
+//
+// Pure helper: no logging, no I/O, no allocations, deterministic
+// for any sane inputs. Call sites: defaultCompositeScorer (and any
+// future scoring code path that wants the same formula without
+// duplicating the constants).
+func compositeScore(sim, recency, depth float32) float32 {
 	return rankVectorWeight*sim +
 		rankRecencyWeight*recency -
-		rankDepthPenaltyPerUnit*float32(node.Depth)
+		rankDepthPenaltyPerUnit*depth
 }
 
 type GraphNode struct {
