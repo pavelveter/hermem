@@ -27,6 +27,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 
 - **CLI + HTTP server** — single binary, two modes
 - **OpenAI-compatible** — works with Ollama or any OpenAI-compatible API
+- **Pluggable vector search** — `InMemoryVectorIndex` (default, zero-dependency) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
 - **Structured logging** — `log/slog` with event fields
 - **Request tracing** — every HTTP response gets `X-Request-ID`
 - **Metrics** — `/metrics` endpoint via `expvar`
@@ -102,8 +103,9 @@ hermem serve 8420
 ## Dependencies
 
 - Go 1.21+
-- CGO enabled (for `github.com/mattn/go-sqlite3`)
+- CGO enabled (for `github.com/mattn/go-sqlite3` + `sqlite-vec`)
 - One of: Ollama running locally, or an OpenAI API key
+- (Optional) `sqlite-vec` — statically linked via `github.com/asg017/sqlite-vec-go-bindings/cgo` when `[database] backend = sqlite-vec`
 
 ## Configuration
 
@@ -194,6 +196,8 @@ Every key is optional; missing keys fall back to the defaults below.
 | `ingestion.dedup_threshold` | `0.88` | Cosine floor for merge-during-ingest (see Deduplication, below). |
 | `retrieval.depth_ceiling` | `5` | Hard clamp on requested `max_depth`. |
 | `retrieval.max_nodes` | `100` | Soft cap on `RetrieveContext` output size. |
+| `database.backend` | `in-memory` | Vector index backend: `in-memory` (Go brute-force) or `sqlite-vec` (indexed KNN). |
+| `vector.dim` | `768` | Embedding dimension for `vec0` virtual table. Must match your model's output dim. |
 | `database.path` | `hermem.db` | SQLite database file. |
 
 Invalid integer / float parse values are logged at warning level and
@@ -256,7 +260,9 @@ hermem/
 ├── config.go            # INI config loader
 ├── embedder.go          # Embedder interface (Ollama / OpenAI)
 ├── extractor.go         # LLMExtractor interface + Ollama chat w/ retry + allowlist filtering
-├── vector.go            # Vector search, entity storage
+├── vector.go            # VectorIndex interface, wrappers (SearchByVector / StoreEntityWithEmbedding), entity storage
+├── vector_inmemory.go   # InMemoryVectorIndex — brute-force cosine scan, always compiled
+├── vector_sqlitevec.go  # SqliteVecIndex — vec0 KNN, build tag sqlite_vec
 ├── retrieval.go         # Recursive CTE graph walk, ranking, markdown formatting
 ├── ingestion.go         # Ingestion worker, entity extraction, deduplication
 ├── server.go            # HTTP API server + strict JSON decoder
@@ -456,37 +462,37 @@ edge is enough for the walk to find the reverse connection.
 
 ### Numbers
 
-| Entities | Vector search | Graph walk (depth 2, middle seed) |
-|---------:|--------------:|----------------------------------:|
-| 1,000    |  1.4 ms       |   43 ms                           |
-| 3,000    |  4.5 ms       |  111 ms                           |
-| 6,000    |  8.9 ms       |  237 ms                           |
+Benchmarked on Apple M1 (768D embeddings, `topK=10`):
 
-Captured on a current Apple M1 machine; cross-platform
-jitter is expected.
+| N | In-Memory (brute-force) | sqlite-vec (KNN index) | Allocs (mem / vec) |
+|--:|------------------------:|-----------------------:|-------------------:|
+| 100 | 58 µs | 410 µs | 926 / 290 |
+| 1,000 | 580 µs | 1.0 ms | 7,523 / 290 |
+| 5,000 | 2.9 ms | 6.8 ms | 35,280 / 290 |
+| 10,000 | 6.2 ms | 10.2 ms | 70,268 / 290 |
 
 ### Scaling
 
-- **Vector search** is **O(N)** in entity count (full cosine
-  scan over every embedding); N=3000 lands at ~3.2× the
-  N=1000 cost, N=6000 at ~6.5×, in line with the algorithm.
-- **Graph walk** is dominated by SQLite's recursive-CTE JOIN
-  cost over edges. Fan-out grows with N because long-range
-  targets uniformly fill the `[0, n)` pool (DELETE + rebuild
-  keeps the topology characteristic of the cohort); visited-
-  fact set size and CTE depth-times-iterations both scale
-  roughly linearly with edge count.
-
-The system handles up to ~20k entities with in-memory cosine
-similarity. Beyond that, consider switching to `sqlite-vec`
-for indexed vector search.
+- **In-Memory** (`InMemoryVectorIndex`, default) — brute-force
+  O(N) cosine scan. On M1 the NEON SIMD pipeline makes 768D
+  dot products extremely fast; at 10K entities a full scan takes
+  ~6 ms. Good for datasets up to ~20K entities.
+- **sqlite-vec** (`SqliteVecIndex`, `[database] backend = sqlite-vec`)
+  — indexed KNN via `vec0` virtual table. Does ~240× fewer
+  allocations (290 vs 70,268 at N=10K) but has SQLite query
+  overhead (plan, MATCH, distance sort). At N < 100K the
+  brute-force path is faster on M1; sqlite-vec pulls ahead
+  at larger scales where O(N) scan becomes prohibitive.
+- **Graph walk** — dominated by SQLite recursive-CTE JOIN
+  cost over edges, scales roughly linearly with edge count.
 
 ## Testing
 
 ```bash
-go test -count=1 ./...                # full suite (50+ tests + 6 benchmarks; ~2s)
-go test -v -count=1 -run TestServer ./...   # strict-decode table only
-go test -bench='Benchmark(SearchByVector|RetrieveContext)' -benchtime=1x -run=^$   # perf sanity
+go test -count=1 ./...                     # full suite (86 tests, ~3s)
+go test -v -count=1 -run TestServer ./...  # strict-decode table only
+go test -bench=BenchmarkInMemorySearch -benchmem -count=3 ./...    # in-memory vector perf
+go test -tags sqlite_vec -bench=BenchmarkSqliteVecSearch -benchmem -count=3 ./...  # sqlite-vec perf
 go test -v -run TestIntegration
 go test -v -run TestTiming
 ```
