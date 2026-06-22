@@ -345,9 +345,9 @@ func TestLoadConfigExtractionFallsBackToEmbedder(t *testing.T) {
 	// When extraction.provider/url/key are unset, NewExtractor should
 	// inherit embedder values.
 	cfg := &Config{
-		Provider:          "openai",
-		URL:               "https://api.openai.com/v1",
-		Key:               "sk-embedder",
+		Provider:           "openai",
+		URL:                "https://api.openai.com/v1",
+		Key:                "sk-embedder",
 		ExtractModel:       "gpt-4o-mini",
 		ExtractTemperature: 0.1,
 	}
@@ -361,7 +361,7 @@ func TestLoadConfigExtractionFallsBackToEmbedder(t *testing.T) {
 
 	// With explicit extraction provider, it should override
 	cfg2 := &Config{
-		Provider:          "ollama",
+		Provider:           "ollama",
 		ExtractProvider:    "openai",
 		ExtractURL:         "https://custom.openai.com",
 		ExtractKey:         "sk-custom",
@@ -453,5 +453,200 @@ func TestLoadConfigFromDir_MissingReturnsDefaults(t *testing.T) {
 	}
 	if cfg.DBPath != "hermem.db" {
 		t.Errorf("DBPath = %q, want default hermem.db", cfg.DBPath)
+	}
+}
+
+// TestParseCSVListIsIdempotentForEmpty exercises the edge cases of the
+// new helper: empty input returns nil, whitespace-only entries are
+// trimmed, consecutive commas collapse to nothing, and a single value
+// round-trips. Behaviour verified with table-driven cases so any
+// regression is captured explicitly.
+func TestParseCSVListIsIdempotentForEmpty(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"empty string", "", nil},
+		{"only commas", ",,,", nil},
+		{"only spaces", "   ", nil},
+		{"mixed empty + spaces", ", , , ", nil},
+		{"single value", "meta", []string{"meta"}},
+		{"three values", "meta, intent, schema", []string{"meta", "intent", "schema"}},
+		{"trailing + leading whitespace", "  meta  ,  intent  ", []string{"meta", "intent"}},
+		{"trailing comma", "meta, intent,", []string{"meta", "intent"}},
+		{"double commas", "meta,, intent", []string{"meta", "intent"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseCSVList(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("at position %d: got %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestLoadConfigParsesExtraCategoriesAndRelationTypes confirms that
+// the new [extraction].extra_categories and [extraction].extra_relation_types
+// INI keys parse correctly. Empty/blank entries are dropped (matches the
+// parseCSVList contract) so a typo like `,,` in operator config does
+// not surface as a filter key.
+func TestLoadConfigParsesExtraCategoriesAndRelationTypes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[extraction]
+extra_categories = meta, intent,, schema
+extra_relation_types = supports, blocks, references
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	wantCats := []string{"meta", "intent", "schema"}
+	if len(cfg.ExtraCategories) != len(wantCats) {
+		t.Fatalf("ExtraCategories len = %d (%v), want %d (%v)",
+			len(cfg.ExtraCategories), cfg.ExtraCategories, len(wantCats), wantCats)
+	}
+	for i, want := range wantCats {
+		if cfg.ExtraCategories[i] != want {
+			t.Errorf("ExtraCategories[%d] = %q, want %q", i, cfg.ExtraCategories[i], want)
+		}
+	}
+
+	wantRels := []string{"supports", "blocks", "references"}
+	if len(cfg.ExtraRelationTypes) != len(wantRels) {
+		t.Fatalf("ExtraRelationTypes len = %d (%v), want %d (%v)",
+			len(cfg.ExtraRelationTypes), cfg.ExtraRelationTypes, len(wantRels), wantRels)
+	}
+	for i, want := range wantRels {
+		if cfg.ExtraRelationTypes[i] != want {
+			t.Errorf("ExtraRelationTypes[%d] = %q, want %q", i, cfg.ExtraRelationTypes[i], want)
+		}
+	}
+}
+
+// TestLoadConfigExtrasDefaultToNil checks that the Config struct's
+// ExtraCategories / ExtraRelationTypes fields nil-out when no keys are
+// present in the ini — so callers can distinguish "operator set an
+// empty list" from "operator never wrote the key". Both zero to nil.
+func TestLoadConfigExtrasDefaultToNil(t *testing.T) {
+	cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.ini"))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.ExtraCategories != nil {
+		t.Errorf("ExtraCategories = %v, want nil for default config", cfg.ExtraCategories)
+	}
+	if cfg.ExtraRelationTypes != nil {
+		t.Errorf("ExtraRelationTypes = %v, want nil for default config", cfg.ExtraRelationTypes)
+	}
+
+	// Empty string in INI parses to nil via parseCSVList.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[extraction]
+extra_categories =
+extra_relation_types =
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err = LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.ExtraCategories != nil {
+		t.Errorf("ExtraCategories with empty key = %v, want nil", cfg.ExtraCategories)
+	}
+	if cfg.ExtraRelationTypes != nil {
+		t.Errorf("ExtraRelationTypes with empty key = %v, want nil", cfg.ExtraRelationTypes)
+	}
+}
+
+// TestConfigAllowedCategoriesMergesDefaultsAndExtras verifies the
+// Config.AllowedCategories method returns the union of package-level
+// defaults (world, opinion, experience, observation) and any operator
+// extras configured via [extraction].extra_categories. Extras do not
+// replace defaults — both coexist so an operator can extend without
+// retroactively breaking stored data.
+func TestConfigAllowedCategoriesMergesDefaultsAndExtras(t *testing.T) {
+	cfg := &Config{ExtraCategories: []string{"meta", "intent"}}
+	got := cfg.AllowedCategories()
+
+	// All four defaults must be present.
+	for _, want := range []string{"world", "opinion", "experience", "observation"} {
+		if !got[want] {
+			t.Errorf("default category %q missing from AllowedCategories", want)
+		}
+	}
+	// Both extras must be present.
+	for _, want := range []string{"meta", "intent"} {
+		if !got[want] {
+			t.Errorf("extra category %q missing from AllowedCategories", want)
+		}
+	}
+	// An unrelated tag should NOT be present.
+	if got["nonexistent"] {
+		t.Error("nonexistent present in AllowedCategories")
+	}
+	// Total size: 4 defaults + 2 extras = 6.
+	if len(got) != 6 {
+		t.Errorf("AllowedCategories size = %d, want 6 (4 defaults + 2 extras)", len(got))
+	}
+}
+
+// TestConfigAllowedRelationTypesMergesDefaultsAndExtras mirrors the
+// category test for relation-type merging: defaults (prefers, uses,
+// mentions, related_to, part_of, causes, contradicts) plus extras.
+func TestConfigAllowedRelationTypesMergesDefaultsAndExtras(t *testing.T) {
+	cfg := &Config{ExtraRelationTypes: []string{"supports", "blocks"}}
+	got := cfg.AllowedRelationTypes()
+
+	for _, want := range []string{"prefers", "uses", "mentions", "related_to", "part_of", "causes", "contradicts"} {
+		if !got[want] {
+			t.Errorf("default relation %q missing from AllowedRelationTypes", want)
+		}
+	}
+	for _, want := range []string{"supports", "blocks"} {
+		if !got[want] {
+			t.Errorf("extra relation %q missing from AllowedRelationTypes", want)
+		}
+	}
+	if got["nonexistent"] {
+		t.Error("nonexistent present in AllowedRelationTypes")
+	}
+	if len(got) != 9 {
+		t.Errorf("AllowedRelationTypes size = %d, want 9 (7 defaults + 2 extras)", len(got))
+	}
+}
+
+// TestConfigAllowedMapsReturnFreshCopies verifies the maps returned by
+// AllowedCategories/AllowedRelationTypes are not shared across calls.
+// A future bug where the same map was returned every call would let one
+// goroutine's mutation leak into another. The test mutates the first
+// returned map and confirms the second call still reflects only the
+// Config-driven state.
+func TestConfigAllowedMapsReturnFreshCopies(t *testing.T) {
+	cfg := &Config{ExtraRelationTypes: []string{"supports"}}
+
+	first := cfg.AllowedRelationTypes()
+	first["rogue-key"] = true
+
+	second := cfg.AllowedRelationTypes()
+	if second["rogue-key"] {
+		t.Errorf("AllowedRelationTypes returned a shared map; mutation leaked into second call")
+	}
+	if !second["supports"] {
+		t.Errorf("extras lost between calls: %v", second)
 	}
 }
