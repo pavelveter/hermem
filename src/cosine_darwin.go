@@ -3,6 +3,7 @@
 package main
 
 /*
+#cgo CFLAGS: -DACCELERATE_NEW_LAPACK
 #cgo LDFLAGS: -framework Accelerate
 #include <Accelerate/Accelerate.h>
 */
