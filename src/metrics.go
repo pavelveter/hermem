@@ -15,13 +15,13 @@ var (
 	metricErrs      = expvar.NewInt("hermem_errors_total")
 )
 
-func incStore()   { metricStores.Add(1) }
-func incSearch()  { metricSearches.Add(1) }
-func incRetrieve(){ metricRetrieves.Add(1) }
-func incIngest()  { metricIngests.Add(1) }
-func incQuery()   { metricQueries.Add(1) }
-func incEdge()    { metricEdges.Add(1) }
-func incErr()     { metricErrs.Add(1) }
+func incStore()    { metricStores.Add(1) }
+func incSearch()   { metricSearches.Add(1) }
+func incRetrieve() { metricRetrieves.Add(1) }
+func incIngest()   { metricIngests.Add(1) }
+func incQuery()    { metricQueries.Add(1) }
+func incEdge()     { metricEdges.Add(1) }
+func incErr()      { metricErrs.Add(1) }
 
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

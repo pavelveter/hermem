@@ -18,6 +18,21 @@ const (
 	rankRecencyWeight        = 0.3
 	rankRecencyHalfLifeHours = 30 * 24 // exp decay half-life (720h = 30d)
 
+	// rankDepthPenaltyPerUnit is the linear per-depth penalty applied
+	// by defaultCompositeScorer for graph-walk nodes at depth > 0.
+	// Concretely each depth unit subtracts 0.05 from the composite
+	// score. The penalty is intentionally small enough that pure
+	// recency dominates a stale entry by the time it ages past a
+	// year of decay at half-life 720h, but large enough to surface a
+	// highly-relevant mid-depth node over a far-periphery noise
+	// node when the cosine gap is moderate. See Batch 8 §16 for the
+	// trade-off analysis.
+	//
+	// Seed nodes (Depth == 0) receive a 0-multiplied penalty so
+	// they remain privileged when the user is asking about exactly
+	// that node.
+	rankDepthPenaltyPerUnit = 0.05
+
 	// rankScoreMin is the theoretical lower bound on the composite score
 	// when cosine similarity hits its floor of -1; used purely for the
 	// doc-comment invariant and any future sanity checks.
@@ -32,28 +47,79 @@ type rankedNode struct {
 	score float32
 }
 
-// computeRankingScore combines vector similarity (cosine) against the
-// query and an exponential recency decay (half-life of 30 days). The
-// theoretical score range is [rankScoreMin, 1.0] because cosine lives in
-// [-1, 1] and recency in (0, 1]. Missing inputs degrade gracefully
-// rather than abort: empty OR absent embedding bytes on either side →
-// sim=0; UpdatedAt.IsZero() (defensive for test fixtures) → recency=1
-// (treat as fresher than any real timestamp).
-func computeRankingScore(queryEmbedding []float32, nodeEmbedding []byte, updatedAt time.Time) float32 {
+// CompositeScorer combines vector similarity, recency decay, and a
+// depth penalty into a single deterministic float32 score used to
+// order the post-scan category buckets. nil opts.CompositeScorer
+// means "use the package-level default" — see defaultCompositeScorer.
+//
+// Parameters (per call, one row at a time):
+//   - node: the row's GraphNode as scanned from the CTE. node.Entity
+//     includes UpdatedAt (recency input) and Category (informational
+//     only — default scorer does not weight by category).
+//   - nodeEmbedding: the raw blob bytes from the entities.embedding
+//     column, included for callers that want to inspect the row
+//     storage format (e.g. signature-matching, copy-on-write). The
+//     default scorer does NOT decode from here — it uses nodeVec.
+//   - nodeVec: the decoded `[]float32` for the row's embedding,
+//     precomputed once in the row-scan loop. nil when the row had
+//     no embedding bytes or the decode failed; custom scorers
+//     should treat nil as "no embedding signal available" rather
+//     than calling DecodeVector themselves (which would re-pay the
+//     decode cost the framework already paid).
+//   - queryEmbedding: the user's original query vector (may be nil
+//     or empty when the caller asked for a recency-only ranking).
+//   - queryNorm: the precomputed L2 norm of queryEmbedding. 0 when
+//     the query is missing/empty. Saves one sqrt per row that
+//     CosineSimilarityWithNorm would otherwise repeat; the same
+//     value is passed to every row in a single retrieval call.
+//
+// Signature shape rationale: passing raw params rather than a struct
+// avoids per-row allocation in the row loop, and adding nodeVec as
+// a separate param avoids forcing custom scorers through
+// DecodeVector (the framework already decoded it).
+type CompositeScorer func(node GraphNode, nodeEmbedding []byte, nodeVec []float32, queryEmbedding []float32, queryNorm float32) float32
+
+// defaultCompositeScorer is the package-level fallback for opts
+// CompositeScorer == nil. Formula:
+//
+//	score = rankVectorWeight*sim
+//	      + rankRecencyWeight*recency
+//	      - rankDepthPenaltyPerUnit*float32(node.Depth)
+//
+// Where:
+//   - sim = CosineSimilarityWithNorm(decoded node embedding,
+//     queryEmbedding, queryNorm); 0 when either norm is 0 OR the
+//     query embedding is missing.
+//   - recency = exp(-hoursOld / rankRecencyHalfLifeHours),
+//     hoursOld = time.Since(node.Entity.UpdatedAt).Hours(). When
+//     UpdatedAt is zero (test fixtures without timestamps) recency
+//     stays at 1.0 — treat as "fresher than any real timestamp"
+//     rather than "0 years old" (which would also score 1.0, but
+//     only by coincidence).
+//   - depth penalty only applies to graph-walk nodes (Depth > 0).
+//     Seeds (Depth == 0) score unchanged from the pre-#16 weighting
+//     so existing depth=0 fixtures reproduce verbatim.
+func defaultCompositeScorer(
+	node GraphNode,
+	_ []byte,
+	nodeVec []float32,
+	queryEmbedding []float32,
+	queryNorm float32,
+) float32 {
 	var sim float32
-	if len(queryEmbedding) > 0 && len(nodeEmbedding) > 0 {
-		if emb, err := DecodeVector(nodeEmbedding, len(queryEmbedding)); err == nil {
-			sim = CosineSimilarity(queryEmbedding, emb)
-		}
+	if len(queryEmbedding) > 0 && len(nodeVec) > 0 {
+		sim = CosineSimilarityWithNorm(nodeVec, queryEmbedding, queryNorm)
 	}
 	var recency float32 = 1
-	if !updatedAt.IsZero() {
-		hoursOld := float32(time.Since(updatedAt).Hours())
+	if !node.Entity.UpdatedAt.IsZero() {
+		hoursOld := float32(time.Since(node.Entity.UpdatedAt).Hours())
 		if hoursOld > 0 {
 			recency = float32(math.Exp(-float64(hoursOld) / float64(rankRecencyHalfLifeHours)))
 		}
 	}
-	return rankVectorWeight*sim + rankRecencyWeight*recency
+	return rankVectorWeight*sim +
+		rankRecencyWeight*recency -
+		rankDepthPenaltyPerUnit*float32(node.Depth)
 }
 
 type GraphNode struct {
@@ -63,10 +129,14 @@ type GraphNode struct {
 	ParentID     string `json:"parent_id"`
 	RelationType string `json:"relation_type,omitempty"`
 	// RankingScore is the deterministic composite score used for ordering
-	// category-bucket output. It is computed as 0.7*sim + 0.3*recency.
+	// category-bucket output. The default formula is 0.7*sim +
+	// 0.3*recency - 0.05*Depth, applied by defaultCompositeScorer (see
+	// RetrieveContextOptions.CompositeScorer for the override hook).
 	// 0.0 when the ranker inputs were unavailable (no QueryEmbedding and
 	// no UpdatedAt). Callers may inspect or sort by it, but the canonical
-	// ordering rule is the internal re-rank after scan.
+	// ordering rule is the internal re-rank after scan. A custom
+	// CompositeScorer may return any float32, including negative or
+	// unboundedly positive values; the post-scan sort orders descending.
 	RankingScore float32 `json:"ranking_score"`
 }
 
@@ -108,6 +178,19 @@ type RetrieveContextOptions struct {
 	// vector similarity component of the re-rank score. Nil/empty
 	// disables vector scoring and falls back to recency-only ranking.
 	QueryEmbedding []float32
+	// CompositeScorer overrides the default scoring formula for
+	// ordering graph-walk results. nil → uses defaultCompositeScorer
+	// (rankVectorWeight*sim + rankRecencyWeight*recency -
+	// rankDepthPenaltyPerUnit*depth). Custom scorers receive the
+	// row's GraphNode (with Entity.UpdatedAt intact for recency),
+	// the raw embedding bytes (informational; not required for
+	// similarity scoring), the decoded node embedding as nodeVec
+	// (the framework precomputed it once via DecodeVector so
+	// custom scorers don't pay the decode cost themselves), the
+	// query embedding, and the precomputed query norm (0 when
+	// QueryEmbedding is empty). See the CompositeScorer func-type
+	// comment for the full arg list and allocation rationale.
+	CompositeScorer CompositeScorer
 	// Ctx carries request-scoped values (request_id) through the
 	// retrieval pipeline for structured logging.
 	Ctx context.Context
@@ -124,6 +207,27 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 	}
 	if opts.DepthCeiling > 0 && effectiveDepth > opts.DepthCeiling {
 		effectiveDepth = opts.DepthCeiling
+	}
+
+	// #17: precompute the query embedding's L2 norm once per
+	// retrieval call. BatchDotProducts / defaultCompositeScorer
+	// need it on every row; caching it here saves one sqrt per row
+	// (CosineSimilarity previously recomputed it). 0 when the
+	// query embedding is missing/empty, which the default scorer
+	// translates into "sim=0" via the normB2/normA guard.
+	var queryNorm float32
+	if len(opts.QueryEmbedding) > 0 {
+		queryNorm = VectorNorm(opts.QueryEmbedding)
+	}
+
+	// resolve the scorer once per call: nil opts → default. Assigning
+	// a package-level function to a local variable is allocation-free
+	// (the function value is statically allocated), so the row loop
+	// pays no closure-box allocation cost even when the user supplies
+	// their own CompositeScorer.
+	scorer := opts.CompositeScorer
+	if scorer == nil {
+		scorer = defaultCompositeScorer
 	}
 
 	// Seed IDs are inlined into the recursive CTE here rather than
@@ -257,11 +361,25 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 			break
 		}
 
-		// Compute the re-rank score from query similarity + recency and
-		// stash the node alongside its score so the post-scan sort can
-		// produce deterministic category-bucket ordering without a second
-		// pass over the result set.
-		score := computeRankingScore(opts.QueryEmbedding, embeddingBlob, node.Entity.UpdatedAt)
+		// Decode the row's embedding once so the default
+		// CompositeScorer doesn't re-decode, and so custom scorers
+		// receive a ready-to-use []float32 rather than raw bytes.
+		// DecodeVector only succeeds when the query-side length
+		// matches the stored dim (an early-write contract); a
+		// mismatch becomes nodeVec=nil and the default scorer
+		// treats it as "no embedding signal".
+		var nodeVec []float32
+		if len(opts.QueryEmbedding) > 0 && len(embeddingBlob) > 0 {
+			if v, err := DecodeVector(embeddingBlob, len(opts.QueryEmbedding)); err == nil {
+				nodeVec = v
+			}
+		}
+
+		// Compute the re-rank score via the resolved CompositeScorer
+		// (custom or default) and stash the node alongside its score
+		// so the post-scan sort can produce deterministic category-
+		// bucket ordering without a second pass over the result set.
+		score := scorer(node, embeddingBlob, nodeVec, opts.QueryEmbedding, queryNorm)
 		node.RankingScore = score
 		ranked = append(ranked, rankedNode{node: node, score: score})
 

@@ -18,16 +18,16 @@ func TestIntegration(t *testing.T) {
 
 	// Test 1: Store fact and link to another node
 	fact1 := Entity{
-		ID:       "verify-fact-1",
-		Category: "world",
-		Content:  "Go is a statically typed programming language",
+		ID:        "verify-fact-1",
+		Category:  "world",
+		Content:   "Go is a statically typed programming language",
 		Embedding: []float32{0.1, 0.2, 0.3},
 	}
 
 	fact2 := Entity{
-		ID:       "verify-fact-2",
-		Category: "world",
-		Content:  "Go was created at Google",
+		ID:        "verify-fact-2",
+		Category:  "world",
+		Content:   "Go was created at Google",
 		Embedding: []float32{0.15, 0.25, 0.35},
 	}
 

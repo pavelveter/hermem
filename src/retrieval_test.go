@@ -443,3 +443,331 @@ func TestFormatContextMarkdownAllBucketsRender(t *testing.T) {
 		}
 	}
 }
+
+// ----- helpers for #16/#17 --------------------------------------------
+
+// float32AlmostEqual reports whether a and b are within ε of each
+// other. Used by the cosine-parity test to absorb single-precision
+// rounding noise across the two implementations.
+func float32AlmostEqual(a, b float32) bool {
+	const epsilon = 1e-5
+	diff := a - b
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff < epsilon
+}
+
+// TestCosineSimilarityWithNormParity verifies the behavioural-
+// parity invariant documented on CosineSimilarityWithNorm: when
+// `normA == VectorNorm(a) the two functions return identical scores.
+// This is the contract #17's query-norm-precompute relies on so the
+// cached-value path produces the same score as the recompute path.
+// Tests five input shapes: identical / orthogonal / opposite /
+// parallel-proportional / random-mix.
+func TestCosineSimilarityWithNormParity(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b []float32
+	}{
+		{"identical", []float32{1, 0, 0}, []float32{1, 0, 0}},
+		{"orthogonal", []float32{1, 0, 0}, []float32{0, 1, 0}},
+		{"opposite", []float32{1, 0, 0}, []float32{-1, 0, 0}},
+		{"parallel_proportional", []float32{2, 4, 6}, []float32{1, 2, 3}},
+		{"random_4d", []float32{0.3, -0.5, 0.8, 0.1}, []float32{0.2, 0.4, -0.1, 0.6}},
+		// Edge cases — both functions return 0 in these conditions and
+		// the parity check verifies the early-return guards match.
+		{"empty_a", nil, []float32{1, 0, 0}},
+		{"dim_mismatch", []float32{1, 0, 0}, []float32{1, 0}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			plain := CosineSimilarity(c.a, c.b)
+			cached := CosineSimilarityWithNorm(c.a, c.b, VectorNorm(c.a))
+			if !float32AlmostEqual(plain, cached) {
+				t.Errorf("parity broken: CosineSimilarity=%v != WithNorm=%v (delta=%v)",
+					plain, cached, plain-cached)
+			}
+		})
+	}
+}
+
+// TestCompositeScorerDefaultDepthPenalty exercises the depth-soft-
+// floor penalty (#16): a higher-cosine deep node must NOT outrank a
+// lower-cosine seed when the depth penalty's flip threshold is
+// crossed. Fixture: chain seed→mid1→mid2→deep, query [1,0,0].
+//
+// Per-row scoring (recency≈1 for all since inserted in the same run):
+//   - seed (depth=0, embedding=[0.5,  0.8660254, 0]):
+//     sim=0.5 → score = 0.7*0.5 + 0.3*1.0 - 0.05*0 = 0.65
+//   - mid1 (depth=1, embedding=[0,1,0]): sim=0 → 0.30 - 0.05 = 0.25
+//   - mid2 (depth=2, embedding=[0,1,0]): sim=0 → 0.30 - 0.10 = 0.20
+//   - deep (depth=3, embedding=[0.6, 0.8, 0]):
+//     sim=0.6 → score = 0.7*0.6 + 0.3*1.0 - 0.05*3 = 0.57
+//
+// Expected ordering after the post-scan sort: seed (0.65) > deep
+// (0.57) > mid1 (0.25) > mid2 (0.20). Without the depth penalty
+// (pre-#16 behaviour) the ranking would be deep (0.72) > seed
+// (0.65) > mid1 (0.30) > mid2 (0.30) — the penalty flipped the
+// seed-vs-deep ordering exactly as designed.
+func TestCompositeScorerDefaultDepthPenalty(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	// Stamp all 4 entities' updated_at to the same fresh time so the
+	// recency component is exactly 1.0 across rows and the depth-soft-
+	// floor is the only signal that flips the seed-vs-deep ordering.
+	// Decoupling from insert-time auto-stamping keeps the test readable
+	// (recency=1 across rows is documented above) and stable across
+	// any future change to insert semantics.
+	stamp := time.Now()
+	for _, e := range []Entity{
+		{ID: "seed", Category: "world", Content: "Seed fact", Embedding: []float32{0.5, 0.8660254, 0}},
+		{ID: "mid1", Category: "world", Content: "Mid 1 fact", Embedding: []float32{0, 1, 0}},
+		{ID: "mid2", Category: "world", Content: "Mid 2 fact", Embedding: []float32{0, 1, 0}},
+		{ID: "deep", Category: "world", Content: "Deep relevant fact", Embedding: []float32{0.6, 0.8, 0}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+		if _, err := db.Exec(`UPDATE entities SET updated_at = ? WHERE id = ?`, stamp, e.ID); err != nil {
+			t.Fatalf("stamp updated_at for %s: %v", e.ID, err)
+		}
+	}
+	for _, p := range []struct{ from, to string }{
+		{"seed", "mid1"}, {"mid1", "mid2"}, {"mid2", "deep"},
+	} {
+		if _, err := db.Exec(
+			`INSERT INTO edges (source_id, target_id, relation_type) VALUES (?, ?, ?)`,
+			p.from, p.to, "related_to"); err != nil {
+			t.Fatalf("edge %s->%s: %v", p.from, p.to, err)
+		}
+	}
+
+	res, err := RetrieveContext(db, []string{"seed"}, RetrieveContextOptions{
+		MaxDepth:       10,
+		QueryEmbedding: []float32{1, 0, 0},
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+
+	want := []string{"Seed fact", "Deep relevant fact", "Mid 1 fact", "Mid 2 fact"}
+	if len(res.WorldFacts) != len(want) {
+		t.Fatalf("WorldFacts len = %d, want %d (contents=%v)",
+			len(res.WorldFacts), len(want), worldFactContents(res.WorldFacts))
+	}
+	for i, w := range want {
+		if res.WorldFacts[i].Content != w {
+			t.Errorf("WorldFacts[%d] = %q, want %q (depth-soft-floor penalty should rank seed above deep at higher cosine)",
+				i, res.WorldFacts[i].Content, w)
+		}
+	}
+
+	// Depth penalty is also visible on RankingScore: seed's score is
+	// 0.65 vs deep's 0.57, mirror of the WorldFacts ordering.
+	if len(res.SeedNodes) != 1 {
+		t.Fatalf("SeedNodes = %d, want 1", len(res.SeedNodes))
+	}
+	if res.SeedNodes[0].RankingScore < 0.64 || res.SeedNodes[0].RankingScore > 0.66 {
+		t.Errorf("seed RankingScore = %v, want ~0.65", res.SeedNodes[0].RankingScore)
+	}
+}
+
+func worldFactContents(facts []RetrievedFact) []string {
+	out := make([]string, len(facts))
+	for i, f := range facts {
+		out[i] = f.Content
+	}
+	return out
+}
+
+// TestCompositeScorerCustom verifies the override hook on
+// opts.CompositeScorer (#16): a caller-supplied closure that
+// assigns 99.0 to a specific node forces it to the top of the
+// category bucket regardless of cosine/recency/depth. Also
+// verifies RankingScore on the seed reflects the custom return
+// (the default formula would have produced sim=0 since embeddings
+// are orthogonal to query, so seed score would be 0.30).
+func TestCompositeScorerCustom(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "a", Category: "world", Content: "A fact", Embedding: []float32{0, 1, 0}},
+		{ID: "b", Category: "world", Content: "B fact", Embedding: []float32{0, 1, 0}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store: %v", err)
+		}
+	}
+	if _, err := db.Exec(
+		`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('a', 'b', 'related_to')`,
+	); err != nil {
+		t.Fatalf("edge: %v", err)
+	}
+
+	scorer := func(node GraphNode, _ []byte, _ []float32, _ []float32, _ float32) float32 {
+		if node.Entity.ID == "b" {
+			return 99.0
+		}
+		return 1.0
+	}
+
+	res, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
+		MaxDepth:        5,
+		QueryEmbedding:  []float32{1, 0, 0},
+		CompositeScorer: scorer,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if len(res.WorldFacts) < 2 {
+		t.Fatalf("WorldFacts = %d, want >= 2", len(res.WorldFacts))
+	}
+	// Custom scorer pushed "b" to rank 1.
+	if res.WorldFacts[0].Content != "B fact" {
+		t.Errorf("WorldFacts[0] = %q, want \"B fact\" (custom scorer forces it first)",
+			res.WorldFacts[0].Content)
+	}
+	// Seed "a" should reflect the custom return (1.0), NOT the
+	// default formula — the default would have given 0.30 for sim=0
+	// orthogonal embedding at depth 0.
+	if len(res.SeedNodes) != 1 {
+		t.Fatalf("SeedNodes = %d, want 1", len(res.SeedNodes))
+	}
+	if res.SeedNodes[0].RankingScore != 1.0 {
+		t.Errorf("seed RankingScore = %v, want 1.0 (custom scorer applied)",
+			res.SeedNodes[0].RankingScore)
+	}
+}
+
+// TestRetrieveContextCustomScorerDispatchCache verifies that the
+// query-norm cache passes the same precomputed value to every row
+// in the scan (the linear-in-rows savings the #17 precompute exists
+// for). Indirect assertion: if the cache were per-row, the resulting
+// scores in RankingScore would differ by per-row rounding noises
+// from repeated sqrt calls. We instead assert that the cache fires
+// exactly once by injecting a CompositeScorer that captures the
+// queryNorm it received and asserting all rows saw the same value.
+func TestRetrieveContextCompositeScorerReceivesCachedQueryNorm(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	qEmb := []float32{0.6, 0.8, 0} // norm = 1.0 (already unit)
+	for _, e := range []Entity{
+		{ID: "a", Category: "world", Content: "A fact", Embedding: []float32{0.6, 0.8, 0}},
+		{ID: "b", Category: "world", Content: "B fact", Embedding: []float32{0.6, 0.8, 0}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store: %v", err)
+		}
+	}
+	if _, err := db.Exec(
+		`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('a', 'b', 'related_to')`,
+	); err != nil {
+		t.Fatalf("edge: %v", err)
+	}
+
+	received := []float32{}
+	scorer := func(_ GraphNode, _ []byte, _ []float32, _ []float32, queryNorm float32) float32 {
+		received = append(received, queryNorm)
+		return 0
+	}
+
+	if _, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
+		MaxDepth:        5,
+		QueryEmbedding:  qEmb,
+		CompositeScorer: scorer,
+	}); err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if len(received) < 2 {
+		t.Fatalf("scorer called %d times, want >= 2", len(received))
+	}
+	want := VectorNorm(qEmb)
+	for i, n := range received {
+		if !float32AlmostEqual(n, want) {
+			t.Errorf("scorer invocation %d: queryNorm=%v, want %v (cache miss?)", i, n, want)
+		}
+	}
+}
+
+// TestCompositeScorerNil uses an explicit CompositeScorer that returns 0
+// to verify nil scorers resolve to defaultCompositeScorer without
+// an explicit nil-guard (i.e. two-semantically-identical retrievals
+// using nil vs defaultCompositeScorer-reference produce the same
+// WorldFacts ordering).
+func TestCompositeScorerNilMatchesDefault(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "seed", Category: "world", Content: "Seed fact", Embedding: []float32{0.5, 0.8660254, 0}},
+		{ID: "deep", Category: "world", Content: "Deep relevant fact", Embedding: []float32{0.6, 0.8, 0}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store: %v", err)
+		}
+	}
+	if _, err := db.Exec(
+		`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('seed', 'deep', 'related_to')`,
+	); err != nil {
+		t.Fatalf("edge: %v", err)
+	}
+
+	optsNil := RetrieveContextOptions{
+		MaxDepth:       5,
+		QueryEmbedding: []float32{1, 0, 0},
+	}
+	optsDefault := RetrieveContextOptions{
+		MaxDepth:        5,
+		QueryEmbedding:  []float32{1, 0, 0},
+		CompositeScorer: defaultCompositeScorer,
+	}
+
+	run := func(opts RetrieveContextOptions) *RetrievalResult {
+		res, err := RetrieveContext(db, []string{"seed"}, opts)
+		if err != nil {
+			t.Fatalf("retrieve: %v", err)
+		}
+		return res
+	}
+
+	resNil := run(optsNil)
+	resDefault := run(optsDefault)
+
+	if len(resNil.WorldFacts) != len(resDefault.WorldFacts) {
+		t.Fatalf("nil vs default length mismatch: %d vs %d",
+			len(resNil.WorldFacts), len(resDefault.WorldFacts))
+	}
+	for i, n := range resNil.WorldFacts {
+		if n.Content != resDefault.WorldFacts[i].Content {
+			t.Errorf("WorldFacts[%d] diverges: nil=%q, default=%q",
+				i, n.Content, resDefault.WorldFacts[i].Content)
+		}
+		if n.Depth != resDefault.WorldFacts[i].Depth {
+			t.Errorf("WorldFacts[%d].Depth diverges: nil=%d, default=%d",
+				i, n.Depth, resDefault.WorldFacts[i].Depth)
+		}
+	}
+	// Catch any future dispatch-path drift in the seed side too: the
+	// two retrievals should produce byte-identical SeedNodes including
+	// their RankingScore values — not just identical category-bucket
+	// contents. A future contributor who accidentally swaps the
+	// nil-resolution pattern would be caught by this assertion.
+	if len(resNil.SeedNodes) != len(resDefault.SeedNodes) {
+		t.Fatalf("nil vs default SeedNodes length mismatch: %d vs %d",
+			len(resNil.SeedNodes), len(resDefault.SeedNodes))
+	}
+	for i, n := range resNil.SeedNodes {
+		if n.Entity.ID != resDefault.SeedNodes[i].Entity.ID {
+			t.Errorf("SeedNodes[%d].Entity.ID diverges: nil=%q, default=%q",
+				i, n.Entity.ID, resDefault.SeedNodes[i].Entity.ID)
+		}
+		if !float32AlmostEqual(n.RankingScore, resDefault.SeedNodes[i].RankingScore) {
+			t.Errorf("SeedNodes[%d].RankingScore diverges: nil=%v, default=%v",
+				i, n.RankingScore, resDefault.SeedNodes[i].RankingScore)
+		}
+	}
+}

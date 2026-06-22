@@ -194,5 +194,3 @@ func checkMeta(db *sql.DB, dim int) error {
 	}
 	return nil
 }
-
-
