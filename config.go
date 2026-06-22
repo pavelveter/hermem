@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -41,6 +42,16 @@ type Config struct {
 	// Only relevant when VectorBackend = "sqlite-vec".
 	// Must match the actual output dimension of the configured embedder model.
 	VectorDim int
+	// Retention controls automatic archival of stale nodes.
+	// world facts are permanent; observation nodes past ObservationTTL
+	// are flagged archived and excluded from graph walks.
+	Retention RetentionPolicy
+}
+
+type RetentionPolicy struct {
+	ObservationTTL  time.Duration // observations older than this → archived
+	RunInterval     time.Duration // how often the GC loop fires
+	DeleteBatchSize int           // max nodes archived per cycle (0 = no limit)
 }
 
 // LoadConfig parses hermem.ini from `path` exactly as given — no
@@ -63,6 +74,11 @@ func LoadConfig(path string) (*Config, error) {
 		MaxRetrievedNodes: 100,
 		VectorBackend:     "in-memory",
 		VectorDim:         768,
+		Retention: RetentionPolicy{
+			ObservationTTL:  90 * 24 * time.Hour,
+			RunInterval:     1 * time.Hour,
+			DeleteBatchSize: 500,
+		},
 	}
 
 	f, err := os.Open(path)

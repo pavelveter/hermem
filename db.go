@@ -9,11 +9,13 @@ import (
 )
 
 type Entity struct {
-	ID        string    `json:"id"`
-	Category  string    `json:"category"`
-	Content   string    `json:"content"`
-	Embedding []float32 `json:"embedding,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	Category       string    `json:"category"`
+	Content        string    `json:"content"`
+	Embedding      []float32 `json:"embedding,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	LastAccessedAt time.Time `json:"last_accessed_at"`
+	Archived       bool      `json:"archived"`
 }
 
 type Edge struct {
@@ -67,5 +69,59 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create edges table: %w", err)
 	}
 
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)
+	`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to create meta table: %w", err)
+	}
+
+	if err := migrateSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("schema migration: %w", err)
+	}
+
+	if err := checkMeta(db, vectorDim); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("schema validation: %w", err)
+	}
+
 	return db, nil
 }
+
+func migrateSchema(db *sql.DB) error {
+	migrations := []struct {
+		name string
+		sql  string
+	}{
+		{"last_accessed_at", `ALTER TABLE entities ADD COLUMN last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP`},
+		{"archived", `ALTER TABLE entities ADD COLUMN archived INTEGER DEFAULT 0`},
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m.sql); err != nil {
+			// Column already exists — ignore
+		}
+	}
+	return nil
+}
+
+func checkMeta(db *sql.DB, dim int) error {
+	var existingDim int
+	err := db.QueryRow("SELECT value FROM meta WHERE key = 'embedding_dim'").Scan(&existingDim)
+	if err == sql.ErrNoRows {
+		_, err = db.Exec("INSERT OR IGNORE INTO meta (key, value) VALUES ('embedding_dim', ?), ('model_name', '')", fmt.Sprintf("%d", dim))
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if existingDim != dim && existingDim != 0 {
+		return fmt.Errorf("embedding_dim mismatch: database has %d, config specifies %d — re-embedding required", existingDim, dim)
+	}
+	return nil
+}
+
+

@@ -70,8 +70,8 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 	}
 
 	rows, err := db.Query(fmt.Sprintf(`
-		SELECT id, category, content, embedding, updated_at
-		FROM entities WHERE id IN (%s)
+		SELECT id, category, content, embedding, updated_at, last_accessed_at
+		FROM entities WHERE id IN (%s) AND archived = 0
 	`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch entities: %w", err)
@@ -82,7 +82,7 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 	for rows.Next() {
 		var entity Entity
 		var embeddingBytes []byte
-		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt); err != nil {
+		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt, &entity.LastAccessedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan entity: %w", err)
 		}
 		sim := float32(0)
@@ -105,6 +105,13 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 	})
 	if topK > 0 && len(results) > topK {
 		results = results[:topK]
+	}
+	if len(results) > 0 {
+		accessed := make([]string, len(results))
+		for i, r := range results {
+			accessed[i] = r.Entity.ID
+		}
+		touchAccessedBatch(db, accessed)
 	}
 	return results, nil
 }
