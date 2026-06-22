@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// benchmarkRetrieveContext10k measures full-call RetrieveContext
-// latency on a 10k-row star graph (one seed fanning out to every other
+// benchmarkRetrieveContextStar measures full-call RetrieveContext
+// latency on a star graph (one seed fanning out to every other
 // entity), so depth=1 visits every row in the corpus — exactly the
 // workload for which the post-#17 query-norm precompute amortizes its
 // one-time sqrt.
@@ -16,7 +16,7 @@ import (
 // exposing the pre-#17 baseline cost. Combined with the post-#17
 // default path captured below, both columns in the CHANGELOG
 // appendix are reproducible from a single `go test -bench` invocation:
-// same harness, same 10k corpus, only the scorer changes.
+// same harness, same corpus, only the scorer changes.
 //
 // Star graph shape (1 seed → all others) is chosen over the
 // forward-chain used by BenchmarkRetrieveContextN so the CTE produces
@@ -31,7 +31,7 @@ import (
 // micro-architecture); the per-row sqrts vs single-sqrt delta is
 // stable. Re-running the bench on the host refreshes both rows in
 // the CHANGELOG appendix table.
-func benchmarkRetrieveContext10k(b *testing.B, perRowRecompute bool) {
+func benchmarkRetrieveContextStar(b *testing.B, perRowRecompute bool) {
 	db, err := InitDB(":memory:", 768)
 	if err != nil {
 		b.Fatalf("InitDB: %v", err)
@@ -106,7 +106,7 @@ func benchmarkRetrieveContext10k(b *testing.B, perRowRecompute bool) {
 // once at the top of RetrieveContext. Pays one sqrt per row (for
 // normB) and reuses the cached queryNorm across all rows.
 func BenchmarkRetrieveContextStarPrecompute(b *testing.B) {
-	benchmarkRetrieveContext10k(b, false)
+	benchmarkRetrieveContextStar(b, false)
 }
 
 // BenchmarkRetrieveContextStarRecompute is the pre-#17 baseline path:
@@ -116,5 +116,5 @@ func BenchmarkRetrieveContextStarPrecompute(b *testing.B) {
 // defaultCompositeScorer delegated to CosineSimilarity (the function
 // before it was split into WithNorm in commit 2c83bfe).
 func BenchmarkRetrieveContextStarRecompute(b *testing.B) {
-	benchmarkRetrieveContext10k(b, true)
+	benchmarkRetrieveContextStar(b, true)
 }
