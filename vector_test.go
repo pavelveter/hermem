@@ -251,10 +251,11 @@ func BenchmarkSearchByVector1000(b *testing.B) { benchmarkSearchByVector(b, 1000
 func BenchmarkSearchByVector5000(b *testing.B) { benchmarkSearchByVector(b, 5000) }
 
 func benchmarkSearchByVector(b *testing.B, n int) {
-	db, err := InitDB(":memory:")
+	db, err := InitDB(":memory:", 768)
 	if err != nil {
 		b.Fatalf("InitDB: %v", err)
 	}
+	currentVectorIndex = newVectorIndex("in-memory", db, 768)
 	defer db.Close()
 
 	for i := 0; i < n; i++ {

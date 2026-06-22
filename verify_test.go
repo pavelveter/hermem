@@ -9,10 +9,11 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
-	db, err := InitDB("verify-test.db")
+	db, err := InitDB("verify-test.db", 768)
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
+	currentVectorIndex = newVectorIndex("in-memory", db, 768)
 	defer db.Close()
 
 	// Test 1: Store fact and link to another node
@@ -119,10 +120,11 @@ func TestTiming(t *testing.T) {
 	longRangeMultipliers := []uint32{7, 11, 13}
 	retrieveSeed := "timing-fact-50"
 
-	db, err := InitDB("timing-test.db")
+	db, err := InitDB("timing-test.db", 768)
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
+	currentVectorIndex = newVectorIndex("in-memory", db, 768)
 	defer os.Remove("timing-test.db")
 	defer db.Close()
 

@@ -12,9 +12,10 @@ import (
 // in package main can `db := memDB(t)` without redeclaration.
 func memDB(t testing.TB) *sql.DB {
 	t.Helper()
-	db, err := InitDB(":memory:")
+	db, err := InitDB(":memory:", 768)
 	if err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
+	currentVectorIndex = newVectorIndex("in-memory", db, 768)
 	return db
 }
