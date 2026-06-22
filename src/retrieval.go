@@ -57,11 +57,11 @@ type rankedNode struct {
 //     includes UpdatedAt (recency input) and Category (informational
 //     only — default scorer does not weight by category).
 //   - nodeVec: the decoded `[]float32` for the row's embedding,
-//     precomputed once in the row-scan loop. nil when the row had
-//     no embedding bytes or the decode failed; custom scorers
-//     should treat nil as "no embedding signal available" rather
-//     than calling DecodeVector themselves (which would re-pay the
-//     decode cost the framework already paid).
+//     precomputed once in the row-scan loop. nil when the row has
+//     no embedding or the decode failed; custom scorers treat nil
+//     as "no embedding signal available" (this is the only embedding
+//     data path exposed to custom scorers — there is no raw-bytes
+//     fallback to re-decode from).
 //   - queryEmbedding: the user's original query vector (may be nil
 //     or empty when the caller asked for a recency-only ranking).
 //   - queryNorm: the precomputed L2 norm of queryEmbedding. 0 when
@@ -202,12 +202,15 @@ type RetrieveContextOptions struct {
 	// (rankVectorWeight*sim + rankRecencyWeight*recency -
 	// rankDepthPenaltyPerUnit*depth). Custom scorers receive the
 	// row's GraphNode (with Entity.UpdatedAt intact for recency),
-	// the decoded node embedding as nodeVec (the framework
-	// precomputed it once via DecodeVector so custom scorers don't
-	// pay the decode cost themselves), the query embedding, and
-	// the precomputed query norm (0 when QueryEmbedding is empty).
-	// See the CompositeScorer func-type comment for the full arg
-	// list and signature rationale.
+	// the decoded node embedding as nodeVec (precomputed once per
+	// row so callers don't pay a per-row DecodeVector cost), the
+	// user's query embedding, and the precomputed query norm
+	// (0 when QueryEmbedding is empty). Signature:
+	//
+	//	func(node GraphNode,
+	//	     nodeVec []float32,
+	//	     queryEmbedding []float32,
+	//	     queryNorm float32) float32
 	CompositeScorer CompositeScorer
 	// Ctx carries request-scoped values (request_id) through the
 	// retrieval pipeline for structured logging.
