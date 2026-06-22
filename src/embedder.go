@@ -60,7 +60,7 @@ func NewOllamaEmbedder(baseURL, model string, timeout time.Duration) *OllamaEmbe
 	return &OllamaEmbedder{
 		BaseURL: baseURL,
 		Model:   model,
-		client: &http.Client{Timeout: timeout},
+		client:  &http.Client{Timeout: timeout},
 	}
 }
 
@@ -114,7 +114,7 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string, timeout time.Duration) *Op
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		Model:   model,
-		client: &http.Client{Timeout: timeout},
+		client:  &http.Client{Timeout: timeout},
 	}
 }
 

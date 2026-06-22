@@ -8,7 +8,7 @@ import (
 func benchEmbedding(seed int, dim int) []float32 {
 	v := make([]float32, dim)
 	for d := 0; d < dim; d++ {
-		v[d] = float32((seed * (d + 1)) % 1000) / 1000.0
+		v[d] = float32((seed*(d+1))%1000) / 1000.0
 	}
 	return v
 }
