@@ -71,11 +71,11 @@ type GraphNode struct {
 }
 
 type RetrievalResult struct {
-	SeedNodes    []GraphNode      `json:"seed_nodes"`
-	WorldFacts   []RetrievedFact  `json:"world_facts"`
-	Opinions     []RetrievedFact  `json:"opinions"`
-	Experiences  []RetrievedFact  `json:"experiences"`
-	Observations []RetrievedFact  `json:"observations"`
+	SeedNodes    []GraphNode     `json:"seed_nodes"`
+	WorldFacts   []RetrievedFact `json:"world_facts"`
+	Opinions     []RetrievedFact `json:"opinions"`
+	Experiences  []RetrievedFact `json:"experiences"`
+	Observations []RetrievedFact `json:"observations"`
 }
 
 // RetrievedFact is one re-ranked item in a category bucket. For nodes
@@ -126,6 +126,18 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 		effectiveDepth = opts.DepthCeiling
 	}
 
+	// Seed IDs are inlined into the recursive CTE here rather than
+	// routed through execInChunks because the query is a single
+	// recursive statement that has to see every seed at once — splitting
+	// into separate per-chunk CTEs would walk the graph from each
+	// chunk's seeds independently and require a UNION ALL + dedup.
+	//
+	// Safety bound: SQLite's default SQLITE_MAX_VARIABLE_NUMBER is
+	// 999. seedIDs in production paths are bounded by SearchByVector's
+	// topK clamp (DefaultSQLBatchSize = 500) plus the soft cap on
+	// MaxRetrievedNodes, keeping this IN-clause well under the limit.
+	// If a caller passes > 999 seed IDs in the future, this is the
+	// place to add a dedup-aware batched variant.
 	placeholders := make([]string, len(seedIDs))
 	args := make([]interface{}, len(seedIDs))
 	for i, id := range seedIDs {
