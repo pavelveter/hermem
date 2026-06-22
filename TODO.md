@@ -17,5 +17,5 @@
 
 ## Pending (low priority / optimisation)
 
-- [ ] Batch cosine via cblas_sgemv — replace per-vector CGO call with matrix×vector batch
+- [x] Batch cosine via cblas_sgemv — replace per-vector CGO call with matrix×vector batch
 - [ ] go mod tidy + verify — lock dependency tree
