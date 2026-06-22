@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -403,5 +406,167 @@ func TestCreateEdgesBulkEmptyInput(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("edges after empty-input calls = %d, want 0", count)
+	}
+}
+
+// TestStoreEntityConcurrentIndexOrderingFix exercises the #10 fix
+// to StoreEntityWithEmbedding: with N goroutines storing distinct
+// entities concurrently, every entity that survives in SQLite must
+// also be retrievable from the vector index by its own embedding.
+//
+// File-backed DB: SQLite :memory: databases are per-connection
+// (without ?cache=shared), and InitDB configures sql.DB's pool to
+// 4 max open conns. 50 parallel goroutines rotate through those
+// connections and any conn opened *after* schema setup never sees
+// the tables. A real file via t.TempDir makes every connection
+// point at the same on-disk schema; the dir auto-cleans.
+//
+// The fix bounds the post-fix transient: there's a brief window
+// where the index has an entry before SQLite commits, so a
+// concurrent Search could return an id that hasn't reached the DB
+// yet — SearchByVector then returns fewer results than asked
+// (the `len(results) < topK` signal). Acceptable trade-off vs
+// a phantom index entry pointing at a row the DB doesn't hold.
+//
+// Run with -race: any data race in the index's reads/writes or in
+// SQLite's connection sharing surfaces here.
+func TestStoreEntityConcurrentIndexOrderingFix(t *testing.T) {
+	tmpPath := filepath.Join(t.TempDir(), "race.db")
+	db, err := InitDB(tmpPath, 768)
+	if err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	defer db.Close()
+	vi := newVectorIndex("in-memory", db, 768)
+
+	const N = 50
+	const dim = 768
+	// Each entity gets a one-hot unit vector: entity i has a 1.0
+	// at dimension i, 0 everywhere else. After NormalizeVector
+	// ||v||=1 is preserved, so cosine(e_i, e_i)=1.0 and
+	// cosine(e_i, e_k)=0.0 for i≠k — meaning rank-1 Search with
+	// embedding[i] uniquely returns entity i without tie noise.
+	// Earlier (i+1)*(j+1)/10000.0 produced too-collinear vectors
+	// (search rank-1 drifted to near-neighbour entities).
+	embeddings := make([][]float32, N)
+	for i := 0; i < N; i++ {
+		embeddings[i] = make([]float32, dim)
+		embeddings[i][i] = 1.0
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, N)
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			entity := Entity{
+				ID:        "e-" + strconv.Itoa(i),
+				Category:  "world",
+				Content:   "content-" + strconv.Itoa(i),
+				Embedding: embeddings[i],
+			}
+			if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
+				errCh <- fmt.Errorf("goroutine %d: %w", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("StoreEntityWithEmbedding: %v", err)
+	}
+
+	// Invariant 1: DB count == N.
+	var dbCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE embedding IS NOT NULL`).Scan(&dbCount); err != nil {
+		t.Fatalf("db count: %v", err)
+	}
+	if dbCount != N {
+		t.Fatalf("DB entity count = %d, want %d", dbCount, N)
+	}
+
+	// Invariant 2: per-entity, Search with its own embedding returns
+	// the matching entity as top-1. This proves the index carries
+	// every entity the DB holds (for non-null embeddings) — the
+	// invariant the new ordering preserves.
+	for i := 0; i < N; i++ {
+		ids, sErr := vi.Search(ictx, embeddings[i], 1)
+		if sErr != nil {
+			t.Errorf("Search[%d]: %v", i, sErr)
+			continue
+		}
+		expected := "e-" + strconv.Itoa(i)
+		if len(ids) == 0 || ids[0] != expected {
+			t.Errorf("Search[%d] returned %v, top should be %q", i, ids, expected)
+		}
+	}
+}
+
+// TestStoreEntityRollbackOnSQLiteFailure verifies that when the
+// SQLite INSERT fails (simulated by closing the DB before the call),
+// vi.Store's prior update is rolled back via vi.Remove. The fix's
+// promise: index never points to a row the DB doesn't actually hold,
+// so a phantom index entry cannot propagate downstream.
+//
+// Without the rollback branch, vi.Store replaces the seed vec with
+// the new vec and the failed SQLite step leaves it behind; the
+// search below would still return "ghost" (cos ≈ 0.9 against the
+// new vec). With rollback, vi.Remove deletes the entry — distinguish
+// the with/without-rollback states deterministically.
+func TestStoreEntityRollbackOnSQLiteFailure(t *testing.T) {
+	db, vi := memDB(t)
+
+	// Seed embedding: 768-dim to match memDB's default and avoid
+	// the embed_dim-mismatch warning noise.
+	seedEmb := make([]float32, 768)
+	for i := range seedEmb {
+		seedEmb[i] = float32(i+1) / 100000.0
+	}
+	if err := StoreEntityWithEmbedding(db, vi, Entity{
+		ID:        "ghost",
+		Category:  "world",
+		Content:   "old",
+		Embedding: seedEmb,
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Distinct vec for the failing update attempt: if rollback is
+	// skipped, this is what's left in the index.
+	newEmb := make([]float32, 768)
+	for i := range newEmb {
+		newEmb[i] = float32(769-i) / 100000.0
+	}
+
+	// Close the DB so the *next* INSERT OR REPLACE fails. The
+	// preceding vi.Store call still completes successfully because
+	// the vector index is in-memory; the rollback path then issues
+	// vi.Remove to undo it.
+	db.Close()
+
+	err := StoreEntityWithEmbedding(db, vi, Entity{
+		ID:        "ghost",
+		Category:  "world",
+		Content:   "new",
+		Embedding: newEmb,
+	})
+	if err == nil {
+		t.Fatal("expected error from closed-DB insert, got nil")
+	}
+
+	// After rollback, "ghost" must NOT be in the index.
+	query := make([]float32, 768)
+	for i := range query {
+		query[i] = 0.005
+	}
+	ids, sErr := vi.Search(ictx, query, 10)
+	if sErr != nil {
+		t.Fatalf("Search post-rollback: %v", sErr)
+	}
+	for _, id := range ids {
+		if id == "ghost" {
+			t.Errorf("index still contains 'ghost' after rollback (err=%v)", err)
+		}
 	}
 }

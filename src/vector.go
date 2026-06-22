@@ -226,22 +226,55 @@ func checkEmbeddingDim(dim int) {
 	}
 }
 
+// StoreEntityWithEmbedding persists entity to SQLite and mirrors its
+// embedding into the vector index.
+//
+// Ordering: the vector index is updated BEFORE the SQLite commit so
+// that, on concurrent ingest, the index can never lag the DB (a
+// long-running DB write won't leave a hot index lagging behind
+// committed DB rows). On SQLite failure, we roll back the index
+// entry via vi.Remove. The worst-case race is:
+//
+//  1. vi.Store adds/replaces an entry for entity ID X.
+//  2. SQLite INSERT OR REPLACE fails (constraint, lock timeout).
+//  3. vi.Remove removes the index entry.
+//
+// For an *update* of an existing row, step 3 means the prior index
+// entry is lost along with the (also lost) new entry; the DB still
+// holds the old data. SearchByVector simply returns one fewer result
+// for that ID, and the caller can retry. Net effect: index never
+// points to a row the DB doesn't have, and SQLite errors don't leave
+// phantom index entries pointing at non-existent IDs.
 func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, entity Entity) error {
 	var embeddingBytes []byte
-	if len(entity.Embedding) > 0 {
+	hasEmbedding := len(entity.Embedding) > 0
+	if hasEmbedding {
 		NormalizeVector(entity.Embedding)
 		checkEmbeddingDim(len(entity.Embedding))
 		embeddingBytes = EmbeddingToBytes(entity.Embedding)
 	}
+
+	if hasEmbedding {
+		if err := vi.Store(context.Background(), entity.ID, entity.Embedding); err != nil {
+			return fmt.Errorf("vector index store: %w", err)
+		}
+	}
+
 	_, err := db.Exec(`
 		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`, entity.ID, entity.Category, entity.Content, embeddingBytes)
 	if err != nil {
+		if hasEmbedding {
+			if rmErr := vi.Remove(context.Background(), []string{entity.ID}); rmErr != nil {
+				slog.Warn("vector index rollback after sqlite failure",
+					"event", "vector_rollback_fail",
+					"entity_id", entity.ID,
+					"rm_err", rmErr,
+				)
+			}
+		}
 		return err
-	}
-	if len(entity.Embedding) > 0 {
-		return vi.Store(context.Background(), entity.ID, entity.Embedding)
 	}
 	return nil
 }
