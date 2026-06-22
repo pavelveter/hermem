@@ -25,6 +25,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 		&stubExtractor{resp: &ExtractionResult{Entities: nil}},
 		0.99,
 		RetrieveContextOptions{MaxDepth: 2, DepthCeiling: 5, MaxRetrievedNodes: 100},
+		validRelationTypes,
 	)
 	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

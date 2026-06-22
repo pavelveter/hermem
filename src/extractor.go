@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -61,9 +62,9 @@ const (
 // only these values; runtime filtering is the safety net for prompts
 // that ignore the schema.
 var validCategories = map[string]bool{
-	"world":      true,
-	"opinion":    true,
-	"experience": true,
+	"world":       true,
+	"opinion":     true,
+	"experience":  true,
 	"observation": true,
 }
 
@@ -85,6 +86,13 @@ var validRelationTypes = map[string]bool{
 // Empty/whitespace-only relations are also dropped. Surviving entities
 // retain a nil-clamped Relations slice so JSON output stays stable.
 //
+// The category and relation-type maps are passed in (rather than
+// read from package-level vars) so Config-driven extras compose
+// cleanly with the package-level defaults. nil maps count as
+// "no entries allowed" — callers should always pass a non-nil
+// map; the nil check is defensive so tests that forge inputs
+// cannot panic the production code path.
+//
 // Allocation: walks the input twice — first to count the survivors
 // (one map lookup per entity, no allocations), then to copy them
 // into a slice with exact pre-counted capacity. When validCount ==
@@ -92,19 +100,19 @@ var validRelationTypes = map[string]bool{
 // behaviour is preserved; when validCount < len(in) we save the
 // wasted capacity that the previous `make([]ExtractedEntity, 0, len(in))`
 // reserved but never used.
-func filterEntities(in []ExtractedEntity) []ExtractedEntity {
+func filterEntities(in []ExtractedEntity, validCats, validRels map[string]bool) []ExtractedEntity {
 	validCount := 0
 	for _, e := range in {
-		if validCategories[e.Category] {
+		if validCats[e.Category] {
 			validCount++
 		}
 	}
 	out := make([]ExtractedEntity, 0, validCount)
 	for _, e := range in {
-		if !validCategories[e.Category] {
+		if !validCats[e.Category] {
 			continue
 		}
-		e.Relations = filterRelations(e.Relations)
+		e.Relations = filterRelations(e.Relations, validRels)
 		out = append(out, e)
 	}
 	return out
@@ -113,24 +121,26 @@ func filterEntities(in []ExtractedEntity) []ExtractedEntity {
 // filterRelations applies TWO independent rules per incoming relation:
 // (1) TargetID must be non-empty (defensive against dangling edges that
 // SQLite's INSERT OR IGNORE would silently accept), and
-// (2) RelationType must be in validRelationTypes (graph-pollution guard).
+// (2) RelationType must be in validRels (graph-pollution guard).
 // Either failure drops the relation; surviving relations retain their
 // declared target_id untouched (no cross-entity resolution happens here).
+// validRels is passed in to compose with Config.Extras at the call
+// site; nil maps count as "no entries allowed".
 //
 // Allocation: pre-counts the survivors before allocating, so make is
 // called with exact capacity and append never re-grows the backing
 // array. The previous `make([]Relation, 0, len(in))` reserved more
 // than necessary on filtered batches.
-func filterRelations(in []Relation) []Relation {
+func filterRelations(in []Relation, validRels map[string]bool) []Relation {
 	validCount := 0
 	for _, r := range in {
-		if r.TargetID != "" && validRelationTypes[r.RelationType] {
+		if r.TargetID != "" && validRels[r.RelationType] {
 			validCount++
 		}
 	}
 	out := make([]Relation, 0, validCount)
 	for _, r := range in {
-		if r.TargetID == "" || !validRelationTypes[r.RelationType] {
+		if r.TargetID == "" || !validRels[r.RelationType] {
 			continue
 		}
 		out = append(out, r)
@@ -143,12 +153,22 @@ type OllamaLLMExtractor struct {
 	Model       string
 	Temperature float32
 
+	// validCategories and validRelationTypes are the per-extractor
+	// allowlists used by filterEntities / filterRelations and by
+	// buildSystemPrompt to compose the system prompt dynamically
+	// from Config-derived maps. nil maps are tolerated at the
+	// constructor (replaced with empty ones) but downstream code
+	// paths still treat them as "nothing allowed" — they should
+	// be non-empty in production.
+	validCategories    map[string]bool
+	validRelationTypes map[string]bool
+
 	// client owns the HTTP transport so retries reuse the TCP connection
 	// and per-request timeout is enforced consistently.
 	client *http.Client
 }
 
-func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout time.Duration) *OllamaLLMExtractor {
+func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout time.Duration, validCategories, validRelationTypes map[string]bool) *OllamaLLMExtractor {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
@@ -161,14 +181,112 @@ func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout t
 	if timeout <= 0 {
 		timeout = ollamaRequestTimeout
 	}
+	if validCategories == nil {
+		validCategories = map[string]bool{}
+	}
+	if validRelationTypes == nil {
+		validRelationTypes = map[string]bool{}
+	}
 	return &OllamaLLMExtractor{
-		BaseURL:     baseURL,
-		Model:       model,
-		Temperature: temperature,
+		BaseURL:            baseURL,
+		Model:              model,
+		Temperature:        temperature,
+		validCategories:    validCategories,
+		validRelationTypes: validRelationTypes,
 		client: &http.Client{
 			Timeout: timeout,
 		},
 	}
+}
+
+// knownCategoryDescriptions pairs the four default categories with
+// one-line semantic descriptions that are baked into the system
+// prompt. Operator-supplied extras (via Config.ExtraCategories) are
+// emitted as bare names without descriptions — operators that want
+// semantic context for extras should include it in the prompt at a
+// higher layer or provide a `description` field in a future config
+// extension.
+var knownCategoryDescriptions = map[string]string{
+	"world":       "facts, definitions, objective knowledge",
+	"opinion":     "preferences, beliefs, subjective views",
+	"experience":  "past events, interactions, what happened",
+	"observation": "patterns noticed, anomalies, insights",
+}
+
+// buildSystemPrompt composes the system prompt dynamically from the
+// merged category and relation-type maps. Operators adding an extra
+// via Config.ExtraCategories / ExtraRelationTypes see the model emit
+// the new tag/relation after a single restart — no source rebuild
+// required.
+//
+// Keys are sorted alphabetically via sortedKeys so the rendered
+// prompt is deterministic across runs (helps prompt-cache hit rate
+// and keeps snapshot tests stable).
+//
+// Schema hint keeps a `<one of: a, b, ...>` concrete example —
+// placeholders like `<one-of-allowed>` are interpreted less reliably
+// by some LLMs, so the schema hint mirrors a small slice of the
+// rendered list verbatim.
+//
+// Accuracy assumption: the dynamic prompt is treated as equivalent
+// to the previously-hardcoded prompt. This has not been benchmarked
+// against real Ollama/OpenAI traffic; a regression in extraction
+// quality after this change should be investigated as either a
+// llm-side prompt drift or a here-side ordering glitch.
+func buildSystemPrompt(validCategories, validRelationTypes map[string]bool) string {
+	cats := sortedKeys(validCategories)
+	rels := sortedKeys(validRelationTypes)
+
+	categoryLines := make([]string, 0, len(cats))
+	for _, c := range cats {
+		if desc, ok := knownCategoryDescriptions[c]; ok {
+			categoryLines = append(categoryLines, "- "+c+": "+desc)
+		} else {
+			categoryLines = append(categoryLines, "- "+c)
+		}
+	}
+
+	// Schema hint uses up to 3 examples each — small enough to keep
+	// the literal compact, large enough that the LLM sees three
+	// independent tokens rather than a one-token fan-in.
+	catExamples := cats
+	if len(catExamples) > 3 {
+		catExamples = catExamples[:3]
+	}
+	relExamples := rels
+	if len(relExamples) > 3 {
+		relExamples = relExamples[:3]
+	}
+
+	return `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
+
+Categories (use EXACTLY these strings, no others):
+` + strings.Join(categoryLines, "\n") + `
+
+Allowed relation_type values (use EXACTLY these strings, no others):
+"` + strings.Join(rels, `", "`) + `"
+
+Rules:
+1. Extract atomic, self-contained entities
+2. Each entity needs a unique kebab-case id
+3. Relations connect entities with one of the allowed relation_type strings
+4. Only include clear, useful knowledge
+5. Return ONLY valid JSON matching this exact schema:
+{"entities":[{"id":"string","category":"<one of: ` + strings.Join(catExamples, ", ") + `>","content":"string","relations":[{"target_id":"string","relation_type":"<one of: ` + strings.Join(relExamples, ", ") + `>"}]}]}
+
+Dialog:`
+}
+
+// sortedKeys returns the keys of m sorted alphabetically. Returns
+// an empty slice for nil/empty maps so the join renders "" without
+// special-casing at the prompt site.
+func sortedKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 type chatMessage struct {
@@ -366,10 +484,13 @@ type OpenAILLMExtractor struct {
 	Model       string
 	Temperature float32
 
+	validCategories    map[string]bool
+	validRelationTypes map[string]bool
+
 	client *http.Client
 }
 
-func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, timeout time.Duration) *OpenAILLMExtractor {
+func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, timeout time.Duration, validCategories, validRelationTypes map[string]bool) *OpenAILLMExtractor {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -382,11 +503,19 @@ func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, t
 	if timeout <= 0 {
 		timeout = ollamaRequestTimeout
 	}
+	if validCategories == nil {
+		validCategories = map[string]bool{}
+	}
+	if validRelationTypes == nil {
+		validRelationTypes = map[string]bool{}
+	}
 	return &OpenAILLMExtractor{
-		BaseURL:     baseURL,
-		APIKey:      apiKey,
-		Model:       model,
-		Temperature: temperature,
+		BaseURL:            baseURL,
+		APIKey:             apiKey,
+		Model:              model,
+		Temperature:        temperature,
+		validCategories:    validCategories,
+		validRelationTypes: validRelationTypes,
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -399,9 +528,9 @@ type openAIChatMessage struct {
 }
 
 type openAIChatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []openAIChatMessage `json:"messages"`
-	Temperature float32             `json:"temperature"`
+	Model          string              `json:"model"`
+	Messages       []openAIChatMessage `json:"messages"`
+	Temperature    float32             `json:"temperature"`
 	ResponseFormat *struct {
 		Type string `json:"type"`
 	} `json:"response_format,omitempty"`
@@ -512,26 +641,10 @@ func (e *OpenAILLMExtractor) chat(ctx context.Context, req *openAIChatRequest) (
 
 func (e *OpenAILLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error) {
 
-	systemPrompt := `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
-
-Categories (use EXACTLY these strings, no others):
-- world: facts, definitions, objective knowledge
-- opinion: preferences, beliefs, subjective views
-- experience: past events, interactions, what happened
-- observation: patterns noticed, anomalies, insights
-
-Allowed relation_type values (use EXACTLY these strings, no others):
-"prefers", "uses", "mentions", "related_to", "part_of", "causes", "contradicts"
-
-Rules:
-1. Extract atomic, self-contained entities
-2. Each entity needs a unique kebab-case id
-3. Relations connect entities with one of the allowed relation_type strings
-4. Only include clear, useful knowledge
-5. Return ONLY valid JSON matching this exact schema:
-{"entities":[{"id":"string","category":"world|opinion|experience|observation","content":"string","relations":[{"target_id":"string","relation_type":"string"}]}]}
-
-Dialog:`
+	// System prompt is composed from the per-extractor validCategories
+	// and validRelationTypes maps so Config.Extras modify what the
+	// model sees after a single restart — no source rebuild required.
+	systemPrompt := buildSystemPrompt(e.validCategories, e.validRelationTypes)
 
 	req := openAIChatRequest{
 		Model: e.Model,
@@ -574,33 +687,14 @@ Dialog:`
 		result.Entities = []ExtractedEntity{}
 	}
 
-	result.Entities = filterEntities(result.Entities)
+	result.Entities = filterEntities(result.Entities, e.validCategories, e.validRelationTypes)
 
 	return &result, nil
 }
 
 func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error) {
 
-	systemPrompt := `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
-
-Categories (use EXACTLY these strings, no others):
-- world: facts, definitions, objective knowledge
-- opinion: preferences, beliefs, subjective views
-- experience: past events, interactions, what happened
-- observation: patterns noticed, anomalies, insights
-
-Allowed relation_type values (use EXACTLY these strings, no others):
-"prefers", "uses", "mentions", "related_to", "part_of", "causes", "contradicts"
-
-Rules:
-1. Extract atomic, self-contained entities
-2. Each entity needs a unique kebab-case id
-3. Relations connect entities with one of the allowed relation_type strings
-4. Only include clear, useful knowledge
-5. Return ONLY valid JSON matching this exact schema:
-{"entities":[{"id":"string","category":"world|opinion|experience|observation","content":"string","relations":[{"target_id":"string","relation_type":"string"}]}]}
-
-Dialog:`
+	systemPrompt := buildSystemPrompt(e.validCategories, e.validRelationTypes)
 
 	req := chatRequest{
 		Model: e.Model,
@@ -643,7 +737,7 @@ Dialog:`
 		result.Entities = []ExtractedEntity{}
 	}
 
-	result.Entities = filterEntities(result.Entities)
+	result.Entities = filterEntities(result.Entities, e.validCategories, e.validRelationTypes)
 
 	return &result, nil
 }

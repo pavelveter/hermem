@@ -180,7 +180,11 @@ func main() {
 		if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
 			log.Fatal("source_id, target_id, relation_type required")
 		}
-		if !validRelationTypes[req.RelationType] {
+		// Build the merged relations map at request time so the CLI
+		// handler picks up any operator-configured extras via Config,
+		// matching the runtime filter the ingester applies.
+		validRels := cfg.AllowedRelationTypes()
+		if !validRels[req.RelationType] {
 			log.Fatalf("invalid relation_type: %s", req.RelationType)
 		}
 		if req.AutoCreate {
@@ -218,7 +222,7 @@ func main() {
 		srv := NewServer(db, vi, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
-		})
+		}, cfg.AllowedRelationTypes())
 
 		gcCtx, gcCancel := context.WithCancel(ctx)
 		gcDone := make(chan struct{})

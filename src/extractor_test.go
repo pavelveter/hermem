@@ -30,7 +30,7 @@ func TestFilterEntitiesDropsInvalidCategory(t *testing.T) {
 		{ID: "ok-opinion", Category: "opinion", Content: "z"},
 		{ID: "bad-empty", Category: "", Content: ""},
 	}
-	got := filterEntities(in)
+	got := filterEntities(in, validCategories, validRelationTypes)
 	want := []string{"ok-world", "ok-opinion"}
 	gotIDs := entityIDs(got)
 	if len(gotIDs) != len(want) {
@@ -50,7 +50,7 @@ func TestFilterRelationsDropsInvalidTypeAndEmptyTarget(t *testing.T) {
 		{TargetID: "", RelationType: "prefers"},       // empty target
 		{TargetID: "z", RelationType: "prefers"},
 	}
-	out := filterRelations(in)
+	out := filterRelations(in, validRelationTypes)
 	if len(out) != 2 {
 		t.Fatalf("got %d relations, want 2", len(out))
 	}
@@ -75,8 +75,8 @@ func TestExtractEntitiesHappy(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "test-model", 0.1, 0)
-	res, err := 	ex.ExtractEntities(extCtx, "user-dialog")
+	ex := NewOllamaLLMExtractor(server.URL, "test-model", 0.1, 0, validCategories, validRelationTypes)
+	res, err := ex.ExtractEntities(extCtx, "user-dialog")
 	if err != nil {
 		t.Fatalf("ExtractEntities: %v", err)
 	}
@@ -104,8 +104,8 @@ func TestExtractEntitiesEmptyContentReturnsEmpty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
-	res, err := 	ex.ExtractEntities(extCtx, "d")
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0, validCategories, validRelationTypes)
+	res, err := ex.ExtractEntities(extCtx, "d")
 	if err != nil {
 		t.Fatalf("ExtractEntities: %v", err)
 	}
@@ -126,8 +126,8 @@ func TestExtractEntitiesParseErrorNoRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
-	if _, err := 	ex.ExtractEntities(extCtx, "d"); err == nil {
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0, validCategories, validRelationTypes)
+	if _, err := ex.ExtractEntities(extCtx, "d"); err == nil {
 		t.Fatal("expected parse error, got nil")
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
@@ -156,9 +156,9 @@ func TestExtractEntitiesRetriesOn5xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0, validCategories, validRelationTypes)
 	start := time.Now()
-	res, err := 	ex.ExtractEntities(extCtx, "d")
+	res, err := ex.ExtractEntities(extCtx, "d")
 	if err != nil {
 		t.Fatalf("expected eventual success, got %v", err)
 	}
@@ -183,8 +183,8 @@ func TestExtractEntitiesAllRetriesFail(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
-	_, err := 	ex.ExtractEntities(extCtx, "d")
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0, validCategories, validRelationTypes)
+	_, err := ex.ExtractEntities(extCtx, "d")
 	if err == nil {
 		t.Fatal("expected exhausted-retry error, got nil")
 	}
@@ -205,8 +205,8 @@ func TestExtractEntitiesNonRetryHTTP4xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
-	_, err := 	ex.ExtractEntities(extCtx, "d")
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0, validCategories, validRelationTypes)
+	_, err := ex.ExtractEntities(extCtx, "d")
 	if err == nil {
 		t.Fatal("expected 4xx error, got nil")
 	}
@@ -265,7 +265,7 @@ func TestExtractEntitiesStripsMarkdownFences(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0, validCategories, validRelationTypes)
 	res, err := ex.ExtractEntities(extCtx, "d")
 	if err != nil {
 		t.Fatalf("ExtractEntities: %v", err)

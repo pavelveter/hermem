@@ -17,6 +17,12 @@ type Server struct {
 	worker        *IngestionWorker
 	embedder      Embedder
 	retrievalOpts RetrieveContextOptions
+	// validRelationTypes is the merged relation-type allowlist
+	// (defaults + Config.ExtraRelationTypes), shared with the
+	// extractor so HTTP-request validation matches the runtime
+	// filter the ingester applies. nil maps count as "no entries
+	// allowed" — production callers always pass a non-nil map.
+	validRelationTypes map[string]bool
 }
 
 type StoreRequest struct {
@@ -58,13 +64,17 @@ type ErrorResponse struct {
 	Field string `json:"field,omitempty"`
 }
 
-func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions) *Server {
+func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions, validRelationTypes map[string]bool) *Server {
+	if validRelationTypes == nil {
+		validRelationTypes = map[string]bool{}
+	}
 	return &Server{
-		db:            db,
-		vi:            vi,
-		worker:        NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold),
-		embedder:      embedder,
-		retrievalOpts: retrievalOpts,
+		db:                 db,
+		vi:                 vi,
+		worker:             NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold),
+		embedder:           embedder,
+		retrievalOpts:      retrievalOpts,
+		validRelationTypes: validRelationTypes,
 	}
 }
 
@@ -306,7 +316,7 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !validRelationTypes[req.RelationType] {
+	if !s.validRelationTypes[req.RelationType] {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid relation_type: %s", req.RelationType))
 		return
 	}

@@ -11,10 +11,10 @@ import (
 )
 
 type Config struct {
-	Provider string
-	URL      string
-	Key      string
-	Model    string
+	Provider           string
+	URL                string
+	Key                string
+	Model              string
 	DBPath             string
 	ExtractProvider    string
 	ExtractURL         string
@@ -51,6 +51,16 @@ type Config struct {
 	EmbedderTimeout time.Duration
 	// ExtractTimeout caps each LLM extractor HTTP request.
 	ExtractTimeout time.Duration
+	// ExtraCategories extends the package-level category allowlist
+	// (world, opinion, experience, observation) without recompiling.
+	// Operators add domain-specific buckets here, e.g. "schema" for
+	// typed schema knowledge. Empty strings are ignored.
+	ExtraCategories []string
+	// ExtraRelationTypes extends the package-level relation allowlist
+	// (prefers, uses, mentions, related_to, part_of, causes, contradicts)
+	// without recompiling. Operators add domain-specific edges here,
+	// e.g. "supports" or "blocks". Empty strings are ignored.
+	ExtraRelationTypes []string
 	// Retention controls automatic archival of stale nodes.
 	// world facts are permanent; observation nodes past ObservationTTL
 	// are flagged archived and excluded from graph walks.
@@ -72,19 +82,19 @@ type RetentionPolicy struct {
 // helper exists to surface, not to fix.
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
-		Provider:          "ollama",
-		URL:               "http://localhost:11434",
-		Model:             "nomic-embed-text",
-		DBPath:            "hermem.db",
-		ExtractModel:      "qwen2.5-coder:7b",
+		Provider:           "ollama",
+		URL:                "http://localhost:11434",
+		Model:              "nomic-embed-text",
+		DBPath:             "hermem.db",
+		ExtractModel:       "qwen2.5-coder:7b",
 		ExtractTemperature: 0.1,
-		DedupThreshold:    0.88,
-		MaxDepthCeiling:   5,
-		MaxRetrievedNodes: 100,
-		VectorBackend:     "in-memory",
-		VectorDim:         768,
-		EmbedderTimeout:   30 * time.Second,
-		ExtractTimeout:    300 * time.Second,
+		DedupThreshold:     0.88,
+		MaxDepthCeiling:    5,
+		MaxRetrievedNodes:  100,
+		VectorBackend:      "in-memory",
+		VectorDim:          768,
+		EmbedderTimeout:    30 * time.Second,
+		ExtractTimeout:     300 * time.Second,
 		Retention: RetentionPolicy{
 			ObservationTTL:  90 * 24 * time.Hour,
 			RunInterval:     1 * time.Hour,
@@ -105,6 +115,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse ini: %w", err)
 	}
+	iniRef = iniFile
 
 	// sec looks up a section case-insensitively.
 	// keyIn returns an *ini.Key matched case-insensitively, or nil.
@@ -222,7 +233,120 @@ func LoadConfig(path string) (*Config, error) {
 	cfg.EmbedderTimeout = getDuration("embedder", "timeout", cfg.EmbedderTimeout)
 	cfg.ExtractTimeout = getDuration("extraction", "timeout", cfg.ExtractTimeout)
 
+	cfg.ExtraCategories = parseCSVList(getStrRaw("extraction", "extra_categories"))
+	cfg.ExtraRelationTypes = parseCSVList(getStrRaw("extraction", "extra_relation_types"))
+
 	return cfg, nil
+}
+
+// parseCSVList splits a comma-separated list of values and trims
+// whitespace around each entry. Empty entries (caused by leading /
+// trailing /consecutive commas) are dropped so acidental `, , ,`
+// from operator typos never surface as blank filter keys. Strings
+// already known to the package-level defaults are kept (the caller
+// decides whether to dedupe against defaults via Allowed*).
+func parseCSVList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// getCSVList reads an INI value as a CSV list. Returns nil for missing
+// or empty keys so callers can distinguish "unset" from "explicitly
+// empty".
+func getCSVList(section, key string) []string {
+	return parseCSVList(getStrRaw(section, key))
+}
+
+// getStrRaw retrieves a raw string from the INI file with no
+// transformation. Companion to the existing getStr closure but lives
+// at package scope so the new CSV helpers can call it.
+func getStrRaw(section, key string) string {
+	k := lookupINIKey(section, key)
+	if k == nil {
+		return ""
+	}
+	return k.String()
+}
+
+// lookupINIKey returns the *ini.Key for the given section + key pair
+// using the same case-insensitive match the rest of the parser uses,
+// or nil if not present.
+func lookupINIKey(section, key string) *ini.Key {
+	// The parser captures an iniFile at LoadConfig time; we keep it
+	// accessible via a package-level cell to make this helper work
+	// from anywhere without rebuilding the closure plumbing.
+	if iniRef == nil {
+		return nil
+	}
+	target := iniRef.Section(section)
+	if target == nil {
+		return nil
+	}
+	for _, k := range target.Keys() {
+		if strings.EqualFold(k.Name(), key) {
+			return k
+		}
+	}
+	return nil
+}
+
+// iniRef is set by LoadConfig so helpers like getStrRaw and
+// getCSVList can use it after the function returns. It avoids
+// re-parsing the file for each access.
+var iniRef *ini.File
+
+// AllowedCategories returns the merged category allowlist: package-
+// level defaults (world, opinion, experience, observation) plus any
+// extras configured via [extraction].extra_categories. Extras do not
+// override defaults — both coexist so operators extend without
+// retroactively breaking stored data.
+//
+// The returned map is fresh (allocated here); callers can keep their
+// own reference without worrying about concurrent mutation.
+func (c *Config) AllowedCategories() map[string]bool {
+	out := make(map[string]bool, len(validCategories)+len(c.ExtraCategories))
+	for k := range validCategories {
+		out[k] = true
+	}
+	for _, k := range c.ExtraCategories {
+		if k == "" {
+			continue
+		}
+		out[k] = true
+	}
+	return out
+}
+
+// AllowedRelationTypes mirrors AllowedCategories for relation types.
+// Defaults: prefers, uses, mentions, related_to, part_of, causes,
+// contradicts. Extras from [extraction].extra_relation_types append
+// to the set without overriding.
+func (c *Config) AllowedRelationTypes() map[string]bool {
+	out := make(map[string]bool, len(validRelationTypes)+len(c.ExtraRelationTypes))
+	for k := range validRelationTypes {
+		out[k] = true
+	}
+	for _, k := range c.ExtraRelationTypes {
+		if k == "" {
+			continue
+		}
+		out[k] = true
+	}
+	return out
 }
 
 func (c *Config) NewEmbedder() Embedder {
@@ -238,11 +362,13 @@ func (c *Config) NewExtractor() LLMExtractor {
 	provider := orDefault(c.ExtractProvider, c.Provider)
 	url := orDefault(c.ExtractURL, c.URL)
 	key := orDefault(c.ExtractKey, c.Key)
+	cats := c.AllowedCategories()
+	rels := c.AllowedRelationTypes()
 	switch provider {
 	case "openai":
-		return NewOpenAILLMExtractor(url, key, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout)
+		return NewOpenAILLMExtractor(url, key, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout, cats, rels)
 	default:
-		return NewOllamaLLMExtractor(url, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout)
+		return NewOllamaLLMExtractor(url, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout, cats, rels)
 	}
 }
 
