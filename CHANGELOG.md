@@ -21,11 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `InMemoryVectorIndex.Search` uses snapshot pattern (RLock → local vars → unlock before compute) for concurrent safety without serializing searches.
 - `SearchBatch` reuses `flatMatrix` for all queries in a batch.
 
-### Removed
-- `cosine_darwin.go` — Apple Accelerate CGO path removed. Pure Go `BatchDotProducts` provides identical throughput without CGO overhead.
-
 ### Fixed
-- `cblas_sdot` deprecation warning silenced via `-DACCELERATE_NEW_LAPACK` CGo flag.
 - `out.txt` added to `.gitignore`, removed from tracking.
 
 ## [PR9] — Retention, auth, id_map, CTE filters
