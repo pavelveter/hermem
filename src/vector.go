@@ -28,6 +28,7 @@ type VectorIndex interface {
 	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
 	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
 	Store(ctx context.Context, id string, vec []float32) error
+	Remove(ctx context.Context, ids []string) error
 }
 
 type vectorIndexFactory func(db *sql.DB, dim int) VectorIndex
@@ -111,7 +112,7 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 		for i, r := range results {
 			accessed[i] = r.Entity.ID
 		}
-		touchAccessedBatch(db, accessed)
+		go touchAccessedBatch(db, accessed)
 	}
 	return results, nil
 }

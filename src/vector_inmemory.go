@@ -152,4 +152,25 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 	return nil
 }
 
+func (idx *InMemoryVectorIndex) Remove(_ context.Context, ids []string) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	for _, id := range ids {
+		pos, ok := idx.byID[id]
+		if !ok {
+			continue
+		}
+		lastIdx := len(idx.entries) - 1
+		lastEntry := idx.entries[lastIdx]
+
+		idx.entries[pos] = lastEntry
+		idx.byID[lastEntry.id] = pos
+
+		idx.entries = idx.entries[:lastIdx]
+		delete(idx.byID, id)
+	}
+	return nil
+}
+
 

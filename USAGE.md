@@ -63,7 +63,7 @@ mkdir -p ~/.local/bin && cp hermem ~/.local/bin/
 
 ```bash
 ./hermem                              # prints command help
-go test -count=1 ./...                # whole suite green? good
+go test -count=1 ./src                # whole suite green? good
 ```
 
 ---
@@ -81,6 +81,9 @@ model    = nomic-embed-text
 key      =                        # only used when provider = openai
 
 [extraction]
+; provider, url, key — optional, fall back to [embedder]
+provider    = ollama
+url         = http://localhost:11434
 model       = qwen2.5-coder:7b
 temperature = 0.1
 
@@ -568,13 +571,15 @@ A single SQLite file with two (or three) tables. The schema lives in
 
 ### `entities`
 
-| Column       | SQLite type | Notes                                                 |
-|--------------|-------------|-------------------------------------------------------|
-| `id`         | TEXT PK     | Stable identifier.                                    |
-| `category`   | TEXT        | One of `world`/`opinion`/`experience`/`observation`.  |
-| `content`    | TEXT        | Free text.                                            |
-| `embedding`  | BLOB        | `len(embedding) * 4` raw little-endian float32 bytes. |
-| `updated_at` | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
+| Column          | SQLite type | Notes                                                 |
+|-----------------|-------------|-------------------------------------------------------|
+| `id`            | TEXT PK     | Stable identifier.                                    |
+| `category`      | TEXT        | One of `world`/`opinion`/`experience`/`observation`.  |
+| `content`       | TEXT        | Free text.                                            |
+| `embedding`     | BLOB        | `len(embedding) * 4` raw little-endian float32 bytes. |
+| `updated_at`    | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
+| `last_accessed_at` | DATETIME | `CURRENT_TIMESTAMP` default; GC uses this for TTL.    |
+| `archived`      | INTEGER     | 0 = active, 1 = excluded from graph walks by GC.      |
 
 Entity IDs are primary keys — repeated `store` calls upsert (the row
 is replaced; edges are not deleted). The DB is configured with
@@ -601,7 +606,7 @@ edge provenance is recovered via `RetrievedFact.parent_id` /
 
 | Column       | SQLite type | Notes                                                 |
 |--------------|-------------|-------------------------------------------------------|
-| `rowid`      | INTEGER PK  | Deterministic hash of the entity's text ID (FNV-1a).  |
+| `rowid`      | INTEGER PK  | Mapped via `id_map` table (AUTOINCREMENT).             |
 | `embedding`  | FLOAT32[n]  | Vector stored in `vec0` virtual table for KNN search. |
 | `entity_id`  | TEXT        | Maps back to `entities.id`.                            |
 
@@ -648,10 +653,9 @@ silently produce wrong cosine scores.
 
 ## 12. Operational notes
 
-- **Working directory matters.** `hermem.ini` is read relative to
-  `os.Getwd()`. Run `./hermem serve` from the directory that owns
-  the ini file, or pass an explicit `--config <path>` when that
-  flag lands.
+- **Config is binary-directory relative.** `hermem.ini` is resolved via
+  `os.Executable()`, not `os.Getwd()`, so `~/.hermes/bin/hermem store` works
+  the same from any working directory. The ini lives next to the binary.
 - **Concurrency.** The HTTP server is fine for dozens of
   concurrent requests, but the underlying SQLite write path is
   serialised by SQLite itself. For high-write workloads consider
@@ -702,12 +706,17 @@ silently produce wrong cosine scores.
 
 | Concern                         | File                              |
 |---------------------------------|-----------------------------------|
-| INI parsing, defaults           | `config.go`                       |
-| Schema, embedding serialisation | `db.go`                           |
-| VectorIndex interface, search backends (InMemory / SqliteVec) | `vector.go` |
-| Graph walk, ranking, formatting | `retrieval.go`                    |
-| Background worker, dedup, edges | `ingestion.go`                    |
-| Ollama / OpenAI HTTP            | `embedder.go`, `extractor.go`     |
-| HTTP handlers, strict decoder   | `server.go`                       |
-| CLI entry-point                 | `main.go`                         |
-| Per-package tests               | `*_test.go` (alongside each file) |
+| INI parsing, defaults           | `src/config.go`                   |
+| Schema, embedding serialisation | `src/db.go`                       |
+| VectorIndex interface, search backends (InMemory / SqliteVec) | `src/vector.go` |
+| Graph walk, ranking, formatting | `src/retrieval.go`                |
+| Background worker, dedup, edges | `src/ingestion.go`                |
+| Ollama / OpenAI HTTP            | `src/embedder.go`, `src/extractor.go` |
+| HTTP handlers, strict decoder   | `src/server.go`                   |
+| CLI entry-point                 | `src/main.go`                     |
+| Retention GC loop               | `src/retention.go`                |
+| Auth + request-id middleware    | `src/middleware.go`               |
+| Metrics                         | `src/metrics.go`                  |
+| Accelerate SIMD cosine (darwin) | `src/cosine_darwin.go`            |
+| Pure-Go cosine fallback         | `src/cosine.go`                   |
+| Per-package tests               | `src/*_test.go`                   |

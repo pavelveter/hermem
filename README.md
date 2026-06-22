@@ -27,8 +27,12 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 
 - **CLI + HTTP server** — single binary, two modes
 - **OpenAI-compatible** — works with Ollama or any OpenAI-compatible API
+- **Separate embedder/extractor providers** — Ollama for embeddings, OpenAI for extraction (or vice versa)
 - **Pluggable vector search** — `InMemoryVectorIndex` (default, zero-dependency) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
-- **Structured logging** — `log/slog` with event fields
+- **Accelerate SIMD** — `cblas_sdot` via CGo for NEON-optimised cosine on Apple Silicon
+- **Automatic retention** — configurable GC loop archives stale observation nodes
+- **API key auth** — optional `X-API-Key` middleware
+- **Structured logging** — `log/slog` with event fields + `request_id` tracing
 - **Request tracing** — every HTTP response gets `X-Request-ID`
 - **Metrics** — `/metrics` endpoint via `expvar`
 - **Graceful shutdown** — drains in-flight requests on SIGINT/SIGTERM
@@ -115,21 +119,44 @@ the same regardless of the caller's working directory — a stray
 `hermem.db` no longer leaks into a transient CWD. INI format.
 If the file doesn't exist, defaults are used.
 
-### hermem.ini
+### hermem.ini — all settings
 
 ```ini
 [embedder]
-provider = ollama          # "ollama" or "openai"
+provider = ollama               # "ollama" | "openai"
 url = http://localhost:11434
 model = nomic-embed-text
-key =                      # API key for OpenAI (not needed for Ollama)
+key =                           # API key for OpenAI (not needed for Ollama)
 
 [extraction]
+; provider, url, key — optional, fall back to [embedder] values
+provider = ollama               # "ollama" | "openai"
+url = http://localhost:11434
+key =                           # API key for OpenAI
 model = qwen2.5-coder:7b
 temperature = 0.1
 
+[ingestion]
+dedup_threshold = 0.88          # cosine floor for merge-during-ingest (0.0–1.0)
+
+[retrieval]
+depth_ceiling = 5               # hard clamp on requested max_depth
+max_nodes = 100                 # soft cap on RetrieveContext output size
+
+[retention]
+observation_ttl = 2160h         # observations older than this → archived (Go duration)
+run_interval = 1h               # how often the GC loop fires
+batch_size = 500                # max nodes archived per cycle (0 = no limit)
+
 [database]
-path = hermem.db
+path = hermem.db                # SQLite file; created on first store
+backend = in-memory             # "in-memory" | "sqlite-vec"
+
+[vector]
+dim = 768                       # embedding dimension for vec0 table (must match model)
+
+[server]
+api_key =                       # X-API-Key auth (empty = disabled)
 ```
 
 ### Provider examples
@@ -142,6 +169,7 @@ url = http://localhost:11434
 model = nomic-embed-text
 
 [extraction]
+; inherit provider/url/key from embedder, override only model
 model = qwen2.5-coder:7b
 temperature = 0.1
 
@@ -149,7 +177,7 @@ temperature = 0.1
 path = hermem.db
 ```
 
-**OpenAI:**
+**OpenAI (same backend for both):**
 ```ini
 [embedder]
 provider = openai
@@ -158,6 +186,25 @@ model = text-embedding-3-small
 key = sk-you...here
 
 [extraction]
+; inherit provider/url/key from embedder
+model = gpt-4o-mini
+temperature = 0.1
+
+[database]
+path = hermem.db
+```
+
+**Mixed backends (Ollama embedder + OpenAI extractor):**
+```ini
+[embedder]
+provider = ollama
+url = http://localhost:11434
+model = nomic-embed-text
+
+[extraction]
+provider = openai
+url = https://api.openai.com/v1
+key = sk-you...here
 model = gpt-4o-mini
 temperature = 0.1
 
@@ -191,14 +238,21 @@ Every key is optional; missing keys fall back to the defaults below.
 | `embedder.url` | `http://localhost:11434` | API endpoint. |
 | `embedder.model` | `nomic-embed-text` | Embedding model name. |
 | `embedder.key` | *(empty)* | API key (OpenAI only). |
-| `extraction.model` | `qwen2.5-coder:7b` | LLM model used by `OllamaLLMExtractor`. |
-| `extraction.temperature` | `0.1` | Sampler temperature passed to `/api/chat`. |
+| `extraction.provider` | `"ollama"` *(inherits embedder)* | LLM provider for extraction (`ollama` \| `openai`). |
+| `extraction.url` | *(inherits embedder)* | API endpoint for extraction. |
+| `extraction.key` | *(inherits embedder)* | API key for extraction (OpenAI). |
+| `extraction.model` | `qwen2.5-coder:7b` | LLM model used by extractor. |
+| `extraction.temperature` | `0.1` | Sampler temperature for extraction. |
 | `ingestion.dedup_threshold` | `0.88` | Cosine floor for merge-during-ingest (see Deduplication, below). |
 | `retrieval.depth_ceiling` | `5` | Hard clamp on requested `max_depth`. |
 | `retrieval.max_nodes` | `100` | Soft cap on `RetrieveContext` output size. |
 | `database.backend` | `in-memory` | Vector index backend: `in-memory` (Go brute-force) or `sqlite-vec` (indexed KNN). |
 | `vector.dim` | `768` | Embedding dimension for `vec0` virtual table. Must match your model's output dim. |
 | `database.path` | `hermem.db` | SQLite database file. |
+| `retention.observation_ttl` | `2160h` | Observation nodes older than this TTL are archived. |
+| `retention.run_interval` | `1h` | How often the GC loop fires. |
+| `retention.batch_size` | `500` | Max nodes archived per cycle. |
+| `server.api_key` | *(empty)* | API key for `X-API-Key` auth (empty = disabled). |
 
 Invalid integer / float parse values are logged at warning level and
 the corresponding default is kept; the server still boots.
@@ -256,33 +310,30 @@ The ingestion worker:
 
 ```
 hermem/
-├── db.go                # SQLite schema, embedding serialization, cosine similarity
-├── config.go            # INI config loader
-├── embedder.go          # Embedder interface (Ollama / OpenAI)
-├── extractor.go         # LLMExtractor interface + Ollama chat w/ retry + allowlist filtering
-├── vector.go            # VectorIndex interface, wrappers (SearchByVector / StoreEntityWithEmbedding), entity storage
-├── vector_inmemory.go   # InMemoryVectorIndex — RAM-cached cosine scan, always compiled
-├── vector_sqlitevec.go  # SqliteVecIndex — vec0 KNN, build tag sqlite_vec
-├── cosine.go            # CosineSimilarity — pure Go fallback (!darwin)
-├── cosine_darwin.go     # CosineSimilarity — Apple Accelerate NEON SIMD (darwin)
-├── retrieval.go         # Recursive CTE graph walk, ranking, markdown formatting
-├── ingestion.go         # Ingestion worker, entity extraction, deduplication
-├── server.go            # HTTP API server + strict JSON decoder
-├── main.go              # Entry point (CLI subcommands + serve)
-├── hermem.ini           # Sample config file
-├── helpers_test.go      # Shared :memory: SQLite + stub mocks for the test suite
-├── config_test.go       # LoadConfig defaults-on-missing, parse-every-key, invalid-vals
-├── vector_test.go       # Byte-round-trip, cosine edges, store upsert/null, search order + top-K + null-skip, BenchmarkSearchByVector{100,1000,5000}
-├── retrieval_test.go    # Cycle guard, depth ceiling, soft cap, re-ranking, FormatContextMarkdown, BenchmarkRetrieveContext{depth=1,2,3}
-├── ingestion_test.go    # stub LLMExtractor + Embedder; dedup merge / append merge / embed-error / extractor-error paths
-├── extractor_test.go    # filterEntities/filterRelations allowlists; Ollama parse-error + 5xx-retry + 4xx-no-retry via httptest
-├── server_test.go       # Table-driven strict-decode (valid/unknown_field/invalid_type/empty_body/trailing_data) on all POST endpoints + method gate
-├── verify_test.go       # File-backed integration + timing smoke (kept for backward-compat)
-└── plugins/
-    └── memory/
-        └── hermem/      # Hermes Agent memory provider plugin
-            ├── __init__.py
-            └── plugin.yaml
+├── src/
+│   ├── db.go                # SQLite schema, embedding serialization
+│   ├── config.go            # INI config loader
+│   ├── embedder.go          # Embedder interface (Ollama / OpenAI)
+│   ├── extractor.go         # LLMExtractor interface + allowlist filtering
+│   ├── vector.go            # VectorIndex interface + wrappers
+│   ├── vector_inmemory.go   # InMemoryVectorIndex — RAM-cached cosine scan
+│   ├── vector_sqlitevec.go  # SqliteVecIndex — vec0 KNN (build tag)
+│   ├── cosine.go            # CosineSimilarity — pure Go fallback (!darwin)
+│   ├── cosine_darwin.go     # CosineSimilarity — Apple Accelerate NEON (darwin)
+│   ├── retrieval.go         # Recursive CTE graph walk, ranking, markdown
+│   ├── ingestion.go         # Ingestion worker, entity extraction, dedup
+│   ├── server.go            # HTTP API server + strict JSON decoder
+│   ├── main.go              # Entry point (CLI subcommands + serve)
+│   ├── metrics.go           # expvar metrics endpoint
+│   ├── middleware.go        # Auth + request-id middleware
+│   ├── retention.go         # Garbage collector + retention policy
+│   ├── *_test.go            # Per-package tests (90 tests)
+├── hermem.ini               # Sample config file
+├── plugins/
+│   └── memory/
+│       └── hermem/          # Hermes Agent memory provider plugin
+│           ├── __init__.py
+│           └── plugin.yaml
 ```
 
 ## HTTP API Server
@@ -290,7 +341,7 @@ hermem/
 Run Hermem as an HTTP service for integration with Hermes Agent or other systems:
 
 ```bash
-./hermem -server -port 8420
+./hermem serve 8420
 ```
 
 ### Endpoints
@@ -490,7 +541,7 @@ Benchmarked on Apple M1 (768D embeddings, `topK=10`):
 ## Testing
 
 ```bash
-go test -count=1 ./...                     # full suite (86 tests, ~3s)
+go test -count=1 ./src                     # full suite (90 tests, ~3s)
 go test -v -count=1 -run TestServer ./...  # strict-decode table only
 go test -bench=BenchmarkInMemorySearch -benchmem -count=3 ./...    # in-memory vector perf
 go test -tags sqlite_vec -bench=BenchmarkSqliteVecSearch -benchmem -count=3 ./...  # sqlite-vec perf
