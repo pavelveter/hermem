@@ -29,6 +29,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `out.txt` added to `.gitignore`, removed from tracking.
 
+### Benchmarks
+- `BenchmarkRetrieveContextStarPrecompute` / `BenchmarkRetrieveContextStarRecompute` (both N=500, star graph, depth=1, dim=768, in-memory backend): post-#17 path uses `defaultCompositeScorer` (cached queryNorm via `CosineSimilarityWithNorm` — one sqrt per row), pre-#17 path uses a `CompositeScorer` override that calls `CosineSimilarity` directly (two sqrts per row). Both columns are reproducible with a single `go test -bench` invocation on the same harness. The relative delta (one-vs-two sqrts) is linear in N.
+
+  Reproduce:
+  ```
+  go test -count=1 -bench='BenchmarkRetrieveContextStar' -benchtime=20x -run='^$' -benchmem ./src/...
+  ```
+
+  Snapshot (macOS, darwin/arm64, Accelerate cblas_sdot, GOOS=darwin):
+
+  | bench                                 | ns/op         | B/op      | allocs/op |
+  |---------------------------------------|---------------|-----------|-----------|
+  | BenchmarkRetrieveContextStarPrecompute | 277_712_844   | 5_339_679 | 11_595    |
+  | BenchmarkRetrieveContextStarRecompute  | 324_184_298   | 5_339_601 | 11_594    |
+
+  The `Precompute` row pays one sqrt per row (normB only); the `Recompute` row pays two (query + node). Wall-clock figures vary by host; relative gap is stable. Re-running the bench refreshes both rows.
+
 ## [PR9] — Retention, auth, id_map, CTE filters
 
 ### Added
