@@ -214,3 +214,66 @@ func TestExtractEntitiesNonRetryHTTP4xx(t *testing.T) {
 		t.Errorf("server hit %d times for 4xx, want 1 (no retry on client errors)", got)
 	}
 }
+
+// TestStripMarkdownCodeFence enumerates the contract of the JSON-fence
+// stripper called by both Ollama and OpenAI ExtractEntities. Each case
+// is a representative LLM response (fenced / bare / wrapped / unclosed).
+func TestStripMarkdownCodeFence(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"bare json unchanged", `{"entities":[{"id":"a","category":"world","content":"A"}]}`, `{"entities":[{"id":"a","category":"world","content":"A"}]}`},
+		{"json fence stripped", "```json\n{\"entities\":[]}\n```", `{"entities":[]}`},
+		{"generic fence stripped", "```\n{\"entities\":[]}\n```", `{"entities":[]}`},
+		{"uppercase JSON tag", "```JSON\n{\"entities\":[]}\n```", `{"entities":[]}`},
+		{"trailing whitespace", "```json\n{\"entities\":[]}\n``` \t", `{"entities":[]}`},
+		{"leading whitespace only", "   \n\r{\"entities\":[]}", `{"entities":[]}`},
+		{"preamble and postamble", "Here you go:\n```json\n{\"entities\":[]}\n``` done.", `{"entities":[]}`},
+		{"unclosed fence best effort", "```json\n{\"entities\":[]}", `{"entities":[]}`},
+		{"empty input", "", ""},
+		{"only fence chars", "```\n```", ""},
+		{"nested-looking fence takes first only", "prefix ```json{a}``` suffix ```json{b}```", "{a}"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripMarkdownCodeFence(tc.input)
+			if got != tc.want {
+				t.Errorf("stripMarkdownCodeFence(%q)\n  got:  %q\n  want: %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestExtractEntitiesStripsMarkdownFences is an integration test
+// through the public ExtractEntities path: a server that emits
+// ```json ... ``` wrapped JSON must still parse successfully instead
+// of returning a parse error.
+func TestExtractEntitiesStripsMarkdownFences(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(chatResponse{
+			Message: chatMessage{
+				Role: "assistant",
+				Content: "```json\n" +
+					`{"entities":[{"id":"fenced","category":"world","content":"Fenced entity"}]}` +
+					"\n```",
+			},
+			Done: true,
+		})
+	}))
+	defer server.Close()
+
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
+	res, err := ex.ExtractEntities(extCtx, "d")
+	if err != nil {
+		t.Fatalf("ExtractEntities: %v", err)
+	}
+	if len(res.Entities) != 1 {
+		t.Fatalf("entities = %d, want 1", len(res.Entities))
+	}
+	if res.Entities[0].ID != "fenced" {
+		t.Errorf("entity id = %q, want fenced", res.Entities[0].ID)
+	}
+}

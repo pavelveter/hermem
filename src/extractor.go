@@ -283,6 +283,57 @@ func truncate(s string, max int) string {
 	return string(runes[:max]) + "...<truncated>"
 }
 
+// stripMarkdownCodeFence strips a markdown ```json or ``` fence around
+// JSON content. Models frequently wrap JSON in such fences despite
+// "return only JSON" instructions; without stripping, json.Unmarshal
+// fails on the leading backtick.
+//
+// Idempotent on already-clean JSON: when no fence is present, the
+// input is returned verbatim (trimmed). The `json` tag inside the
+// fence is matched case-insensitively.
+//
+// Behaviour:
+//   - `{"a":1}`                                -> `{"a":1}`
+//   - "```json\n{\"a\":1}\n```"                -> `{"a\":1}`
+//   - "```\n{\"a\":1}\n```"                    -> `{"a\":1}`
+//   - "```JSON\n{\"a\":1}\n```"                -> `{"a\":1}`
+//   - "preamble ```json\n{...}\n``` postamble" -> `{...}`
+//   - unclosed "```json\n{\"a\":1}"            -> `{"a\":1}` (best effort)
+func stripMarkdownCodeFence(s string) string {
+	openIdx, tagLen := findCodeFence(s)
+	if openIdx == -1 {
+		return strings.TrimSpace(s)
+	}
+	innerStart := openIdx + tagLen
+	for innerStart < len(s) && isFenceWS(s[innerStart]) {
+		innerStart++
+	}
+	rest := s[innerStart:]
+	closeIdx := strings.Index(rest, "```")
+	if closeIdx == -1 {
+		return strings.TrimSpace(rest)
+	}
+	return strings.TrimSpace(rest[:closeIdx])
+}
+
+// findCodeFence returns the index of an opening ``` fence, preferring
+// ```json over plain ```. Returns (-1, 0) when no fence is present.
+func findCodeFence(s string) (int, int) {
+	idx := strings.Index(s, "```")
+	if idx == -1 {
+		return -1, 0
+	}
+	after := idx + 3
+	if after+4 <= len(s) && strings.EqualFold(s[after:after+4], "json") {
+		return idx, 7
+	}
+	return idx, 3
+}
+
+func isFenceWS(c byte) bool {
+	return c == '\n' || c == '\r' || c == ' ' || c == '\t'
+}
+
 // OpenAILLMExtractor extracts entities via the OpenAI Chat Completions API.
 type OpenAILLMExtractor struct {
 	BaseURL     string
@@ -479,6 +530,12 @@ Dialog:`
 	}
 
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	// Defensive: even with response_format=json_object, some
+	// fine-tuned variants or downgraded models emit markdown
+	// fences when chat drift confuses them. Strip before parsing
+	// so transient fence wrapping doesn't cascade to the caller
+	// as a parse error.
+	content = stripMarkdownCodeFence(content)
 	if content == "" {
 		return &ExtractionResult{Entities: []ExtractedEntity{}}, nil
 	}
@@ -539,6 +596,11 @@ Dialog:`
 	}
 
 	content := strings.TrimSpace(chatResp.Message.Content)
+	// Strip markdown fences that Ollama emits despite format=json.
+	// Without this, json.Unmarshal fails on the leading backtick and
+	// every Ollama response that wraps its JSON in ``` ... ``` would
+	// surface as "parse error" — even when the inner JSON is valid.
+	content = stripMarkdownCodeFence(content)
 	if content == "" {
 		return &ExtractionResult{Entities: []ExtractedEntity{}}, nil
 	}
