@@ -47,17 +47,20 @@ type openaiEmbedResponse struct {
 	} `json:"data"`
 }
 
-func NewOllamaEmbedder(baseURL, model string) *OllamaEmbedder {
+func NewOllamaEmbedder(baseURL, model string, timeout time.Duration) *OllamaEmbedder {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
 	if model == "" {
 		model = "nomic-embed-text"
 	}
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	return &OllamaEmbedder{
 		BaseURL: baseURL,
 		Model:   model,
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{Timeout: timeout},
 	}
 }
 
@@ -97,18 +100,21 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	return embedResp.Embedding, nil
 }
 
-func NewOpenAIEmbedder(baseURL, apiKey, model string) *OpenAIEmbedder {
+func NewOpenAIEmbedder(baseURL, apiKey, model string, timeout time.Duration) *OpenAIEmbedder {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
 	if model == "" {
 		model = "text-embedding-3-small"
 	}
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	return &OpenAIEmbedder{
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		Model:   model,
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{Timeout: timeout},
 	}
 }
 

@@ -49,6 +49,16 @@ func VectorNorm(v []float32) float32 {
 	return float32(math.Sqrt(float64(norm2)))
 }
 
+func NormalizeVector(v []float32) {
+	n := VectorNorm(v)
+	if n == 0 {
+		return
+	}
+	for i := range v {
+		v[i] /= n
+	}
+}
+
 func BatchDotProducts(query []float32, matrix []float32, rows, cols int, dot []float32) {
 	_ = matrix[rows*cols-1]
 	_ = dot[rows-1]

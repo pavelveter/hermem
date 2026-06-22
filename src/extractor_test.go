@@ -75,7 +75,7 @@ func TestExtractEntitiesHappy(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "test-model", 0.1)
+	ex := NewOllamaLLMExtractor(server.URL, "test-model", 0.1, 0)
 	res, err := 	ex.ExtractEntities(extCtx, "user-dialog")
 	if err != nil {
 		t.Fatalf("ExtractEntities: %v", err)
@@ -104,7 +104,7 @@ func TestExtractEntitiesEmptyContentReturnsEmpty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
 	res, err := 	ex.ExtractEntities(extCtx, "d")
 	if err != nil {
 		t.Fatalf("ExtractEntities: %v", err)
@@ -126,7 +126,7 @@ func TestExtractEntitiesParseErrorNoRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
 	if _, err := 	ex.ExtractEntities(extCtx, "d"); err == nil {
 		t.Fatal("expected parse error, got nil")
 	}
@@ -156,7 +156,7 @@ func TestExtractEntitiesRetriesOn5xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
 	start := time.Now()
 	res, err := 	ex.ExtractEntities(extCtx, "d")
 	if err != nil {
@@ -183,7 +183,7 @@ func TestExtractEntitiesAllRetriesFail(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
 	_, err := 	ex.ExtractEntities(extCtx, "d")
 	if err == nil {
 		t.Fatal("expected exhausted-retry error, got nil")
@@ -205,7 +205,7 @@ func TestExtractEntitiesNonRetryHTTP4xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
+	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1, 0)
 	_, err := 	ex.ExtractEntities(extCtx, "d")
 	if err == nil {
 		t.Fatal("expected 4xx error, got nil")

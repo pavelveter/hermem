@@ -32,6 +32,17 @@ func VectorNorm(v []float32) float32 {
 	return float32(math.Sqrt(float64(sum)))
 }
 
+// NormalizeVector scales v to unit length in place. No-op for zero vectors.
+func NormalizeVector(v []float32) {
+	n := VectorNorm(v)
+	if n == 0 {
+		return
+	}
+	for i := range v {
+		v[i] /= n
+	}
+}
+
 // BatchDotProducts computes dot(query, matrix[row]) for every row of the
 // rows×cols matrix. The matrix must be stored row-major. The length of
 // the output slice must equal rows.

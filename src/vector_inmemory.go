@@ -52,6 +52,7 @@ func (idx *InMemoryVectorIndex) load() {
 			continue
 		}
 		if emb := BytesToEmbedding(blob); emb != nil {
+			NormalizeVector(emb)
 			if idx.cols == 0 {
 				idx.cols = len(emb)
 			}
@@ -59,7 +60,7 @@ func (idx *InMemoryVectorIndex) load() {
 			idx.entries = append(idx.entries, vectorEntry{
 				id:   id,
 				vec:  emb,
-				norm: vectorNorm(emb),
+				norm: 1,
 			})
 			idx.flatMatrix = append(idx.flatMatrix, emb...)
 		}
@@ -99,7 +100,7 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 	BatchDotProducts(queryEmbedding, flatMatrix, n, cols, dots)
 
 	for i := range dots {
-		dots[i] /= queryNorm * entries[i].norm
+		dots[i] /= queryNorm
 	}
 
 	idxs := make([]int, n)
@@ -152,7 +153,7 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 		BatchDotProducts(q, flatMatrix, n, cols, dots)
 
 		for i := range dots {
-			dots[i] /= queryNorm * entries[i].norm
+			dots[i] /= queryNorm
 		}
 
 		idxs := make([]int, n)
@@ -179,7 +180,8 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	entry := vectorEntry{id: id, vec: vec, norm: vectorNorm(vec)}
+	// vec is already normalized by StoreEntityWithEmbedding caller
+	entry := vectorEntry{id: id, vec: vec, norm: 1}
 	if i, ok := idx.byID[id]; ok {
 		idx.entries[i] = entry
 		copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], vec)
