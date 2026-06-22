@@ -14,6 +14,7 @@ type AsyncMetricsWorker struct {
 	batchSize    int
 	flushTimeout time.Duration
 	stopCh       chan struct{}
+	flushReqCh   chan chan struct{}
 }
 
 func NewAsyncMetricsWorker(db *sql.DB, bufferSize, batchSize int, flushTimeout time.Duration) *AsyncMetricsWorker {
@@ -23,6 +24,7 @@ func NewAsyncMetricsWorker(db *sql.DB, bufferSize, batchSize int, flushTimeout t
 		batchSize:    batchSize,
 		flushTimeout: flushTimeout,
 		stopCh:       make(chan struct{}),
+		flushReqCh:   make(chan chan struct{}),
 	}
 }
 
@@ -66,6 +68,14 @@ func (w *AsyncMetricsWorker) Start() {
 			case <-ticker.C:
 				flush()
 
+			case replyCh := <-w.flushReqCh:
+				for len(w.ch) > 0 {
+					id := <-w.ch
+					pending[id] = struct{}{}
+				}
+				flush()
+				close(replyCh)
+
 			case <-w.stopCh:
 				flush()
 				return
@@ -93,6 +103,18 @@ func (w *AsyncMetricsWorker) Stop() {
 		return
 	}
 	close(w.stopCh)
+}
+
+func (w *AsyncMetricsWorker) Flush() {
+	if w == nil {
+		return
+	}
+	replyCh := make(chan struct{})
+	select {
+	case w.flushReqCh <- replyCh:
+		<-replyCh
+	case <-w.stopCh:
+	}
 }
 
 func flushAccessedBatch(ctx context.Context, db *sql.DB, ids []string) error {
