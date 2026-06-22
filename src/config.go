@@ -12,11 +12,14 @@ import (
 )
 
 type Config struct {
-	Provider     string
-	URL          string
-	Key          string
-	Model        string
+	Provider string
+	URL      string
+	Key      string
+	Model    string
 	DBPath             string
+	ExtractProvider    string
+	ExtractURL         string
+	ExtractKey         string
 	ExtractModel       string
 	ExtractTemperature float32
 	// DedupThreshold is the cosine-similarity floor above which an
@@ -139,6 +142,12 @@ func LoadConfig(path string) (*Config, error) {
 			}
 		case "extraction.model":
 			cfg.ExtractModel = val
+		case "extraction.provider":
+			cfg.ExtractProvider = strings.ToLower(val)
+		case "extraction.url":
+			cfg.ExtractURL = val
+		case "extraction.key":
+			cfg.ExtractKey = val
 		case "extraction.temperature":
 			if v, err := strconv.ParseFloat(val, 32); err == nil {
 				cfg.ExtractTemperature = float32(v)
@@ -197,12 +206,23 @@ func (c *Config) NewEmbedder() Embedder {
 }
 
 func (c *Config) NewExtractor() LLMExtractor {
-	switch c.Provider {
+	provider := orDefault(c.ExtractProvider, c.Provider)
+	url := orDefault(c.ExtractURL, c.URL)
+	key := orDefault(c.ExtractKey, c.Key)
+	switch provider {
 	case "openai":
-		return NewOpenAILLMExtractor(c.URL, c.Key, c.ExtractModel, c.ExtractTemperature)
+		return NewOpenAILLMExtractor(url, key, c.ExtractModel, c.ExtractTemperature)
 	default:
-		return NewOllamaLLMExtractor(c.URL, c.ExtractModel, c.ExtractTemperature)
+		return NewOllamaLLMExtractor(url, c.ExtractModel, c.ExtractTemperature)
 	}
+}
+
+// orDefault returns val if non-empty, otherwise fallback.
+func orDefault(val, fallback string) string {
+	if val != "" {
+		return val
+	}
+	return fallback
 }
 
 // LoadConfigFromBinaryDir is the production entry point: it resolves
