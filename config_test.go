@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
@@ -242,6 +243,49 @@ DIM = 512
 	}
 	if cfg.VectorDim != 512 {
 		t.Errorf("VectorDim = %d, want 512", cfg.VectorDim)
+	}
+}
+
+func TestLoadConfigRetentionDefaults(t *testing.T) {
+	tmp := t.TempDir()
+	cfg, err := LoadConfig(filepath.Join(tmp, "no-such.ini"))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Retention.ObservationTTL != 90*24*time.Hour {
+		t.Errorf("ObservationTTL = %v, want 2160h", cfg.Retention.ObservationTTL)
+	}
+	if cfg.Retention.RunInterval != 1*time.Hour {
+		t.Errorf("RunInterval = %v, want 1h", cfg.Retention.RunInterval)
+	}
+	if cfg.Retention.DeleteBatchSize != 500 {
+		t.Errorf("DeleteBatchSize = %d, want 500", cfg.Retention.DeleteBatchSize)
+	}
+}
+
+func TestLoadConfigParsesRetentionKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[retention]
+observation_ttl = 720h
+run_interval = 30m
+batch_size = 100
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Retention.ObservationTTL != 720*time.Hour {
+		t.Errorf("ObservationTTL = %v, want 720h", cfg.Retention.ObservationTTL)
+	}
+	if cfg.Retention.RunInterval != 30*time.Minute {
+		t.Errorf("RunInterval = %v, want 30m", cfg.Retention.RunInterval)
+	}
+	if cfg.Retention.DeleteBatchSize != 100 {
+		t.Errorf("DeleteBatchSize = %d, want 100", cfg.Retention.DeleteBatchSize)
 	}
 }
 
