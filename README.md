@@ -261,8 +261,10 @@ hermem/
 ├── embedder.go          # Embedder interface (Ollama / OpenAI)
 ├── extractor.go         # LLMExtractor interface + Ollama chat w/ retry + allowlist filtering
 ├── vector.go            # VectorIndex interface, wrappers (SearchByVector / StoreEntityWithEmbedding), entity storage
-├── vector_inmemory.go   # InMemoryVectorIndex — brute-force cosine scan, always compiled
+├── vector_inmemory.go   # InMemoryVectorIndex — RAM-cached cosine scan, always compiled
 ├── vector_sqlitevec.go  # SqliteVecIndex — vec0 KNN, build tag sqlite_vec
+├── cosine.go            # CosineSimilarity — pure Go fallback (!darwin)
+├── cosine_darwin.go     # CosineSimilarity — Apple Accelerate NEON SIMD (darwin)
 ├── retrieval.go         # Recursive CTE graph walk, ranking, markdown formatting
 ├── ingestion.go         # Ingestion worker, entity extraction, deduplication
 ├── server.go            # HTTP API server + strict JSON decoder
@@ -464,25 +466,24 @@ edge is enough for the walk to find the reverse connection.
 
 Benchmarked on Apple M1 (768D embeddings, `topK=10`):
 
-| N | In-Memory (brute-force) | sqlite-vec (KNN index) | Allocs (mem / vec) |
-|--:|------------------------:|-----------------------:|-------------------:|
-| 100 | 58 µs | 410 µs | 926 / 290 |
-| 1,000 | 580 µs | 1.0 ms | 7,523 / 290 |
-| 5,000 | 2.9 ms | 6.8 ms | 35,280 / 290 |
-| 10,000 | 6.2 ms | 10.2 ms | 70,268 / 290 |
+| N | In-Memory (cache + Accelerate) | sqlite-vec (KNN index) | Allocs (mem / vec) |
+|--:|-------------------------------:|-----------------------:|-------------------:|
+| 100 | 77 µs | 410 µs | 245 / 290 |
+| 1,000 | 473 µs | 1.0 ms | 245 / 290 |
+| 5,000 | 3.1 ms | 6.8 ms | 245 / 290 |
+| 10,000 | 5.9 ms | 10.2 ms | 245 / 290 |
 
 ### Scaling
 
-- **In-Memory** (`InMemoryVectorIndex`, default) — brute-force
-  O(N) cosine scan. On M1 the NEON SIMD pipeline makes 768D
-  dot products extremely fast; at 10K entities a full scan takes
-  ~6 ms. Good for datasets up to ~20K entities.
+- **In-Memory** (`InMemoryVectorIndex`, default) — RAM-cached
+  O(N) cosine scan via Apple Accelerate framework (`cblas_sdot`,
+  NEON SIMD). 245 allocs per search (vs 70,268 in SQLite scan).
+  At 10K entities ~5.9 ms. Good for datasets up to ~20K entities.
 - **sqlite-vec** (`SqliteVecIndex`, `[database] backend = sqlite-vec`)
-  — indexed KNN via `vec0` virtual table. Does ~240× fewer
-  allocations (290 vs 70,268 at N=10K) but has SQLite query
-  overhead (plan, MATCH, distance sort). At N < 100K the
-  brute-force path is faster on M1; sqlite-vec pulls ahead
-  at larger scales where O(N) scan becomes prohibitive.
+  — indexed KNN via `vec0` virtual table. 290 allocs per search.
+  SQLite query overhead (plan, MATCH, distance sort). At N < 100K
+  in-memory is faster on M1; sqlite-vec pulls ahead at larger
+  scales where O(N) scan becomes prohibitive.
 - **Graph walk** — dominated by SQLite recursive-CTE JOIN
   cost over edges, scales roughly linearly with edge count.
 
