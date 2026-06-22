@@ -267,6 +267,212 @@ func truncate(s string, max int) string {
 	return s[:max] + "...<truncated>"
 }
 
+// OpenAILLMExtractor extracts entities via the OpenAI Chat Completions API.
+type OpenAILLMExtractor struct {
+	BaseURL     string
+	APIKey      string
+	Model       string
+	Temperature float32
+
+	client *http.Client
+}
+
+func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32) *OpenAILLMExtractor {
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
+	if temperature == 0 {
+		temperature = 0.1
+	}
+	return &OpenAILLMExtractor{
+		BaseURL:     baseURL,
+		APIKey:      apiKey,
+		Model:       model,
+		Temperature: temperature,
+		client: &http.Client{
+			Timeout: ollamaRequestTimeout,
+		},
+	}
+}
+
+type openAIChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openAIChatRequest struct {
+	Model       string              `json:"model"`
+	Messages    []openAIChatMessage `json:"messages"`
+	Temperature float32             `json:"temperature"`
+	ResponseFormat *struct {
+		Type string `json:"type"`
+	} `json:"response_format,omitempty"`
+}
+
+type openAIChatChoice struct {
+	Message openAIChatMessage `json:"message"`
+}
+
+type openAIChatResponse struct {
+	Choices []openAIChatChoice `json:"choices"`
+}
+
+func (e *OpenAILLMExtractor) chat(ctx context.Context, req *openAIChatRequest) (*openAIChatResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("extractor: marshal openai request: %w", err)
+	}
+
+	url := e.BaseURL + "/chat/completions"
+
+	var lastErr error
+	backoff := ollamaBackoffBase
+	attemptsUsed := 0
+	defer func() {
+		outcome := "ok"
+		if lastErr != nil {
+			outcome = "error"
+		}
+		slog.Debug("openai call complete",
+			"event", "openai_call",
+			"model", e.Model,
+			"attempts_used", attemptsUsed,
+			"outcome", outcome,
+		)
+	}()
+	for attempt := 1; attempt <= ollamaRetries; attempt++ {
+		attemptsUsed = attempt
+		if attempt > 1 {
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			backoff *= 2
+			if backoff > ollamaBackoffMax {
+				backoff = ollamaBackoffMax
+			}
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("extractor: build openai request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+e.APIKey)
+
+		resp, err := e.client.Do(httpReq)
+		if err != nil {
+			lastErr = err
+			slog.Warn("openai attempt failed, will retry",
+				"model", e.Model,
+				"attempt", attempt,
+				"err", err.Error(),
+			)
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("extractor: openai HTTP %d", resp.StatusCode)
+			slog.Warn("openai returned 5xx, will retry",
+				"model", e.Model,
+				"attempt", attempt,
+				"status", resp.StatusCode,
+			)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("extractor: openai HTTP %d: %s", resp.StatusCode, truncate(string(data), 200))
+		}
+
+		var cr openAIChatResponse
+		if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("extractor: decode openai response: %w", err)
+		}
+		if err := resp.Body.Close(); err != nil {
+			return nil, fmt.Errorf("extractor: close openai response: %w", err)
+		}
+		return &cr, nil
+	}
+
+	if lastErr != nil {
+		return nil, fmt.Errorf("extractor: openai chat failed after %d attempts: %w", ollamaRetries, lastErr)
+	}
+	return nil, fmt.Errorf("extractor: openai chat failed after %d attempts", ollamaRetries)
+}
+
+func (e *OpenAILLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error) {
+
+	systemPrompt := `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
+
+Categories (use EXACTLY these strings, no others):
+- world: facts, definitions, objective knowledge
+- opinion: preferences, beliefs, subjective views
+- experience: past events, interactions, what happened
+- observation: patterns noticed, anomalies, insights
+
+Allowed relation_type values (use EXACTLY these strings, no others):
+"prefers", "uses", "mentions", "related_to", "part_of", "causes", "contradicts"
+
+Rules:
+1. Extract atomic, self-contained entities
+2. Each entity needs a unique kebab-case id
+3. Relations connect entities with one of the allowed relation_type strings
+4. Only include clear, useful knowledge
+5. Return ONLY valid JSON matching this exact schema:
+{"entities":[{"id":"string","category":"world|opinion|experience|observation","content":"string","relations":[{"target_id":"string","relation_type":"string"}]}]}
+
+Dialog:`
+
+	req := openAIChatRequest{
+		Model: e.Model,
+		Messages: []openAIChatMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: dialog},
+		},
+		Temperature: e.Temperature,
+		ResponseFormat: &struct {
+			Type string `json:"type"`
+		}{Type: "json_object"},
+	}
+
+	chatResp, err := e.chat(ctx, &req)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return &ExtractionResult{Entities: []ExtractedEntity{}}, nil
+	}
+
+	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	if content == "" {
+		return &ExtractionResult{Entities: []ExtractedEntity{}}, nil
+	}
+
+	var result ExtractionResult
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, fmt.Errorf("extractor: parse openai JSON response: %w (raw content: %s)", err, truncate(content, 200))
+	}
+
+	if result.Entities == nil {
+		result.Entities = []ExtractedEntity{}
+	}
+
+	result.Entities = filterEntities(result.Entities)
+
+	return &result, nil
+}
+
 func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error) {
 
 	systemPrompt := `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
