@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 )
+
+var ictx = context.Background()
 
 // stubExtractor is a stub LLMExtractor that returns a fixed response /
 // error without touching the network. Place it in the test file so it
@@ -14,7 +17,7 @@ type stubExtractor struct {
 	err  error
 }
 
-func (s *stubExtractor) ExtractEntities(_ string) (*ExtractionResult, error) {
+func (s *stubExtractor) ExtractEntities(_ context.Context, _ string) (*ExtractionResult, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -30,7 +33,7 @@ type stubEmbedder struct {
 	calls int
 }
 
-func (e *stubEmbedder) Embed(content string) ([]float32, error) {
+func (e *stubEmbedder) Embed(_ context.Context, content string) ([]float32, error) {
 	e.calls++
 	if e.err != nil {
 		return nil, e.err
@@ -51,7 +54,7 @@ func TestProcessDialogHappyPath(t *testing.T) {
 	}}}
 	emb := &stubEmbedder{}
 	w := NewIngestionWorker(db, ext, emb, 0.99) // high threshold → no dedup
-	if err := w.ProcessDialog("user dialog text"); err != nil {
+	if err := w.ProcessDialog(ictx, "user dialog text"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
 	rows, err := db.Query(`SELECT id FROM entities ORDER BY id`)
@@ -93,7 +96,7 @@ func TestProcessDialogMergesNearDuplicate(t *testing.T) {
 		"Existing fact": existingEmbed,
 	}}
 	w := NewIngestionWorker(db, ext, emb, 0.99)
-	if err := w.ProcessDialog("d"); err != nil {
+	if err := w.ProcessDialog(ictx, "d"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
 	var n int
@@ -118,7 +121,7 @@ func TestProcessDialogEmbedderError(t *testing.T) {
 	}}}
 	emb := &stubEmbedder{err: embErr}
 	w := NewIngestionWorker(db, ext, emb, 0.99)
-	err := w.ProcessDialog("d")
+	err := w.ProcessDialog(ictx, "d")
 	if err == nil {
 		t.Fatal("expected embedder error, got nil")
 	}
@@ -135,7 +138,7 @@ func TestProcessDialogExtractorError(t *testing.T) {
 	ext := &stubExtractor{err: extErr}
 	emb := &stubEmbedder{}
 	w := NewIngestionWorker(db, ext, emb, 0.99)
-	err := w.ProcessDialog("d")
+	err := w.ProcessDialog(ictx, "d")
 	if err == nil {
 		t.Fatal("expected extractor error, got nil")
 	}
@@ -159,7 +162,7 @@ func TestMemoryWorkerDrainsChannel(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "hello"}
 	close(ch)
 
-	MemoryWorker(db, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, ext, emb, 0.99, ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "m1").Scan(&n); err != nil {
@@ -187,7 +190,7 @@ func TestMemoryWorkerExtractorErrorHaltsAllIngest(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "second"}
 	close(ch)
 
-	MemoryWorker(db, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, ext, emb, 0.99, ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities`).Scan(&n); err != nil {
@@ -211,7 +214,7 @@ type statefulExtractor struct {
 	callNum int
 }
 
-func (s *statefulExtractor) ExtractEntities(_ string) (*ExtractionResult, error) {
+func (s *statefulExtractor) ExtractEntities(_ context.Context, _ string) (*ExtractionResult, error) {
 	s.callNum++
 	if s.callNum == s.failOn {
 		return nil, s.err
@@ -241,7 +244,7 @@ func TestMemoryWorkerContinuesAfterSingleError(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "second (succeeds)"}
 	close(ch)
 
-	MemoryWorker(db, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, ext, emb, 0.99, ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "good-m2").Scan(&n); err != nil {
@@ -284,7 +287,7 @@ func TestProcessDialogAppendsDifferentContentOnMerge(t *testing.T) {
 		"apple; banana": existingEmbed,
 	}}
 	w := NewIngestionWorker(db, ext, emb, 0.99)
-	if err := w.ProcessDialog("d"); err != nil {
+	if err := w.ProcessDialog(ictx, "d"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
 

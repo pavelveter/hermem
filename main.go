@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -10,11 +11,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 )
 
-func GenerateResponse(db *sql.DB, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
-	queryEmbedding, err := embedder.Embed(userQuery)
+func GenerateResponse(ctx context.Context, db *sql.DB, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
+	queryEmbedding, err := embedder.Embed(ctx, userQuery)
 	if err != nil {
 		return "", fmt.Errorf("failed to embed query: %w", err)
 	}
@@ -71,6 +75,7 @@ func main() {
 	extractor := cfg.NewExtractor()
 
 	cmd := os.Args[1]
+	ctx := context.Background()
 
 	switch cmd {
 	case "store":
@@ -88,7 +93,7 @@ func main() {
 		}
 		entity := Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}
 		if len(entity.Embedding) == 0 {
-			embedding, err := embedder.Embed(entity.Content)
+			embedding, err := embedder.Embed(ctx, entity.Content)
 			if err != nil {
 				log.Fatalf("Failed to embed: %v", err)
 			}
@@ -97,7 +102,7 @@ func main() {
 		if err := StoreEntityWithEmbedding(db, entity); err != nil {
 			log.Fatalf("Failed to store: %v", err)
 		}
-		if err := AutoLinkEdges(db, embedder, entity.ID, entity.Embedding); err != nil {
+		if err := AutoLinkEdges(ctx, db, embedder, entity.ID, entity.Embedding); err != nil {
 			log.Fatalf("Failed to auto-link: %v", err)
 		}
 		fmt.Println(`{"status":"ok"}`)
@@ -116,7 +121,7 @@ func main() {
 		if req.TopK <= 0 {
 			req.TopK = 5
 		}
-		embedding, err := embedder.Embed(req.Query)
+		embedding, err := embedder.Embed(ctx, req.Query)
 		if err != nil {
 			log.Fatalf("Embed failed: %v", err)
 		}
@@ -141,7 +146,7 @@ func main() {
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
 		}
-		context, err := GenerateResponse(db, embedder, opts, req.Query)
+		context, err := GenerateResponse(ctx, db, embedder, opts, req.Query)
 		if err != nil {
 			log.Fatalf("Query failed: %v", err)
 		}
@@ -164,7 +169,7 @@ func main() {
 			log.Fatalf("invalid relation_type: %s", req.RelationType)
 		}
 		if req.AutoCreate {
-			if err := AddEdgeWithAutoCreate(db, embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {
+			if err := AddEdgeWithAutoCreate(ctx, db, embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {
 				log.Fatalf("Failed to add edge: %v", err)
 			}
 		} else {
@@ -185,7 +190,7 @@ func main() {
 			log.Fatal("dialog required")
 		}
 		worker := NewIngestionWorker(db, extractor, embedder, cfg.DedupThreshold)
-		if err := worker.ProcessDialog(req.Dialog); err != nil {
+		if err := worker.ProcessDialog(ctx, req.Dialog); err != nil {
 			log.Fatalf("Ingest failed: %v", err)
 		}
 		fmt.Println(`{"status":"ok"}`)
@@ -199,18 +204,43 @@ func main() {
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
 		})
-		http.HandleFunc("/health", srv.HandleHealth)
-		http.HandleFunc("/store", srv.HandleStore)
-		http.HandleFunc("/search", srv.HandleSearch)
-		http.HandleFunc("/retrieve", srv.HandleRetrieve)
-		http.HandleFunc("/ingest", srv.HandleIngest)
-		http.HandleFunc("/query", srv.HandleQuery)
-		http.HandleFunc("/edge", srv.HandleEdge)
-		slog.Info("server ready",
-			"event", "server_ready",
-			"port", port,
-		)
-		log.Fatal(http.ListenAndServe(":"+port, nil))
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", srv.HandleHealth)
+		mux.HandleFunc("/metrics", metricsHandler)
+		mux.HandleFunc("/store", srv.HandleStore)
+		mux.HandleFunc("/search", srv.HandleSearch)
+		mux.HandleFunc("/retrieve", srv.HandleRetrieve)
+		mux.HandleFunc("/ingest", srv.HandleIngest)
+		mux.HandleFunc("/query", srv.HandleQuery)
+		mux.HandleFunc("/edge", srv.HandleEdge)
+
+		httpServer := &http.Server{
+			Addr:    ":" + port,
+			Handler: requestIDMiddleware(slogMiddleware(mux)),
+		}
+
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+		go func() {
+			slog.Info("server ready",
+				"event", "server_ready",
+				"port", port,
+			)
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("server error: %v", err)
+			}
+		}()
+
+		<-quit
+		slog.Info("shutting down...", "event", "server_shutdown")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Fatalf("server forced shutdown: %v", err)
+		}
+		slog.Info("server stopped", "event", "server_stopped")
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)

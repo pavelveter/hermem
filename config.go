@@ -15,8 +15,9 @@ type Config struct {
 	URL          string
 	Key          string
 	Model        string
-	DBPath       string
-	ExtractModel string
+	DBPath             string
+	ExtractModel       string
+	ExtractTemperature float32
 	// DedupThreshold is the cosine-similarity floor above which an
 	// incoming entity is considered a duplicate of an existing one and
 	// is merged rather than inserted. Cosine similarity lives in [0, 1]
@@ -47,8 +48,9 @@ func LoadConfig(path string) (*Config, error) {
 		URL:               "http://localhost:11434",
 		Model:             "nomic-embed-text",
 		DBPath:            "hermem.db",
-		ExtractModel:      "qwen2.5-coder:7b",
-		DedupThreshold:    0.88,
+		ExtractModel:       "qwen2.5-coder:7b",
+		ExtractTemperature: 0.1,
+		DedupThreshold:     0.88,
 		MaxDepthCeiling:   5,
 		MaxRetrievedNodes: 100,
 	}
@@ -98,6 +100,12 @@ func LoadConfig(path string) (*Config, error) {
 			cfg.DBPath = val
 		case "extraction.model":
 			cfg.ExtractModel = val
+		case "extraction.temperature":
+			if v, err := strconv.ParseFloat(val, 32); err == nil {
+				cfg.ExtractTemperature = float32(v)
+			} else {
+				log.Printf("config: invalid extraction.temperature %q, keeping default %.2f: %v", val, cfg.ExtractTemperature, err)
+			}
 		case "ingestion.dedup_threshold":
 			if v, err := strconv.ParseFloat(val, 32); err == nil {
 				cfg.DedupThreshold = float32(v)
@@ -132,7 +140,12 @@ func (c *Config) NewEmbedder() Embedder {
 }
 
 func (c *Config) NewExtractor() LLMExtractor {
-	return NewOllamaLLMExtractor(c.URL, c.ExtractModel)
+	switch c.Provider {
+	case "openai":
+		return NewOpenAILLMExtractor(c.URL, c.Key, c.ExtractModel, c.ExtractTemperature)
+	default:
+		return NewOllamaLLMExtractor(c.URL, c.ExtractModel, c.ExtractTemperature)
+	}
 }
 
 // LoadConfigFromBinaryDir is the production entry point: it resolves

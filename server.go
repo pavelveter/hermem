@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -134,10 +135,16 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := StoreEntityWithEmbedding(s.db, entity); err != nil {
+		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	if err := AutoLinkEdges(r.Context(), s.db, s.embedder, req.ID, entity.Embedding); err != nil {
+		slog.Warn("auto-link failed", "event", "auto_link_failed", "id", req.ID, "error", err)
+	}
+
+	incStore()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -162,18 +169,21 @@ func (s *Server) HandleSearch(w http.ResponseWriter, r *http.Request) {
 		req.TopK = 5
 	}
 
-	embedding, err := s.embedder.Embed(req.Query)
+	embedding, err := s.embedder.Embed(r.Context(), req.Query)
 	if err != nil {
+		incErr()
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("embed failed: %v", err))
 		return
 	}
 
 	results, err := SearchByVector(s.db, embedding, req.TopK)
 	if err != nil {
+		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	incSearch()
 	writeJSON(w, http.StatusOK, results)
 }
 
@@ -202,10 +212,12 @@ func (s *Server) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 	opts.MaxDepth = req.MaxDepth
 	result, err := RetrieveContext(s.db, req.SeedIDs, opts)
 	if err != nil {
+		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	incRetrieve()
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -226,11 +238,13 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.worker.ProcessDialog(req.Dialog); err != nil {
+	if err := s.worker.ProcessDialog(r.Context(), req.Dialog); err != nil {
+		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	incIngest()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -255,12 +269,14 @@ func (s *Server) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		req.TopK = 3
 	}
 
-	context, err := GenerateResponse(s.db, s.embedder, s.retrievalOpts, req.Query)
+	context, err := GenerateResponse(r.Context(), s.db, s.embedder, s.retrievalOpts, req.Query)
 	if err != nil {
+		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	incQuery()
 	writeJSON(w, http.StatusOK, map[string]string{"context": context})
 }
 
@@ -288,15 +304,17 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.AutoCreate {
-		err = AddEdgeWithAutoCreate(s.db, s.embedder, req.SourceID, req.TargetID, req.RelationType)
+		err = AddEdgeWithAutoCreate(r.Context(), s.db, s.embedder, req.SourceID, req.TargetID, req.RelationType)
 	} else {
 		err = AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType)
 	}
 	if err != nil {
+		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	incEdge()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

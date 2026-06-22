@@ -1,9 +1,17 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"sort"
+	"sync"
+)
+
+var (
+	embedDimOnce sync.Once
+	embedDim     int
 )
 
 type SearchResult struct {
@@ -88,7 +96,7 @@ func AddEdge(db *sql.DB, src, dst, rel string) error {
 	return nil
 }
 
-func AddEdgeWithAutoCreate(db *sql.DB, embedder Embedder, src, dst, rel string) error {
+func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, embedder Embedder, src, dst, rel string) error {
 	for _, id := range []string{src, dst} {
 		var exists bool
 		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM entities WHERE id = ?)", id).Scan(&exists)
@@ -96,7 +104,7 @@ func AddEdgeWithAutoCreate(db *sql.DB, embedder Embedder, src, dst, rel string) 
 			return fmt.Errorf("failed to check entity %q: %w", id, err)
 		}
 		if !exists {
-			embedding, err := embedder.Embed(id)
+			embedding, err := embedder.Embed(ctx, id)
 			if err != nil {
 				return fmt.Errorf("failed to embed placeholder entity %q: %w", id, err)
 			}
@@ -113,7 +121,7 @@ func AddEdgeWithAutoCreate(db *sql.DB, embedder Embedder, src, dst, rel string) 
 	return AddEdge(db, src, dst, rel)
 }
 
-func AutoLinkEdges(db *sql.DB, embedder Embedder, newID string, newEmbedding []float32) error {
+func AutoLinkEdges(ctx context.Context, db *sql.DB, embedder Embedder, newID string, newEmbedding []float32) error {
 	if len(newEmbedding) == 0 {
 		return fmt.Errorf("cannot auto-link: embedding is empty for %s", newID)
 	}
@@ -134,7 +142,7 @@ func AutoLinkEdges(db *sql.DB, embedder Embedder, newID string, newEmbedding []f
 		if r.Similarity <= 0.85 {
 			continue
 		}
-		_, err := db.Exec(`
+		_, err := db.ExecContext(ctx, `
 			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
 			VALUES (?, ?, 'related_to')
 		`, newID, r.Entity.ID)
@@ -146,9 +154,24 @@ func AutoLinkEdges(db *sql.DB, embedder Embedder, newID string, newEmbedding []f
 	return nil
 }
 
+func checkEmbeddingDim(dim int) {
+	embedDimOnce.Do(func() {
+		embedDim = dim
+		slog.Debug("embedding dimension set", "event", "embed_dim_set", "dim", dim)
+	})
+	if embedDim != 0 && dim != 0 && dim != embedDim {
+		slog.Warn("embedding dimension mismatch",
+			"event", "embed_dim_mismatch",
+			"expected", embedDim,
+			"got", dim,
+		)
+	}
+}
+
 func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 	var embeddingBytes []byte
 	if len(entity.Embedding) > 0 {
+		checkEmbeddingDim(len(entity.Embedding))
 		embeddingBytes = EmbeddingToBytes(entity.Embedding)
 	}
 
