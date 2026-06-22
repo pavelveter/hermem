@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"sync"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
@@ -112,20 +111,14 @@ func (idx *SqliteVecIndex) Store(_ context.Context, id string, vec []float32) er
 func (idx *SqliteVecIndex) Remove(ctx context.Context, ids []string) error {
 	idx.ensureTables()
 
-	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-
-	inClause := strings.Join(placeholders, ",")
-	if _, err := idx.db.ExecContext(ctx,
-		fmt.Sprintf("DELETE FROM vec_entities WHERE entity_id IN (%s)", inClause), args...); err != nil {
+	// Chunked so this stays below SQLite's SQLITE_MAX_VARIABLE_NUMBER=999
+	// even when GC callers pass batch_size > 500 IDs.
+	if err := execInChunks(ctx, idx.db,
+		"DELETE FROM vec_entities WHERE entity_id IN (%s)", ids, DefaultSQLBatchSize); err != nil {
 		return fmt.Errorf("remove from vec_entities: %w", err)
 	}
-	if _, err := idx.db.ExecContext(ctx,
-		fmt.Sprintf("DELETE FROM id_map WHERE entity_id IN (%s)", inClause), args...); err != nil {
+	if err := execInChunks(ctx, idx.db,
+		"DELETE FROM id_map WHERE entity_id IN (%s)", ids, DefaultSQLBatchSize); err != nil {
 		return fmt.Errorf("remove from id_map: %w", err)
 	}
 	return nil

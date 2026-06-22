@@ -63,6 +63,23 @@ func SearchByVector(db *sql.DB, vi VectorIndex, queryEmbedding []float32, topK i
 		return nil, fmt.Errorf("empty query embedding")
 	}
 
+	// Clamp topK to the SQLite IN-clause ceiling. SQLite's default
+	// SQLITE_MAX_VARIABLE_NUMBER is 999; the SELECT below feeds every
+	// returned id into a single `IN (...)` placeholder list, so a
+	// caller-supplied topK > 999 reproduces the same "too many SQL
+	// variables" failure this PR fixes for writes. DefaultSQLBatchSize=500
+	// leaves headroom against any future raise of the limit. Callers
+	// can detect the clamp via `len(results) < topK`; we log debug so
+	// operators can see it on demand.
+	if topK > DefaultSQLBatchSize {
+		slog.Debug("search_topk_clamped",
+			"event", "search_topk_clamp",
+			"requested", topK,
+			"applied", DefaultSQLBatchSize,
+		)
+		topK = DefaultSQLBatchSize
+	}
+
 	ids, err := vi.Search(context.Background(), queryEmbedding, topK)
 	if err != nil {
 		return nil, err
@@ -212,6 +229,7 @@ func checkEmbeddingDim(dim int) {
 func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, entity Entity) error {
 	var embeddingBytes []byte
 	if len(entity.Embedding) > 0 {
+		NormalizeVector(entity.Embedding)
 		checkEmbeddingDim(len(entity.Embedding))
 		embeddingBytes = EmbeddingToBytes(entity.Embedding)
 	}
@@ -259,5 +277,3 @@ func BytesToEmbedding(data []byte) []float32 {
 	}
 	return embedding
 }
-
-

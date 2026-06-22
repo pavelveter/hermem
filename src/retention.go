@@ -76,11 +76,13 @@ func archiveStale(ctx context.Context, db *sql.DB, vi VectorIndex, policy Retent
 		return 0, nil
 	}
 
-	// Mark as archived in SQLite
-	phs, args := inClauseArgs(ids)
-	_, err = db.ExecContext(ctx, fmt.Sprintf(
-		"UPDATE entities SET archived = 1 WHERE id IN (%s)", phs), args...)
-	if err != nil {
+	// Mark as archived in SQLite. Uses chunked exec so a single GC
+	// call with batch_size approaching or exceeding SQLite's
+	// SQLITE_MAX_VARIABLE_NUMBER=999 doesn't fail with "too many SQL
+	// variables". DefaultSQLBatchSize=500 leaves comfortable headroom.
+	if err := execInChunks(ctx, db,
+		"UPDATE entities SET archived = 1 WHERE id IN (%s)",
+		ids, DefaultSQLBatchSize); err != nil {
 		return 0, fmt.Errorf("archive stale: %w", err)
 	}
 

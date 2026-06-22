@@ -140,21 +140,28 @@ func TestRetrieveContextSoftCapBoundsOutput(t *testing.T) {
 
 // TestRetrieveContextRankingOrderByScore verifies the composite
 // re-rank (0.7*sim + 0.3*recency) orders things deterministically.
-// "fresh-aligned" should outrank "old-ortho" because both have
-// query-aligned cosine (1.0 vs ~0) and freshness difference (now vs
-// 720h ago → recency 1.0 vs ~0.37).
+//
+// Wall-clock isolation: UpdatedAt values are FIXED (not time.Now())
+// with a multi-year gap so the score gap isn't sensitive to CI
+// scheduling jitter. The dominant signal here is cosine: aligned
+// embedding outranks orthogonal embedding regardless of recency, so
+// the assertion holds even if a busy runner delays time.Since by
+// hours. The recency component is a secondary check — at
+// rankRecencyHalfLifeHours=720h, an oldTime ~5 years stale gives
+// recency≈0 while a freshTime near the run-time gives recency near 1.
 func TestRetrieveContextRankingOrderByScore(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
 
-	now := time.Now()
+	oldTime := time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
+	freshTime := time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC)
 	rows := []struct {
 		id, content string
 		emb         []float32
 		updatedAt   time.Time
 	}{
-		{"old-ortho", "Ranking older orthogonal fact", []float32{0, 0, 1}, now.Add(-720 * time.Hour)},
-		{"fresh-aligned", "Ranking fresh aligned fact", []float32{1, 0, 0}, now},
+		{"old-ortho", "Ranking older orthogonal fact", []float32{0, 0, 1}, oldTime},
+		{"fresh-aligned", "Ranking fresh aligned fact", []float32{1, 0, 0}, freshTime},
 	}
 	for _, r := range rows {
 		if err := StoreEntityWithEmbedding(db, vi, Entity{

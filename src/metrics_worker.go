@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const maxSQLiteVars = 999
-
 type AsyncMetricsWorker struct {
 	db           *sql.DB
 	ch           chan string
@@ -50,16 +48,20 @@ func (w *AsyncMetricsWorker) Start() {
 			for id := range pending {
 				ids = append(ids, id)
 			}
-			for i := 0; i < len(ids); i += maxSQLiteVars {
-				end := i + maxSQLiteVars
+			// Chunked at the caller so a transient SQLite error on one
+			// chunk does NOT abandon the rest of the pending set —
+			// metrics are best-effort consistency and partial flush is
+			// preferred over dropping whole seconds of Touch events.
+			for start := 0; start < len(ids); start += DefaultSQLBatchSize {
+				end := start + DefaultSQLBatchSize
 				if end > len(ids) {
 					end = len(ids)
 				}
-				if err := flushAccessedBatch(context.Background(), w.db, ids[i:end]); err != nil {
+				if err := flushAccessedBatch(context.Background(), w.db, ids[start:end]); err != nil {
 					slog.Error("async_metrics_flush_failed",
 						"event", "metrics_flush_error",
 						"error", err,
-						"count", len(ids[i:end]),
+						"count", end-start,
 					)
 				}
 			}
@@ -144,6 +146,14 @@ func (w *AsyncMetricsWorker) Stop() {
 	})
 }
 
+// flushAccessedBatch runs ONE UPDATE with `ids` in the IN-clause.
+// Pre-condition: len(ids) ≤ DefaultSQLBatchSize (the SQLite
+// SQLITE_MAX_VARIABLE_NUMBER ceiling). The AsyncMetricsWorker loop in
+// Start() owns the chunking and is tolerant of per-chunk failures
+// (best-effort consistency: dropping a single Touch is preferable to
+// abandoning the rest of the pending set). Production callers
+// wanting strict / all-or-nothing semantics should use execInChunks
+// from sqlbatch.go directly.
 func flushAccessedBatch(ctx context.Context, db *sql.DB, ids []string) error {
 	if len(ids) == 0 {
 		return nil
