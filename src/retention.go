@@ -44,7 +44,7 @@ func archiveStale(ctx context.Context, db *sql.DB, policy RetentionPolicy) (int,
 
 	cutoff := fmt.Sprintf("-%.0f seconds", policy.ObservationTTL.Seconds())
 
-	query := `UPDATE entities SET archived = 1
+	selectQuery := `SELECT id FROM entities
 		WHERE category = 'observation'
 		AND archived = 0
 		AND last_accessed_at < datetime('now', ?)`
@@ -52,15 +52,55 @@ func archiveStale(ctx context.Context, db *sql.DB, policy RetentionPolicy) (int,
 	args := []interface{}{cutoff}
 
 	if policy.DeleteBatchSize > 0 {
-		query += fmt.Sprintf(" LIMIT %d", policy.DeleteBatchSize)
+		selectQuery += fmt.Sprintf(" LIMIT %d", policy.DeleteBatchSize)
 	}
 
-	res, err := db.ExecContext(ctx, query, args...)
+	rows, err := db.QueryContext(ctx, selectQuery, args...)
+	if err != nil {
+		return 0, fmt.Errorf("select stale: %w", err)
+	}
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan stale id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate stale ids: %w", err)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	// Mark as archived in SQLite
+	placeholders := make([]string, len(ids))
+	updateArgs := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		updateArgs[i] = id
+	}
+	_, err = db.ExecContext(ctx, fmt.Sprintf(
+		"UPDATE entities SET archived = 1 WHERE id IN (%s)", strings.Join(placeholders, ",")),
+		updateArgs...)
 	if err != nil {
 		return 0, fmt.Errorf("archive stale: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+
+	// Evict from in-memory vector index
+	if err := currentVectorIndex.Remove(ctx, ids); err != nil {
+		slog.Warn("vector index remove failed",
+			"event", "gc_vector_remove_error",
+			"err", err,
+			"count", len(ids),
+		)
+	}
+
+	return len(ids), nil
 }
 
 func vacuumAfter(db *sql.DB, archived int) {
