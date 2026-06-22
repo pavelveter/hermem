@@ -84,8 +84,22 @@ var validRelationTypes = map[string]bool{
 // and drops relations whose relation_type is outside the allowlist.
 // Empty/whitespace-only relations are also dropped. Surviving entities
 // retain a nil-clamped Relations slice so JSON output stays stable.
+//
+// Allocation: walks the input twice — first to count the survivors
+// (one map lookup per entity, no allocations), then to copy them
+// into a slice with exact pre-counted capacity. When validCount ==
+// len(in) the new slice is the same size as the input, so pass-through
+// behaviour is preserved; when validCount < len(in) we save the
+// wasted capacity that the previous `make([]ExtractedEntity, 0, len(in))`
+// reserved but never used.
 func filterEntities(in []ExtractedEntity) []ExtractedEntity {
-	out := make([]ExtractedEntity, 0, len(in))
+	validCount := 0
+	for _, e := range in {
+		if validCategories[e.Category] {
+			validCount++
+		}
+	}
+	out := make([]ExtractedEntity, 0, validCount)
 	for _, e := range in {
 		if !validCategories[e.Category] {
 			continue
@@ -102,8 +116,19 @@ func filterEntities(in []ExtractedEntity) []ExtractedEntity {
 // (2) RelationType must be in validRelationTypes (graph-pollution guard).
 // Either failure drops the relation; surviving relations retain their
 // declared target_id untouched (no cross-entity resolution happens here).
+//
+// Allocation: pre-counts the survivors before allocating, so make is
+// called with exact capacity and append never re-grows the backing
+// array. The previous `make([]Relation, 0, len(in))` reserved more
+// than necessary on filtered batches.
 func filterRelations(in []Relation) []Relation {
-	out := make([]Relation, 0, len(in))
+	validCount := 0
+	for _, r := range in {
+		if r.TargetID != "" && validRelationTypes[r.RelationType] {
+			validCount++
+		}
+	}
+	out := make([]Relation, 0, validCount)
 	for _, r := range in {
 		if r.TargetID == "" || !validRelationTypes[r.RelationType] {
 			continue
