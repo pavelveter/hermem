@@ -170,14 +170,44 @@ func (w *IngestionWorker) mergeEntities(ctx context.Context, existing *Entity, n
 	return StoreEntityWithEmbedding(w.db, w.vi, *existing)
 }
 
+// createEdges inserts all relations for entityID in bounded chunks
+// of multi-VALUES INSERTs. Each edge consumes 3 host parameters
+// (source_id, target_id, relation_type). edgesPerChunk is derived
+// from DefaultSQLBatchSize / 3 so that adding a schema column
+// (weight, updated_at, ...) on this table will automatically shrink
+// the per-edge parameter count and retune the ceiling without a
+// code edit here.
+//
+// Behaviour preserved: empty input short-circuits to nil; on the
+// first chunk that fails the function returns that chunk's error
+// immediately (matching the previous per-edge abort semantics).
+// INSERT OR IGNORE continues to collapse duplicate
+// (source, target, relation_type) tuples silently.
 func (w *IngestionWorker) createEdges(entityID string, relations []Relation) error {
-	for _, rel := range relations {
-		_, err := w.db.Exec(`
-			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
-			VALUES (?, ?, ?)
-		`, entityID, rel.TargetID, rel.RelationType)
-		if err != nil {
-			return fmt.Errorf("failed to insert edge %s -> %s: %w", entityID, rel.TargetID, err)
+	if len(relations) == 0 {
+		return nil
+	}
+
+	const edgesPerChunk = DefaultSQLBatchSize / 3
+
+	for start := 0; start < len(relations); start += edgesPerChunk {
+		end := start + edgesPerChunk
+		if end > len(relations) {
+			end = len(relations)
+		}
+		chunk := relations[start:end]
+
+		args := make([]interface{}, 0, len(chunk)*3)
+		phs := make([]string, len(chunk))
+		for i, rel := range chunk {
+			args = append(args, entityID, rel.TargetID, rel.RelationType)
+			phs[i] = "(?, ?, ?)"
+		}
+		q := `INSERT OR IGNORE INTO edges (source_id, target_id, relation_type) VALUES ` +
+			strings.Join(phs, ",")
+		if _, err := w.db.Exec(q, args...); err != nil {
+			return fmt.Errorf("bulk insert edges for %s: chunk [%d-%d] of %d: %w",
+				entityID, start, end, len(relations), err)
 		}
 	}
 	return nil

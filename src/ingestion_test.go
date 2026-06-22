@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -309,5 +310,98 @@ func TestProcessDialogAppendsDifferentContentOnMerge(t *testing.T) {
 	}
 	if content != "apple; banana" {
 		t.Errorf("merged content = %q, want %q (append separator + both halves)", content, "apple; banana")
+	}
+}
+
+// TestCreateEdgesBulkInsertFirstChunk covers the happy path for
+// the bulk INSERT migration: ≤ ceil(DefaultSQLBatchSize/3) relations
+// fit in a single multi-VALUES statement. We use 150 (well under
+// the 166-row single-chunk ceiling) to leave clearance for any
+// future bump in host parameters-per-edge.
+func TestCreateEdgesBulkInsertFirstChunk(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	// FK enforcement is OFF in this codebase (no PRAGMA foreign_keys),
+	// so the target rows don't need to exist as entities. We only
+	// need entityID to be insertable as source_id, which has no
+	// additional constraint beyond edges.source_id NOT NULL.
+	w := NewIngestionWorker(db, vi, nil, nil, 0.99)
+
+	const n = 150
+	rels := make([]Relation, n)
+	for i := range rels {
+		rels[i] = Relation{
+			TargetID:     "t-" + strconv.Itoa(i),
+			RelationType: "related_to",
+		}
+	}
+	if err := w.createEdges("src", rels); err != nil {
+		t.Fatalf("createEdges %d: %v", n, err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM edges WHERE source_id = ?`, "src").Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != n {
+		t.Errorf("edges count = %d, want %d", count, n)
+	}
+}
+
+// TestCreateEdgesBulkInsertMultiChunk verifies bulk insertion
+// properly partitions >chunkSize relations across multiple SQL
+// statements; with edgesPerChunk=DefaultSQLBatchSize/3 (~166), a
+// 700-row batch lands in ceil(700/166)=5 chunks. We only assert
+// the total row count here; the chunk-count boundary is exercised
+// implicitly by the row count being exact (off-by-one chunking
+// would drop rows).
+func TestCreateEdgesBulkInsertMultiChunk(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	w := NewIngestionWorker(db, vi, nil, nil, 0.99)
+
+	const n = 700
+	rels := make([]Relation, n)
+	for i := range rels {
+		rels[i] = Relation{
+			TargetID:     "t-" + strconv.Itoa(i),
+			RelationType: "related_to",
+		}
+	}
+	if err := w.createEdges("src", rels); err != nil {
+		t.Fatalf("createEdges %d: %v", n, err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM edges WHERE source_id = ?`, "src").Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != n {
+		t.Errorf("edges count = %d, want %d (chunking may be wrong)", count, n)
+	}
+}
+
+// TestCreateEdgesBulkEmptyInput verifies the no-op short-circuit:
+// neither nil nor an empty relations slice should issue any SQL.
+// Catches a regression where the function issued a useless
+// "VALUES ()" INSERT with no rows.
+func TestCreateEdgesBulkEmptyInput(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	w := NewIngestionWorker(db, vi, nil, nil, 0.99)
+
+	if err := w.createEdges("src", nil); err != nil {
+		t.Fatalf("createEdges(nil): %v", err)
+	}
+	if err := w.createEdges("src", []Relation{}); err != nil {
+		t.Fatalf("createEdges([]): %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM edges`).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("edges after empty-input calls = %d, want 0", count)
 	}
 }
