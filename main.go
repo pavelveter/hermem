@@ -11,7 +11,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 )
 
 func GenerateResponse(ctx context.Context, db *sql.DB, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
@@ -201,18 +204,43 @@ func main() {
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
 		})
-		http.HandleFunc("/health", srv.HandleHealth)
-		http.HandleFunc("/store", srv.HandleStore)
-		http.HandleFunc("/search", srv.HandleSearch)
-		http.HandleFunc("/retrieve", srv.HandleRetrieve)
-		http.HandleFunc("/ingest", srv.HandleIngest)
-		http.HandleFunc("/query", srv.HandleQuery)
-		http.HandleFunc("/edge", srv.HandleEdge)
-		slog.Info("server ready",
-			"event", "server_ready",
-			"port", port,
-		)
-		log.Fatal(http.ListenAndServe(":"+port, nil))
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", srv.HandleHealth)
+		mux.HandleFunc("/metrics", metricsHandler)
+		mux.HandleFunc("/store", srv.HandleStore)
+		mux.HandleFunc("/search", srv.HandleSearch)
+		mux.HandleFunc("/retrieve", srv.HandleRetrieve)
+		mux.HandleFunc("/ingest", srv.HandleIngest)
+		mux.HandleFunc("/query", srv.HandleQuery)
+		mux.HandleFunc("/edge", srv.HandleEdge)
+
+		httpServer := &http.Server{
+			Addr:    ":" + port,
+			Handler: requestIDMiddleware(slogMiddleware(mux)),
+		}
+
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+		go func() {
+			slog.Info("server ready",
+				"event", "server_ready",
+				"port", port,
+			)
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("server error: %v", err)
+			}
+		}()
+
+		<-quit
+		slog.Info("shutting down...", "event", "server_shutdown")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Fatalf("server forced shutdown: %v", err)
+		}
+		slog.Info("server stopped", "event", "server_stopped")
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
