@@ -163,6 +163,24 @@ func LoadConfig(path string) (*Config, error) {
 			} else {
 				log.Printf("config: invalid retrieval.max_nodes %q, keeping default %d: %v", val, cfg.MaxRetrievedNodes, err)
 			}
+		case "retention.observation_ttl":
+			if d, err := time.ParseDuration(val); err == nil && d > 0 {
+				cfg.Retention.ObservationTTL = d
+			} else {
+				log.Printf("config: invalid retention.observation_ttl %q, keeping default %v: %v", val, cfg.Retention.ObservationTTL, err)
+			}
+		case "retention.run_interval":
+			if d, err := time.ParseDuration(val); err == nil && d > 0 {
+				cfg.Retention.RunInterval = d
+			} else {
+				log.Printf("config: invalid retention.run_interval %q, keeping default %v: %v", val, cfg.Retention.RunInterval, err)
+			}
+		case "retention.batch_size":
+			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
+				cfg.Retention.DeleteBatchSize = v
+			} else {
+				log.Printf("config: invalid retention.batch_size %q, keeping default %d: %v", val, cfg.Retention.DeleteBatchSize, err)
+			}
 		}
 	}
 
