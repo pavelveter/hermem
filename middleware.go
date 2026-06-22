@@ -14,7 +14,20 @@ type ctxKey string
 
 const reqIDKey ctxKey = "request_id"
 
+func withReqID(ctx context.Context, attrs ...any) []any {
+	if ctx == nil {
+		return attrs
+	}
+	if id := getReqID(ctx); id != "" {
+		attrs = append(attrs, "request_id", id)
+	}
+	return attrs
+}
+
 func getReqID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
 	if id, ok := ctx.Value(reqIDKey).(string); ok {
 		return id
 	}
@@ -39,6 +52,22 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", id)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func authMiddleware(apiKey string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if apiKey == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if r.Header.Get("X-API-Key") != apiKey {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func slogMiddleware(next http.Handler) http.Handler {

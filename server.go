@@ -141,7 +141,7 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := AutoLinkEdges(r.Context(), s.db, s.embedder, req.ID, entity.Embedding); err != nil {
-		slog.Warn("auto-link failed", "event", "auto_link_failed", "id", req.ID, "error", err)
+		slog.Warn("auto-link failed", withReqID(r.Context(), "event", "auto_link_failed", "id", req.ID, "error", err)...)
 	}
 
 	incStore()
@@ -210,6 +210,7 @@ func (s *Server) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 
 	opts := s.retrievalOpts
 	opts.MaxDepth = req.MaxDepth
+	opts.Ctx = r.Context()
 	result, err := RetrieveContext(s.db, req.SeedIDs, opts)
 	if err != nil {
 		incErr()

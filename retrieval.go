@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -105,6 +106,9 @@ type RetrieveContextOptions struct {
 	// vector similarity component of the re-rank score. Nil/empty
 	// disables vector scoring and falls back to recency-only ranking.
 	QueryEmbedding []float32
+	// Ctx carries request-scoped values (request_id) through the
+	// retrieval pipeline for structured logging.
+	Ctx context.Context
 }
 
 func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
@@ -137,7 +141,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 				'' as parent_id,
 				'' as relation_type
 			FROM entities e
-			WHERE e.id IN (%s)
+			WHERE e.id IN (%[1]s) AND e.archived = 0
 			
 			UNION ALL
 			
@@ -154,7 +158,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 					ELSE ed.source_id = e.id
 				END
 			)
-			WHERE gw.depth < ? AND e.id != gw.id
+			WHERE gw.depth < ? AND e.id != gw.id AND e.archived = 0
 		)
 		SELECT DISTINCT id, category, content, updated_at, embedding, depth, parent_id, relation_type
 		FROM graph_walk
@@ -244,11 +248,13 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 	// surfaced at least once; the row count itself is the
 	// authoritative answer.
 	slog.Debug("retrieval complete",
-		"event", "retrieval_complete",
-		"seed_count", len(seedIDs),
-		"total_ranked", len(ranked),
-		"effective_depth", effectiveDepth,
-		"cap_active", opts.MaxRetrievedNodes > 0,
+		withReqID(opts.Ctx,
+			"event", "retrieval_complete",
+			"seed_count", len(seedIDs),
+			"total_ranked", len(ranked),
+			"effective_depth", effectiveDepth,
+			"cap_active", opts.MaxRetrievedNodes > 0,
+		)...,
 	)
 
 	// Sort once by composite score (descending). SQL return order is

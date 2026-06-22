@@ -31,31 +31,7 @@ func (idx *SqliteVecIndex) ensureTables() {
 				embedding FLOAT32[%d],
 				entity_id TEXT
 			)`, idx.dim))
-		idx.db.Exec(`
-			CREATE TABLE IF NOT EXISTS vec_id_map (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				entity_id TEXT UNIQUE NOT NULL
-			)`)
 	})
-}
-
-func (idx *SqliteVecIndex) getRowID(entityID string) (int64, error) {
-	idx.ensureTables()
-
-	var rowID int64
-	err := idx.db.QueryRow("SELECT id FROM vec_id_map WHERE entity_id = ?", entityID).Scan(&rowID)
-	if err == nil {
-		return rowID, nil
-	}
-	if err != sql.ErrNoRows {
-		return 0, fmt.Errorf("failed to query vec_id_map: %w", err)
-	}
-
-	res, err := idx.db.Exec("INSERT INTO vec_id_map (entity_id) VALUES (?)", entityID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create vec_id_map entry: %w", err)
-	}
-	return res.LastInsertId()
 }
 
 func (idx *SqliteVecIndex) Search(_ context.Context, queryEmbedding []float32, topK int) ([]string, error) {
@@ -106,6 +82,10 @@ func (idx *SqliteVecIndex) SearchBatch(ctx context.Context, queries [][]float32,
 		results[i] = ids
 	}
 	return results, nil
+}
+
+func (idx *SqliteVecIndex) getRowID(entityID string) (int64, error) {
+	return ensureEntityID(idx.db, entityID)
 }
 
 func (idx *SqliteVecIndex) Store(_ context.Context, id string, vec []float32) error {
