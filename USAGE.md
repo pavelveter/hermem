@@ -14,7 +14,7 @@ do at the keyboard*.
 
 ```bash
 # Build once.
-go build -o hermem .
+go build -o hermem ./src
 
 # CLI mode: pipe JSON into stdin. No server, no Ollama process to keep alive.
 echo '{"query":"What is Go?"}' | ./hermem query
@@ -46,9 +46,9 @@ the file is missing, all keys fall back to defaults (Ollama at
 ### Build the binary
 
 ```bash
-go build -o hermem .
+go build -o hermem ./src
 # or with -trimpath for reproducible builds
-go build -trimpath -ldflags="-s -w" -o hermem .
+go build -trimpath -ldflags="-s -w" -o hermem ./src
 ```
 
 Install into `$PATH`:
