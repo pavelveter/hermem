@@ -13,6 +13,7 @@ import (
 
 type Server struct {
 	db            *sql.DB
+	vi            VectorIndex
 	worker        *IngestionWorker
 	embedder      Embedder
 	retrievalOpts RetrieveContextOptions
@@ -57,10 +58,11 @@ type ErrorResponse struct {
 	Field string `json:"field,omitempty"`
 }
 
-func NewServer(db *sql.DB, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions) *Server {
+func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions) *Server {
 	return &Server{
 		db:            db,
-		worker:        NewIngestionWorker(db, extractor, embedder, dedupThreshold),
+		vi:            vi,
+		worker:        NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold),
 		embedder:      embedder,
 		retrievalOpts: retrievalOpts,
 	}
@@ -134,13 +136,13 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 		Embedding: req.Embedding,
 	}
 
-	if err := StoreEntityWithEmbedding(s.db, entity); err != nil {
+	if err := StoreEntityWithEmbedding(s.db, s.vi, entity); err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	if err := AutoLinkEdges(r.Context(), s.db, s.embedder, req.ID, entity.Embedding); err != nil {
+	if err := AutoLinkEdges(r.Context(), s.db, s.vi, s.embedder, req.ID, entity.Embedding); err != nil {
 		slog.Warn("auto-link failed", withReqID(r.Context(), "event", "auto_link_failed", "id", req.ID, "error", err)...)
 	}
 
@@ -176,7 +178,7 @@ func (s *Server) HandleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := SearchByVector(s.db, embedding, req.TopK)
+	results, err := SearchByVector(s.db, s.vi, embedding, req.TopK)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -270,7 +272,7 @@ func (s *Server) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		req.TopK = 3
 	}
 
-	context, err := GenerateResponse(r.Context(), s.db, s.embedder, s.retrievalOpts, req.Query)
+	context, err := GenerateResponse(r.Context(), s.db, s.vi, s.embedder, s.retrievalOpts, req.Query)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -305,7 +307,7 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.AutoCreate {
-		err = AddEdgeWithAutoCreate(r.Context(), s.db, s.embedder, req.SourceID, req.TargetID, req.RelationType)
+		err = AddEdgeWithAutoCreate(r.Context(), s.db, s.vi, s.embedder, req.SourceID, req.TargetID, req.RelationType)
 	} else {
 		err = AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType)
 	}

@@ -12,10 +12,10 @@ import (
 // Returns the DB; caller closes.
 func setupChainDB(t *testing.T, n int) *sql.DB {
 	t.Helper()
-	db := memDB(t)
+	db, vi := memDB(t)
 	for i := 0; i < n; i++ {
 		emb := []float32{float32(i) + 1, float32(i) + 2, float32(i) + 3}
-		if err := StoreEntityWithEmbedding(db, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, Entity{
 			ID:        fmt.Sprintf("chain-%d", i),
 			Category:  "world",
 			Content:   fmt.Sprintf("Chain fact %d", i),
@@ -43,14 +43,14 @@ func setupChainDB(t *testing.T, n int) *sql.DB {
 // behavior: a 2-node A↔B cycle produces exactly 2 unique nodes,
 // with no result-set inflation.
 func TestRetrieveContextCycleGuard(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	for _, e := range []Entity{
 		{ID: "A", Category: "world", Content: "node A", Embedding: []float32{1, 0}},
 		{ID: "B", Category: "world", Content: "node B", Embedding: []float32{0, 1}},
 	} {
-		if err := StoreEntityWithEmbedding(db, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
@@ -144,7 +144,7 @@ func TestRetrieveContextSoftCapBoundsOutput(t *testing.T) {
 // query-aligned cosine (1.0 vs ~0) and freshness difference (now vs
 // 720h ago → recency 1.0 vs ~0.37).
 func TestRetrieveContextRankingOrderByScore(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	now := time.Now()
@@ -157,7 +157,7 @@ func TestRetrieveContextRankingOrderByScore(t *testing.T) {
 		{"fresh-aligned", "Ranking fresh aligned fact", []float32{1, 0, 0}, now},
 	}
 	for _, r := range rows {
-		if err := StoreEntityWithEmbedding(db, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, Entity{
 			ID: r.id, Category: "world", Content: r.content, Embedding: r.emb,
 		}); err != nil {
 			t.Fatalf("store %s: %v", r.id, err)
@@ -237,12 +237,13 @@ func benchmarkRetrieveContext(b *testing.B, depth int) {
 	if err != nil {
 		b.Fatalf("InitDB: %v", err)
 	}
+	vi := newVectorIndex("in-memory", db, 768)
 	defer db.Close()
 
 	const n = 500
 	for i := 0; i < n; i++ {
 		emb := []float32{float32(i % 7), float32(i%11) / 11, float32(i%13) / 13}
-		if err := StoreEntityWithEmbedding(db, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, Entity{
 			ID:        fmt.Sprintf("bench-%d", i),
 			Category:  "world",
 			Content:   fmt.Sprintf("fact-%d", i),

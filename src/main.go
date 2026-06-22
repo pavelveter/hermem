@@ -17,13 +17,13 @@ import (
 	"time"
 )
 
-func GenerateResponse(ctx context.Context, db *sql.DB, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
+func GenerateResponse(ctx context.Context, db *sql.DB, vi VectorIndex, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
 	queryEmbedding, err := embedder.Embed(ctx, userQuery)
 	if err != nil {
 		return "", fmt.Errorf("failed to embed query: %w", err)
 	}
 
-	searchResults, err := SearchByVector(db, queryEmbedding, 3)
+	searchResults, err := SearchByVector(db, vi, queryEmbedding, 3)
 	if err != nil {
 		return "", fmt.Errorf("failed to search: %w", err)
 	}
@@ -72,7 +72,7 @@ func main() {
 	}
 	defer db.Close()
 
-	currentVectorIndex = newVectorIndex(cfg.VectorBackend, db, cfg.VectorDim)
+	vi := newVectorIndex(cfg.VectorBackend, db, cfg.VectorDim)
 	metricsWorker = InitMetricsWorker(db)
 	defer metricsWorker.Stop()
 
@@ -104,10 +104,10 @@ func main() {
 			}
 			entity.Embedding = embedding
 		}
-		if err := StoreEntityWithEmbedding(db, entity); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
 			log.Fatalf("Failed to store: %v", err)
 		}
-		if err := AutoLinkEdges(ctx, db, embedder, entity.ID, entity.Embedding); err != nil {
+		if err := AutoLinkEdges(ctx, db, vi, embedder, entity.ID, entity.Embedding); err != nil {
 			log.Fatalf("Failed to auto-link: %v", err)
 		}
 		fmt.Println(`{"status":"ok"}`)
@@ -130,7 +130,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Embed failed: %v", err)
 		}
-		results, err := SearchByVector(db, embedding, req.TopK)
+		results, err := SearchByVector(db, vi, embedding, req.TopK)
 		if err != nil {
 			log.Fatalf("Search failed: %v", err)
 		}
@@ -151,7 +151,7 @@ func main() {
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
 		}
-		context, err := GenerateResponse(ctx, db, embedder, opts, req.Query)
+		context, err := GenerateResponse(ctx, db, vi, embedder, opts, req.Query)
 		if err != nil {
 			log.Fatalf("Query failed: %v", err)
 		}
@@ -174,7 +174,7 @@ func main() {
 			log.Fatalf("invalid relation_type: %s", req.RelationType)
 		}
 		if req.AutoCreate {
-			if err := AddEdgeWithAutoCreate(ctx, db, embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {
+			if err := AddEdgeWithAutoCreate(ctx, db, vi, embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {
 				log.Fatalf("Failed to add edge: %v", err)
 			}
 		} else {
@@ -194,7 +194,7 @@ func main() {
 		if req.Dialog == "" {
 			log.Fatal("dialog required")
 		}
-		worker := NewIngestionWorker(db, extractor, embedder, cfg.DedupThreshold)
+		worker := NewIngestionWorker(db, vi, extractor, embedder, cfg.DedupThreshold)
 		if err := worker.ProcessDialog(ctx, req.Dialog); err != nil {
 			log.Fatalf("Ingest failed: %v", err)
 		}
@@ -205,14 +205,14 @@ func main() {
 		if len(os.Args) > 2 {
 			port = os.Args[2]
 		}
-		srv := NewServer(db, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
+		srv := NewServer(db, vi, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
 		})
 
 		gcCtx, gcCancel := context.WithCancel(ctx)
 		defer gcCancel()
-		go GarbageCollector(gcCtx, db, cfg.Retention)
+		go GarbageCollector(gcCtx, db, vi, cfg.Retention)
 
 		mux := http.NewServeMux()
 		mux.HandleFunc("/health", srv.HandleHealth)

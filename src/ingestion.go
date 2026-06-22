@@ -10,14 +10,16 @@ import (
 
 type IngestionWorker struct {
 	db          *sql.DB
+	vi          VectorIndex
 	extractor   LLMExtractor
 	embedder    Embedder
 	dedupThresh float32
 }
 
-func NewIngestionWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32) *IngestionWorker {
+func NewIngestionWorker(db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32) *IngestionWorker {
 	return &IngestionWorker{
 		db:          db,
+		vi:          vi,
 		extractor:   extractor,
 		embedder:    embedder,
 		dedupThresh: dedupThreshold,
@@ -58,7 +60,7 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 		embeddings[i] = it.embedding
 	}
 
-	allIDs, err := currentVectorIndex.SearchBatch(ctx, embeddings, 1)
+	allIDs, err := w.vi.SearchBatch(ctx, embeddings, 1)
 	if err != nil {
 		return fmt.Errorf("batch similar search failed: %w", err)
 	}
@@ -148,7 +150,7 @@ func (w *IngestionWorker) createEntity(entity ExtractedEntity, embedding []float
 		Content:   entity.Content,
 		Embedding: embedding,
 	}
-	return StoreEntityWithEmbedding(w.db, dbEntity)
+	return StoreEntityWithEmbedding(w.db, w.vi, dbEntity)
 }
 
 func (w *IngestionWorker) mergeEntities(ctx context.Context, existing *Entity, newEntity ExtractedEntity, newEmbedding []float32) error {
@@ -165,7 +167,7 @@ func (w *IngestionWorker) mergeEntities(ctx context.Context, existing *Entity, n
 	existing.Content = mergedContent
 	existing.Embedding = updatedEmbedding
 
-	return StoreEntityWithEmbedding(w.db, *existing)
+	return StoreEntityWithEmbedding(w.db, w.vi, *existing)
 }
 
 func (w *IngestionWorker) createEdges(entityID string, relations []Relation) error {
@@ -185,8 +187,8 @@ type MemoryMessage struct {
 	Dialog string
 }
 
-func MemoryWorker(ctx context.Context, db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, ch <-chan MemoryMessage) {
-	worker := NewIngestionWorker(db, extractor, embedder, dedupThreshold)
+func MemoryWorker(ctx context.Context, db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, ch <-chan MemoryMessage) {
+	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold)
 	for msg := range ch {
 		if err := worker.ProcessDialog(ctx, msg.Dialog); err != nil {
 			slog.Error("dialog processing failed",

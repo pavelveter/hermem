@@ -45,7 +45,7 @@ func (e *stubEmbedder) Embed(_ context.Context, content string) ([]float32, erro
 }
 
 func TestProcessDialogHappyPath(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	ext := &stubExtractor{resp: &ExtractionResult{Entities: []ExtractedEntity{
@@ -53,7 +53,7 @@ func TestProcessDialogHappyPath(t *testing.T) {
 		{ID: "e2", Category: "world", Content: "Berlin is capital of Germany"},
 	}}}
 	emb := &stubEmbedder{}
-	w := NewIngestionWorker(db, ext, emb, 0.99) // high threshold → no dedup
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99) // high threshold → no dedup
 	if err := w.ProcessDialog(ictx, "user dialog text"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
@@ -80,11 +80,11 @@ func TestProcessDialogHappyPath(t *testing.T) {
 // must merge into the existing row (content not duplicated), leaving
 // total row count at 1.
 func TestProcessDialogMergesNearDuplicate(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	existingEmbed := []float32{0.4, 0.6, 0.8}
-	if err := StoreEntityWithEmbedding(db, Entity{
+	if err := StoreEntityWithEmbedding(db, vi, Entity{
 		ID: "old-1", Category: "world", Content: "Existing fact", Embedding: existingEmbed,
 	}); err != nil {
 		t.Fatalf("seed store: %v", err)
@@ -95,7 +95,7 @@ func TestProcessDialogMergesNearDuplicate(t *testing.T) {
 	emb := &stubEmbedder{vecs: map[string][]float32{
 		"Existing fact": existingEmbed,
 	}}
-	w := NewIngestionWorker(db, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
 	if err := w.ProcessDialog(ictx, "d"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestProcessDialogMergesNearDuplicate(t *testing.T) {
 // TestProcessDialogEmbedderError ensures embedder failures propagate
 // (don't get silently swallowed) so the LLM output isn't silently
 func TestProcessDialogEmbedderError(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	embErr := errors.New("embedder down")
@@ -119,7 +119,7 @@ func TestProcessDialogEmbedderError(t *testing.T) {
 		{ID: "x", Category: "world", Content: "x"},
 	}}}
 	emb := &stubEmbedder{err: embErr}
-	w := NewIngestionWorker(db, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
 	err := w.ProcessDialog(ictx, "d")
 	if err != nil {
 		t.Fatalf("expected no error (entity errors are non-fatal), got %v", err)
@@ -134,13 +134,13 @@ func TestProcessDialogEmbedderError(t *testing.T) {
 }
 
 func TestProcessDialogExtractorError(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	extErr := errors.New("ollama offline")
 	ext := &stubExtractor{err: extErr}
 	emb := &stubEmbedder{}
-	w := NewIngestionWorker(db, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
 	err := w.ProcessDialog(ictx, "d")
 	if err == nil {
 		t.Fatal("expected extractor error, got nil")
@@ -154,7 +154,7 @@ func TestProcessDialogExtractorError(t *testing.T) {
 // the channel is closed and writes the corresponding entity to the DB.
 // This is a foreground synchronous flow: send 1 msg, close, wait, query.
 func TestMemoryWorkerDrainsChannel(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	ext := &stubExtractor{resp: &ExtractionResult{Entities: []ExtractedEntity{
@@ -165,7 +165,7 @@ func TestMemoryWorkerDrainsChannel(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "hello"}
 	close(ch)
 
-	MemoryWorker(ictx, db, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, vi, ext, emb, 0.99, ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "m1").Scan(&n); err != nil {
@@ -183,7 +183,7 @@ func TestMemoryWorkerDrainsChannel(t *testing.T) {
 // extractor, so a failing extractor short-circuits before
 // embedding is invoked.
 func TestMemoryWorkerExtractorErrorHaltsAllIngest(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	ext := &stubExtractor{err: errors.New("first boom")}
@@ -193,7 +193,7 @@ func TestMemoryWorkerExtractorErrorHaltsAllIngest(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "second"}
 	close(ch)
 
-	MemoryWorker(ictx, db, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, vi, ext, emb, 0.99, ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities`).Scan(&n); err != nil {
@@ -231,7 +231,7 @@ func (s *statefulExtractor) ExtractEntities(_ context.Context, _ string) (*Extra
 // processed. Verifies by sending a failing msg, a succeeding msg, and
 // asserting exactly the second message's entity lands in the DB.
 func TestMemoryWorkerContinuesAfterSingleError(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	ext := &statefulExtractor{
@@ -247,7 +247,7 @@ func TestMemoryWorkerContinuesAfterSingleError(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "second (succeeds)"}
 	close(ch)
 
-	MemoryWorker(ictx, db, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, vi, ext, emb, 0.99, ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "good-m2").Scan(&n); err != nil {
@@ -269,11 +269,11 @@ func TestMemoryWorkerContinuesAfterSingleError(t *testing.T) {
 // distinct from the equal-content path covered by
 // TestProcessDialogMergesNearDuplicate.
 func TestProcessDialogAppendsDifferentContentOnMerge(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	existingEmbed := []float32{0.4, 0.6, 0.8}
-	if err := StoreEntityWithEmbedding(db, Entity{
+	if err := StoreEntityWithEmbedding(db, vi, Entity{
 		ID: "old-2", Category: "world", Content: "apple", Embedding: existingEmbed,
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -289,7 +289,7 @@ func TestProcessDialogAppendsDifferentContentOnMerge(t *testing.T) {
 		"banana":        existingEmbed,
 		"apple; banana": existingEmbed,
 	}}
-	w := NewIngestionWorker(db, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
 	if err := w.ProcessDialog(ictx, "d"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}

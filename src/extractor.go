@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -160,6 +161,41 @@ type chatResponse struct {
 	Done    bool        `json:"done"`
 }
 
+// ollamaDoAttempt performs one HTTP POST to /api/chat and returns the
+// decoded response. The response body is always closed before return.
+// Returns nil response + retryable error for HTTP 5xx (caller retries);
+// non-retryable error for 4xx / decode failures.
+func (e *OllamaLLMExtractor) ollamaDoAttempt(ctx context.Context, url string, body []byte) (*chatResponse, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build chat request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := e.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode >= 500 {
+		return nil, &httpStatusError{code: resp.StatusCode}
+	}
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama HTTP %d: %s", resp.StatusCode, truncate(string(data), 200))
+	}
+
+	var cr chatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		return nil, fmt.Errorf("decode chat response: %w", err)
+	}
+	return &cr, nil
+}
+
 // chat performs one POST to /api/chat with retries on transient failures.
 // Only network errors and HTTP 5xx are retried; JSON/content errors
 // return immediately because they won't change on retry.
@@ -175,9 +211,6 @@ func (e *OllamaLLMExtractor) chat(ctx context.Context, req *chatRequest) (*chatR
 	backoff := ollamaBackoffBase
 	attemptsUsed := 0
 	defer func() {
-		// Single-event post-call summary at Debug (level-filter as
-		// throttle per TODO §5.3). Replaces the per-attempt loop log
-		// that would emit one line per retry attempt.
 		outcome := "ok"
 		if lastErr != nil {
 			outcome = "error"
@@ -203,52 +236,21 @@ func (e *OllamaLLMExtractor) chat(ctx context.Context, req *chatRequest) (*chatR
 			}
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		cr, err := e.ollamaDoAttempt(ctx, url, body)
 		if err != nil {
-			return nil, fmt.Errorf("extractor: build chat request: %w", err)
+			var httpErr *httpStatusError
+			if errors.As(err, &httpErr) {
+				lastErr = err
+				slog.Warn("ollama returned 5xx, will retry",
+					"model", e.Model,
+					"attempt", attempt,
+					"status", httpErr.code,
+				)
+				continue
+			}
+			return nil, fmt.Errorf("extractor: %w", err)
 		}
-		httpReq.Header.Set("Content-Type", "application/json")
-
-		resp, err := e.client.Do(httpReq)
-		if err != nil {
-			// Network/timeout: surface as retryable.
-			lastErr = err
-			slog.Warn("ollama attempt failed, will retry",
-				"model", e.Model,
-				"attempt", attempt,
-				"err", err.Error(),
-			)
-			continue
-		}
-
-		if resp.StatusCode >= 500 {
-			// Drain body before closing so the connection can be reused.
-			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
-			lastErr = fmt.Errorf("extractor: ollama HTTP %d", resp.StatusCode)
-			slog.Warn("ollama returned 5xx, will retry",
-				"model", e.Model,
-				"attempt", attempt,
-				"status", resp.StatusCode,
-			)
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			data, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return nil, fmt.Errorf("extractor: ollama HTTP %d: %s", resp.StatusCode, truncate(string(data), 200))
-		}
-
-		var cr chatResponse
-		if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("extractor: decode chat response: %w", err)
-		}
-		if err := resp.Body.Close(); err != nil {
-			return nil, fmt.Errorf("extractor: close chat response: %w", err)
-		}
-		return &cr, nil
+		return cr, nil
 	}
 
 	if lastErr != nil {
@@ -256,6 +258,13 @@ func (e *OllamaLLMExtractor) chat(ctx context.Context, req *chatRequest) (*chatR
 	}
 	return nil, fmt.Errorf("extractor: ollama chat failed after %d attempts", ollamaRetries)
 }
+
+// httpStatusError wraps an HTTP status code for retry decisions.
+// chat retry loops distinguish 5xx (retryable) from 4xx (fatal) via
+// errors.As on this type.
+type httpStatusError struct{ code int }
+
+func (e *httpStatusError) Error() string { return fmt.Sprintf("HTTP %d", e.code) }
 
 // truncate caps a string for inclusion in error messages and log records.
 // Returns "..." suffix when truncation actually happens so callers can
@@ -324,6 +333,41 @@ type openAIChatResponse struct {
 	Choices []openAIChatChoice `json:"choices"`
 }
 
+// openaiDoAttempt performs one HTTP POST to /chat/completions and
+// returns the decoded response. The response body is always closed
+// before return. Returns nil response + retryable error for HTTP 5xx.
+func (e *OpenAILLMExtractor) openaiDoAttempt(ctx context.Context, url string, body []byte) (*openAIChatResponse, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build openai request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+e.APIKey)
+
+	resp, err := e.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode >= 500 {
+		return nil, &httpStatusError{code: resp.StatusCode}
+	}
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("openai HTTP %d: %s", resp.StatusCode, truncate(string(data), 200))
+	}
+
+	var cr openAIChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		return nil, fmt.Errorf("decode openai response: %w", err)
+	}
+	return &cr, nil
+}
+
 func (e *OpenAILLMExtractor) chat(ctx context.Context, req *openAIChatRequest) (*openAIChatResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -361,51 +405,21 @@ func (e *OpenAILLMExtractor) chat(ctx context.Context, req *openAIChatRequest) (
 			}
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		cr, err := e.openaiDoAttempt(ctx, url, body)
 		if err != nil {
-			return nil, fmt.Errorf("extractor: build openai request: %w", err)
+			var httpErr *httpStatusError
+			if errors.As(err, &httpErr) {
+				lastErr = err
+				slog.Warn("openai returned 5xx, will retry",
+					"model", e.Model,
+					"attempt", attempt,
+					"status", httpErr.code,
+				)
+				continue
+			}
+			return nil, fmt.Errorf("extractor: %w", err)
 		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Authorization", "Bearer "+e.APIKey)
-
-		resp, err := e.client.Do(httpReq)
-		if err != nil {
-			lastErr = err
-			slog.Warn("openai attempt failed, will retry",
-				"model", e.Model,
-				"attempt", attempt,
-				"err", err.Error(),
-			)
-			continue
-		}
-
-		if resp.StatusCode >= 500 {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
-			lastErr = fmt.Errorf("extractor: openai HTTP %d", resp.StatusCode)
-			slog.Warn("openai returned 5xx, will retry",
-				"model", e.Model,
-				"attempt", attempt,
-				"status", resp.StatusCode,
-			)
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			data, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return nil, fmt.Errorf("extractor: openai HTTP %d: %s", resp.StatusCode, truncate(string(data), 200))
-		}
-
-		var cr openAIChatResponse
-		if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("extractor: decode openai response: %w", err)
-		}
-		if err := resp.Body.Close(); err != nil {
-			return nil, fmt.Errorf("extractor: close openai response: %w", err)
-		}
-		return &cr, nil
+		return cr, nil
 	}
 
 	if lastErr != nil {

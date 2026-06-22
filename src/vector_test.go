@@ -75,7 +75,7 @@ func TestCosineZeroVectorReturnsZero(t *testing.T) {
 }
 
 func TestStoreEntityInsertThenReadBack(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	entity := Entity{
@@ -84,7 +84,7 @@ func TestStoreEntityInsertThenReadBack(t *testing.T) {
 		Content:   "first",
 		Embedding: []float32{0.5, 0.5, 0.5},
 	}
-	if err := StoreEntityWithEmbedding(db, entity); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
 		t.Fatalf("store: %v", err)
 	}
 	var content string
@@ -110,13 +110,13 @@ func TestStoreEntityInsertThenReadBack(t *testing.T) {
 // semantics: same id, different content + embedding → row content
 // updates, row count stays at 1.
 func TestStoreEntityUpsertReplacesSameID(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
-	if err := StoreEntityWithEmbedding(db, Entity{ID: "upsert-1", Category: "world", Content: "old", Embedding: []float32{0.1, 0.2}}); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, Entity{ID: "upsert-1", Category: "world", Content: "old", Embedding: []float32{0.1, 0.2}}); err != nil {
 		t.Fatalf("store old: %v", err)
 	}
-	if err := StoreEntityWithEmbedding(db, Entity{ID: "upsert-1", Category: "opinion", Content: "new", Embedding: []float32{0.3, 0.4}}); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, Entity{ID: "upsert-1", Category: "opinion", Content: "new", Embedding: []float32{0.3, 0.4}}); err != nil {
 		t.Fatalf("store new: %v", err)
 	}
 	var content, category string
@@ -144,10 +144,10 @@ func TestStoreEntityUpsertReplacesSameID(t *testing.T) {
 // search path skips these rows (SearchByVector's `WHERE embedding IS
 // NOT NULL`).
 func TestStoreEntityNullEmbeddingNotPersisted(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
-	if err := StoreEntityWithEmbedding(db, Entity{ID: "no-embed", Category: "world", Content: "no vector"}); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, Entity{ID: "no-embed", Category: "world", Content: "no vector"}); err != nil {
 		t.Fatalf("store: %v", err)
 	}
 	var blob []byte
@@ -160,19 +160,19 @@ func TestStoreEntityNullEmbeddingNotPersisted(t *testing.T) {
 }
 
 func TestSearchByVectorRejectsEmptyQuery(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
-	if _, err := SearchByVector(db, nil, 10); err == nil {
+	if _, err := SearchByVector(db, vi, nil, 10); err == nil {
 		t.Error("SearchByVector(nil) returned nil error")
 	}
-	if _, err := SearchByVector(db, []float32{}, 10); err == nil {
+	if _, err := SearchByVector(db, vi, []float32{}, 10); err == nil {
 		t.Error("SearchByVector(empty) returned nil error")
 	}
 }
 
 func TestSearchByVectorOrdersBySimilarityDesc(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	for _, e := range []Entity{
@@ -180,11 +180,11 @@ func TestSearchByVectorOrdersBySimilarityDesc(t *testing.T) {
 		{ID: "mid", Category: "world", Content: "mid", Embedding: []float32{0.5, 0.5, 0}},
 		{ID: "far", Category: "world", Content: "far", Embedding: []float32{0, 1, 0}},
 	} {
-		if err := StoreEntityWithEmbedding(db, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
-	results, err := SearchByVector(db, []float32{1, 0, 0}, 10)
+	results, err := SearchByVector(db, vi, []float32{1, 0, 0}, 10)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -204,19 +204,19 @@ func TestSearchByVectorOrdersBySimilarityDesc(t *testing.T) {
 }
 
 func TestSearchByVectorTopKTrims(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
 	for i := 0; i < 5; i++ {
 		id := string(rune('a' + i))
-		if err := StoreEntityWithEmbedding(db, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, Entity{
 			ID: id, Category: "world", Content: id,
 			Embedding: []float32{float32(i), float32(5 - i)},
 		}); err != nil {
 			t.Fatalf("store %s: %v", id, err)
 		}
 	}
-	results, err := SearchByVector(db, []float32{4, 0}, 2)
+	results, err := SearchByVector(db, vi, []float32{4, 0}, 2)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -226,16 +226,16 @@ func TestSearchByVectorTopKTrims(t *testing.T) {
 }
 
 func TestSearchByVectorSkipsNullEmbeddingRows(t *testing.T) {
-	db := memDB(t)
+	db, vi := memDB(t)
 	defer db.Close()
 
-	if err := StoreEntityWithEmbedding(db, Entity{ID: "with-vec", Category: "world", Content: "with vec", Embedding: []float32{0.5, 0.5, 0.5}}); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, Entity{ID: "with-vec", Category: "world", Content: "with vec", Embedding: []float32{0.5, 0.5, 0.5}}); err != nil {
 		t.Fatalf("store with-vec: %v", err)
 	}
-	if err := StoreEntityWithEmbedding(db, Entity{ID: "without-vec", Category: "world", Content: "without vec"}); err != nil {
+	if err := StoreEntityWithEmbedding(db, vi, Entity{ID: "without-vec", Category: "world", Content: "without vec"}); err != nil {
 		t.Fatalf("store without-vec: %v", err)
 	}
-	results, err := SearchByVector(db, []float32{0.5, 0.5, 0.5}, 10)
+	results, err := SearchByVector(db, vi, []float32{0.5, 0.5, 0.5}, 10)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -255,12 +255,12 @@ func benchmarkSearchByVector(b *testing.B, n int) {
 	if err != nil {
 		b.Fatalf("InitDB: %v", err)
 	}
-	currentVectorIndex = newVectorIndex("in-memory", db, 768)
+	vi := newVectorIndex("in-memory", db, 768)
 	defer db.Close()
 
 	for i := 0; i < n; i++ {
 		emb := []float32{float32(i % 7), float32(i%11) / 11, float32(i%13) / 13}
-		if err := StoreEntityWithEmbedding(db, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, Entity{
 			ID:        fmt.Sprintf("bench-%d", i),
 			Category:  "world",
 			Content:   fmt.Sprintf("fact-%d", i),
@@ -273,7 +273,7 @@ func benchmarkSearchByVector(b *testing.B, n int) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := SearchByVector(db, q, 10); err != nil {
+		if _, err := SearchByVector(db, vi, q, 10); err != nil {
 			b.Fatalf("search: %v", err)
 		}
 	}
