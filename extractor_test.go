@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 )
+
+var extCtx = context.Background()
 
 // entityIDs returns just the IDs from a slice, for terse assertion messages.
 func entityIDs(es []ExtractedEntity) []string {
@@ -73,7 +76,7 @@ func TestExtractEntitiesHappy(t *testing.T) {
 	defer server.Close()
 
 	ex := NewOllamaLLMExtractor(server.URL, "test-model", 0.1)
-	res, err := ex.ExtractEntities("user-dialog")
+	res, err := 	ex.ExtractEntities(extCtx, "user-dialog")
 	if err != nil {
 		t.Fatalf("ExtractEntities: %v", err)
 	}
@@ -102,7 +105,7 @@ func TestExtractEntitiesEmptyContentReturnsEmpty(t *testing.T) {
 	defer server.Close()
 
 	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
-	res, err := ex.ExtractEntities("d")
+	res, err := 	ex.ExtractEntities(extCtx, "d")
 	if err != nil {
 		t.Fatalf("ExtractEntities: %v", err)
 	}
@@ -124,7 +127,7 @@ func TestExtractEntitiesParseErrorNoRetry(t *testing.T) {
 	defer server.Close()
 
 	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
-	if _, err := ex.ExtractEntities("d"); err == nil {
+	if _, err := 	ex.ExtractEntities(extCtx, "d"); err == nil {
 		t.Fatal("expected parse error, got nil")
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
@@ -155,7 +158,7 @@ func TestExtractEntitiesRetriesOn5xx(t *testing.T) {
 
 	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
 	start := time.Now()
-	res, err := ex.ExtractEntities("d")
+	res, err := 	ex.ExtractEntities(extCtx, "d")
 	if err != nil {
 		t.Fatalf("expected eventual success, got %v", err)
 	}
@@ -181,7 +184,7 @@ func TestExtractEntitiesAllRetriesFail(t *testing.T) {
 	defer server.Close()
 
 	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
-	_, err := ex.ExtractEntities("d")
+	_, err := 	ex.ExtractEntities(extCtx, "d")
 	if err == nil {
 		t.Fatal("expected exhausted-retry error, got nil")
 	}
@@ -203,7 +206,7 @@ func TestExtractEntitiesNonRetryHTTP4xx(t *testing.T) {
 	defer server.Close()
 
 	ex := NewOllamaLLMExtractor(server.URL, "m", 0.1)
-	_, err := ex.ExtractEntities("d")
+	_, err := 	ex.ExtractEntities(extCtx, "d")
 	if err == nil {
 		t.Fatal("expected 4xx error, got nil")
 	}

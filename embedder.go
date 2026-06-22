@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,7 +10,7 @@ import (
 )
 
 type Embedder interface {
-	Embed(text string) ([]float32, error)
+	Embed(ctx context.Context, text string) ([]float32, error)
 }
 
 type OllamaEmbedder struct {
@@ -56,7 +57,7 @@ func NewOllamaEmbedder(baseURL, model string) *OllamaEmbedder {
 	}
 }
 
-func (e *OllamaEmbedder) Embed(text string) ([]float32, error) {
+func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	req := ollamaEmbedRequest{
 		Model:  e.Model,
 		Prompt: text,
@@ -67,7 +68,13 @@ func (e *OllamaEmbedder) Embed(text string) ([]float32, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := http.Post(e.BaseURL+"/api/embeddings", "application/json", bytes.NewBuffer(jsonData))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.BaseURL+"/api/embeddings", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Ollama API: %w", err)
 	}
@@ -100,7 +107,7 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string) *OpenAIEmbedder {
 	}
 }
 
-func (e *OpenAIEmbedder) Embed(text string) ([]float32, error) {
+func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	req := openaiEmbedRequest{
 		Model: e.Model,
 		Input: []string{text},
@@ -111,7 +118,7 @@ func (e *OpenAIEmbedder) Embed(text string) ([]float32, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", e.BaseURL+"/embeddings", bytes.NewBuffer(jsonData))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.BaseURL+"/embeddings", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

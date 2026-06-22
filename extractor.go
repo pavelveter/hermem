@@ -33,7 +33,7 @@ type ExtractionResult struct {
 
 // LLMExtractor turns dialog text into structured entities.
 type LLMExtractor interface {
-	ExtractEntities(dialog string) (*ExtractionResult, error)
+	ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error)
 }
 
 // Ollama chat-call tuning. Held in package-level consts so the values
@@ -267,12 +267,7 @@ func truncate(s string, max int) string {
 	return s[:max] + "...<truncated>"
 }
 
-func (e *OllamaLLMExtractor) ExtractEntities(dialog string) (*ExtractionResult, error) {
-	// Hard overall budget so a stuck Ollama can't pin the HTTP server
-	// (or MemoryWorker) on a single bad request.
-	totalBudget := ollamaRequestTimeout*time.Duration(ollamaRetries) + ollamaBackoffMax*time.Duration(ollamaRetries-1)
-	ctx, cancel := context.WithTimeout(context.Background(), totalBudget)
-	defer cancel()
+func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error) {
 
 	systemPrompt := `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
 
