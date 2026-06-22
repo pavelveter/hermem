@@ -65,6 +65,16 @@ func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
 	if cfg.VectorDim != want.VectorDim {
 		t.Errorf("VectorDim = %d, want %d", cfg.VectorDim, want.VectorDim)
 	}
+	// ExtractProvider/URL/Key should be empty (zero value) by default
+	if cfg.ExtractProvider != "" {
+		t.Errorf("ExtractProvider = %q, want empty", cfg.ExtractProvider)
+	}
+	if cfg.ExtractURL != "" {
+		t.Errorf("ExtractURL = %q, want empty", cfg.ExtractURL)
+	}
+	if cfg.ExtractKey != "" {
+		t.Errorf("ExtractKey = %q, want empty", cfg.ExtractKey)
+	}
 }
 
 func TestLoadConfigParsesAllKeys(t *testing.T) {
@@ -286,6 +296,81 @@ batch_size = 100
 	}
 	if cfg.Retention.DeleteBatchSize != 100 {
 		t.Errorf("DeleteBatchSize = %d, want 100", cfg.Retention.DeleteBatchSize)
+	}
+}
+func TestLoadConfigExtractionOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[embedder]
+provider = ollama
+url = http://ollama-host:11434
+key = ollama-key
+
+[extraction]
+provider = openai
+url = https://api.openai.com/v1
+key = sk-test-extraction
+model = gpt-4o
+temperature = 0.2
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.ExtractProvider != "openai" {
+		t.Errorf("ExtractProvider = %q, want openai", cfg.ExtractProvider)
+	}
+	if cfg.ExtractURL != "https://api.openai.com/v1" {
+		t.Errorf("ExtractURL = %q", cfg.ExtractURL)
+	}
+	if cfg.ExtractKey != "sk-test-extraction" {
+		t.Errorf("ExtractKey = %q", cfg.ExtractKey)
+	}
+	if cfg.ExtractModel != "gpt-4o" {
+		t.Errorf("ExtractModel = %q, want gpt-4o", cfg.ExtractModel)
+	}
+	// Embedder settings unchanged
+	if cfg.Provider != "ollama" {
+		t.Errorf("Provider = %q, want ollama", cfg.Provider)
+	}
+	if cfg.URL != "http://ollama-host:11434" {
+		t.Errorf("URL = %q", cfg.URL)
+	}
+}
+
+func TestLoadConfigExtractionFallsBackToEmbedder(t *testing.T) {
+	// When extraction.provider/url/key are unset, NewExtractor should
+	// inherit embedder values.
+	cfg := &Config{
+		Provider:          "openai",
+		URL:               "https://api.openai.com/v1",
+		Key:               "sk-embedder",
+		ExtractModel:       "gpt-4o-mini",
+		ExtractTemperature: 0.1,
+	}
+	// Use reflection-free check: create the extractor and inspect its type.
+	// We can't easily inspect URL/Key of the returned interface, but
+	// the test confirms it picks the right backend (openai vs ollama).
+	ext := cfg.NewExtractor()
+	if _, ok := ext.(*OpenAILLMExtractor); !ok {
+		t.Errorf("NewExtractor with provider=openai returned %T, want *OpenAILLMExtractor", ext)
+	}
+
+	// With explicit extraction provider, it should override
+	cfg2 := &Config{
+		Provider:          "ollama",
+		ExtractProvider:    "openai",
+		ExtractURL:         "https://custom.openai.com",
+		ExtractKey:         "sk-custom",
+		ExtractModel:       "gpt-4o",
+		ExtractTemperature: 0.3,
+	}
+	ext2 := cfg2.NewExtractor()
+	if _, ok := ext2.(*OpenAILLMExtractor); !ok {
+		t.Errorf("NewExtractor with ExtractProvider=openai returned %T, want *OpenAILLMExtractor", ext2)
 	}
 }
 
