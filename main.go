@@ -102,7 +102,7 @@ func main() {
 		if err := StoreEntityWithEmbedding(db, entity); err != nil {
 			log.Fatalf("Failed to store: %v", err)
 		}
-		if err := AutoLinkEdges(db, embedder, entity.ID, entity.Embedding); err != nil {
+		if err := AutoLinkEdges(ctx, db, embedder, entity.ID, entity.Embedding); err != nil {
 			log.Fatalf("Failed to auto-link: %v", err)
 		}
 		fmt.Println(`{"status":"ok"}`)

@@ -4,7 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"sort"
+	"sync"
+)
+
+var (
+	embedDimOnce sync.Once
+	embedDim     int
 )
 
 type SearchResult struct {
@@ -114,7 +121,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, embedder Embedder, s
 	return AddEdge(db, src, dst, rel)
 }
 
-func AutoLinkEdges(db *sql.DB, embedder Embedder, newID string, newEmbedding []float32) error {
+func AutoLinkEdges(ctx context.Context, db *sql.DB, embedder Embedder, newID string, newEmbedding []float32) error {
 	if len(newEmbedding) == 0 {
 		return fmt.Errorf("cannot auto-link: embedding is empty for %s", newID)
 	}
@@ -135,7 +142,7 @@ func AutoLinkEdges(db *sql.DB, embedder Embedder, newID string, newEmbedding []f
 		if r.Similarity <= 0.85 {
 			continue
 		}
-		_, err := db.Exec(`
+		_, err := db.ExecContext(ctx, `
 			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
 			VALUES (?, ?, 'related_to')
 		`, newID, r.Entity.ID)
@@ -147,9 +154,24 @@ func AutoLinkEdges(db *sql.DB, embedder Embedder, newID string, newEmbedding []f
 	return nil
 }
 
+func checkEmbeddingDim(dim int) {
+	embedDimOnce.Do(func() {
+		embedDim = dim
+		slog.Debug("embedding dimension set", "event", "embed_dim_set", "dim", dim)
+	})
+	if embedDim != 0 && dim != 0 && dim != embedDim {
+		slog.Warn("embedding dimension mismatch",
+			"event", "embed_dim_mismatch",
+			"expected", embedDim,
+			"got", dim,
+		)
+	}
+}
+
 func StoreEntityWithEmbedding(db *sql.DB, entity Entity) error {
 	var embeddingBytes []byte
 	if len(entity.Embedding) > 0 {
+		checkEmbeddingDim(len(entity.Embedding))
 		embeddingBytes = EmbeddingToBytes(entity.Embedding)
 	}
 
