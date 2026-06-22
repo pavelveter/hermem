@@ -100,9 +100,14 @@ func LoadConfig(path string) (*Config, error) {
 	section := ""
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := scanner.Text()
 
-		if line == "" || line[0] == '#' || line[0] == ';' {
+		if idx := strings.IndexAny(line, "#;"); idx > 0 {
+			line = line[:idx]
+		}
+		line = strings.TrimSpace(line)
+
+		if line == "" {
 			continue
 		}
 
@@ -249,6 +254,24 @@ func LoadConfigFromBinaryDir() (*Config, error) {
 // stdlib doesn't allow that to be replaced at test time).
 func LoadConfigFromDir(dir string) (*Config, error) {
 	return LoadConfig(filepath.Join(dir, "hermem.ini"))
+}
+
+// Validate checks config invariants that would cause silent misbehaviour
+// at runtime. Returns nil on success.
+func (c *Config) Validate() error {
+	if c.DedupThreshold < 0 || c.DedupThreshold > 1 {
+		return fmt.Errorf("dedup_threshold must be in [0, 1], got %.2f", c.DedupThreshold)
+	}
+	if c.VectorDim <= 0 {
+		return fmt.Errorf("vector.dim must be positive, got %d", c.VectorDim)
+	}
+	if c.Provider != "ollama" && c.Provider != "openai" {
+		return fmt.Errorf("embedder.provider must be 'ollama' or 'openai', got %q", c.Provider)
+	}
+	if c.URL == "" {
+		return fmt.Errorf("embedder.url must not be empty")
+	}
+	return nil
 }
 
 // resolveDBPath interprets cfg.DBPath in a hermem-binary-aware way:

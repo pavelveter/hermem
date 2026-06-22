@@ -132,7 +132,7 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 
 	sim := float32(0)
 	if len(embeddingBytes) > 0 {
-		if emb := BytesToEmbedding(embeddingBytes); emb != nil {
+		if emb, err := DecodeVector(embeddingBytes, len(embedding)); err == nil {
 			sim = CosineSimilarity(embedding, emb)
 		}
 	}

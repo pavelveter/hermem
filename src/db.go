@@ -2,7 +2,10 @@ package main
 
 import (
 	"database/sql"
+	"encoding/binary"
 	"fmt"
+	"math"
+	"net/url"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -25,13 +28,26 @@ type Edge struct {
 }
 
 func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	v := url.Values{}
+	v.Set("_journal_mode", "WAL")
+	v.Set("_busy_timeout", "5000")
+	v.Set("_sync", "NORMAL")
+
+	var dsn string
+	if dbPath == ":memory:" {
+		dsn = ":memory:?" + v.Encode()
+	} else {
+		dsn = "file:" + dbPath + "?" + v.Encode()
+	}
+
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	db.SetMaxOpenConns(4)
 
+	// PRAGMAs as explicit confirmation; DSN params apply first at connect.
 	if _, err := db.Exec("PRAGMA journal_mode = WAL;"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to set WAL mode: %w", err)
@@ -142,6 +158,25 @@ func ensureEntityID(db *sql.DB, entityID string) (int64, error) {
 		return 0, fmt.Errorf("insert id_map: %w", err)
 	}
 	return res.LastInsertId()
+}
+
+// DecodeVector decodes a BLOB into a float32 slice, validating that the
+// blob size matches the expected embedding dimension. Returns error on
+// empty blob or dimension mismatch (silent data corruption guard).
+func DecodeVector(data []byte, expectedDim int) ([]float32, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty vector blob")
+	}
+	if len(data) != expectedDim*4 {
+		return nil, fmt.Errorf("vector dimension drift: blob %d bytes, want %d (dim=%d)",
+			len(data), expectedDim*4, expectedDim)
+	}
+	emb := make([]float32, expectedDim)
+	for i := range emb {
+		bits := binary.LittleEndian.Uint32(data[i*4 : i*4+4])
+		emb[i] = math.Float32frombits(bits)
+	}
+	return emb, nil
 }
 
 func checkMeta(db *sql.DB, dim int) error {

@@ -71,6 +71,25 @@ func authMiddleware(apiKey string) func(http.Handler) http.Handler {
 	}
 }
 
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("panic recovered",
+					"event", "panic_recovery",
+					"path", r.URL.Path,
+					"method", r.Method,
+					"panic", fmt.Sprintf("%v", rec),
+				)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"internal server error"}`))
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func slogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

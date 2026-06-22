@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 type Embedder interface {
@@ -16,12 +17,14 @@ type Embedder interface {
 type OllamaEmbedder struct {
 	BaseURL string
 	Model   string
+	client  *http.Client
 }
 
 type OpenAIEmbedder struct {
 	BaseURL string
 	APIKey  string
 	Model   string
+	client  *http.Client
 }
 
 type ollamaEmbedRequest struct {
@@ -54,6 +57,7 @@ func NewOllamaEmbedder(baseURL, model string) *OllamaEmbedder {
 	return &OllamaEmbedder{
 		BaseURL: baseURL,
 		Model:   model,
+		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -74,7 +78,7 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := e.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Ollama API: %w", err)
 	}
@@ -104,6 +108,7 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string) *OpenAIEmbedder {
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		Model:   model,
+		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -126,7 +131,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+e.APIKey)
 
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := e.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call OpenAI API: %w", err)
 	}
