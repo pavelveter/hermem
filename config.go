@@ -33,6 +33,14 @@ type Config struct {
 	// single RetrieveContext call, protecting response size and memory
 	// against dense graph walks. 0 disables the cap.
 	MaxRetrievedNodes int
+	// VectorBackend selects the vector index implementation.
+	// "in-memory" (default) — Go brute-force cosine scan, zero-dependency.
+	// "sqlite-vec" — indexed KNN via sqlite-vec vec0 virtual table.
+	VectorBackend string
+	// VectorDim is the embedding dimension used by vec0 virtual table.
+	// Only relevant when VectorBackend = "sqlite-vec".
+	// Must match the actual output dimension of the configured embedder model.
+	VectorDim int
 }
 
 // LoadConfig parses hermem.ini from `path` exactly as given — no
@@ -53,6 +61,8 @@ func LoadConfig(path string) (*Config, error) {
 		DedupThreshold:     0.88,
 		MaxDepthCeiling:   5,
 		MaxRetrievedNodes: 100,
+		VectorBackend:     "in-memory",
+		VectorDim:         768,
 	}
 
 	f, err := os.Open(path)
@@ -98,6 +108,14 @@ func LoadConfig(path string) (*Config, error) {
 			cfg.Model = val
 		case "database.path":
 			cfg.DBPath = val
+		case "database.backend":
+			cfg.VectorBackend = strings.ToLower(val)
+		case "vector.dim":
+			if v, err := strconv.Atoi(val); err == nil && v > 0 {
+				cfg.VectorDim = v
+			} else {
+				log.Printf("config: invalid vector.dim %q, keeping default %d: %v", val, cfg.VectorDim, err)
+			}
 		case "extraction.model":
 			cfg.ExtractModel = val
 		case "extraction.temperature":

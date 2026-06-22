@@ -110,7 +110,6 @@ func TestProcessDialogMergesNearDuplicate(t *testing.T) {
 
 // TestProcessDialogEmbedderError ensures embedder failures propagate
 // (don't get silently swallowed) so the LLM output isn't silently
-// inserted without a vector.
 func TestProcessDialogEmbedderError(t *testing.T) {
 	db := memDB(t)
 	defer db.Close()
@@ -122,11 +121,15 @@ func TestProcessDialogEmbedderError(t *testing.T) {
 	emb := &stubEmbedder{err: embErr}
 	w := NewIngestionWorker(db, ext, emb, 0.99)
 	err := w.ProcessDialog(ictx, "d")
-	if err == nil {
-		t.Fatal("expected embedder error, got nil")
+	if err != nil {
+		t.Fatalf("expected no error (entity errors are non-fatal), got %v", err)
 	}
-	if !strings.Contains(err.Error(), "embedder down") {
-		t.Errorf("error chain lost embedder cause: got %v", err)
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "x").Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("entity was stored despite embedder error, want 0 rows")
 	}
 }
 

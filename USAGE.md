@@ -111,6 +111,22 @@ deliberately **not wired** in this release; the binary's directory
 *is* the config location. Both remain tracked as TODO items for a
 future "operator portable between installs" change.
 
+### Vector backend
+
+Hermem supports two vector index backends, selected via `[database] backend`:
+
+| Backend | Config value | Search | Dependency |
+|---------|-------------|--------|------------|
+| In-memory (default) | `in-memory` | Brute-force O(N) cosine scan | None (zero-dependency) |
+| sqlite-vec | `sqlite-vec` | Indexed KNN via `vec0` virtual table | `sqlite-vec` statically linked |
+
+The in-memory backend reads all embeddings from the `entities` table
+and computes cosine similarity in Go — simple, no dependencies, good up
+to ~20k entities. The sqlite-vec backend stores vectors in a `vec0`
+virtual table and uses its indexed KNN query for fast O(log N) search.
+Switch by setting `[database] backend = sqlite-vec` and ensuring
+`[vector] dim` matches your model's output dimension.
+
 ### Embedder dimension gotcha
 
 The SQLite BLOB column holds embeddings as raw `float32` bytes with a
@@ -547,7 +563,7 @@ $ echo '{"query":"x","topK":3}' | ./hermem search
 
 ## 10. Database schema
 
-A single SQLite file with two tables. The schema lives in
+A single SQLite file with two (or three) tables. The schema lives in
 `db.go → InitDB`; below is the field-by-field reference.
 
 ### `entities`
@@ -580,6 +596,19 @@ edges auto-dedupe on insert. There is no `weight` or timestamp column
 on edges — weight is implicit (always 1.0 in the current model) and
 edge provenance is recovered via `RetrievedFact.parent_id` /
 `relation_type` from the graph walk.
+
+### `vec_entities` (when `[database] backend = sqlite-vec`)
+
+| Column       | SQLite type | Notes                                                 |
+|--------------|-------------|-------------------------------------------------------|
+| `rowid`      | INTEGER PK  | Deterministic hash of the entity's text ID (FNV-1a).  |
+| `embedding`  | FLOAT32[n]  | Vector stored in `vec0` virtual table for KNN search. |
+| `entity_id`  | TEXT        | Maps back to `entities.id`.                            |
+
+This is a `vec0` virtual table managed by the `sqlite-vec` extension.
+It enables indexed KNN search via `WHERE embedding MATCH ? ORDER BY distance`.
+Only created when `[database] backend = sqlite-vec`; the default
+`in-memory` backend reads directly from `entities.embedding`.
 
 ### Migrations
 
@@ -675,7 +704,7 @@ silently produce wrong cosine scores.
 |---------------------------------|-----------------------------------|
 | INI parsing, defaults           | `config.go`                       |
 | Schema, embedding serialisation | `db.go`                           |
-| Store, search, cosine           | `vector.go`                       |
+| VectorIndex interface, search backends (InMemory / SqliteVec) | `vector.go` |
 | Graph walk, ranking, formatting | `retrieval.go`                    |
 | Background worker, dedup, edges | `ingestion.go`                    |
 | Ollama / OpenAI HTTP            | `embedder.go`, `extractor.go`     |
