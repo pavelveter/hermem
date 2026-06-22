@@ -1,240 +1,184 @@
-# TODO: Review-Driven Hardening Batch
+# TODO: Review-Driven Hardening Batches
 
-Scope: 7 items from the recent review (all approved by the user) EXCEPT
-`SmartCosineSimilarity` (#4, deferred — needs M-series SIMD benchmarks
-before committing to a hybrid threshold).
+## Batch 7 — Shipped (rounds 5–7)
 
-| #  | Item                              | Domain          | Source                  |
-|----|-----------------------------------|-----------------|-------------------------|
-| 13 | LLM JSON ```fence``` stripping    | Correctness     | `src/extractor.go`      |
-| 10 | Ingestion race fix                | Concurrency     | `src/ingestion.go` + `src/vector.go` + `src/vector_inmemory.go` |
-|  7 | CTE cycle handling                | SQL correctness | `src/retrieval.go`      |
-|  6 | `createEdges` → bulk INSERT       | Performance     | `src/ingestion.go`      |
-|  2 | `validCategories`/`validRelationTypes` → Config | Extensibility | `src/config.go` + `src/extractor.go` |
-|  3 | `filterRelations` pre-count       | Micro-opt       | `src/extractor.go`      |
-|  1 | DBPath symlink `slog.Debug`       | Polish          | `src/config.go`         |
+All 7 items from the original review-driven hardening batch are
+landed. Commit history (most recent at top):
 
-(Excluded: #4 SmartCosineSimilarity, #5 BEGIN IMMEDIATE (theoretical),
- #8 Lost-in-the-Middle (would need composite-score rewrite), #9 tick
- stacking (false positive — Go `time.Ticker` drops excess ticks),
- #11/#12/#14 already addressed, #15 architectural observation only.)
+```
+1841faa  chore: format-only normalization across docs, db, embedder, metrics
+9fa0f2c  chore: debug-log DBPath symlink resolution divergence (#1)
+a814929  feat: extra_categories / extra_relation_types config-driven allowlists (#2)
+40cbb11  fix: path-tracker cycle guard in graph_walk CTE, char(31) delimiter (#7)
+91200e1  fix: vector-index write before SQLite commit in StoreEntityWithEmbedding (#10)
+e1d98b4  fix: createEdges bulk multi-VALUES INSERT, chunked via DB var ceiling (#6)
+9dc8250  feat: ini.v1 parser + embedder/extract timeouts (round 5)
+63e11f2  fix: chunked SQLite IN-clause exec + INI helper (round 4)
+```
 
----
-
-## #13 LLM JSON cleanup — HIGH
-
-**File:** `src/extractor.go`, tests `src/extractor_test.go`.
-
-**Risk:** Without stripping, Ollama responses that wrap JSON in
-` ```json ... ` ``` (very common) survive TrimSpace but fail
-`json.Unmarshal`. Production run on Ollama without `format=json`
-hardening sees ≥50% parse errors. OpenAI clients with
-`response_format=json_object` are immune, but still drop defensive
-coverage if a future model stops honoring it.
-
-**Approach:** New helper `stripMarkdownCodeFence(s string) string`
-that:
-1. Iterates the string looking for ` ```json ` or generic ` ``` ` openings.
-2. Captures up to the closing ` ``` ` (or end-of-string).
-3. Returns the inner content (trimmed of leading/trailing whitespace).
-- Apply in both `OllamaLLMExtractor.ExtractEntities` and
-  `OpenAILLMExtractor.ExtractEntities` AFTER `TrimSpace`, BEFORE
-  `json.Unmarshal`.
-- Idempotent: bare JSON passes through unchanged.
-
-**Test:** feed ` ```json\n{"entities":[]}\n` ` ` and plain JSON,
-assert both produce equivalent `ExtractionResult`.
+### Items that remain deferred (NOT this batch)
+- #4 SmartCosineSimilarity — needs M-series SIMD benchmarks before
+  committing to a hybrid SIMD/naive threshold. Not picked up here.
+- #5 BEGIN IMMEDIATE — theoretical; code does not currently use
+  any transaction wrappers.
+- #9 Tick stacking — false positive. Go's `time.Ticker` already
+  drops excess ticks.
+- #15 InMemory vs sqlite-vec — architectural; revisit when N>100k.
 
 ---
 
-## #10 Ingestion race fix — HIGH
+## Batch 8 — Lost-in-the-Middle Composite Scoring
 
-**Files:** `src/ingestion.go`, `src/vector.go`, `src/vector_inmemory.go`,
-tests `src/ingestion_test.go`.
+Theme: Quality-of-results for graph walk retrieval. hermem's value
+proposition is being a semantic memory store; sorting returned
+context for downstream LLM prompts matters more than micro-SIMD
+gains. Two production-pragma items + one architecture item.
 
-**Risk:** Today `StoreEntityWithEmbedding` writes SQLite first, then
-updates `vi.Store` under a `Lock`. Two parallel ingesters can
-commit SQLite in order A→B but update the in-memory index in order
-B→A, corrupting byID→entries mapping for spot searches until the
-DB is rebuilt.
+### Why this batch over a SIMD pass
 
-**Approach:** Reverse the order:
-1. Call `vi.Store(id, vec)` first — this acquires `idx.mu.Lock()`
-   and inserts the row.
-2. Perform SQLite INSERT.
-3. If SQLite INSERT fails, call `vi.Remove([]string{id})` to roll
-   back the index change. The window between "index has it" and
-   "DB has it" is now bounded by SQLite commit latency (sub-ms);
-   the inverse window is gone.
-- Doc the new ordering prominently on `StoreEntityWithEmbedding` so
-  future contributors don't re-introduce the bug.
+The codebase already has a non-trivial composite scorer:
 
-**Test:** Race-detector test in `-race` mode. Spawn 10 goroutines,
-each ingesting 100 distinct entities. After all complete, assert:
-   - `len(idx.entries)` equals `SELECT COUNT(*) FROM entities`.
-   - For every entry in `idx.entries`, `idx.byID[id] == position`.
-   - All goroutines pass without race-detector warnings.
+- `computeRankingScore(queryEmbedding, nodeEmbedding, updatedAt)`
+  in `src/retrieval.go` returns
+  `0.7*cosine(query, node) + 0.3*exp(-age/30d)`.
+- It runs in the row loop, attaches `RankingScore` to each
+  `GraphNode`, then `sort.SliceStable` orders category buckets
+  by score desc.
 
----
+What it does NOT model:
+- **Depth distance.** Mid-depth nodes (depth 2 in a depth-4 walk)
+  are penalized equally — the classical "Lost in the Middle"
+  retrieval pathology (Liu et al., 2023): relevant items near the
+  ends of an ordering get more attention than those in the middle.
+  For hermem, the equivalent is mid-depth graph-walk results
+  scoring lower than both seeds and far-periphery nodes, so the
+  downstream prompt sees the seeds + periphery first and the
+  actually-relevant mid-context last (or trimmed if MaxRetrievedNodes
+  kicks in).
+- **Composable scoring.** Operators today cannot supply a custom
+  ranking function without forking the binary; embedding a
+  function field in `RetrieveContextOptions` is the smallest
+  extension that unlocks A/B scoring.
+- **Query-embedding overhead.** Each row decodes the node's
+  embedding bytes and computes cosine. The query norm is constant
+  per call but recomputed at every row.
 
-## #7 CTE cycle handling — MEDIUM
+### #16 CompositeScorer extension — MEDIUM (lead item)
 
-**File:** `src/retrieval.go`, doc test in `src/retrieval_test.go`.
+**Files:** `src/retrieval.go`, tests `src/retrieval_test.go`.
 
-**Risk:** The current recursive CTE uses `UNION ALL` and bounds depth
-with `gw.depth < effectiveDepth`. Cycles A→B→A walk to depth
-`DepthCeiling`, multiplying intermediate rows. Above 5 hops, the
-intermediate temp-table can OOM SQLite. The Go-side `seenIDs` dedups
-the FINAL result set, masking the bug.
+**Approach:**
+1. Add `CompositeScorer func(retrievedNode ScoringInput) float32`
+   to `RetrieveContextOptions`. nil → use the existing weighted
+   default (`sim*0.7 + recency*0.3`).
+2. Define `ScoringInput` as a small read-only struct holding the
+   fields the scorer needs: `Depth int`, `Embedding []float32`
+   (decoded bytes for the node), `UpdatedAt time.Time`,
+   `QueryEmbedding []float32` (from opts). Score is computed on
+   the caller-supplied closure; nil closure falls back.
+3. Refactor `computeRankingScore` → `defaultCompositeScorer` as
+   the package-level default scorer implementation. Behaviour
+   unchanged for callers that don't set `opts.CompositeScorer`.
+4. **Add depth-soft-floor**: default scorer now also applies a
+   small depth penalty when `Depth > 0` to surface mid-depth
+   relevant nodes over far-periphery noise. Concretely,
+   `score = w_sim*sim + w_recency*recency - depthPenalty*Depth`.
+   The depth penalty starts small enough (e.g. 0.05 / depth unit)
+   that pure recency dominates by the time a node is stale; the
+   default weight constants live in named `const` blocks so the
+   existing `TestRetrieveContext*` ordering tests that depended
+   on the old shape are surfaced as failures first, then patched
+   in the same PR.
 
-**Approach:** Add an explicit path-visit guard inside the CTE itself.
-Append a `path TEXT` column to the CTE; recursive branch refuses
-to expand a row whose `target_id` is already in `gw.path`
-(separator-based LIKE check). This bounds the work SQLite does
-regardless of how Go later dedups the result.
-- Existing `seenIDs`/`seenContents` Go-side dedups stay (defence in
-  depth + faster because there's no SQL-level dedup step).
+**Test:** `TestCompositeScorerDefault` — fixture with three nodes
+identical except depth (0, 2, 4), assert score monotonic
+decrease is overridden for the depth-2 node when its cosine is
+strictly higher. `TestCompositeScorerCustom` — caller-supplied
+closure returns 99.0; verify the post-sort ranks the
+custom-scored node first regardless of cosine.
 
-**Test:** Existing `TestRetrieveContextCycleGuard` keeps passing.
-Add `TestRetrieveContextCycleComplex`: a 5-node graph with two
-interleaving cycles, depth limit 8, asserts `num intermediate rows
-<= ~20` and final result matches hand-computed unique set.
+**Risk:** Any re-rank reshape can break snapshot tests that
+assert first-N ordering. Acceptable; explicit list of test
+fixtures to update is in §Validation.
 
----
+### #17 Query-embedding norm precompute — MICRO-OPT (bundle)
 
-## #6 `createEdges` → bulk INSERT — MEDIUM
+**Files:** `src/retrieval.go`.
 
-**File:** `src/ingestion.go`.
+**Approach:** When `opts.QueryEmbedding` is set and non-empty,
+precompute its `VectorNorm` exactly once at the top of
+`RetrieveContext` and pass it into the scorer. Each row's
+`cosine(query, node)` then computes `dot / (cachedQueryNorm *
+node.Norm)` instead of recomputing the query-norm every call.
+For a 100-row retrieval this is ~99 SQRT calls saved per
+request; not a hot-loop issue at current scale, but the wiring
+becomes the natural handoff point if we ever introduce
+`CompositeScorer` that needs the cached value.
 
-**Risk:** The current `createEdges` does ONE INSERT per relation. A
-dialog producing 50 edges hits SQLite 50 times; each call is a
-separate prepared statement and a write transaction. High-volume
-ingest pipelines get throttled to SQLite commit IOPS.
+**Test:** No new test. Microbench before/after (`Benchmark
+RetrieveContext_NormCache`) to demonstrate the win; defer
+benchmark infrastructure to #18.
 
-**Approach:** Replace the per-relation loop with a single
-multi-VALUES INSERT chunked through the `execInChunks` helper
-introduced in 63e11f2. Skip duplicate target_ids within the same
-batch (INSERT OR IGNORE handles DB-side dedup, but excluding
-duplicates in app code prevents redundant args-list allocation).
-- Inputs: same `(entityID, relations)` shape.
-- Output: single `db.ExecContext` per chunk (no prepare/repeat).
+**Risk:** Negligible. Pure rearranging of `computeRankingScore`'s
+inputs.
 
-**Test:** Add a unit test that calls `createEdges` for 50 relations
-and asserts exactly 50 rows land in `edges`. Add a separate
-test for cross-batch partitioning (e.g., 700 relations → two
-EXEC calls).
+### #18 Recall microbench infrastructure — MICRO-OPT (bundle)
 
----
+**Files:** `src/vector_bench_test.go` (extend existing bench
+file) and a new `src/retrieval_bench_test.go` (parallel to
+existing bench layout).
 
-## #2 Categories/relations → Config — MEDIUM-EXT
+**Approach:**
+1. `BenchmarkRetrieveContextRecall`: synthesize a fixture graph
+   (10 seeds, 50 entities, 3 cycles), run `RetrieveContext` at
+   5/10/50/100 rows, capture `BenchmarkRetrieveContextRecall-
+   N` ops/sec and allocs/op. Establishes the baseline before
+   #16 lands so re-order visibility is measurable.
+2. `BenchmarkCompositeScorerDispatch`: nil closure vs custom
+   closure vs default-with-depth; verify custom closure path
+   doesn't accidentally box into interface allocations.
 
-**Files:** `src/config.go`, `src/extractor.go`, `src/extractor_test.go`.
+These benchmarks are infrastructure-only; no production code
+changes.
 
-**Risk:** New operators who want a `meta` category or a `supports`
-relation today have to fork the binary. The current lists in
-`extractor.go` are package-level vars with no override mechanism.
+**Test:** None — bench files are run on demand, not in CI suite.
 
-**Approach:** Add `ExtraCategories []string` and
-`ExtraRelationTypes []string` to `Config` (ini keys
-`extraction.extra_categories` / `extraction.extra_relation_types`,
-CSV-parsed).
-- `NewOllamaLLMExtractor` / `NewOpenAILLMExtractor` accept two extra
-  slices as parameters (after the existing 4). Wire the merged
-  sets into the package-level maps at extractor construction
-  (caller-owned lifetime — refusing to mutate the package-level
-  map directly from concurrent ingests avoids race).
-- `filterEntities` / `filterRelations` look up the merged set.
-- Validation: every `Extra*` value passes a regex check
-  (`^[a-z][a-z0-9_]*$`); invalid values are dropped at config-load
-  with a `slog.Warn` so a typo doesn't quietly widen the schema.
+### Execution order
 
-**Test:** `TestLoadConfigParsesExtractionExtensibility` validates
-the ini parsing. `TestFilterValidatesExtraCategories` extends
-filterEntities with a custom category and asserts the entity
-passes.
+1. **#18 recall microbench** — establishes the baseline before
+   any re-rank change, so #16's impact is measurable.
+2. **#17 query-embedding norm precompute** — pure refactor,
+   zero behaviour change, microbench delta confirms.
+3. **#16 CompositeScorer extension** — the lead item; updates
+   `TestRetrieveContext*` snapshots where the default-depth
+   penalty changes ordering. One rollup commit covering the
+   three.
 
----
+### Validation plan
 
-## #3 `filterRelations` pre-count — MICRO-OPT
-
-**File:** `src/extractor.go`.
-
-**Risk:** Tiny perf concern; minor code change. Cosmetic.
-
-**Approach:** Pre-count valid relations in a single pass; allocate
-`make([]Relation, 0, validCount)` exactly. For `filterEntities`,
-same pattern — pre-count valid entities by category check, allocate
-exactly. Skip the "if validCount == len(in) return in" fast path
-because callers don't depend on identity preservation.
-
-**Test:** No new test — existing filterEntities coverage already
-asserts the result; this PR preserves behavior, only changes
-allocation strategy. Re-run existing tests.
-
----
-
-## #1 DBPath symlink logging — POLISH
-
-**File:** `src/config.go`.
-
-**Risk:** Cosmetic — operators sometimes can't find the DB file when
-the binary is symlinked through `/usr/local/bin/`. Today the path
-resolution is silent. Adding a debug log makes stray DB files
-detectable without code changes.
-
-**Approach:** When resolving DBPath from the binary's directory,
-call `filepath.EvalSymlinks`; if the resolved path differs from
-the raw path, emit `slog.Debug("db_path_symlink_resolved", "raw",
-rawDir, "resolved", realDir, "db_path", dbPath)`. Keeps behavior
-identical, just adds observability.
-
-**Test:** No new test — existing `TestLoadConfigFromDir_*` exercises
-the resolver. Manual verification: deploy via symlink, run with
-`slog.LevelDebug`, confirm the event appears.
-
----
-
-## Execution order
-
-1. #13 LLM JSON cleanup (isolated, smallest blast radius).
-2. #3 `filterRelations` pre-count (same file, no risk).
-3. #6 bulk edges (uses existing `execInChunks` from 63e11f2).
-4. #10 ingestion race fix (largest architectural change; needs
-   race-detector test).
-5. #7 CTE cycle handling (SQL surgery; sensitive).
-6. #2 categories/relations → Config (touches extractor constructors
-   and existing test calls).
-7. #1 symlink logging (final polish).
-
-Group by commit theme:
-- **Round 6 — correctness / perf:**
-  #13, #10, #6, #7.
-- **Round 6 — extensibility / polish:**
-  #2, #3, #1.
-
-Two commits, each vet- and race-clean.
-
-## Validation plan
-
-After all 7 items:
 - `gofmt -w src/*.go`
 - `go vet ./src/...`
-- `go test -count=1 -race -timeout 120s ./src/...` (race-detector,
-  catches #10 fixes)
-- Targeted runs for new tests:
-   - `TestStripMarkdownCodeFence`
-   - `TestIngestionRaceNoIndexMismatch`
-   - `TestRetrieveContextCycleComplex`
-   - `TestLoadConfigParsesExtractionExtensibility`
-   - `TestFilterValidatesExtraCategories`
+- `go test -count=1 -race -timeout 180s ./src/...` (full suite,
+  verify #16 didn't drift `TestRetrieveContext*` ordering)
+- `go test -bench='BenchmarkRetrieveContext|BenchmarkCompositeScorer' -benchtime=3x -run=^$ ./src/...`
+  (record #17 + #18 baseline numbers into the commit body)
+- New targeted runs:
+  - `go test -run TestCompositeScorerDefault ./src/...`
+  - `go test -run TestCompositeScorerCustom ./src/...`
 
-## Out of scope (deferred for later PRs)
+### Out of scope (deferred)
 
-- #4 SmartCosineSimilarity — needs M-series benchmarks; the 512-dim
-  heuristic the reviewer suggested is a guess without measurement.
-- #5 BEGIN IMMEDIATE — code doesn't currently use any transaction
-  wrappers.
-- #8 "Lost in the Middle" — composite-score re-order refactor;
-  requires benchmark + design discussion.
-- #9 tick stacking — false positive.
-- #15 InMemory vs sqlite-vec — architectural; revisit when N>100k.
+- #4 SmartCosineSimilarity — needs Apple Silicon and AVX2 hosts
+  on hand to measure; revisit after Batch 8 lands.
+- #19 Generic retrieval response filter / category weights —
+  lifted from a stub I left in `TODO.md`; paper design until a
+  user hits the issue.
+
+---
+
+## Tree-cleanup note (small, separate)
+
+`main` (the stray Go test binary produced by `go build -o main`
+during earlier validation) was dropped at commit `1841faa`.
+Future runs should add `main` to `.gitignore` so the same
+mistake doesn't reappear.
