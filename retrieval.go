@@ -68,11 +68,11 @@ type GraphNode struct {
 }
 
 type RetrievalResult struct {
-	SeedNodes    []GraphNode
-	WorldFacts   []RetrievedFact
-	Opinions     []RetrievedFact
-	Experiences  []RetrievedFact
-	Observations []RetrievedFact
+	SeedNodes    []GraphNode      `json:"seed_nodes"`
+	WorldFacts   []RetrievedFact  `json:"world_facts"`
+	Opinions     []RetrievedFact  `json:"opinions"`
+	Experiences  []RetrievedFact  `json:"experiences"`
+	Observations []RetrievedFact  `json:"observations"`
 }
 
 // RetrievedFact is one re-ranked item in a category bucket. For nodes

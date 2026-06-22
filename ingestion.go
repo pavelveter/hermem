@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -26,22 +27,22 @@ func NewIngestionWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, d
 	}
 }
 
-func (w *IngestionWorker) ProcessDialog(dialog string) error {
-	result, err := w.extractor.ExtractEntities(dialog)
+func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) error {
+	result, err := w.extractor.ExtractEntities(ctx, dialog)
 	if err != nil {
 		return fmt.Errorf("failed to extract entities: %w", err)
 	}
 
 	for _, entity := range result.Entities {
-		if err := w.processEntity(entity); err != nil {
+		if err := w.processEntity(ctx, entity); err != nil {
 			return fmt.Errorf("failed to process entity %s: %w", entity.ID, err)
 		}
 	}
 	return nil
 }
 
-func (w *IngestionWorker) processEntity(entity ExtractedEntity) error {
-	embedding, err := w.embedder.Embed(entity.Content)
+func (w *IngestionWorker) processEntity(ctx context.Context, entity ExtractedEntity) error {
+	embedding, err := w.embedder.Embed(ctx, entity.Content)
 	if err != nil {
 		return fmt.Errorf("failed to embed content: %w", err)
 	}
@@ -54,7 +55,7 @@ func (w *IngestionWorker) processEntity(entity ExtractedEntity) error {
 	targetID := entity.ID
 	if existing != nil {
 		targetID = existing.ID
-		err = w.mergeEntities(existing, entity, embedding)
+		err = w.mergeEntities(ctx, existing, entity, embedding)
 	} else {
 		err = w.createEntity(entity, embedding)
 	}
@@ -88,13 +89,13 @@ func (w *IngestionWorker) createEntity(entity ExtractedEntity, embedding []float
 	return StoreEntityWithEmbedding(w.db, dbEntity)
 }
 
-func (w *IngestionWorker) mergeEntities(existing *Entity, newEntity ExtractedEntity, newEmbedding []float32) error {
+func (w *IngestionWorker) mergeEntities(ctx context.Context, existing *Entity, newEntity ExtractedEntity, newEmbedding []float32) error {
 	mergedContent := existing.Content
 	if !strings.Contains(existing.Content, newEntity.Content) {
 		mergedContent = existing.Content + "; " + newEntity.Content
 	}
 
-	updatedEmbedding, err := w.embedder.Embed(mergedContent)
+	updatedEmbedding, err := w.embedder.Embed(ctx, mergedContent)
 	if err != nil {
 		return fmt.Errorf("failed to re-embed merged content: %w", err)
 	}
@@ -122,10 +123,10 @@ type MemoryMessage struct {
 	Dialog string
 }
 
-func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, ch <-chan MemoryMessage) {
+func MemoryWorker(ctx context.Context, db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, ch <-chan MemoryMessage) {
 	worker := NewIngestionWorker(db, extractor, embedder, dedupThreshold)
 	for msg := range ch {
-		if err := worker.ProcessDialog(msg.Dialog); err != nil {
+		if err := worker.ProcessDialog(ctx, msg.Dialog); err != nil {
 			slog.Error("dialog processing failed",
 				"event", "ingest_failed",
 				"err", err,
@@ -137,7 +138,7 @@ func MemoryWorker(db *sql.DB, extractor LLMExtractor, embedder Embedder, dedupTh
 
 type SimpleLLMExtractor struct{}
 
-func (e *SimpleLLMExtractor) ExtractEntities(dialog string) (*ExtractionResult, error) {
+func (e *SimpleLLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error) {
 	result := &ExtractionResult{}
 	lines := strings.Split(dialog, "\n")
 

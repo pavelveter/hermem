@@ -33,7 +33,7 @@ type ExtractionResult struct {
 
 // LLMExtractor turns dialog text into structured entities.
 type LLMExtractor interface {
-	ExtractEntities(dialog string) (*ExtractionResult, error)
+	ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error)
 }
 
 // Ollama chat-call tuning. Held in package-level consts so the values
@@ -113,24 +113,29 @@ func filterRelations(in []Relation) []Relation {
 }
 
 type OllamaLLMExtractor struct {
-	BaseURL string
-	Model   string
+	BaseURL     string
+	Model       string
+	Temperature float32
 
 	// client owns the HTTP transport so retries reuse the TCP connection
 	// and per-request timeout is enforced consistently.
 	client *http.Client
 }
 
-func NewOllamaLLMExtractor(baseURL, model string) *OllamaLLMExtractor {
+func NewOllamaLLMExtractor(baseURL, model string, temperature float32) *OllamaLLMExtractor {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
 	if model == "" {
 		model = "qwen2.5-coder:7b"
 	}
+	if temperature == 0 {
+		temperature = 0.1
+	}
 	return &OllamaLLMExtractor{
-		BaseURL: baseURL,
-		Model:   model,
+		BaseURL:     baseURL,
+		Model:       model,
+		Temperature: temperature,
 		client: &http.Client{
 			Timeout: ollamaRequestTimeout,
 		},
@@ -262,12 +267,7 @@ func truncate(s string, max int) string {
 	return s[:max] + "...<truncated>"
 }
 
-func (e *OllamaLLMExtractor) ExtractEntities(dialog string) (*ExtractionResult, error) {
-	// Hard overall budget so a stuck Ollama can't pin the HTTP server
-	// (or MemoryWorker) on a single bad request.
-	totalBudget := ollamaRequestTimeout*time.Duration(ollamaRetries) + ollamaBackoffMax*time.Duration(ollamaRetries-1)
-	ctx, cancel := context.WithTimeout(context.Background(), totalBudget)
-	defer cancel()
+func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error) {
 
 	systemPrompt := `You are a knowledge extraction assistant. Extract entities and relations from dialog text.
 
@@ -299,7 +299,7 @@ Dialog:`
 		Stream: false,
 		Format: "json",
 		Options: map[string]any{
-			"temperature": 0.1,
+			"temperature": e.Temperature,
 		},
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -88,7 +89,7 @@ func AddEdge(db *sql.DB, src, dst, rel string) error {
 	return nil
 }
 
-func AddEdgeWithAutoCreate(db *sql.DB, embedder Embedder, src, dst, rel string) error {
+func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, embedder Embedder, src, dst, rel string) error {
 	for _, id := range []string{src, dst} {
 		var exists bool
 		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM entities WHERE id = ?)", id).Scan(&exists)
@@ -96,7 +97,7 @@ func AddEdgeWithAutoCreate(db *sql.DB, embedder Embedder, src, dst, rel string) 
 			return fmt.Errorf("failed to check entity %q: %w", id, err)
 		}
 		if !exists {
-			embedding, err := embedder.Embed(id)
+			embedding, err := embedder.Embed(ctx, id)
 			if err != nil {
 				return fmt.Errorf("failed to embed placeholder entity %q: %w", id, err)
 			}

@@ -162,7 +162,7 @@ func (s *Server) HandleSearch(w http.ResponseWriter, r *http.Request) {
 		req.TopK = 5
 	}
 
-	embedding, err := s.embedder.Embed(req.Query)
+	embedding, err := s.embedder.Embed(r.Context(), req.Query)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("embed failed: %v", err))
 		return
@@ -226,7 +226,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.worker.ProcessDialog(req.Dialog); err != nil {
+	if err := s.worker.ProcessDialog(r.Context(), req.Dialog); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -255,7 +255,7 @@ func (s *Server) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		req.TopK = 3
 	}
 
-	context, err := GenerateResponse(s.db, s.embedder, s.retrievalOpts, req.Query)
+	context, err := GenerateResponse(r.Context(), s.db, s.embedder, s.retrievalOpts, req.Query)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -288,7 +288,7 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.AutoCreate {
-		err = AddEdgeWithAutoCreate(s.db, s.embedder, req.SourceID, req.TargetID, req.RelationType)
+		err = AddEdgeWithAutoCreate(r.Context(), s.db, s.embedder, req.SourceID, req.TargetID, req.RelationType)
 	} else {
 		err = AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType)
 	}
