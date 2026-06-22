@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
+
+const maxSQLiteVars = 999
 
 type AsyncMetricsWorker struct {
 	db           *sql.DB
@@ -15,6 +19,8 @@ type AsyncMetricsWorker struct {
 	flushTimeout time.Duration
 	stopCh       chan struct{}
 	flushReqCh   chan chan struct{}
+	wg           sync.WaitGroup
+	onceStop     sync.Once
 }
 
 func NewAsyncMetricsWorker(db *sql.DB, bufferSize, batchSize int, flushTimeout time.Duration) *AsyncMetricsWorker {
@@ -29,7 +35,9 @@ func NewAsyncMetricsWorker(db *sql.DB, bufferSize, batchSize int, flushTimeout t
 }
 
 func (w *AsyncMetricsWorker) Start() {
+	w.wg.Add(1)
 	go func() {
+		defer w.wg.Done()
 		ticker := time.NewTicker(w.flushTimeout)
 		defer ticker.Stop()
 
@@ -43,12 +51,18 @@ func (w *AsyncMetricsWorker) Start() {
 			for id := range pending {
 				ids = append(ids, id)
 			}
-			if err := flushAccessedBatch(context.Background(), w.db, ids); err != nil {
-				slog.Error("async_metrics_flush_failed",
-					"event", "metrics_flush_error",
-					"error", err,
-					"count", len(ids),
-				)
+			for i := 0; i < len(ids); i += maxSQLiteVars {
+				end := i + maxSQLiteVars
+				if end > len(ids) {
+					end = len(ids)
+				}
+				if err := flushAccessedBatch(context.Background(), w.db, ids[i:end]); err != nil {
+					slog.Error("async_metrics_flush_failed",
+						"event", "metrics_flush_error",
+						"error", err,
+						"count", len(ids[i:end]),
+					)
+				}
 			}
 			pending = make(map[string]struct{}, w.batchSize)
 		}
@@ -69,14 +83,28 @@ func (w *AsyncMetricsWorker) Start() {
 				flush()
 
 			case replyCh := <-w.flushReqCh:
-				for len(w.ch) > 0 {
-					id := <-w.ch
-					pending[id] = struct{}{}
+				drain := true
+				for drain {
+					select {
+					case id, ok := <-w.ch:
+						if !ok {
+							drain = false
+						} else {
+							pending[id] = struct{}{}
+						}
+					default:
+						drain = false
+					}
 				}
 				flush()
 				close(replyCh)
 
 			case <-w.stopCh:
+				for len(w.ch) > 0 {
+					if id, ok := <-w.ch; ok {
+						pending[id] = struct{}{}
+					}
+				}
 				flush()
 				return
 			}
@@ -98,13 +126,6 @@ func (w *AsyncMetricsWorker) Touch(id string) {
 	}
 }
 
-func (w *AsyncMetricsWorker) Stop() {
-	if w == nil {
-		return
-	}
-	close(w.stopCh)
-}
-
 func (w *AsyncMetricsWorker) Flush() {
 	if w == nil {
 		return
@@ -115,6 +136,13 @@ func (w *AsyncMetricsWorker) Flush() {
 		<-replyCh
 	case <-w.stopCh:
 	}
+}
+
+func (w *AsyncMetricsWorker) Stop() {
+	w.onceStop.Do(func() {
+		close(w.stopCh)
+		w.wg.Wait()
+	})
 }
 
 func flushAccessedBatch(ctx context.Context, db *sql.DB, ids []string) error {
@@ -130,5 +158,8 @@ func flushAccessedBatch(ctx context.Context, db *sql.DB, ids []string) error {
 	_, err := db.ExecContext(ctx,
 		"UPDATE entities SET last_accessed_at = CURRENT_TIMESTAMP WHERE id IN ("+
 			strings.Join(placeholders, ",")+")", args...)
-	return err
+	if err != nil {
+		return fmt.Errorf("bulk update entities: %w", err)
+	}
+	return nil
 }
