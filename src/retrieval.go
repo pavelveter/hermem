@@ -147,32 +147,60 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 
 	args = append(args, effectiveDepth)
 
+	// graph_walk recursion terminates on cycles via a `visited`
+	// path-column: each row accumulates the IDs of nodes traversed
+	// to reach it, and the WHERE clause rejects any expansion
+	// whose target appears in the path with
+	// `instr(gw.visited, char(31) || e.id || char(31)) = 0`. Without
+	// this guard, a 3-cycle A→B→C→A would inflate graph_walk to
+	// ~depthCap/3 + 1 rows before the depth cap stops it; SELECT
+	// DISTINCT at the end of this query still collapses the
+	// user-visible result, so the guard is a
+	// correctness/performance improvement at the SQL engine layer
+	// (bounded CTE build cost) rather than a user-visible behaviour
+	// change. The separate row count check in retrieval_test.go's
+	// TestGraphWalk3CycleDirectProbe exercises the SQL guard
+	// directly without DISTINCT.
+	//
+	// Delimiter is `char(31)` (Unit Separator, 0x1F) instead of a
+	// printable character: US is structurally absent from any
+	// entity id (TSV/IANA-delimiter convention), so the contract is
+	// enforced at the SQL semantics layer rather than relying on a
+	// "ids never contain ','" social invariant.
+	//
+	// The 'visited' column is intentionally NOT projected in the
+	// final SELECT DISTINCT so retrieval.go's row.Scan signature
+	// is unchanged.
 	query := fmt.Sprintf(`
 		WITH RECURSIVE graph_walk AS (
-			SELECT 
+			SELECT
 				e.id, e.category, e.content, e.updated_at, e.embedding,
 				0 as depth,
 				'' as parent_id,
-				'' as relation_type
+				'' as relation_type,
+				char(31) || e.id || char(31) as visited
 			FROM entities e
 			WHERE e.id IN (%[1]s) AND e.archived = 0
-			
+
 			UNION ALL
-			
-			SELECT 
+
+			SELECT
 				e.id, e.category, e.content, e.updated_at, e.embedding,
 				gw.depth + 1,
 				gw.id as parent_id,
-				ed.relation_type
+				ed.relation_type,
+				gw.visited || e.id || char(31) as visited
 			FROM graph_walk gw
 			JOIN edges ed ON (ed.source_id = gw.id OR ed.target_id = gw.id)
 			JOIN entities e ON (
-				CASE 
+				CASE
 					WHEN ed.source_id = gw.id THEN ed.target_id = e.id
 					ELSE ed.source_id = e.id
 				END
 			)
-			WHERE gw.depth < ? AND e.id != gw.id AND e.archived = 0
+			WHERE gw.depth < ?
+				AND instr(gw.visited, char(31) || e.id || char(31)) = 0
+				AND e.archived = 0
 		)
 		SELECT DISTINCT id, category, content, updated_at, embedding, depth, parent_id, relation_type
 		FROM graph_walk
