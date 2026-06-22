@@ -9,6 +9,69 @@ import (
 	"time"
 )
 
+const (
+	touchChanSize  = 1000
+	touchBatchSize = 100
+	touchInterval  = 100 * time.Millisecond
+)
+
+type touchTask struct {
+	db  *sql.DB
+	ids []string
+}
+
+var touchCh = make(chan touchTask, touchChanSize)
+
+func init() {
+	go touchWorker()
+}
+
+func touchWorker() {
+	ticker := time.NewTicker(touchInterval)
+	defer ticker.Stop()
+
+	var buf []string
+	var taskDB *sql.DB
+
+	flush := func() {
+		if len(buf) == 0 || taskDB == nil {
+			return
+		}
+		if err := touchAccessedBatch(context.Background(), taskDB, buf); err != nil {
+			slog.Warn("touch worker flush failed", "event", "touch_error", "err", err)
+		}
+		buf = buf[:0]
+		taskDB = nil
+	}
+
+	for {
+		select {
+		case task, ok := <-touchCh:
+			if !ok {
+				flush()
+				return
+			}
+			if taskDB == nil {
+				taskDB = task.db
+			}
+			buf = append(buf, task.ids...)
+			if len(buf) >= touchBatchSize {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
+
+func enqueueTouch(db *sql.DB, ids []string) {
+	select {
+	case touchCh <- touchTask{db: db, ids: ids}:
+	default:
+		slog.Warn("touch channel full, dropping", "event", "touch_dropped", "count", len(ids))
+	}
+}
+
 func GarbageCollector(ctx context.Context, db *sql.DB, policy RetentionPolicy) {
 	if policy.RunInterval <= 0 {
 		return
@@ -113,9 +176,9 @@ func vacuumAfter(db *sql.DB, archived int) {
 	}
 }
 
-func touchAccessedBatch(db *sql.DB, ids []string) {
+func touchAccessedBatch(ctx context.Context, db *sql.DB, ids []string) error {
 	if len(ids) == 0 {
-		return
+		return nil
 	}
 	placeholders := make([]string, len(ids))
 	args := make([]interface{}, len(ids))
@@ -123,10 +186,12 @@ func touchAccessedBatch(db *sql.DB, ids []string) {
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	if _, err := db.Exec(fmt.Sprintf(
+	_, err := db.ExecContext(ctx, fmt.Sprintf(
 		"UPDATE entities SET last_accessed_at = CURRENT_TIMESTAMP WHERE id IN (%s)",
 		strings.Join(placeholders, ","),
-	), args...); err != nil {
-		slog.Warn("touch accessed batch failed", "event", "touch_error", "err", err)
+	), args...)
+	if err != nil {
+		return fmt.Errorf("touch accessed batch: %w", err)
 	}
+	return nil
 }

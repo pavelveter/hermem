@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -61,7 +62,7 @@ func authMiddleware(apiKey string) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if r.Header.Get("X-API-Key") != apiKey {
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-API-Key")), []byte(apiKey)) != 1 {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}

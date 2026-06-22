@@ -112,7 +112,7 @@ func SearchByVector(db *sql.DB, queryEmbedding []float32, topK int) ([]SearchRes
 		for i, r := range results {
 			accessed[i] = r.Entity.ID
 		}
-		go touchAccessedBatch(db, accessed)
+		enqueueTouch(db, accessed)
 	}
 	return results, nil
 }
