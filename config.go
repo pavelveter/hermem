@@ -140,7 +140,12 @@ func (c *Config) NewEmbedder() Embedder {
 }
 
 func (c *Config) NewExtractor() LLMExtractor {
-	return NewOllamaLLMExtractor(c.URL, c.ExtractModel, c.ExtractTemperature)
+	switch c.Provider {
+	case "openai":
+		return NewOpenAILLMExtractor(c.URL, c.Key, c.ExtractModel, c.ExtractTemperature)
+	default:
+		return NewOllamaLLMExtractor(c.URL, c.ExtractModel, c.ExtractTemperature)
+	}
 }
 
 // LoadConfigFromBinaryDir is the production entry point: it resolves
