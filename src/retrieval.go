@@ -56,10 +56,6 @@ type rankedNode struct {
 //   - node: the row's GraphNode as scanned from the CTE. node.Entity
 //     includes UpdatedAt (recency input) and Category (informational
 //     only — default scorer does not weight by category).
-//   - nodeEmbedding: the raw blob bytes from the entities.embedding
-//     column, included for callers that want to inspect the row
-//     storage format (e.g. signature-matching, copy-on-write). The
-//     default scorer does NOT decode from here — it uses nodeVec.
 //   - nodeVec: the decoded `[]float32` for the row's embedding,
 //     precomputed once in the row-scan loop. nil when the row had
 //     no embedding bytes or the decode failed; custom scorers
@@ -73,11 +69,14 @@ type rankedNode struct {
 //     CosineSimilarityWithNorm would otherwise repeat; the same
 //     value is passed to every row in a single retrieval call.
 //
-// Signature shape rationale: passing raw params rather than a struct
-// avoids per-row allocation in the row loop, and adding nodeVec as
-// a separate param avoids forcing custom scorers through
-// DecodeVector (the framework already decoded it).
-type CompositeScorer func(node GraphNode, nodeEmbedding []byte, nodeVec []float32, queryEmbedding []float32, queryNorm float32) float32
+// Signature shape rationale: the framework already pays the cost
+// of decoding the row's embedding inside the row loop and passes
+// the result here. Raw-bytes signature matching is intentionally
+// not part of the public surface — re-add `nodeEmbedding []byte`
+// to this signature in a future PR if a real caller needs it.
+// 4 args keeps the function type documentation-focused (param
+// names map 1:1 to the doc above).
+type CompositeScorer func(node GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32) float32
 
 // defaultCompositeScorer is the package-level fallback for opts
 // CompositeScorer == nil. Formula:
@@ -101,7 +100,6 @@ type CompositeScorer func(node GraphNode, nodeEmbedding []byte, nodeVec []float3
 //     so existing depth=0 fixtures reproduce verbatim.
 func defaultCompositeScorer(
 	node GraphNode,
-	_ []byte,
 	nodeVec []float32,
 	queryEmbedding []float32,
 	queryNorm float32,
@@ -204,13 +202,12 @@ type RetrieveContextOptions struct {
 	// (rankVectorWeight*sim + rankRecencyWeight*recency -
 	// rankDepthPenaltyPerUnit*depth). Custom scorers receive the
 	// row's GraphNode (with Entity.UpdatedAt intact for recency),
-	// the raw embedding bytes (informational; not required for
-	// similarity scoring), the decoded node embedding as nodeVec
-	// (the framework precomputed it once via DecodeVector so
-	// custom scorers don't pay the decode cost themselves), the
-	// query embedding, and the precomputed query norm (0 when
-	// QueryEmbedding is empty). See the CompositeScorer func-type
-	// comment for the full arg list and allocation rationale.
+	// the decoded node embedding as nodeVec (the framework
+	// precomputed it once via DecodeVector so custom scorers don't
+	// pay the decode cost themselves), the query embedding, and
+	// the precomputed query norm (0 when QueryEmbedding is empty).
+	// See the CompositeScorer func-type comment for the full arg
+	// list and signature rationale.
 	CompositeScorer CompositeScorer
 	// Ctx carries request-scoped values (request_id) through the
 	// retrieval pipeline for structured logging.
@@ -400,7 +397,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 		// (custom or default) and stash the node alongside its score
 		// so the post-scan sort can produce deterministic category-
 		// bucket ordering without a second pass over the result set.
-		score := scorer(node, embeddingBlob, nodeVec, opts.QueryEmbedding, queryNorm)
+		score := scorer(node, nodeVec, opts.QueryEmbedding, queryNorm)
 		node.RankingScore = score
 		ranked = append(ranked, rankedNode{node: node, score: score})
 

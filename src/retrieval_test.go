@@ -607,7 +607,7 @@ func TestCompositeScorerCustom(t *testing.T) {
 		t.Fatalf("edge: %v", err)
 	}
 
-	scorer := func(node GraphNode, _ []byte, _ []float32, _ []float32, _ float32) float32 {
+	scorer := func(node GraphNode, _ []float32, _ []float32, _ float32) float32 {
 		if node.Entity.ID == "b" {
 			return 99.0
 		}
@@ -670,7 +670,7 @@ func TestRetrieveContextCompositeScorerReceivesCachedQueryNorm(t *testing.T) {
 	}
 
 	received := []float32{}
-	scorer := func(_ GraphNode, _ []byte, _ []float32, _ []float32, queryNorm float32) float32 {
+	scorer := func(_ GraphNode, _ []float32, _ []float32, queryNorm float32) float32 {
 		received = append(received, queryNorm)
 		return 0
 	}
