@@ -14,9 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RetrieveContextOptions.Ctx` for request-id propagation through `withReqID`.
 - `id_map` table in core schema (replaces per-backend `vec_id_map`).
 - Retention config parsing: `retention.observation_ttl`, `retention.run_interval`, `retention.batch_size`.
+- `InMemoryVectorIndex.flatMatrix` — pre-built row-major matrix, maintained incrementally on Store/Remove; eliminates per-search matrix rebuild.
 
 ### Changed
 - All `.go` files moved to `src/` — build path is now `./src`.
+- `InMemoryVectorIndex.Search` uses snapshot pattern (RLock → local vars → unlock before compute) for concurrent safety without serializing searches.
+- `SearchBatch` reuses `flatMatrix` for all queries in a batch.
+
+### Removed
+- `cosine_darwin.go` — Apple Accelerate CGO path removed. Pure Go `BatchDotProducts` provides identical throughput without CGO overhead.
 
 ### Fixed
 - `cblas_sdot` deprecation warning silenced via `-DACCELERATE_NEW_LAPACK` CGo flag.

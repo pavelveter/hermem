@@ -15,10 +15,12 @@ type vectorEntry struct {
 }
 
 type InMemoryVectorIndex struct {
-	db      *sql.DB
-	mu      sync.RWMutex
-	entries []vectorEntry
-	byID    map[string]int
+	db         *sql.DB
+	mu         sync.RWMutex
+	entries    []vectorEntry
+	byID       map[string]int
+	flatMatrix []float32 // row-major: entries[i].vec concatenated
+	cols       int       // vector dimension (0 until first entity loaded)
 }
 
 func NewInMemoryVectorIndex(db *sql.DB) *InMemoryVectorIndex {
@@ -50,12 +52,16 @@ func (idx *InMemoryVectorIndex) load() {
 			continue
 		}
 		if emb := BytesToEmbedding(blob); emb != nil {
+			if idx.cols == 0 {
+				idx.cols = len(emb)
+			}
 			idx.byID[id] = len(idx.entries)
 			idx.entries = append(idx.entries, vectorEntry{
 				id:   id,
 				vec:  emb,
 				norm: vectorNorm(emb),
 			})
+			idx.flatMatrix = append(idx.flatMatrix, emb...)
 		}
 	}
 }
@@ -74,48 +80,42 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 	}
 
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
 	n := len(idx.entries)
 	if n == 0 {
+		idx.mu.RUnlock()
 		return nil, nil
 	}
+	flatMatrix := idx.flatMatrix
+	entries := idx.entries
+	cols := idx.cols
+	idx.mu.RUnlock()
 
-	cols := len(queryEmbedding)
 	queryNorm := vectorNorm(queryEmbedding)
 	if queryNorm == 0 {
 		return nil, fmt.Errorf("zero query embedding")
 	}
 
-	// Build flat matrix for batch dot products.
-	matrix := make([]float32, n*cols)
-	for i, e := range idx.entries {
-		copy(matrix[i*cols:(i+1)*cols], e.vec)
-	}
-
 	dots := make([]float32, n)
-	BatchDotProducts(queryEmbedding, matrix, n, cols, dots)
+	BatchDotProducts(queryEmbedding, flatMatrix, n, cols, dots)
 
-	type candidate struct {
-		id         string
-		similarity float32
-	}
-	candidates := make([]candidate, n)
-	for i, e := range idx.entries {
-		sim := dots[i] / (queryNorm * e.norm)
-		candidates[i] = candidate{id: e.id, similarity: sim}
+	for i := range dots {
+		dots[i] /= queryNorm * entries[i].norm
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].similarity > candidates[j].similarity
+	idxs := make([]int, n)
+	for i := range idxs {
+		idxs[i] = i
+	}
+	sort.Slice(idxs, func(i, j int) bool {
+		return dots[idxs[i]] > dots[idxs[j]]
 	})
-	if topK > 0 && len(candidates) > topK {
-		candidates = candidates[:topK]
+	if topK > 0 && topK < n {
+		idxs = idxs[:topK]
 	}
 
-	ids := make([]string, len(candidates))
-	for i, c := range candidates {
-		ids[i] = c.id
+	ids := make([]string, len(idxs))
+	for i, pos := range idxs {
+		ids[i] = entries[pos].id
 	}
 	return ids, nil
 }
@@ -126,30 +126,19 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 	}
 
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
 	n := len(idx.entries)
 	if n == 0 {
+		idx.mu.RUnlock()
 		results := make([][]string, len(queries))
 		return results, nil
 	}
+	flatMatrix := idx.flatMatrix
+	entries := idx.entries
+	cols := idx.cols
+	idx.mu.RUnlock()
 
-	cols := len(queries[0])
-
-	// Build flat matrix once.
-	matrix := make([]float32, n*cols)
-	for i, e := range idx.entries {
-		copy(matrix[i*cols:(i+1)*cols], e.vec)
-	}
-
-	type score struct {
-		id  string
-		sim float32
-	}
-
-	// Process each query with one batch call.
-	results := make([][]string, len(queries))
 	dots := make([]float32, n)
+	results := make([][]string, len(queries))
 
 	for qi, q := range queries {
 		if len(q) == 0 {
@@ -160,28 +149,26 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 			return nil, fmt.Errorf("zero query embedding")
 		}
 
-		BatchDotProducts(q, matrix, n, cols, dots)
+		BatchDotProducts(q, flatMatrix, n, cols, dots)
 
-		top := make([]score, 0, limit)
-		for i, e := range idx.entries {
-			sim := dots[i] / (queryNorm * e.norm)
-			t := top
-			if len(t) < limit {
-				top = append(t, score{id: e.id, sim: sim})
-			} else if sim > t[len(t)-1].sim {
-				t[len(t)-1] = score{id: e.id, sim: sim}
-			} else {
-				continue
-			}
-			t = top
-			for j := len(t) - 1; j > 0 && t[j].sim > t[j-1].sim; j-- {
-				t[j], t[j-1] = t[j-1], t[j]
-			}
+		for i := range dots {
+			dots[i] /= queryNorm * entries[i].norm
 		}
 
-		ids := make([]string, len(top))
-		for i, s := range top {
-			ids[i] = s.id
+		idxs := make([]int, n)
+		for i := range idxs {
+			idxs[i] = i
+		}
+		sort.Slice(idxs, func(i, j int) bool {
+			return dots[idxs[i]] > dots[idxs[j]]
+		})
+		if limit > 0 && limit < n {
+			idxs = idxs[:limit]
+		}
+
+		ids := make([]string, len(idxs))
+		for i, pos := range idxs {
+			ids[i] = entries[pos].id
 		}
 		results[qi] = ids
 	}
@@ -195,9 +182,14 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 	entry := vectorEntry{id: id, vec: vec, norm: vectorNorm(vec)}
 	if i, ok := idx.byID[id]; ok {
 		idx.entries[i] = entry
+		copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], vec)
 	} else {
 		idx.byID[id] = len(idx.entries)
 		idx.entries = append(idx.entries, entry)
+		if idx.cols == 0 {
+			idx.cols = len(vec)
+		}
+		idx.flatMatrix = append(idx.flatMatrix, vec...)
 	}
 	return nil
 }
@@ -216,8 +208,11 @@ func (idx *InMemoryVectorIndex) Remove(_ context.Context, ids []string) error {
 
 		idx.entries[pos] = lastEntry
 		idx.byID[lastEntry.id] = pos
-
 		idx.entries = idx.entries[:lastIdx]
+
+		copy(idx.flatMatrix[pos*idx.cols:(pos+1)*idx.cols], idx.flatMatrix[lastIdx*idx.cols:(lastIdx+1)*idx.cols])
+		idx.flatMatrix = idx.flatMatrix[:lastIdx*idx.cols]
+
 		delete(idx.byID, id)
 	}
 	return nil
