@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -19,6 +20,7 @@ type Entity struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 	LastAccessedAt time.Time `json:"last_accessed_at"`
 	Archived       bool      `json:"archived"`
+	Status         string    `json:"status,omitempty"`
 }
 
 type Edge struct {
@@ -71,7 +73,7 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS entities (
 			id TEXT PRIMARY KEY,
-			category TEXT NOT NULL CHECK(category IN ('world', 'experience', 'opinion', 'observation')),
+			category TEXT NOT NULL CHECK(category IN ('world', 'experience', 'opinion', 'observation', 'task')),
 			content TEXT NOT NULL,
 			embedding BLOB,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -135,13 +137,70 @@ func migrateSchema(db *sql.DB) error {
 	}{
 		{"last_accessed_at", `ALTER TABLE entities ADD COLUMN last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP`},
 		{"archived", `ALTER TABLE entities ADD COLUMN archived INTEGER DEFAULT 0`},
+		{"status", `ALTER TABLE entities ADD COLUMN status TEXT DEFAULT 'pending'`},
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m.sql); err != nil {
 			// Column already exists — ignore
 		}
 	}
+	if err := migrateCategoryCheck(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+// migrateCategoryCheck recreates the entities table if the category
+// CHECK constraint doesn't include 'task'. SQLite doesn't support
+// ALTER TABLE to modify CHECK constraints, so we recreate the table
+// with the updated schema and copy all data in a transaction.
+func migrateCategoryCheck(db *sql.DB) error {
+	var createSQL string
+	err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='entities'").Scan(&createSQL)
+	if err != nil {
+		return nil
+	}
+	if strings.Contains(createSQL, "'task'") {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		CREATE TABLE entities_new (
+			id TEXT PRIMARY KEY,
+			category TEXT NOT NULL CHECK(category IN ('world', 'experience', 'opinion', 'observation', 'task')),
+			content TEXT NOT NULL,
+			embedding BLOB,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			archived INTEGER DEFAULT 0,
+			status TEXT DEFAULT 'pending'
+		)
+	`); err != nil {
+		return fmt.Errorf("create entities_new: %w", err)
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO entities_new (id, category, content, embedding, updated_at, last_accessed_at, archived, status)
+		SELECT id, category, content, embedding, updated_at, last_accessed_at, archived, status FROM entities
+	`); err != nil {
+		return fmt.Errorf("copy entities: %w", err)
+	}
+
+	if _, err := tx.Exec(`DROP TABLE entities`); err != nil {
+		return fmt.Errorf("drop old entities: %w", err)
+	}
+
+	if _, err := tx.Exec(`ALTER TABLE entities_new RENAME TO entities`); err != nil {
+		return fmt.Errorf("rename entities_new: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 func ensureEntityID(db *sql.DB, entityID string) (int64, error) {
@@ -193,4 +252,51 @@ func checkMeta(db *sql.DB, dim int) error {
 		return fmt.Errorf("embedding_dim mismatch: database has %d, config specifies %d — re-embedding required", existingDim, dim)
 	}
 	return nil
+}
+
+// UpdateTaskStatus sets the status of a task entity. Only updates rows
+// where category = 'task' to avoid touching memory/opinion nodes.
+// Returns an error if the entity is not found or is not a task.
+func UpdateTaskStatus(db *sql.DB, id, status string) error {
+	validStatuses := map[string]bool{
+		"pending":   true,
+		"running":   true,
+		"completed": true,
+		"failed":    true,
+	}
+	if !validStatuses[status] {
+		return fmt.Errorf("invalid status: %s (must be pending, running, completed, or failed)", status)
+	}
+	res, err := db.Exec(
+		`UPDATE entities SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND category = 'task'`,
+		status, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update task status: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("task not found or not a task entity: %s", id)
+	}
+	return nil
+}
+
+// GetTaskStatus returns the current status of a task entity, or empty
+// string if the entity doesn't exist or isn't a task.
+func GetTaskStatus(db *sql.DB, id string) (string, error) {
+	var status string
+	err := db.QueryRow(
+		`SELECT status FROM entities WHERE id = ? AND category = 'task'`,
+		id,
+	).Scan(&status)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get task status: %w", err)
+	}
+	return status, nil
 }

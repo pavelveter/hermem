@@ -66,19 +66,22 @@ var validCategories = map[string]bool{
 	"opinion":     true,
 	"experience":  true,
 	"observation": true,
+	"task":        true,
 }
 
 // validRelationTypes is the allowlist of relation labels the LLM
 // extractor produces. Keeping the set small and descriptive prevents
 // graph pollution from one-off relation labels like "thinks_about_v2".
 var validRelationTypes = map[string]bool{
-	"prefers":     true,
-	"uses":        true,
-	"mentions":    true,
-	"related_to":  true,
-	"part_of":     true,
-	"causes":      true,
-	"contradicts": true,
+	"prefers":      true,
+	"uses":         true,
+	"mentions":     true,
+	"related_to":   true,
+	"part_of":      true,
+	"causes":       true,
+	"contradicts":  true,
+	"blocked_by":   true,
+	"recovers_via": true,
 }
 
 // filterEntities drops entities whose category is outside the allowlist
@@ -211,6 +214,7 @@ var knownCategoryDescriptions = map[string]string{
 	"opinion":     "preferences, beliefs, subjective views",
 	"experience":  "past events, interactions, what happened",
 	"observation": "patterns noticed, anomalies, insights",
+	"task":        "actionable work items, steps, to-dos with status tracking",
 }
 
 // buildSystemPrompt composes the system prompt dynamically from the

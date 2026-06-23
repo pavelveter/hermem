@@ -41,6 +41,12 @@ func setupTestServer(t *testing.T) *httptest.Server {
 			srv.HandleIngest(w, r)
 		case "/query":
 			srv.HandleQuery(w, r)
+		case "/edge":
+			srv.HandleEdge(w, r)
+		case "/task/status":
+			srv.HandleTaskStatus(w, r)
+		case "/task/executable":
+			srv.HandleTaskExecutable(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -260,6 +266,189 @@ func TestServerHealthAlwaysOK(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Errorf("status field = %q, want %q", body["status"], "ok")
+	}
+}
+
+// ----- /task/status ---------------------------------------------------
+
+func TestServerTaskStatus(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Store a task entity first.
+	resp := doPost(t, srv.URL, "/store", `{"id":"ts1","category":"task","content":"test task"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("store task: status = %d, want 200", resp.StatusCode)
+	}
+
+	// Valid status update.
+	resp = doPost(t, srv.URL, "/task/status", `{"id":"ts1","status":"running"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("update running: status = %d, want 204", resp.StatusCode)
+	}
+
+	// Invalid status.
+	resp = doPost(t, srv.URL, "/task/status", `{"id":"ts1","status":"bogus"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("invalid status: status = %d, want 400", resp.StatusCode)
+	}
+
+	// Non-existent task.
+	resp = doPost(t, srv.URL, "/task/status", `{"id":"nope","status":"pending"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("missing task: status = %d, want 400", resp.StatusCode)
+	}
+
+	runCases(t, srv, "/task/status", []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantCode   string
+		wantField  string
+		wantMsg    string
+	}{
+		{"empty_body", ``, http.StatusBadRequest, "empty_body", "", ""},
+		{"unknown_field", `{"id":"x","status":"pending","surprise":true}`, http.StatusBadRequest, "unknown_field", "surprise", ""},
+		{"missing_id", `{"status":"running"}`, http.StatusBadRequest, "", "", "id, status required"},
+		{"missing_status", `{"id":"ts1"}`, http.StatusBadRequest, "", "", "id, status required"},
+	})
+}
+
+// ----- /task/executable -----------------------------------------------
+
+func TestServerTaskExecutable(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Store three tasks in a chain: A blocks B, B blocks C.
+	for _, body := range []string{
+		`{"id":"ea","category":"task","content":"step A"}`,
+		`{"id":"eb","category":"task","content":"step B"}`,
+		`{"id":"ec","category":"task","content":"step C"}`,
+	} {
+		resp := doPost(t, srv.URL, "/store", body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("store: status = %d", resp.StatusCode)
+		}
+	}
+	// B blocked_by A, C blocked_by B.
+	doPost(t, srv.URL, "/edge", `{"source_id":"eb","target_id":"ea","relation_type":"blocked_by"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"ec","target_id":"eb","relation_type":"blocked_by"}`).Body.Close()
+
+	// Initially A has no blockers → executable.
+	resp := doPost(t, srv.URL, "/task/executable", ``)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("initial: status = %d", resp.StatusCode)
+	}
+	var result TaskExecutableResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "ea" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("initial executable = %v, want [ea]", ids)
+	}
+
+	// Complete A → B should be executable.
+	doPost(t, srv.URL, "/task/status", `{"id":"ea","status":"completed"}`).Body.Close()
+
+	resp = doPost(t, srv.URL, "/task/executable", ``)
+	defer resp.Body.Close()
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "eb" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("after A completed: executable = %v, want [eb]", ids)
+	}
+
+	// Complete B → C should be executable.
+	doPost(t, srv.URL, "/task/status", `{"id":"eb","status":"completed"}`).Body.Close()
+
+	resp = doPost(t, srv.URL, "/task/executable", ``)
+	defer resp.Body.Close()
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "ec" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("after B completed: executable = %v, want [ec]", ids)
+	}
+}
+
+func TestServerTaskExecutableGoalScoped(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Two independent tasks: g1 blocked by gx, g2 blocked by gy.
+	doPost(t, srv.URL, "/store", `{"id":"g1","category":"task","content":"goal 1"}`).Body.Close()
+	doPost(t, srv.URL, "/store", `{"id":"gx","category":"task","content":"step x"}`).Body.Close()
+	doPost(t, srv.URL, "/store", `{"id":"g2","category":"task","content":"goal 2"}`).Body.Close()
+	doPost(t, srv.URL, "/store", `{"id":"gy","category":"task","content":"step y"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"g1","target_id":"gx","relation_type":"blocked_by"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"g2","target_id":"gy","relation_type":"blocked_by"}`).Body.Close()
+
+	// With goal_id=g1: dep_tree = {g1, gx}. gx has no blockers → executable.
+	resp := doPost(t, srv.URL, "/task/executable?goal_id=g1", ``)
+	defer resp.Body.Close()
+	var result TaskExecutableResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "gx" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("goal1 scoped: executable = %v, want [gx]", ids)
+	}
+
+	// With goal_id=g2: dep_tree = {g2, gy}. gy has no blockers → executable.
+	resp = doPost(t, srv.URL, "/task/executable?goal_id=g2", ``)
+	defer resp.Body.Close()
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "gy" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("goal2 scoped: executable = %v, want [gy]", ids)
+	}
+}
+
+func TestServerTaskStatusMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/status", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestServerTaskExecutableMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/executable", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
 	}
 }
 

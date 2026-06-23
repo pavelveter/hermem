@@ -282,16 +282,18 @@ paths). Pipe stderr to your log aggregator.
 
 ### Endpoints
 
-| Method | Path       | Body                           | Returns                  |
-|--------|------------|--------------------------------|--------------------------|
-| GET    | `/health`  | —                            | `{"status":"ok"}`        |
-| GET    | `/metrics` | —                            | expvar JSON               |
-| POST   | `/store`   | `StoreRequest`                 | `{"status":"ok"}`        |
-| POST   | `/search`  | `SearchRequest`                | `[{entity, similarity}]` |
-| POST   | `/retrieve`| `RetrieveRequest`              | `RetrievalResult` (snake_case keys) |
-| POST   | `/edge`    | `EdgeRequest`                  | `{"status":"ok"}`        |
-| POST   | `/ingest`  | `IngestRequest`                | `{"status":"ok"}`        |
-| POST   | `/query`   | `QueryRequest`                 | `{"context": "..."}`     |
+| Method | Path | Body | Returns |
+|--------|------|------|---------|
+| GET | `/health` | — | `{"status":"ok"}` |
+| GET | `/metrics` | — | expvar JSON |
+| POST | `/store` | `StoreRequest` | `{"status":"ok"}` |
+| POST | `/search` | `SearchRequest` | `[{"entity", "similarity"}]` |
+| POST | `/retrieve` | `RetrieveRequest` | `RetrievalResult` (snake_case keys) |
+| POST | `/edge` | `EdgeRequest` | `{"status":"ok"}` |
+| POST | `/ingest` | `IngestRequest` | `{"status":"ok"}` |
+| POST | `/query` | `QueryRequest` | `{"context":"..."}` |
+| POST | `/task/status` | `{"id", "status"}` | `204 No Content` |
+| POST | `/task/executable` | query `goal_id?` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
 
 Every POST endpoint goes through a strict JSON decoder; fields not in
 the request schema are rejected with `400`. See §9 for the error
@@ -375,6 +377,38 @@ curl -X POST http://localhost:8420/query \
 # → {"context":"## world\n- Paris is the capital of France\n..."}
 ```
 
+### `/task/status`
+
+Update execution state for a `task` entity. Valid statuses are
+`pending`, `running`, `completed`, `failed`.
+
+```bash
+curl -X POST http://localhost:8420/task/status \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"step-1","status":"running"}'
+# → 204 No Content
+```
+
+Non-task entities or unknown statuses return `400`.
+
+### `/task/executable`
+
+List pending tasks whose `blocked_by` dependencies are all `completed`.
+Omit `goal_id` for a global view, or pass `?goal_id=...` to restrict
+the recursive CTE walk to a specific goal subtree.
+
+```bash
+# global
+curl -X POST http://localhost:8420/task/executable \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+
+# goal-scoped
+curl -X POST "http://localhost:8420/task/executable?goal_id=goal-1" \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
 ---
 
 ## 6. CLI vs. Server — side-by-side
@@ -385,6 +419,8 @@ curl -X POST http://localhost:8420/query \
 | Search by query     | `… \| ./hermem search`                                 | `curl -X POST …/search -d '{…}'`                      |
 | Full query → md   | `… \| ./hermem query`                                  | `curl -X POST …/query -d '{…}'`                       |
 | Ingest dialog       | `… \| ./hermem ingest`                                 | `curl -X POST …/ingest -d '{…}'`                      |
+| Update task status  | `… \| ./hermem task-status`                            | `curl -X POST …/task/status -d '{…}'`                 |
+| List executable     | `… \| ./hermem task-executable`                        | `curl -X POST …/task/executable`                       |
 | Health              | n/a (CLI is one-shot)                                  | `curl …/health`                                       |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
 | Errors              | Exit non-zero + `log.Fatalf` to stderr                 | `HTTP 400` + structured `ErrorResponse` body          |
@@ -404,7 +440,7 @@ struct field unless noted.
 | Field        | Type        | Required | Notes                                          |
 |--------------|-------------|----------|------------------------------------------------|
 | `id`         | string      | yes      | Stable identifier, used as upsert key.         |
-| `category`   | string      | yes      | One of: `world`, `opinion`, `experience`, `observation`. |
+| `category`   | string      | yes      | One of: `world`, `opinion`, `experience`, `observation`, `task`. |
 | `content`    | string      | yes      | Free text.                                     |
 | `embedding`  | float32[]   | no       | Pre-computed embedding; server fills if absent.|
 
@@ -428,7 +464,7 @@ struct field unless noted.
 |-----------------|---------|----------|------------------------------------------------|
 | `source_id`     | string  | yes      | Source entity ID.                              |
 | `target_id`     | string  | yes      | Target entity ID.                              |
-| `relation_type` | string  | yes      | One of: `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts`. |
+| `relation_type` | string  | yes      | One of: `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts`, `blocked_by`, `recovers_via`. |
 | `auto_create`   | bool    | no       | Default `false`. When `true`, missing entities are auto-created as `category=world` placeholders with embeddings. |
 
 ### `IngestRequest` (`/ingest`, CLI `ingest`)
@@ -436,6 +472,22 @@ struct field unless noted.
 | Field    | Type   | Required | Notes                                       |
 |----------|--------|----------|---------------------------------------------|
 | `dialog` | string | yes      | Free-form conversational text.             |
+
+### `TaskStatusRequest` (`/task/status`, CLI `task-status`)
+
+| Field    | Type   | Required | Notes                                       |
+|----------|--------|----------|---------------------------------------------|
+| `id`     | string | yes      | Task entity ID.                             |
+| `status` | string | yes      | One of: `pending`, `running`, `completed`, `failed`. |
+
+### `TaskExecutableRequest` (`/task/executable`, CLI `task-executable`)
+
+HTTP: body ignored; `goal_id` comes from the query string.
+CLI: pass `goal_id` in the JSON body (omit or leave empty for global view).
+
+| Field     | Type   | Required | Notes                                          |
+|-----------|--------|----------|------------------------------------------------|
+| `goal_id` | string | no       | Restrict CTE walk to a specific goal subtree.  |
 
 ---
 
@@ -497,6 +549,22 @@ why each fact was pulled in. `seed_nodes` is `[]GraphNode` with full
 
 ```json
 {"context":"## world\n- Paris is the capital of France\n..."}
+```
+
+### `TaskExecutableResponse`
+
+```json
+{
+  "tasks": [
+    {
+      "id": "step-1",
+      "category": "task",
+      "content": "Run tests",
+      "status": "pending",
+      "updated_at": "2026-06-23T10:00:00Z"
+    }
+  ]
+}
 ```
 
 ### `HealthResponse`
