@@ -116,8 +116,21 @@ echo '{"id":"step-1","status":"running"}' | ~/.hermes/bin/hermem task-status
 # list executable (global)
 echo '{}' | ~/.hermes/bin/hermem task-executable
 
-# list executable scoped to goal
-echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task-executable
+# alias
+echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task-next
+
+# filter by status / goal
+echo '{"status":"pending"}' | ~/.hermes/bin/hermem task-list
+echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task-list
+
+# show task + relations
+echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-show
+
+# manage dependency
+echo '{"source_id":"step-1","target_id":"step-0","add":true}' | ~/.hermes/bin/hermem task-dep
+
+# find rollback task
+echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-rollback
 ```
 
 HTTP:
@@ -137,6 +150,31 @@ curl -X POST http://localhost:8420/task/executable \
 curl -X POST "http://localhost:8420/task/executable?goal_id=goal-1" \
   -H 'Content-Type: application/json' \
   -d '{}'
+
+# next alias
+curl -X POST http://localhost:8420/task/next \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+
+# list by status
+curl -X POST http://localhost:8420/task/list \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"pending"}'
+
+# show task + relations
+curl -X POST http://localhost:8420/task/show \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"step-1"}'
+
+# add dependency
+curl -X POST http://localhost:8420/task/dep \
+  -H 'Content-Type: application/json' \
+  -d '{"source_id":"step-1","target_id":"step-0","add":true}'
+
+# rollback lookup
+curl -X POST http://localhost:8420/task/rollback \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"step-1"}'
 ```
 
 ### DB helpers (from `src` package)
@@ -145,6 +183,10 @@ curl -X POST "http://localhost:8420/task/executable?goal_id=goal-1" \
 - `GetTaskStatus(db, id) (string, error)`
 - `GetExecutableTasks(db, goalID string) ([]Entity, error)`
 - `FindRollbackTask(db, failedTaskID string) (string, error)`
+- `ListTasks(db, status, goalID string) ([]Entity, error)`
+- `GetTaskWithRelations(db, taskID string) (Entity, []Edge, []Edge, error)`
+- `AddEdge(db, sourceID, targetID, relationType string) error`
+- `DeleteEdge(db, sourceID, targetID, relationType string) error`
 
 ### Pitfalls
 
@@ -282,4 +324,7 @@ curl -X POST "http://localhost:8420/task/executable?goal_id=goal-1" \
 # CLI smoke
 echo '{"id":"goal-1","status":"running"}' | ~/.hermes/bin/hermem task-status
 echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task-executable
+echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-show
+echo '{"status":"pending"}' | ~/.hermes/bin/hermem task-list
+echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-rollback
 ```

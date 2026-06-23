@@ -356,6 +356,13 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/retrieve` | POST | Graph walk from seed IDs |
 | `/ingest` | POST | Ingest dialog text |
 | `/query` | POST | Full pipeline: search + graph walk + markdown |
+| `/task/status` | POST | Update task execution status |
+| `/task/executable` | POST | List executable tasks (CTE dependency walk) |
+| `/task/next` | POST | Alias for executable |
+| `/task/list` | POST | Filter tasks by status/goal |
+| `/task/show` | POST | Show task + blocked_by / recovers_via relations |
+| `/task/dep` | POST | Manage task dependencies |
+| `/task/rollback` | POST | Find rollback task for a failed task |
 
 ### Examples
 
@@ -385,6 +392,29 @@ curl -X POST http://localhost:8420/query \
 curl -X POST http://localhost:8420/ingest \
   -H "Content-Type: application/json" \
   -d '{"dialog":"User: What is Go?\nAssistant: Go is a statically typed language."}'
+```
+
+**Task management:**
+```bash
+# create a task
+curl -X POST http://localhost:8420/store \
+  -H "Content-Type: application/json" \
+  -d '{"id":"step-1","category":"task","content":"Run tests"}'
+
+# update status
+curl -X POST http://localhost:8420/task/status \
+  -H "Content-Type: application/json" \
+  -d '{"id":"step-1","status":"running"}'
+
+# list executable tasks
+curl -X POST http://localhost:8420/task/executable \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# show task with dependencies
+curl -X POST http://localhost:8420/task/show \
+  -H "Content-Type: application/json" \
+  -d '{"id":"step-1"}'
 ```
 
 ## Hermes Agent Integration
