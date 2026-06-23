@@ -255,6 +255,8 @@ Every key is optional; missing keys fall back to the defaults below.
 | `retention.run_interval` | `1h` | How often the GC loop fires. |
 | `retention.batch_size` | `500` | Max nodes archived per cycle. |
 | `server.api_key` | *(empty)* | API key for `X-API-Key` auth (empty = disabled). |
+| `embedder.timeout` | `30s` | HTTP request timeout per embedder call (Go duration). |
+| `extraction.timeout` | `5m` | HTTP request timeout per LLM extractor call (Go duration). |
 
 Invalid integer / float parse values are logged at warning level and
 the corresponding default is kept; the server still boots.
@@ -276,7 +278,7 @@ StoreEntityWithEmbedding(db, entity)
 ### 2. Vector search
 
 ```go
-results, err := SearchByVector(db, queryEmbedding, 10) // top 10
+results, err := SearchByVector(db, vi, queryEmbedding, 10) // top 10
 for _, r := range results {
     fmt.Printf("%s (similarity: %.3f)\n", r.Entity.Content, r.Similarity)
 }
@@ -362,7 +364,11 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/task/list` | POST | Filter tasks by status/goal |
 | `/task/show` | POST | Show task + blocked_by / recovers_via relations |
 | `/task/dep` | POST | Manage task dependencies |
+| `/task/create` | POST | Create task with auto-linked context edges |
+| `/task/tree` | POST | Print task tree (blocked_by parents) |
 | `/task/rollback` | POST | Find rollback task for a failed task |
+| `/metrics` | GET | expvar counters (stores / searches / retrieves / queries / errors / task ops) |
+| `/edge` | POST | Add a typed edge between two entities (or auto-create missing ones) |
 
 ### Examples
 
@@ -396,10 +402,15 @@ curl -X POST http://localhost:8420/ingest \
 
 **Task management:**
 ```bash
-# create a task
+# create a task manually
 curl -X POST http://localhost:8420/store \
   -H "Content-Type: application/json" \
   -d '{"id":"step-1","category":"task","content":"Run tests"}'
+
+# create a task with auto-linked context
+curl -X POST http://localhost:8420/task/create \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Run tests","context_ids":["step-0"]}'
 
 # update status
 curl -X POST http://localhost:8420/task/status \

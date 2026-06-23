@@ -79,6 +79,7 @@ provider = ollama                # "ollama" | "openai"
 url      = http://localhost:11434
 model    = nomic-embed-text
 key      =                        # only used when provider = openai
+timeout  = 30s                    # HTTP request timeout (Go duration)
 
 [extraction]
 ; provider, url, key — optional, fall back to [embedder]
@@ -86,16 +87,29 @@ provider    = ollama
 url         = http://localhost:11434
 model       = qwen2.5-coder:7b
 temperature = 0.1
+timeout     = 300s                 # HTTP request timeout (Go duration)
 
 [ingestion]
 dedup_threshold = 0.88           # cosine floor for merge-during-ingest
 
 [database]
-path = hermem.db                  # SQLite file; created on first store
+path    = hermem.db              # SQLite file; created on first store
+backend = in-memory              # "in-memory" | "sqlite-vec"
+
+[vector]
+dim = 768                        # embedding dimension for vec0 table (must match model output)
 
 [retrieval]
 depth_ceiling = 5                 # hard clamp on requested max_depth
 max_nodes     = 100               # soft cap on nodes per RetrieveContext
+
+[retention]
+observation_ttl = 2160h          # age beyond which observation nodes are archived (Go duration)
+run_interval    = 1h              # how often the GC loop fires
+batch_size      = 500             # max nodes archived per cycle (0 = no limit)
+
+[server]
+api_key =                        # X-API-Key auth (empty = disabled)
 ```
 
 ### Lookup order
@@ -154,7 +168,7 @@ one-shot read-process-print.
 
 ### Commands
 
-|| Command | Reads (stdin JSON)              | Writes (stdout JSON)             |
+| Command | Reads (stdin JSON)              | Writes (stdout JSON)             |
 |---------|----------------------------------|----------------------------------|
 | `store` | `{id, category, content, …}`     | `{"status":"ok"}`                |
 | `search`| `{query, top_k?}`                | `[{entity, similarity}, …]`      |
@@ -167,6 +181,7 @@ one-shot read-process-print.
 | `task-list` | `{status?, goal_id?}` | `{"tasks":[{"id","category","content","status","updated_at"}, …]}` |
 | `task-show` | `{id}` | `{"entity":{…},"blocked_by":[…],"recovers_via":[…]}` |
 | `task-dep` | `{source_id, target_id, relation_type?, add?}` | `{"status":"ok"}` |
+| `task-create` | `{content, context_ids?, id?}` | `{"id":"…","status":"ok"}` |
 | `task-rollback` | `{id}` | `{"rollback_task_id":"…"}` |
 | `serve` | (no stdin; takes optional port)  | logs to stderr                   |
 
@@ -299,13 +314,13 @@ paths). Pipe stderr to your log aggregator.
 | POST | `/edge` | `EdgeRequest` | `{"status":"ok"}` |
 | POST | `/ingest` | `IngestRequest` | `{"status":"ok"}` |
 | POST | `/query` | `QueryRequest` | `{"context":"..."}` |
-|| POST | `/task/status` | `{"id", "status"}` | `204 No Content` |
-|| POST | `/task/executable` | query `goal_id?` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
-|| POST | `/task/next` | `{"goal_id?":…}` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
-|| POST | `/task/list` | `{"status?", "goal_id?"}` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
-|| POST | `/task/show` | `{"id"}` | `{"entity":{…},"blocked_by":[…],"recovers_via":[…]}` |
-|| POST | `/task/dep` | `{"source_id","target_id","relation_type?","add?"}` | `{"status":"ok"}` |
-|| POST | `/task/rollback` | `{"id"}` | `{"rollback_task_id":"…"}` |
+| POST | `/task/status` | `{"id", "status"}` | `204 No Content` |
+| POST | `/task/executable` | query `goal_id?` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
+| POST | `/task/next` | `{"goal_id?":…}` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
+| POST | `/task/list` | `{"status?", "goal_id?"}` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
+| POST | `/task/show` | `{"id"}` | `{"entity":{…},"blocked_by":[…],"recovers_via":[…]}` |
+| POST | `/task/dep` | `{"source_id","target_id","relation_type?","add?"}` | `{"status":"ok"}` |
+| POST | `/task/rollback` | `{"id"}` | `{"rollback_task_id":"…"}` |
 
 Every POST endpoint goes through a strict JSON decoder; fields not in
 the request schema are rejected with `400`. See §9 for the error
@@ -531,7 +546,9 @@ If no rollback task is linked, `rollback_task_id` is empty string.
 | List tasks          | `… \| ./hermem task-list`                              | `curl -X POST …/task/list`                             |
 | Show task           | `… \| ./hermem task-show`                              | `curl -X POST …/task/show`                             |
 | Task dependency     | `… \| ./hermem task-dep`                               | `curl -X POST …/task/dep`                              |
+| Create task         | `… \| ./hermem task-create`                            | `curl -X POST …/task/create`                           |
 | Rollback task       | `… \| ./hermem task-rollback`                          | `curl -X POST …/task/rollback`                         |
+| Task tree           | `… \| ./hermem task-tree`                              | `curl -X POST …/task/tree`                             |
 | Health              | n/a (CLI is one-shot)                                  | `curl …/health`                                       |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
 | Errors              | Exit non-zero + `log.Fatalf` to stderr                 | `HTTP 400` + structured `ErrorResponse` body          |
@@ -621,6 +638,20 @@ CLI: pass `goal_id` in the JSON body (omit or leave empty for global view).
 | `target_id`     | string  | yes      | Dependency target.                             |
 | `relation_type` | string  | no       | Default `blocked_by`. Allowed values listed above. |
 | `add`           | bool    | no       | Default `true`. `false` removes the edge.      |
+
+### `TaskCreateRequest` (`/task/create`, CLI `task-create`)
+
+| Field           | Type    | Required | Notes                                          |
+|-----------------|---------|----------|------------------------------------------------|
+| `id`            | string  | no       | Stable task ID; auto-generated when omitted.    |
+| `content`       | string  | yes      | Task description / payload.                     |
+| `context_ids`   | string[]| no       | Existing task IDs to link via `related_to`.     |
+
+### `TaskTreeRequest` (`/task/tree`, CLI `task-tree`)
+
+| Field   | Type   | Required | Notes                                           |
+|---------|--------|----------|-------------------------------------------------|
+| `goal_id` | string | no       | Root task ID; omit to render all root tasks.    |
 
 ### `TaskRollbackRequest` (`/task/rollback`, CLI `task-rollback`)
 

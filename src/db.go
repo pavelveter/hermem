@@ -13,14 +13,14 @@ import (
 )
 
 type Entity struct {
-	ID             string    `json:"id"`
-	Category       string    `json:"category"`
-	Content        string    `json:"content"`
-	Embedding      []float32 `json:"embedding,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             string     `json:"id"`
+	Category       string     `json:"category"`
+	Content        string     `json:"content"`
+	Embedding      []float32  `json:"embedding,omitempty"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 	LastAccessedAt *time.Time `json:"last_accessed_at"`
-	Archived       bool      `json:"archived"`
-	Status         string    `json:"status,omitempty"`
+	Archived       bool       `json:"archived"`
+	Status         string     `json:"status,omitempty"`
 }
 
 type Edge struct {
@@ -381,4 +381,185 @@ func GetTaskWithRelations(db *sql.DB, id string) (Entity, []Edge, []Edge, error)
 		return Entity{}, nil, nil, err
 	}
 	return e, blocked, recovers, nil
+}
+
+// GetTaskByID returns a task entity by ID.
+func GetTaskByID(db *sql.DB, id string) (Entity, error) {
+	var e Entity
+	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category = 'task'", id).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return Entity{}, fmt.Errorf("task not found: %s", id)
+	}
+	if err != nil {
+		return Entity{}, fmt.Errorf("get task: %w", err)
+	}
+	return e, nil
+}
+
+// GetTasksByIDs returns a map of task entities for the given IDs.
+func GetTasksByIDs(db *sql.DB, ids []string) (map[string]Entity, error) {
+	if len(ids) == 0 {
+		return map[string]Entity{}, nil
+	}
+	phs, args := inClauseArgs(ids)
+	query := "SELECT id, category, content, status, updated_at FROM entities WHERE id IN (" + phs + ") AND category = 'task'"
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get tasks by ids: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]Entity)
+	for rows.Next() {
+		var e Entity
+		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan task: %w", err)
+		}
+		out[e.ID] = e
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tasks: %w", err)
+	}
+	return out, nil
+}
+
+// GetBlockedBy returns edges of type 'blocked_by' where target_id = id.
+func GetBlockedBy(db *sql.DB, id string) ([]Edge, error) {
+	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = 'blocked_by'", id)
+}
+
+// GetRecoversVia returns edges of type 'recovers_via' where target_id = id.
+func GetRecoversVia(db *sql.DB, id string) ([]Edge, error) {
+	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = 'recovers_via'", id)
+}
+
+// TreeNode represents a node in the task tree.
+type TreeNode struct {
+	ID       string
+	Content  string
+	Status   string
+	Children []*TreeNode
+}
+
+// GetTaskTree builds a tree of tasks starting from rootID.
+// If rootID is empty, returns all root tasks (tasks without blocked_by parents).
+func GetTaskTree(db *sql.DB, rootID string) ([]*TreeNode, error) {
+	if rootID != "" {
+		_, err := GetTaskByID(db, rootID)
+		if err != nil {
+			return nil, err
+		}
+		node, err := buildNode(db, rootID, nil)
+		if err != nil {
+			return nil, err
+		}
+		return []*TreeNode{node}, nil
+	}
+
+	roots, err := GetRootTasks(db)
+	if err != nil {
+		return nil, err
+	}
+	var out []*TreeNode
+	for _, root := range roots {
+		node, err := buildNode(db, root.ID, nil)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, node)
+	}
+	return out, nil
+}
+
+// GetRootTasks returns tasks that have no blocked_by edges (roots of the DAG).
+func GetRootTasks(db *sql.DB) ([]Entity, error) {
+	query := `
+		SELECT e.id, e.category, e.content, e.status, e.updated_at
+		FROM entities e
+		WHERE e.category = 'task' AND e.archived = 0
+		AND e.id NOT IN (
+			SELECT source_id FROM edges WHERE target_id = e.id AND relation_type = 'blocked_by'
+		)
+	`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("get root tasks: %w", err)
+	}
+	defer rows.Close()
+	return scanTaskEntities(rows)
+}
+
+// buildNode recursively builds a tree node, fetching blocked_by parents as children.
+func buildNode(db *sql.DB, id string, visited map[string]bool) (*TreeNode, error) {
+	if visited == nil {
+		visited = make(map[string]bool)
+	}
+	if visited[id] {
+		return &TreeNode{ID: id, Content: "(cycle)", Status: "cycle"}, nil
+	}
+	visited[id] = true
+
+	e, err := GetTaskByID(db, id)
+	if err != nil {
+		return nil, err
+	}
+
+	node := &TreeNode{
+		ID:       e.ID,
+		Content:  e.Content,
+		Status:   e.Status,
+	}
+
+	blocked, err := GetBlockedBy(db, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var childIDs []string
+	for _, edge := range blocked {
+		childIDs = append(childIDs, edge.SourceID)
+	}
+
+	tasks, err := GetTasksByIDs(db, childIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, cid := range childIDs {
+		child, err := buildNode(db, cid, visited)
+		if err != nil {
+			return nil, err
+		}
+		if task, ok := tasks[cid]; ok {
+			child.Content = task.Content
+			child.Status = task.Status
+		}
+		node.Children = append(node.Children, child)
+	}
+
+	return node, nil
+}
+
+// RenderTaskTree returns a human-readable tree representation.
+// Example: "[id] content (status)"
+//          "├─ [cid] content"
+//          "└─ [cid] content"
+func RenderTaskTree(nodes []*TreeNode, prefix string) string {
+	var sb strings.Builder
+	for i, node := range nodes {
+		status := ""
+		if node.Status != "" && node.Status != "pending" {
+			status = fmt.Sprintf(" (%s)", node.Status)
+		}
+		sb.WriteString(fmt.Sprintf("%s[%s] %s%s\n", prefix, node.ID, node.Content, status))
+		for _, child := range node.Children {
+			childPrefix := prefix
+			if i == len(nodes)-1 {
+				childPrefix += "    "
+			} else {
+				childPrefix += "│   "
+			}
+			sb.WriteString(RenderTaskTree([]*TreeNode{child}, childPrefix))
+		}
+	}
+	return sb.String()
 }

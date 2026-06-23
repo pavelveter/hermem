@@ -36,6 +36,7 @@ Commands:
   task-show        Show task + relations (JSON on stdin)
   task-dep         Add/remove task dependency (JSON on stdin)
   task-create      Create task with auto-linked context edges (JSON on stdin)
+  task-tree        Print task tree (blocked_by parents) as human-readable text
   task-rollback    Find rollback task for failed task (JSON on stdin)
   serve            Run HTTP server`
 

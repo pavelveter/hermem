@@ -346,6 +346,23 @@ func main() {
 		}
 		fmt.Println(`{"status":"ok"}`)
 
+	case "task-tree":
+		var req struct {
+			GoalID string `json:"goal_id"`
+			ID     string `json:"id,omitempty"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.ID != "" {
+			req.GoalID = req.ID
+		}
+		nodes, err := GetTaskTree(db, req.GoalID)
+		if err != nil {
+			log.Fatalf("failed to get task tree: %v", err)
+		}
+		fmt.Print(RenderTaskTree(nodes, ""))
+
 	case "task-create":
 		var req struct {
 			ID         string   `json:"id"`
@@ -430,6 +447,7 @@ func main() {
 		mux.HandleFunc("/task/list", srv.HandleTaskList)
 		mux.HandleFunc("/task/show", srv.HandleTaskShow)
 		mux.HandleFunc("/task/dep", srv.HandleTaskDep)
+		mux.HandleFunc("/task/tree", srv.HandleTaskTree)
 		mux.HandleFunc("/task/create", srv.HandleTaskCreate)
 		mux.HandleFunc("/task/rollback", srv.HandleTaskRollback)
 

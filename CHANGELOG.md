@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `embedder.timeout` and `extraction.timeout` config keys (default 30s / 300s).
 - Vector normalization at ingest — embeddings stored as unit vectors, Search skips norm division.
 - Graceful shutdown: HTTP drain → GC cancel → metrics flush → DB close, in order.
+- `--help` / `-h` CLI flag short-circuits before any DB work and prints a block-glyph HERMEM banner followed by the command reference (stdout, exit 0). The no-args path now also prints the banner (stderr, exit 1). Banner is plain text everywhere — no ANSI escapes leak into piped output or test captures.
 
 ### Changed
 - All `.go` files moved to `src/` — build path is now `./src`.

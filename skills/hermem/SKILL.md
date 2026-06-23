@@ -11,10 +11,7 @@ metadata:
         description: Hermem server URL
         default: "http://localhost:8420"
         prompt: "Hermem server URL (e.g. http://localhost:8420)"
-required_environment_variables:
-  - name: HERMEM_URL
-    help: "Optional: override Hermem base URL for HTTP/server mode"
-    required_for: HTTP/server mode only
+required_environment_variables: []
 ---
 
 # Hermem — Graph Memory Skill
@@ -36,9 +33,9 @@ Use the installed binary:
 ~/.hermes/bin/hermem ...
 ```
 
-### Critical working-directory rule
+### Binary-directory resolution
 
-The Go binary resolves `./hermem.ini` from the **current working directory**, not from the binary's location. Therefore, if the binary is invoked from any directory other than `~/.hermes`, it will fall back to built-in defaults and can create a stray `hermem.db` in that unrelated directory. When running the binary, use the `~/.hermes` working directory explicitly: `cd ~/.hermes && ~/.hermes/bin/hermem ...`. This is also true when rebuilding from the hermem source tree in `/Users/pavelveter/Projects/labs/hermem`.
+Hermem reads `hermem.ini` from the binary's **own directory** via `os.Executable()`, not from the current working directory. A `~/.hermes/bin/hermem` binary will pick up `~/.hermes/hermem.ini` regardless of where it was launched from — `cd ~/.hermes && ~/.hermes/bin/hermem …` is not required. Older SKILL revisions warned about stray `hermem.db` files from a transient CWD; that bug is fixed in the current binary.
 
 ## Memory Categories
 
@@ -130,6 +127,9 @@ echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-show
 # manage dependency
 echo '{"source_id":"step-1","target_id":"step-0","add":true}' | ~/.hermes/bin/hermem task-dep
 
+# create task with auto-linked context
+echo '{"content":"New task","context_ids":["step-0"]}' | ~/.hermes/bin/hermem task-create
+
 # find rollback task
 echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-rollback
 ```
@@ -171,6 +171,11 @@ curl -X POST http://localhost:8420/task/show \
 curl -X POST http://localhost:8420/task/dep \
   -H 'Content-Type: application/json' \
   -d '{"source_id":"step-1","target_id":"step-0","add":true}'
+
+# create task
+curl -X POST http://localhost:8420/task/create \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"New task","context_ids":["step-0"]}'
 
 # rollback lookup
 curl -X POST http://localhost:8420/task/rollback \
@@ -236,12 +241,12 @@ curl -X POST http://localhost:8420/ingest \
 ## Pitfalls
 
 - Hermem server must be running before using the tools
-- Default URL is `http://localhost:8420` — set `HERMEM_URL` env var if different
+- Default server URL is `http://localhost:8420`; the plugin reads this from its own `hermem.url` config (see YAML frontmatter), not from a shell env var
 - Entities with similar content (>88% cosine similarity) are merged automatically
 - Graph walk depth defaults to 2 hops — increase via `max_depth` parameter
 - `store` auto-links the new entity to up to 3 existing entities with cosine similarity > 0.85 using relation type `related_to`. Explicit graph edges still use `edge` with `source_id`, `target_id`, and `relation_type`. `ingest` remains the path that extracts entities and relations from dialog text.
 - `store` and `ingest` are NOT interchangeable. `ingest` is the only path that produces both entities and graph edges from dialog text, because it runs the LLM extractor to discover relationships. Do not run `store` and then manually `INSERT INTO edges` in SQLite — that skips validation, entity resolution, and the dedup layer, and it creates dirty state the CLI does not know about.
-- If `ingest` fails because the LLM extractor times out, fix the root cause — usually by raising `ollamaRequestTimeout` in `extractor.go` and rebuilding — then re-run `ingest`. Never cure Ollama latency by hand-inserting into `edges`.
+- If `ingest` fails because the LLM extractor times out, raise `[extraction] timeout` in `hermem.ini` (Go duration, default `5m` / `300s`), then re-run `ingest`. Never cure Ollama latency by hand-inserting into `edges`.
 - CLI `store` does not guarantee an embedding was generated. Always verify retrieval with `hermem_query`/`hermem_search` after storing facts.
 - If `query` returns `{"context":""}`, inspect the active binary path, database path, and query wording before retrying.
 
@@ -261,7 +266,7 @@ hermes memory
 
 ### hermem.ini
 
-The Go binary loads `hermem.ini` from the current working directory by default. When run via Hermes, prefer setting an explicit database path so it does not depend on session cwd:
+The Go binary resolves `hermem.ini` from its own directory via `os.Executable()` (see Binary-directory resolution above), so the path is independent of session cwd. The example below uses an explicit absolute database path so the operator is never surprised by a Linux-vs-macOS homedir mismatch:
 
 ```ini
 [embedder]
@@ -305,7 +310,7 @@ go test -count=1 -race -timeout 180s ./src/...
 Manual endpoint smoke:
 
 ```bash
-~/.hermes/bin/hermem --no-decor &
+~/.hermes/bin/hermem serve 8420 &
 curl -X POST http://localhost:8420/store \
   -H 'Content-Type: application/json' \
   -d '{"id":"goal-1","category":"task","content":"Ship release"}'
