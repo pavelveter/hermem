@@ -123,6 +123,26 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 			continue
 		}
 
+		// Sprint 5: contradiction detection — when a near-duplicate is
+		// found by cosine similarity but the new statement contradicts
+		// the existing one (e.g. "likes Go" vs "hates Go"), keep both
+		// as separate nodes with a contradicts edge instead of merging.
+		if existing != nil && isContradiction(existing.Content, it.entity.Content) {
+			slog.Info("contradiction detected, creating separate node",
+				"event", "contradiction",
+				"existing_id", existing.ID,
+				"incoming_id", it.entity.ID,
+				"existing", truncate(existing.Content, 60),
+				"incoming", truncate(it.entity.Content, 60),
+			)
+			// Add a contradicts edge from the new entity to the existing one.
+			it.entity.Relations = append(it.entity.Relations, Relation{
+				TargetID:     existing.ID,
+				RelationType: "contradicts",
+			})
+			existing = nil // force create-new path, not merge
+		}
+
 		// Normalize before storing in vi: the index assumes unit
 		// vectors (Search divides by queryNorm only, not entry norms).
 		NormalizeVector(it.embedding)

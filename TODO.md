@@ -412,8 +412,8 @@ Sprint 4: ✅
 - ✅ Migration system
 - ✅ Schema versioning
 
-Sprint 5: ⬜
-- ⬜ Contradiction handling
+Sprint 5: 🔄
+- ✅ Contradiction handling (heuristic-based, no LLM)
 - ⬜ Temporal memory
 
 Sprint 6: ⬜
