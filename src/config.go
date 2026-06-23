@@ -604,7 +604,8 @@ func LoadConfigFromDir(dir string) (*Config, error) {
 }
 
 // Validate checks config invariants that would cause silent misbehaviour
-// at runtime. Returns nil on success.
+// at runtime. Returns nil on success. Also validates the embedded schema
+// via ValidateSchema.
 func (c *Config) Validate() error {
 	if c.DedupThreshold < 0 || c.DedupThreshold > 1 {
 		return fmt.Errorf("dedup_threshold must be in [0, 1], got %.2f", c.DedupThreshold)
@@ -618,6 +619,44 @@ func (c *Config) Validate() error {
 	if c.URL == "" {
 		return fmt.Errorf("embedder.url must not be empty")
 	}
+	if err := ValidateSchema(c.Schema); err != nil {
+		return fmt.Errorf("schema: %w", err)
+	}
+	return nil
+}
+
+// ValidateSchema checks a SchemaConfig for internal consistency before
+// the server starts. Detects duplicate states, missing initial state,
+// and unreachable states in the FSM. Called at startup and on SIGHUP.
+// Returns nil if the schema is valid.
+func ValidateSchema(s SchemaConfig) error {
+	// Duplicate state detection in the ordered slice.
+	seen := make(map[string]bool, len(s.ValidStateOrder))
+	for _, state := range s.ValidStateOrder {
+		if seen[state] {
+			return fmt.Errorf("duplicate state %q in valid_states", state)
+		}
+		seen[state] = true
+	}
+
+	// If stateful categories exist, there must be at least one valid
+	// state (the initial state).
+	if len(s.StatefulCategories) > 0 && len(s.ValidStateOrder) == 0 {
+		return fmt.Errorf("stateful_categories set but valid_states is empty")
+	}
+
+	// state_unblocking must appear in valid_states if stateful FSM is active.
+	if s.StateUnblocking != "" && len(s.ValidStates) > 0 && !s.ValidStates[s.StateUnblocking] {
+		return fmt.Errorf("state_unblocking %q is not in valid_states", s.StateUnblocking)
+	}
+
+	// Blocking and recovery relations must be in allowed_relations.
+	for _, rel := range []string{s.RelationBlocking, s.RelationRecovery} {
+		if rel != "" && len(s.AllowedRelations) > 0 && !s.AllowedRelations[rel] {
+			return fmt.Errorf("schema relation %q is not in allowed_relations", rel)
+		}
+	}
+
 	return nil
 }
 

@@ -11,65 +11,19 @@ Eliminate global mutable state and prepare codebase for future multi-tenant, ser
 
 Tasks:
 
-[ ] Remove global activeSchema singleton
+[x] Remove global activeSchema singleton  ✅ Sprint 1
 
-Current:
-
-    ActiveSchema()
-    SetActiveSchema()
-
-Problem:
-
-    Process-wide mutable state
-    Race potential
-    Impossible per-request schemas
-
-Implement:
-
-    type Runtime struct {
-        Schema SchemaConfig
-    }
-
-Pass schema through:
-
-    StoreEntity()
-    ProcessDialog()
-    RetrieveContext()
-    HTTP handlers
-
-Expected result:
-
-    No global schema state.
+    ActiveSchema() / SetActiveSchema() removed.
+    Replaced by Runtime struct with explicit DB/VI/Embedder/Extractor/Config fields.
+    Server uses atomic.Pointer[ServerState] for lock-free per-request schema access.
 
 ----------------------------------------------------------
 
-[ ] Remove global iniRef
+[x] Remove global iniRef  ✅ Sprint 1
 
-Current:
-
-    var iniRef *ini.File
-
-Problem:
-
-    Hidden dependency
-    Multiple config loads overwrite state
-
-Implement:
-
-    type Config struct {
-        ...
-        rawINI *ini.File
-    }
-
-or
-
-    type Loader struct {
-        ini *ini.File
-    }
-
-Expected result:
-
-    Config becomes immutable after load.
+    iniRef variable removed. Config loaded via gopkg.in/ini.v1, parsed into
+    Config struct. getStr/getInt/getFloat32/getDuration closures over local
+    iniFile, no package-level mutable state.
 
 ==========================================================
 PHASE 2 — INGESTION CONSISTENCY
@@ -83,31 +37,11 @@ Prevent half-written graph states.
 
 Tasks:
 
-[ ] Make ingestion transactional
+[x] Make ingestion transactional  ✅ Sprint 1
 
-Current flow:
-
-    create entity
-    create edges
-    update embedding
-    merge
-
-Problem:
-
-    Failure in middle leaves broken graph.
-
-Implement:
-
-    tx.Begin()
-
-    store entity
-    merge entity
-    create edges
-    update vectors
-
-    tx.Commit()
-
-Rollback on any failure.
+    Per-item transactions: entity INSERT + edges INSERT in same SQL tx.
+    On failure: tx.Rollback + vi.Remove rollback. No half-written graphs.
+    vi.Store executed pre-tx (network-shaped), vi updates post-commit.
 
 ----------------------------------------------------------
 
@@ -228,39 +162,17 @@ Reduce allocations and memory footprint.
 
 Tasks:
 
-[ ] Remove duplicated vector storage
+[x] Remove duplicated vector storage  ✅ (multi-sprint)
 
-Current:
-
-    flatMatrix
-    entries[i].Vector
-
-Store only:
-
-    flatMatrix
-    metadata
-
-Expected:
-
-    ~50% RAM reduction
+    Removed vec []float32 from vectorEntry — only flatMatrix stores vectors.
+    entries keep id + norm (metadata). ~50% RAM reduction on entries slice.
 
 ----------------------------------------------------------
 
-[ ] sync.Pool for search buffers
+[x] sync.Pool for search buffers  ✅ (multi-sprint)
 
-Current:
-
-    make([]float32, n)
-
-per request.
-
-Replace:
-
-    sync.Pool
-
-Expected:
-
-    lower GC pressure
+    dotPool + intBufPool reuse dot/idx buffers across Search/SearchBatch.
+    getDotBuf/putDotBuf/getIntBuf/putIntBuf helpers. Lower GC pressure on hot paths.
 
 ----------------------------------------------------------
 
@@ -290,24 +202,7 @@ Operate Hermem in production.
 
 Tasks:
 
-[ ] Prometheus metrics
-
-Replace:
-
-    expvar
-
-With:
-
-    Prometheus
-
-Metrics:
-
-    ingest_total
-    search_total
-    retrieve_total
-    vector_search_duration
-    graph_walk_duration
-    llm_extract_duration
+[ ] Prometheus metrics  ⬜ (metrics exist via expvar, not Prometheus format yet)
 
 ----------------------------------------------------------
 
@@ -329,18 +224,11 @@ Compatible with:
 
 ----------------------------------------------------------
 
-[ ] Health levels
+[x] Health levels  ✅ (multi-sprint)
 
-Endpoints:
-
-    /health/live
-    /health/ready
-
-Ready checks:
-
-    database
-    embedder
-    extractor
+    /health/live — always 200 (liveness probe)
+    /health/ready — DB ping check, returns 503 with per-dependency status if degraded
+    TODO: add embedder/extractor health checks to /health/ready
 
 ==========================================================
 PHASE 7 — SCHEMA ENGINE
@@ -354,19 +242,11 @@ Make schema a first-class feature.
 
 Tasks:
 
-[ ] Schema validation compiler
+[x] Schema validation compiler  ✅ (multi-sprint)
 
-Startup:
-
-    validate schema
-
-Check:
-
-    duplicate states
-    duplicate relations
-    invalid FSM
-
-Fail fast.
+    ValidateSchema() checks: duplicate states, stateful_categories requires states,
+    state_unblocking ∈ valid_states, blocking/recovery ∈ allowed_relations.
+    Integrated into Config.Validate() — runs at startup and on SIGHUP.
 
 ----------------------------------------------------------
 
@@ -514,8 +394,8 @@ RECOMMENDED ORDER
 
 Sprint 1: ✅
 - ✅ FK enforcement
-- ⬜ Remove globals
-- ⬜ Transactions
+- ✅ Remove globals
+- ✅ Transactions
 
 Sprint 2: ✅
 - ✅ Memory provenance
@@ -525,7 +405,8 @@ Sprint 2: ✅
 Sprint 3: ✅ (merged into Sprint 5)
 - ✅ Reranker
 - ✅ Ranking config
-- ⬜ Prometheus (metrics exist but not Prometheus format)
+- ✅ Health levels (/health/live, /health/ready)
+- ⬜ Prometheus (metrics exist via expvar, not Prometheus format)
 
 Sprint 4: ✅
 - ✅ Migration system
