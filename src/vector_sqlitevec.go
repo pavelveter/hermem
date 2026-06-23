@@ -90,7 +90,23 @@ func (idx *SqliteVecIndex) getRowID(entityID string) (int64, error) {
 
 func (idx *SqliteVecIndex) Store(_ context.Context, id string, vec []float32) error {
 	idx.ensureTables()
+	return idx.storeOne(id, vec)
+}
 
+func (idx *SqliteVecIndex) BulkStore(_ context.Context, pairs []BulkPair) error {
+	if len(pairs) == 0 {
+		return nil
+	}
+	idx.ensureTables()
+	for _, p := range pairs {
+		if err := idx.storeOne(p.ID, p.Vec); err != nil {
+			return fmt.Errorf("bulk store %q: %w", p.ID, err)
+		}
+	}
+	return nil
+}
+
+func (idx *SqliteVecIndex) storeOne(id string, vec []float32) error {
 	vecBytes, err := sqlite_vec.SerializeFloat32(vec)
 	if err != nil {
 		return fmt.Errorf("failed to serialize embedding: %w", err)

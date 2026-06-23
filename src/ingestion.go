@@ -80,8 +80,12 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 // conversation_id, message_id, extracted_from, source = "dialog",
 // source_type = "extraction", confidence = 1.0.
 func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialog string, prov Provenance) error {
+	ctx, span := Tracer().Start(ctx, "ingestion.process_dialog")
+	defer span.End()
+
 	result, err := w.extractor.ExtractEntities(ctx, dialog)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to extract entities: %w", err)
 	}
 
@@ -116,6 +120,18 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 	allIDs, err := w.vi.SearchBatch(ctx, embeddings, 1)
 	if err != nil {
 		return fmt.Errorf("batch similar search failed: %w", err)
+	}
+
+	// Phase 5: BulkStore all embeddings in a single lock acquisition
+	// before the per-item loop. Per-item failures still roll back via
+	// vi.Remove for individual IDs (same pattern as before).
+	var bulkPairs []BulkPair
+	for _, it := range items {
+		NormalizeVector(it.embedding)
+		bulkPairs = append(bulkPairs, BulkPair{ID: it.entity.ID, Vec: it.embedding})
+	}
+	if err := w.vi.BulkStore(ctx, bulkPairs); err != nil {
+		return fmt.Errorf("bulk vector index store: %w", err)
 	}
 
 	for i, it := range items {
@@ -187,19 +203,9 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 			}
 		}
 
-		// Normalize before storing in vi: the index assumes unit
-		// vectors (Search divides by queryNorm only, not entry norms).
-		NormalizeVector(it.embedding)
-
-		// store/update the index BEFORE the SQL txn runs.
-		if err := w.vi.Store(ctx, it.entity.ID, it.embedding); err != nil {
-			slog.Error("entity processing failed, continuing",
-				"event", "entity_failed",
-				"entity_id", it.entity.ID,
-				"err", err,
-			)
-			continue
-		}
+		// Vector already stored in the index via BulkStore above.
+		// Per-item failure rollback uses vi.Remove; BulkStore is
+		// single-lock, Remove is fine-grained.
 
 		// ---- pre-tx phase: re-embed if merging, update vector index -----
 		var mergeEntity *Entity

@@ -157,19 +157,12 @@ Tasks:
 
 ----------------------------------------------------------
 
-[ ] Batch ingestion indexing
+[x] Batch ingestion indexing  ✅ (this commit)
 
-Current:
-
-    rebuild index frequently
-
-Implement:
-
-    bulk insert mode
-
-Expected:
-
-    faster large imports
+    BulkStore added to VectorIndex interface + InMemoryVectorIndex
+    + SqliteVecIndex. Single lock acquisition for all pairs.
+    Ingestion normalizes and bulk-stores all embeddings before
+    per-item loop. Per-item rollback still uses individual vi.Remove.
 
 ==========================================================
 PHASE 6 — OBSERVABILITY
@@ -191,21 +184,12 @@ Tasks:
 
 ----------------------------------------------------------
 
-[ ] OpenTelemetry tracing
+[x] OpenTelemetry tracing  ✅ (this commit)
 
-Trace:
-
-    query
-    search
-    graph walk
-    extraction
-    storage
-
-Compatible with:
-
-    Tempo
-    Jaeger
-    Grafana
+    src/tracing.go — InitTracing with stdout exporter, Tracer() helper.
+    Spans on: ProcessDialogWithProvenance, SearchByVector, RetrieveContext.
+    Wired in serve mode with defer shutdown. OTLP exporter via env var.
+    Compatible with Tempo, Jaeger, Grafana via OTEL_EXPORTER_OTLP_ENDPOINT.
 
 ----------------------------------------------------------
 
