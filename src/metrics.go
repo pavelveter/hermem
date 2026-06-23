@@ -1,47 +1,119 @@
 package main
 
 import (
-	"expvar"
 	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-	metricStores         = expvar.NewInt("hermem_stores_total")
-	metricSearches       = expvar.NewInt("hermem_searches_total")
-	metricRetrieves      = expvar.NewInt("hermem_retrieves_total")
-	metricIngests        = expvar.NewInt("hermem_ingests_total")
-	metricQueries        = expvar.NewInt("hermem_queries_total")
-	metricEdges          = expvar.NewInt("hermem_edges_total")
-	metricErrs           = expvar.NewInt("hermem_errors_total")
-	metricTaskStatus     = expvar.NewInt("hermem_task_status_total")
-	metricTaskExecutable = expvar.NewInt("hermem_task_executable_total")
-	metricTaskList       = expvar.NewInt("hermem_task_list_total")
-	metricTaskShow       = expvar.NewInt("hermem_task_show_total")
-	metricTaskDep        = expvar.NewInt("hermem_task_dep_total")
-	metricTaskRollback   = expvar.NewInt("hermem_task_rollback_total")
-	metricTaskNext       = expvar.NewInt("hermem_task_next_total")
-	metricTaskCreate     = expvar.NewInt("hermem_task_create_total")
-	metricTaskTree       = expvar.NewInt("hermem_task_tree_total")
+	metricStores = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_stores_total",
+		Help: "Total number of store operations.",
+	})
+	metricSearches = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_searches_total",
+		Help: "Total number of search operations.",
+	})
+	metricRetrieves = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_retrieves_total",
+		Help: "Total number of retrieve operations.",
+	})
+	metricIngests = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_ingests_total",
+		Help: "Total number of ingest operations.",
+	})
+	metricQueries = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_queries_total",
+		Help: "Total number of query operations.",
+	})
+	metricEdges = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_edges_total",
+		Help: "Total number of edge operations.",
+	})
+	metricErrs = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_errors_total",
+		Help: "Total number of error responses.",
+	})
+	metricTaskStatus = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_status_total",
+		Help: "Total number of task status updates.",
+	})
+	metricTaskExecutable = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_executable_total",
+		Help: "Total number of task executable queries.",
+	})
+	metricTaskList = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_list_total",
+		Help: "Total number of task list queries.",
+	})
+	metricTaskShow = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_show_total",
+		Help: "Total number of task show queries.",
+	})
+	metricTaskDep = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_dep_total",
+		Help: "Total number of task dependency operations.",
+	})
+	metricTaskRollback = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_rollback_total",
+		Help: "Total number of task rollback queries.",
+	})
+	metricTaskNext = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_next_total",
+		Help: "Total number of task next queries (alias for executable).",
+	})
+	metricTaskCreate = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_create_total",
+		Help: "Total number of task create operations.",
+	})
+	metricTaskTree = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hermem_task_tree_total",
+		Help: "Total number of task tree queries.",
+	})
 )
 
-func incStore()          { metricStores.Add(1) }
-func incSearch()         { metricSearches.Add(1) }
-func incRetrieve()       { metricRetrieves.Add(1) }
-func incIngest()         { metricIngests.Add(1) }
-func incQuery()          { metricQueries.Add(1) }
-func incEdge()           { metricEdges.Add(1) }
-func incErr()            { metricErrs.Add(1) }
-func incTaskStatus()     { metricTaskStatus.Add(1) }
-func incTaskExecutable() { metricTaskExecutable.Add(1) }
-func incTaskList()       { metricTaskList.Add(1) }
-func incTaskShow()       { metricTaskShow.Add(1) }
-func incTaskDep()        { metricTaskDep.Add(1) }
-func incTaskRollback()   { metricTaskRollback.Add(1) }
-func incTaskNext()       { metricTaskNext.Add(1) }
-func incTaskCreate()     { metricTaskCreate.Add(1) }
-func incTaskTree()       { metricTaskTree.Add(1) }
+func init() {
+	prometheus.MustRegister(
+		metricStores,
+		metricSearches,
+		metricRetrieves,
+		metricIngests,
+		metricQueries,
+		metricEdges,
+		metricErrs,
+		metricTaskStatus,
+		metricTaskExecutable,
+		metricTaskList,
+		metricTaskShow,
+		metricTaskDep,
+		metricTaskRollback,
+		metricTaskNext,
+		metricTaskCreate,
+		metricTaskTree,
+	)
+}
+
+func incStore()          { metricStores.Inc() }
+func incSearch()         { metricSearches.Inc() }
+func incRetrieve()       { metricRetrieves.Inc() }
+func incIngest()         { metricIngests.Inc() }
+func incQuery()          { metricQueries.Inc() }
+func incEdge()           { metricEdges.Inc() }
+func incErr()            { metricErrs.Inc() }
+func incTaskStatus()     { metricTaskStatus.Inc() }
+func incTaskExecutable() { metricTaskExecutable.Inc() }
+func incTaskList()       { metricTaskList.Inc() }
+func incTaskShow()       { metricTaskShow.Inc() }
+func incTaskDep()        { metricTaskDep.Inc() }
+func incTaskRollback()   { metricTaskRollback.Inc() }
+func incTaskNext()       { metricTaskNext.Inc() }
+func incTaskCreate()     { metricTaskCreate.Inc() }
+func incTaskTree()       { metricTaskTree.Inc() }
+
+var promHandler = promhttp.Handler()
 
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	expvar.Handler().ServeHTTP(w, r)
+	promHandler.ServeHTTP(w, r)
 }

@@ -83,7 +83,12 @@ Tasks:
     via ~45 inflected-form antonym map. No LLM needed. Word overlap >= 25% gate.
     On contradiction: creates contradicts edge, forces separate node instead of merge.
 
-    TODO: confidence comparison (keep both when both have high confidence).
+    [x] Confidence comparison  ✅ (this commit)
+    highConfidenceThreshold = 0.7. When existing.Confidence >= 0.7:
+    keep both with contradicts edge (current behavior). When < 0.7:
+    archive existing entity, create incoming as replacement.
+    Unset confidence (NULL→0, pre-migration) treated as reliable.
+    See src/ingestion.go ProcessDialogWithProvenance.
 
 ----------------------------------------------------------
 
@@ -178,7 +183,11 @@ Operate Hermem in production.
 
 Tasks:
 
-[ ] Prometheus metrics  ⬜ (metrics exist via expvar, not Prometheus format yet)
+[x] Prometheus metrics  ✅ (this commit)
+
+    Replaced expvar with prometheus/client_golang. 16 counters registered
+    via MustRegister in init(). metricsHandler serves promhttp.Handler().
+    Go runtime metrics included free. Backward-compatible inc*() helpers.
 
 ----------------------------------------------------------
 
@@ -378,7 +387,7 @@ Sprint 3: ✅ (merged into Sprint 5)
 - ✅ Reranker
 - ✅ Ranking config
 - ✅ Health levels (/health/live, /health/ready)
-- ⬜ Prometheus (metrics exist via expvar, not Prometheus format)
+- ✅ Prometheus (prometheus/client_golang, 16 counters, promhttp)
 
 Sprint 4: ✅
 - ✅ Migration system

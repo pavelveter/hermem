@@ -4,7 +4,7 @@
 
 # Hermem
 
-A lightweight, zero-dependency graph memory system for LLM agents. Stores facts as a directed graph in SQLite with vector embeddings for semantic retrieval.
+A lightweight, single-binary graph memory system for LLM agents. Stores facts as a directed graph in SQLite with vector embeddings for semantic retrieval.
 
 **Use case:** Give your agent persistent memory across sessions — it remembers what it learned, who you are, what worked, and what didn't.
 
@@ -29,7 +29,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **CLI + HTTP server** — single binary, two modes
 - **OpenAI-compatible** — works with Ollama or any OpenAI-compatible API
 - **Separate embedder/extractor providers** — Ollama for embeddings, OpenAI for extraction (or vice versa)
-- **Pluggable vector search** — `InMemoryVectorIndex` (default, zero-dependency) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
+- **Pluggable vector search** — `InMemoryVectorIndex` (default, pure-Go brute-force) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
 - **Accelerate SIMD** — `cblas_sgemv` via CGo for AMX-optimised batch dot products on Apple Silicon
 - **Automatic retention** — configurable GC loop archives stale observation nodes
 - **API key auth** — optional `X-API-Key` middleware
