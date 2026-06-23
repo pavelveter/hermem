@@ -628,6 +628,63 @@ func (s *Server) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, TaskTreeResponse{Tree: RenderTaskTree(nodes, "")})
 }
 
+func (s *Server) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req SearchRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	if req.Query == "" {
+		writeError(w, http.StatusBadRequest, "query required")
+		return
+	}
+
+	if req.TopK <= 0 {
+		req.TopK = 3
+	}
+
+	queryEmbedding, err := s.embedder.Embed(r.Context(), req.Query)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("embed failed: %v", err))
+		return
+	}
+
+	searchResults, err := SearchByVector(s.db, s.vi, queryEmbedding, req.TopK)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var seedIDs []string
+	for _, res := range searchResults {
+		seedIDs = append(seedIDs, res.Entity.ID)
+	}
+
+	opts := s.retrievalOpts
+	opts.QueryEmbedding = queryEmbedding
+	opts.Ctx = r.Context()
+	opts.Explain = true
+
+	result, err := RetrieveContext(s.db, seedIDs, opts)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	incQuery()
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

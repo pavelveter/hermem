@@ -42,6 +42,8 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Declarative schema** — categories, relation types, FSM rules defined in `hermem.ini` `[schema]`; no recompilation needed
 - **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
 - **Graph integrity verify** — `verify` CLI command checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types
+- **Retrieval explainability** — `/query/explain` endpoint returns vector/recency/depth score breakdown per retrieved fact
+- **Memory provenance** — tracks `conversation_id`, `message_id`, `extracted_from` per entity; entity metadata (`confidence`, `source`, `source_type`, temporal validity)
 - **Docker** — multi-stage build, non-root user
 
 ## Quick Start

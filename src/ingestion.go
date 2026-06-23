@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 )
 
 type IngestionWorker struct {
@@ -26,7 +27,25 @@ func NewIngestionWorker(db *sql.DB, vi VectorIndex, extractor LLMExtractor, embe
 		dedupThresh: dedupThreshold,
 		schema:      schema,
 	}
-} // ProcessDialog loads, embeds, stores entities from one dialog.
+}
+
+// Provenance records where an ingested entity came from.
+type Provenance struct {
+	ConversationID string
+	MessageID      string
+	ExtractedFrom  string // the dialog that produced this entity
+}
+
+// ProcessDialog is the backward-compatible entry point. It delegates to
+// ProcessDialogWithProvenance with default provenance sourced from the
+// dialog itself.
+func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) error {
+	return w.ProcessDialogWithProvenance(ctx, dialog, Provenance{ExtractedFrom: dialog})
+}
+
+// ProcessDialogWithProvenance loads, embeds, stores entities from one dialog,
+// recording provenance metadata on each stored entity.
+//
 // Sprint 1 transaction model (per-item, entity+edges atomic):
 //
 //	for each item in result.Entities:
@@ -39,26 +58,12 @@ func NewIngestionWorker(db *sql.DB, vi VectorIndex, extractor LLMExtractor, embe
 //
 // The entity INSERT and edges INSERT live inside the same SQL
 // transaction so that an edge failure rolls back both writes — no
-// half-written graph states (Sprint 1 goal). The per-item boundary
-// is chosen because:
-//   - LLM extraction is already the per-item bottleneck; the
-//     per-item SQL round-trip amortizes into that cost.
-//   - A failure on item N does not abort items N+1: each item has
-//     independent atomicity.
-//   - vi.Store precedes the tx so the index never lags (invariant
-//     preserved from pre-Sprint-1 code).
+// half-written graph states (Sprint 1 goal).
 //
-// What stays outside the SQL txn:
-//   - embedder.Embed: network call; must NOT hold a write transaction
-//     open that would block concurrent reads.
-//   - vi.Store: maintains the "index never points to row the DB
-//     doesn't hold" invariant.
-//
-// Failure mode summary:
-//   - LLM extract failure → no DB writes; log + return.
-//   - Per-item embed failure → slog + continue to next item.
-//   - Any SQL failure (entity, edges, commit) → tx.Rollback + vi.Remove.
-func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) error {
+// Sprint 2: provenance tracking. Each stored entity records
+// conversation_id, message_id, extracted_from, source = "dialog",
+// source_type = "extraction", confidence = 1.0.
+func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialog string, prov Provenance) error {
 	result, err := w.extractor.ExtractEntities(ctx, dialog)
 	if err != nil {
 		return fmt.Errorf("failed to extract entities: %w", err)
@@ -111,15 +116,9 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 
 		// Normalize before storing in vi: the index assumes unit
 		// vectors (Search divides by queryNorm only, not entry norms).
-		// NormalizeVector is non-blocking and safe to call pre-tx.
 		NormalizeVector(it.embedding)
 
-		// store/update the index BEFORE the SQL txn runs. This keeps
-		// the "no lag" invariant for concurrent Search while we wait
-		// for the COMMIT: if a parallel Search hits the index entry,
-		// it sees the row in the DB (the eventual commit happens
-		// before index entry removal becomes necessary, indexes only
-		// roll back on failure).
+		// store/update the index BEFORE the SQL txn runs.
 		if err := w.vi.Store(ctx, it.entity.ID, it.embedding); err != nil {
 			slog.Error("entity processing failed, continuing",
 				"event", "entity_failed",
@@ -130,8 +129,6 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 		}
 
 		// ---- pre-tx phase: re-embed if merging, update vector index -----
-		// Network calls and vi mutations happen here, BEFORE any SQL
-		// transaction opens, so write locks are never held across I/O.
 		var mergeEntity *Entity
 		if existing != nil {
 			targetID = existing.ID
@@ -150,18 +147,25 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 				continue
 			}
 			NormalizeVector(updatedEmb)
+			now := time.Now()
 			mergeEntity = &Entity{
 				ID:        existing.ID,
 				Category:  existing.Category,
 				Content:   mergedContent,
 				Embedding: updatedEmb,
 				Status:    existing.Status,
+				// Preserve original creation metadata on merge
+				CreatedAt:  existing.CreatedAt,
+				Confidence: 1.0,
+				// Update provenance to latest source
+				ConversationID: prov.ConversationID,
+				MessageID:      prov.MessageID,
+				ExtractedFrom:  prov.ExtractedFrom,
+				Source:         "dialog",
+				SourceType:     "extraction",
+				UpdatedAt:      now,
 			}
-			// Remove the incoming entity's dangling index entry — after
-			// merge, the only entity in the DB is the existing one.
-			// The existing entity's vi entry is NOT overwritten here:
-			// vi.Store(existing.ID, updatedEmb) is deferred to after
-			// tx.Commit so a tx failure doesn't lose the old embedding.
+			// Remove the incoming entity's dangling index entry.
 			w.vi.Remove(ctx, []string{it.entity.ID})
 		}
 
@@ -170,8 +174,7 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 		if itemErr != nil {
 			if mergeEntity != nil {
 				// Pre-tx already removed it.entity.ID; mergeEntity.ID
-				// (existing) was never touched in this iteration — its
-				// vi.Store is deferred to post-commit. No cleanup needed.
+				// was never touched — vi.Store deferred to post-commit.
 			} else {
 				w.vi.Remove(ctx, []string{it.entity.ID})
 			}
@@ -187,7 +190,7 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 		if mergeEntity != nil {
 			writeErr = w.mergeEntityInTx(ctx, itemTx, *mergeEntity)
 		} else {
-			writeErr = w.createEntityInTx(ctx, itemTx, it.entity, it.embedding)
+			writeErr = w.createEntityInTx(ctx, itemTx, it.entity, it.embedding, prov)
 		}
 		if writeErr == nil {
 			writeErr = w.createEdgesInTx(ctx, itemTx, targetID, it.entity.Relations)
@@ -195,10 +198,6 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 
 		rollbackID := it.entity.ID
 		if mergeEntity != nil {
-			// Pre-tx already removed it.entity.ID from vi.
-			// mergeEntity.ID (existing) vi entry was never updated
-			// — vi.Store is deferred to post-commit. Skip vi.Remove
-			// on failure to preserve the existing entity's valid vec.
 			rollbackID = ""
 		}
 		if writeErr != nil {
@@ -238,9 +237,7 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 			continue
 		}
 
-		// Post-commit: update the existing entity's vi entry with
-		// the merged embedding. Deferred to here so a tx failure
-		// leaves the old (functional) embedding intact.
+		// Post-commit: update the existing entity's vi entry.
 		if mergeEntity != nil {
 			w.vi.Store(ctx, mergeEntity.ID, mergeEntity.Embedding)
 		}
@@ -259,9 +256,18 @@ func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e Ent
 		status = w.schema.ValidStateOrder[0]
 	}
 	_, err := tx.ExecContext(ctx, `
-		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-	`, e.ID, e.Category, e.Content, embeddingBytes, nullString(status))
+		INSERT OR REPLACE INTO entities
+			(id, category, content, embedding, updated_at, status,
+			 confidence, source, source_type, created_at,
+			 conversation_id, message_id, extracted_from)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?,
+		        ?, ?, ?, ?,
+		        ?, ?, ?)
+	`,
+		e.ID, e.Category, e.Content, embeddingBytes, nullString(status),
+		e.Confidence, e.Source, e.SourceType, orNullTime(e.CreatedAt),
+		e.ConversationID, e.MessageID, e.ExtractedFrom,
+	)
 	if err != nil {
 		return fmt.Errorf("merge entity: %w", err)
 	}
@@ -269,14 +275,21 @@ func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e Ent
 }
 
 // createEntityInTx normalises and INSERTs one entity on the supplied
-// transaction. Does NOT open or commit its own transaction.
-func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, entity ExtractedEntity, embedding []float32) error {
+// transaction with provenance metadata. Does NOT open or commit its
+// own transaction.
+func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, entity ExtractedEntity, embedding []float32, prov Provenance) error {
 	NormalizeVector(embedding)
 	dbEntity := Entity{
-		ID:        entity.ID,
-		Category:  entity.Category,
-		Content:   entity.Content,
-		Embedding: embedding,
+		ID:             entity.ID,
+		Category:       entity.Category,
+		Content:        entity.Content,
+		Embedding:      embedding,
+		Confidence:     1.0,
+		Source:         "dialog",
+		SourceType:     "extraction",
+		ConversationID: prov.ConversationID,
+		MessageID:      prov.MessageID,
+		ExtractedFrom:  prov.ExtractedFrom,
 	}
 	embeddingBytes := EmbeddingToBytes(dbEntity.Embedding)
 	status := dbEntity.Status
@@ -285,9 +298,18 @@ func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, enti
 	}
 
 	_, err := tx.ExecContext(ctx, `
-		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-	`, dbEntity.ID, dbEntity.Category, dbEntity.Content, embeddingBytes, nullString(status))
+		INSERT OR REPLACE INTO entities
+			(id, category, content, embedding, updated_at, status,
+			 confidence, source, source_type, created_at,
+			 conversation_id, message_id, extracted_from)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?,
+		        ?, ?, ?, CURRENT_TIMESTAMP,
+		        ?, ?, ?)
+	`,
+		dbEntity.ID, dbEntity.Category, dbEntity.Content, embeddingBytes, nullString(status),
+		dbEntity.Confidence, dbEntity.Source, dbEntity.SourceType,
+		dbEntity.ConversationID, dbEntity.MessageID, dbEntity.ExtractedFrom,
+	)
 	if err != nil {
 		return fmt.Errorf("insert entity: %w", err)
 	}
@@ -353,7 +375,6 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 		return nil, nil
 	}
 
-	// If the top match is the entity itself (from a re-embed), skip it
 	candidateID := similarIDs[0]
 	if candidateID == selfID {
 		if len(similarIDs) < 2 {
@@ -364,15 +385,48 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 
 	var entity Entity
 	var embeddingBytes []byte
+	var confidence sql.NullFloat64
+	var source, sourceType, conversationID, messageID, extractedFrom sql.NullString
+	var createdAt sql.NullTime
 	err := w.db.QueryRow(
-		`SELECT id, category, content, embedding, updated_at FROM entities WHERE id = ?`,
+		`SELECT id, category, content, embedding, updated_at,
+		        confidence, source, source_type, created_at,
+		        conversation_id, message_id, extracted_from
+		 FROM entities WHERE id = ?`,
 		candidateID,
-	).Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt)
+	).Scan(
+		&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt,
+		&confidence, &source, &sourceType, &createdAt,
+		&conversationID, &messageID, &extractedFrom,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to fetch candidate %q: %w", candidateID, err)
+	}
+
+	if confidence.Valid {
+		entity.Confidence = float32(confidence.Float64)
+	}
+	if source.Valid {
+		entity.Source = source.String
+	}
+	if sourceType.Valid {
+		entity.SourceType = sourceType.String
+	}
+	if createdAt.Valid {
+		t := createdAt.Time
+		entity.CreatedAt = &t
+	}
+	if conversationID.Valid {
+		entity.ConversationID = conversationID.String
+	}
+	if messageID.Valid {
+		entity.MessageID = messageID.String
+	}
+	if extractedFrom.Valid {
+		entity.ExtractedFrom = extractedFrom.String
 	}
 
 	sim := float32(0)
@@ -389,13 +443,20 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 }
 
 type MemoryMessage struct {
-	Dialog string
+	Dialog         string
+	ConversationID string
+	MessageID      string
 }
 
 func MemoryWorker(ctx context.Context, db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, schema SchemaConfig, ch <-chan MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema)
 	for msg := range ch {
-		if err := worker.ProcessDialog(ctx, msg.Dialog); err != nil {
+		prov := Provenance{
+			ConversationID: msg.ConversationID,
+			MessageID:      msg.MessageID,
+			ExtractedFrom:  msg.Dialog,
+		}
+		if err := worker.ProcessDialogWithProvenance(ctx, msg.Dialog, prov); err != nil {
 			slog.Error("dialog processing failed",
 				"event", "ingest_failed",
 				"err", err,

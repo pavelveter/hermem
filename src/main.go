@@ -403,6 +403,43 @@ func main() {
 		}
 		fmt.Println(`{"status":"ok"}`)
 
+	case "explain":
+		// Sprint 2: retrieval explainability — full pipeline with
+		// vector/recency/depth breakdown per fact.
+		var req struct {
+			Query string `json:"query"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.Query == "" {
+			log.Fatal("query required")
+		}
+		queryEmbedding, err := embedder.Embed(ctx, req.Query)
+		if err != nil {
+			log.Fatalf("Embed failed: %v", err)
+		}
+		searchResults, err := SearchByVector(db, vi, queryEmbedding, 3)
+		if err != nil {
+			log.Fatalf("Search failed: %v", err)
+		}
+		var seedIDs []string
+		for _, res := range searchResults {
+			seedIDs = append(seedIDs, res.Entity.ID)
+		}
+		opts := RetrieveContextOptions{
+			MaxDepth:          2,
+			DepthCeiling:      cfg.MaxDepthCeiling,
+			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+			QueryEmbedding:    queryEmbedding,
+			Explain:           true,
+		}
+		result, err := RetrieveContext(db, seedIDs, opts)
+		if err != nil {
+			log.Fatalf("Explain failed: %v", err)
+		}
+		json.NewEncoder(os.Stdout).Encode(result)
+
 	case "task-rollback":
 		var req struct {
 			ID string `json:"id"`
@@ -465,6 +502,7 @@ func main() {
 		mux.HandleFunc("/task/tree", srv.HandleTaskTree)
 		mux.HandleFunc("/task/create", srv.HandleTaskCreate)
 		mux.HandleFunc("/task/rollback", srv.HandleTaskRollback)
+		mux.HandleFunc("/query/explain", srv.HandleQueryExplain)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 

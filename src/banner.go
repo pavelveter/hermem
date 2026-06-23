@@ -27,6 +27,7 @@ Commands:
   store            Store a fact (JSON on stdin)
   search           Search memory (JSON on stdin)
   query            Full pipeline: search + graph walk (JSON on stdin)
+  explain          Full pipeline with score breakdown per fact (JSON on stdin)
   edge             Add an edge (JSON on stdin)
   ingest           Ingest dialog (JSON on stdin)
   task-status      Update task status (JSON on stdin)

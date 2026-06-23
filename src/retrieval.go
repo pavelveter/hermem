@@ -45,6 +45,9 @@ const (
 type rankedNode struct {
 	node  GraphNode
 	score float32
+	// Sprint 2: score breakdown for explainability
+	sim     float32
+	recency float32
 }
 
 // CompositeScorer combines vector similarity, recency decay, and a
@@ -178,6 +181,11 @@ type RetrievedFact struct {
 	ParentID     string `json:"parent_id,omitempty"`
 	RelationType string `json:"relation_type,omitempty"`
 	Depth        int    `json:"depth"`
+	// Sprint 2: retrieval explainability — score breakdown
+	VectorScore  float32 `json:"vector_score,omitempty"`
+	RecencyScore float32 `json:"recency_score,omitempty"`
+	DepthPenalty float32 `json:"depth_penalty,omitempty"`
+	RankingScore float32 `json:"ranking_score,omitempty"`
 }
 
 // RetrieveContextOptions controls graph-walk bounds for a single
@@ -215,6 +223,10 @@ type RetrieveContextOptions struct {
 	// Ctx carries request-scoped values (request_id) through the
 	// retrieval pipeline for structured logging.
 	Ctx context.Context
+	// Sprint 2: when true, populate vector/recency/depth breakdown
+	// on every RetrievedFact. Slight CPU overhead (extra float32
+	// assignments) but zero allocations.
+	Explain bool
 }
 
 func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
@@ -402,7 +414,24 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 		// bucket ordering without a second pass over the result set.
 		score := scorer(node, nodeVec, opts.QueryEmbedding, queryNorm)
 		node.RankingScore = score
-		ranked = append(ranked, rankedNode{node: node, score: score})
+		rn := rankedNode{node: node, score: score}
+		// Sprint 2: populate score breakdown when explainability requested
+		if opts.Explain {
+			if len(opts.QueryEmbedding) > 0 && len(nodeVec) > 0 {
+				rn.sim = CosineSimilarityWithNorm(nodeVec, opts.QueryEmbedding, queryNorm)
+			}
+			if !node.Entity.UpdatedAt.IsZero() {
+				hoursOld := float32(time.Since(node.Entity.UpdatedAt).Hours())
+				if hoursOld > 0 {
+					rn.recency = float32(math.Exp(-float64(hoursOld) / float64(rankRecencyHalfLifeHours)))
+				} else {
+					rn.recency = 1.0
+				}
+			} else {
+				rn.recency = 1.0
+			}
+		}
+		ranked = append(ranked, rn)
 
 		// Seed nodes preserve their DB-returned order at depth 0; the
 		// score is still attached so downstream consumers can inspect or
@@ -458,6 +487,13 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 			ParentID:     rn.node.ParentID,
 			RelationType: rn.node.RelationType,
 			Depth:        rn.node.Depth,
+		}
+		// Sprint 2: attach score breakdown when explainability is on
+		if opts.Explain {
+			fact.VectorScore = rn.sim
+			fact.RecencyScore = rn.recency
+			fact.DepthPenalty = rankDepthPenaltyPerUnit * float32(rn.node.Depth)
+			fact.RankingScore = rn.score
 		}
 
 		switch rn.node.Entity.Category {

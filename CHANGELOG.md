@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `verify` CLI command: checks entity count, edge count, embedding count, corrupt blobs, orphan edges, invalid status, invalid relation types. Exits 0 when clean.
   - `VerifyReport` struct with `Pass()` and formatted text output; `VerifyGraph(db, schema, dim)` performs the check.
   - `NormalizeVector` called before `vi.Store` in both merge and non-merge ingestion paths; merge-path `vi.Store` deferred to post-commit.
+- **Sprint 2** — Memory provenance, entity metadata, and retrieval explainability.
+  - Entity metadata: `confidence`, `source`, `source_type`, `created_at`, `valid_from`, `valid_to` columns on `entities` table with ALTER TABLE migrations.
+  - Memory provenance: `conversation_id`, `message_id`, `extracted_from` columns track where each entity was extracted from. `Provenance` struct threaded through `ProcessDialogWithProvenance` → `createEntityInTx` / `mergeEntityInTx`.
+  - `MemoryMessage` extended with `ConversationID` and `MessageID`; `MemoryWorker` passes them through.
+  - Retrieval explainability: `RetrievedFact` gains `vector_score`, `recency_score`, `depth_penalty`, `ranking_score` breakdown fields (populated when `RetrieveContextOptions.Explain = true`).
+  - `/query/explain` HTTP endpoint and `explain` CLI command run the full pipeline with score breakdown per fact.
+  - `orNullTime` helper for nullable timestamp columns in INSERTs.
 - `extraction.provider` / `extraction.url` / `extraction.key` config keys with fallback to `[embedder]` values.
 - `PRAGMA auto_vacuum = INCREMENTAL` in `InitDB` — `vacuumAfter()` now works.
 - Auth middleware: `server.api_key` config key, validated via `X-API-Key` header (empty = disabled).

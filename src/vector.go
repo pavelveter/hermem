@@ -299,6 +299,15 @@ func nullString(value string) interface{} {
 	return value
 }
 
+// orNullTime returns nil for nil *time.Time, otherwise the underlying value.
+// Used in INSERT statements so NULL propagates correctly for optional timestamps.
+func orNullTime(t *time.Time) interface{} {
+	if t == nil {
+		return nil
+	}
+	return *t
+}
+
 // inClauseArgs builds N "?" placeholders and an args slice for SQL
 // IN (...) queries. Avoids raw string concatenation of SQL fragments.
 func inClauseArgs(ids []string) (string, []interface{}) {
