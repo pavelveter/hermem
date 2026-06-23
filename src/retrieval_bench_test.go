@@ -84,10 +84,11 @@ func benchmarkRetrieveContextStar(b *testing.B, perRowRecompute bool) {
 			_ float32,
 		) float32 {
 			depth := float32(node.Depth)
+			w := RankingWeight{VectorWeight: 0.7, RecencyWeight: 0.3, DepthPenalty: 0.05}
 			if len(qEmb) == 0 || len(nodeVec) == 0 {
-				return compositeScore(0, 1, depth)
+				return compositeScore(w, 0, 1, depth)
 			}
-			return compositeScore(CosineSimilarity(nodeVec, qEmb), 1, depth)
+			return compositeScore(w, CosineSimilarity(nodeVec, qEmb), 1, depth)
 		}
 	}
 

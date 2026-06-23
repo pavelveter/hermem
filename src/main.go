@@ -38,6 +38,7 @@ func GenerateResponse(ctx context.Context, db *sql.DB, vi VectorIndex, embedder 
 	// Safe mutation: opts is the value-type copy owned by GenerateResponse,
 	// not the caller's struct.
 	opts.QueryEmbedding = queryEmbedding
+	opts.QueryText = userQuery
 	opts.Ctx = ctx
 	contextResult, err := RetrieveContext(db, seedIDs, opts)
 	if err != nil {
@@ -97,6 +98,7 @@ func main() {
 
 	embedder := cfg.NewEmbedder()
 	extractor := cfg.NewExtractor()
+	reranker := cfg.NewReranker()
 
 	// Sprint 1: Runtime struct is defined in runtime.go for future
 	// multi-tenant/library use. For now, per-command access goes
@@ -176,6 +178,8 @@ func main() {
 			MaxDepth:          2,
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+			RankingWeight:     cfg.Ranking,
+			Reranker:          reranker,
 		}
 		context, err := GenerateResponse(ctx, db, vi, embedder, opts, req.Query)
 		if err != nil {
@@ -432,7 +436,10 @@ func main() {
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
 			QueryEmbedding:    queryEmbedding,
+			QueryText:         req.Query,
 			Explain:           true,
+			RankingWeight:     cfg.Ranking,
+			Reranker:          reranker,
 		}
 		result, err := RetrieveContext(db, seedIDs, opts)
 		if err != nil {
@@ -520,6 +527,8 @@ func main() {
 		srv := NewServer(db, vi, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+			RankingWeight:     cfg.Ranking,
+			Reranker:          reranker,
 		}, cfg.Schema)
 
 		gcCtx, gcCancel := context.WithCancel(ctx)

@@ -103,6 +103,21 @@ dim = 768                        # embedding dimension for vec0 table (must matc
 depth_ceiling = 5                 # hard clamp on requested max_depth
 max_nodes     = 100               # soft cap on nodes per RetrieveContext
 
+[ranking]                          # Sprint 5 — tunable ranking weights
+vector_weight         = 0.7       # vector similarity weight (0 = disabled)
+recency_weight        = 0.3       # recency decay weight
+; recency_half_life_hours = 720   # half-life for exp decay (default 720h ≈ 30d)
+; depth_penalty         = 0.05    # linear penalty per hop depth
+
+[reranker]                         # Sprint 5 — optional post-retrieval reranker
+; Follows the same provider convention as [embedder] / [extraction].
+; When provider is empty or absent, reranking is skipped.
+; provider = ollama               # "ollama" (cross-encoder) | "openai" (chat-based)
+; url = http://localhost:11434
+; model = mxbai-rerank-base
+; key =                           # API key (only needed for openai)
+; timeout = 30s
+
 [retention]
 observation_ttl = 2160h          # age beyond which observation nodes are archived (Go duration)
 run_interval    = 1h              # how often the GC loop fires

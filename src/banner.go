@@ -42,7 +42,11 @@ Commands:
   verify           Run graph integrity checks
   migrate          Show/apply versioned database migrations
   schema           Show current vs stored schema fingerprint
-  serve            Run HTTP server`
+  serve            Run HTTP server (SIGHUP to reload config)
+
+Config-only features:
+  [ranking]        Tunable composite scorer weights
+  [reranker]       Optional post-retrieval reranker (ollama / openai)`
 
 // printUsage writes the HERMEM banner followed by the command
 // reference to w. A blank line is emitted above the banner so it
