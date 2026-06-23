@@ -111,54 +111,6 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to set auto_vacuum mode: %w", err)
 	}
 
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS entities (
-			id TEXT PRIMARY KEY,
-			category TEXT NOT NULL,
-			content TEXT NOT NULL,
-			embedding BLOB,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			status TEXT DEFAULT NULL
-		)
-	`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create entities table: %w", err)
-	}
-
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS edges (
-			source_id TEXT NOT NULL,
-			target_id TEXT NOT NULL,
-			relation_type TEXT NOT NULL,
-			PRIMARY KEY (source_id, target_id, relation_type),
-			FOREIGN KEY (source_id) REFERENCES entities(id) ON DELETE CASCADE,
-			FOREIGN KEY (target_id) REFERENCES entities(id) ON DELETE CASCADE
-		)
-	`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create edges table: %w", err)
-	}
-
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS meta (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL
-		)
-	`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create meta table: %w", err)
-	}
-
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS id_map (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			entity_id TEXT UNIQUE NOT NULL
-		)
-	`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create id_map table: %w", err)
-	}
-
 	// Create migration tracking table before running migrations
 	// so the runner can record its own progress.
 	if _, err := db.Exec(`
@@ -248,9 +200,33 @@ func runMigrations(db *sql.DB) error {
 			return fmt.Errorf("begin tx for %s: %w", name, err)
 		}
 
-		if _, err := tx.Exec(string(sqlBytes)); err != nil {
+		_, execErr := tx.Exec(string(sqlBytes))
+		if execErr != nil {
 			tx.Rollback()
-			return fmt.Errorf("apply migration %s: %w", name, err)
+			// Pre-existing databases: columns may already exist from
+			// the old ad-hoc migrateSchema. Treat "duplicate column"
+			// as a benign no-op and record the migration as applied
+			// in a fresh transaction (the original tx is rolled back).
+			if strings.Contains(execErr.Error(), "duplicate column name") {
+				slog.Info("migration skipped (columns already exist)", "migration", name)
+				recTx, err := db.Begin()
+				if err != nil {
+					return fmt.Errorf("begin record tx for %s: %w", name, err)
+				}
+				if _, err := recTx.Exec(
+					"INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)",
+					name,
+				); err != nil {
+					recTx.Rollback()
+					return fmt.Errorf("record migration %s: %w", name, err)
+				}
+				if err := recTx.Commit(); err != nil {
+					return fmt.Errorf("commit record for %s: %w", name, err)
+				}
+				slog.Info("migration recorded (pre-existing)", "migration", name)
+				continue
+			}
+			return fmt.Errorf("apply migration %s: %w", name, execErr)
 		}
 
 		if _, err := tx.Exec(
