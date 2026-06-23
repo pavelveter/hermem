@@ -40,12 +40,15 @@ type Entity struct {
 	ConversationID string `json:"conversation_id,omitempty"`
 	MessageID      string `json:"message_id,omitempty"`
 	ExtractedFrom  string `json:"extracted_from,omitempty"`
+	// P1: graph centrality — total edges (in + out). Auto-maintained via triggers.
+	Degree int `json:"degree,omitempty"`
 }
 
 type Edge struct {
-	SourceID     string `json:"source_id"`
-	TargetID     string `json:"target_id"`
-	RelationType string `json:"relation_type"`
+	SourceID     string  `json:"source_id"`
+	TargetID     string  `json:"target_id"`
+	RelationType string  `json:"relation_type"`
+	Weight       float32 `json:"weight,omitempty"`
 }
 
 // InitDB opens (or creates) hermem.db with a hardened SQL pragma set.
@@ -725,7 +728,7 @@ func queryEdges(db *sql.DB, query string, args ...interface{}) ([]Edge, error) {
 	var out []Edge
 	for rows.Next() {
 		var ed Edge
-		if err := rows.Scan(&ed.SourceID, &ed.TargetID, &ed.RelationType); err != nil {
+		if err := rows.Scan(&ed.SourceID, &ed.TargetID, &ed.RelationType, &ed.Weight); err != nil {
 			return nil, fmt.Errorf("scan edge: %w", err)
 		}
 		out = append(out, ed)
@@ -790,11 +793,11 @@ func GetTaskWithRelations(db *sql.DB, schema SchemaConfig, id string) (Entity, [
 	if err != nil {
 		return Entity{}, nil, nil, fmt.Errorf("get task: %w", err)
 	}
-	blocked, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = ?", id, schema.RelationBlocking)
+	blocked, err := queryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE source_id = ? AND relation_type = ?", id, schema.RelationBlocking)
 	if err != nil {
 		return Entity{}, nil, nil, err
 	}
-	recovers, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = ?", id, schema.RelationRecovery)
+	recovers, err := queryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE source_id = ? AND relation_type = ?", id, schema.RelationRecovery)
 	if err != nil {
 		return Entity{}, nil, nil, err
 	}
@@ -846,12 +849,12 @@ func GetTasksByIDs(db *sql.DB, schema SchemaConfig, ids []string) (map[string]En
 
 // GetBlockedBy returns edges of type 'blocked_by' where target_id = id.
 func GetBlockedBy(db *sql.DB, schema SchemaConfig, id string) ([]Edge, error) {
-	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = ?", id, schema.RelationBlocking)
+	return queryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE target_id = ? AND relation_type = ?", id, schema.RelationBlocking)
 }
 
 // GetRecoversVia returns edges of type 'recovers_via' where target_id = id.
 func GetRecoversVia(db *sql.DB, schema SchemaConfig, id string) ([]Edge, error) {
-	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = ?", id, schema.RelationRecovery)
+	return queryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE target_id = ? AND relation_type = ?", id, schema.RelationRecovery)
 }
 
 // TreeNode represents a node in the task tree.
@@ -1013,6 +1016,87 @@ func GetContradictions(db *sql.DB, entityID string) ([]ContradictionPair, error)
 			return nil, fmt.Errorf("scan contradiction: %w", err)
 		}
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetEntitiesByProvenance returns entities matching at least one of the
+// provided provenance filters. At least one filter must be non-empty.
+// Returns up to `limit` results (default 50, max 200).
+func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source string, limit int) ([]Entity, error) {
+	if conversationID == "" && messageID == "" && source == "" {
+		return nil, fmt.Errorf("at least one provenance filter required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	var wheres []string
+	var args []interface{}
+
+	if conversationID != "" {
+		wheres = append(wheres, "conversation_id = ?")
+		args = append(args, conversationID)
+	}
+	if messageID != "" {
+		wheres = append(wheres, "message_id = ?")
+		args = append(args, messageID)
+	}
+	if source != "" {
+		wheres = append(wheres, "source = ?")
+		args = append(args, source)
+	}
+
+	query := `SELECT id, category, content, updated_at,
+		conversation_id, message_id, source, source_type, created_at, confidence
+	FROM entities
+	WHERE archived = 0 AND (` + strings.Join(wheres, " OR ") + `)
+	ORDER BY created_at DESC
+	LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query provenance: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Entity
+	for rows.Next() {
+		var e Entity
+		var convID, msgID, src, srcType sql.NullString
+		var confidence sql.NullFloat64
+		var createdAt sql.NullTime
+		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.UpdatedAt,
+			&convID, &msgID, &src, &srcType, &createdAt, &confidence); err != nil {
+			return nil, fmt.Errorf("scan provenance entity: %w", err)
+		}
+		if convID.Valid {
+			e.ConversationID = convID.String
+		}
+		if msgID.Valid {
+			e.MessageID = msgID.String
+		}
+		if src.Valid {
+			e.Source = src.String
+		}
+		if srcType.Valid {
+			e.SourceType = srcType.String
+		}
+		if createdAt.Valid {
+			t := createdAt.Time
+			e.CreatedAt = &t
+		}
+		if confidence.Valid {
+			e.Confidence = float32(confidence.Float64)
+		}
+		out = append(out, e)
+	}
+	if out == nil {
+		out = []Entity{}
 	}
 	return out, rows.Err()
 }

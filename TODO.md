@@ -20,9 +20,9 @@
 - [x] Contradiction-aware retrieval
 - [x] Retrieval explainability
 - [x] Temporal reranking
-- [ ] Graph centrality scoring
-- [ ] Weighted edges
-- [ ] Provenance APIs
+- [x] Graph centrality scoring
+- [x] Weighted edges
+- [x] Provenance APIs
 
 ## P2 - Nice To Have
 

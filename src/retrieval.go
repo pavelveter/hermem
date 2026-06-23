@@ -80,30 +80,39 @@ func defaultCompositeScorer(w RankingWeight) CompositeScorer {
 			hoursOld := float32(time.Since(*node.Entity.CreatedAt).Hours())
 			temporalBoost = float32(math.Exp(-float64(hoursOld) / float64(w.TemporalHalfLifeHours)))
 		}
-		return compositeScore(w, sim, recency, temporalBoost, float32(node.Depth))
+		// Centrality boost: log10(1+degree) normalises degree centrality
+		// so highly-connected nodes get a mild ranking bonus.
+		var centrality float32 = 0
+		if w.CentralityWeight > 0 && node.Entity.Degree > 0 {
+			centrality = float32(math.Log10(float64(1 + node.Entity.Degree)))
+		}
+		return compositeScore(w, sim, recency, temporalBoost, centrality, float32(node.PathWeight))
 	}
 }
 
 // compositeScore combines vector similarity, recency decay, temporal
-// boost, and a per-depth penalty using the config-driven RankingWeight
-// values. Formula: VectorWeight*sim + RecencyWeight*recency +
-// TemporalWeight*temporalBoost - DepthPenalty*depth.
-func compositeScore(w RankingWeight, sim, recency, temporalBoost, depth float32) float32 {
+// boost, centrality, and a per-depth penalty using the config-driven
+// RankingWeight values. Formula: VectorWeight*sim + RecencyWeight*recency +
+// TemporalWeight*temporalBoost + CentralityWeight*centrality - DepthPenalty*pathWeight.
+func compositeScore(w RankingWeight, sim, recency, temporalBoost, centrality, pathWeight float32) float32 {
 	return w.VectorWeight*sim +
 		w.RecencyWeight*recency +
-		w.TemporalWeight*temporalBoost -
-		w.DepthPenalty*depth
+		w.TemporalWeight*temporalBoost +
+		w.CentralityWeight*centrality -
+		w.DepthPenalty*pathWeight
 }
 
 type GraphNode struct {
-	Entity       Entity `json:"entity"`
-	Relations    []Edge `json:"relations,omitempty"`
-	Depth        int    `json:"depth"`
-	ParentID     string `json:"parent_id"`
-	RelationType string `json:"relation_type,omitempty"`
+	Entity       Entity  `json:"entity"`
+	Relations    []Edge  `json:"relations,omitempty"`
+	Depth        int     `json:"depth"`
+	PathWeight   float32 `json:"path_weight,omitempty"`
+	ParentID     string  `json:"parent_id"`
+	RelationType string  `json:"relation_type,omitempty"`
 	// RankingScore is the composite score used for ordering category-
 	// bucket output. Formula uses config-driven RankingWeight:
-	// VectorWeight*sim + RecencyWeight*recency - DepthPenalty*Depth.
+	// VectorWeight*sim + RecencyWeight*recency + TemporalWeight*temporalBoost +
+	// CentralityWeight*log10(1+degree) - DepthPenalty*PathWeight.
 	// Defaults to 0.7/0.3/0.05 when zero-valued. 0.0 when the ranker
 	// inputs were unavailable. Callers may inspect or sort by it. A
 	// custom CompositeScorer may return any float32; post-scan sort
@@ -211,6 +220,9 @@ func resolvedRankingWeight(w RankingWeight) RankingWeight {
 	}
 	if w.TemporalHalfLifeHours == 0 {
 		w.TemporalHalfLifeHours = 720
+	}
+	if w.CentralityWeight == 0 {
+		w.CentralityWeight = 0.05
 	}
 	return w
 }
@@ -321,18 +333,22 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 		WITH RECURSIVE graph_walk AS (
 			SELECT
 				e.id, e.category, e.content, e.updated_at, e.embedding,
+				e.degree,
 				0 as depth,
+				0.0 as path_weight,
 				'' as parent_id,
 				'' as relation_type,
 				char(31) || e.id || char(31) as visited
-		FROM entities e
-		WHERE e.id IN (%[1]s) AND e.archived = 0`+timeFilter+`
+			FROM entities e
+			WHERE e.id IN (%[1]s) AND e.archived = 0`+timeFilter+`
 
 		UNION ALL
 
 			SELECT
 				e.id, e.category, e.content, e.updated_at, e.embedding,
+				e.degree,
 				gw.depth + 1,
+				gw.path_weight + COALESCE(ed.weight, 1.0),
 				gw.id as parent_id,
 				ed.relation_type,
 				gw.visited || e.id || char(31) as visited
@@ -348,7 +364,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 			AND e.archived = 0
 			`+timeFilter+`
 		)
-		SELECT DISTINCT id, category, content, updated_at, embedding, depth, parent_id, relation_type
+		SELECT DISTINCT id, category, content, updated_at, embedding, degree, depth, path_weight, parent_id, relation_type
 		FROM graph_walk
 		ORDER BY depth ASC, category ASC
 	`, strings.Join(placeholders, ","))
@@ -380,7 +396,9 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 			&node.Entity.Content,
 			&node.Entity.UpdatedAt,
 			&embeddingBlob,
+			&node.Entity.Degree,
 			&node.Depth,
+			&node.PathWeight,
 			&node.ParentID,
 			&node.RelationType,
 		); err != nil {
@@ -501,7 +519,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 		if opts.Explain {
 			fact.VectorScore = rn.sim
 			fact.RecencyScore = rn.recency
-			fact.DepthPenalty = w.DepthPenalty * float32(rn.node.Depth)
+			fact.DepthPenalty = w.DepthPenalty * rn.node.PathWeight
 			fact.RankingScore = rn.score
 		}
 

@@ -191,10 +191,11 @@ func main() {
 
 	case "edge":
 		var req struct {
-			SourceID     string `json:"source_id"`
-			TargetID     string `json:"target_id"`
-			RelationType string `json:"relation_type"`
-			AutoCreate   bool   `json:"auto_create"`
+			SourceID     string  `json:"source_id"`
+			TargetID     string  `json:"target_id"`
+			RelationType string  `json:"relation_type"`
+			AutoCreate   bool    `json:"auto_create"`
+			Weight       float32 `json:"weight,omitempty"`
 		}
 		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
 			log.Fatalf("invalid request: %s", msg)
@@ -210,7 +211,7 @@ func main() {
 				log.Fatalf("Failed to add edge: %v", err)
 			}
 		} else {
-			if err := AddEdge(db, req.SourceID, req.TargetID, req.RelationType); err != nil {
+			if err := AddEdge(db, req.SourceID, req.TargetID, req.RelationType, req.Weight); err != nil {
 				log.Fatalf("Failed to add edge: %v", err)
 			}
 		}
@@ -342,7 +343,7 @@ func main() {
 			log.Fatalf("invalid request: %v", err)
 		}
 		if req.Add {
-			if err := AddEdge(db, req.SourceID, req.TargetID, rel); err != nil {
+			if err := AddEdge(db, req.SourceID, req.TargetID, rel, 1.0); err != nil {
 				log.Fatalf("failed to add dependency: %v", err)
 			}
 		} else {
@@ -400,7 +401,7 @@ func main() {
 			if cid == "" {
 				continue
 			}
-			if err := AddEdge(db, req.ID, cid, "related_to"); err != nil {
+			if err := AddEdge(db, req.ID, cid, "related_to", 1.0); err != nil {
 				slog.Error("failed to add context edge", "err", err, "from", req.ID, "to", cid)
 			}
 		}
@@ -688,6 +689,56 @@ func main() {
 			fmt.Printf("[%s] %s  [%s]\n", t.ID, t.Content, t.Status)
 		}
 
+	case "provenance":
+		// P1: provenance API — query entities by conversation, message, source.
+		conversationID := ""
+		messageID := ""
+		sourceFilter := ""
+		limit := 50
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--conversation":
+				if i+1 < len(args) {
+					conversationID = args[i+1]
+					i++
+				}
+			case "--message":
+				if i+1 < len(args) {
+					messageID = args[i+1]
+					i++
+				}
+			case "--source":
+				if i+1 < len(args) {
+					sourceFilter = args[i+1]
+					i++
+				}
+			case "--limit":
+				if i+1 < len(args) {
+					if n, err := fmt.Sscanf(args[i+1], "%d", &limit); err != nil || n != 1 {
+						limit = 50
+					}
+					i++
+				}
+			}
+		}
+		entities, err := GetEntitiesByProvenance(db, conversationID, messageID, sourceFilter, limit)
+		if err != nil {
+			log.Fatalf("provenance: %v", err)
+		}
+		for _, e := range entities {
+			ts := ""
+			if e.CreatedAt != nil {
+				ts = e.CreatedAt.Format(time.RFC3339)
+			}
+			fmt.Printf("[%s] %s  [%s]  %s  conv=%s msg=%s\n",
+				ts, e.ID, e.Category, truncate(e.Content, 80),
+				e.ConversationID, e.MessageID)
+		}
+		if len(entities) == 0 {
+			fmt.Println("No entities found for given provenance filters.")
+		}
+
 	case "schema":
 		// Sprint 4: show current vs stored schema fingerprint.
 		stored, current, err := CheckSchemaFingerprint(db, cfg.Schema)
@@ -758,6 +809,7 @@ func main() {
 		mux.HandleFunc("/contradictions", srv.HandleContradictions)
 		mux.HandleFunc("/query/temporal", srv.HandleQueryTemporal)
 		mux.HandleFunc("/timeline", srv.HandleTimeline)
+		mux.HandleFunc("/provenance", srv.HandleProvenance)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 
