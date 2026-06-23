@@ -40,7 +40,7 @@ func GenerateResponse(ctx context.Context, db *sql.DB, vi VectorIndex, embedder 
 	opts.QueryEmbedding = queryEmbedding
 	opts.QueryText = userQuery
 	opts.Ctx = ctx
-	contextResult, err := RetrieveContext(db, seedIDs, opts)
+	contextResult, err := MultiHopRetrieveContext(db, vi, embedder, seedIDs, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve context: %w", err)
 	}
@@ -581,6 +581,27 @@ func main() {
 			log.Fatalf("failed to find rollback task: %v", err)
 		}
 		json.NewEncoder(os.Stdout).Encode(TaskRollbackResponse{RollbackTaskID: rollbackID})
+
+	case "agent-loop":
+		// Phase 10: agent state engine — execution loop for a goal.
+		// JSON stdin: {goal_id}.
+		var req struct {
+			GoalID string `json:"goal_id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.GoalID == "" {
+			log.Fatal("goal_id required")
+		}
+		slog.Info("agent loop started", "event", "agent_loop_start", "goal_id", req.GoalID)
+		err := AgentLoop(ctx, db, cfg.Schema, req.GoalID, func(ctx context.Context, task Entity) error {
+			fmt.Printf("[%s] %s  [%s]\n", task.ID, task.Content, task.Category)
+			return nil
+		})
+		if err != nil {
+			log.Fatalf("agent loop: %v", err)
+		}
 
 	case "verify":
 		// Sprint 1: graph integrity verifier — read-only sanity checks.
