@@ -860,7 +860,7 @@ A single SQLite file with two (or three) tables. The schema lives in
 | Column          | SQLite type | Notes                                                 |
 |-----------------|-------------|-------------------------------------------------------|
 | `id`            | TEXT PK     | Stable identifier.                                    |
-| `category`      | TEXT        | One of `world`/`opinion`/`experience`/`observation`.  |
+| `category`      | TEXT        | One of the categories defined in `[schema] allowed_categories` (defaults: `world`/`opinion`/`experience`/`observation`). |
 | `content`       | TEXT        | Free text.                                            |
 | `embedding`     | BLOB        | `len(embedding) * 4` raw little-endian float32 bytes. |
 | `updated_at`    | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
@@ -880,7 +880,7 @@ the float32 stride does not change.
 |-----------------|-------------|-----------------------------------------------------|
 | `source_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
 | `target_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
-| `relation_type` | TEXT        | `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts` (canonical allowlist enforced by `filterRelations` in `extractor.go`). |
+| `relation_type` | TEXT        | Relation label from `[schema] allowed_relations` (defaults: `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts`, `blocked_by`, `recovers_via`). Unknown values are rejected with HTTP 422. |
 
 Composite PK `(source_id, target_id, relation_type)` means duplicate
 edges auto-dedupe on insert. There is no `weight` or timestamp column
