@@ -915,21 +915,11 @@ func TestRetrieveContextCompositeScorerReceivesCachedQueryNorm(t *testing.T) {
 }
 
 // TestCompositeScoreDirect unit-tests the closed-form numeric
-// surface behind the default scoring formula. The formula lives in
-// compositeScore(sim, recency, depth float32) and resolves the
-// package-level constants rankVectorWeight / rankRecencyWeight /
-// rankDepthPenaltyPerUnit — no magic numbers inside the helper
-// itself, so any future tweak to one of those constants propagates
-// here and these fixtures catch the change without having to
-// recompute fixtures in TestCompositeScorerDefaultDepthPenalty.
-//
-//	compositeScore(0.5, 1.0, 0) = 0.7*0.5 + 0.3*1.0 - 0.05*0
-//	                              = 0.35 + 0.30 - 0.00 = 0.65
-//	compositeScore(0.6, 1.0, 3) = 0.7*0.6 + 0.3*1.0 - 0.05*3
-//	                              = 0.42 + 0.30 - 0.15 = 0.57
-//	compositeScore(0.0, 1.0, 4) = 0.7*0.0 + 0.3*1.0 - 0.05*4
-//	                              = 0.00 + 0.30 - 0.20 = 0.10
+// surface behind the default scoring formula. Uses hardcoded default
+// weights (0.7/0.3/0.05) so the test catches any accidental drift in
+// the compositeScore helper itself.
 func TestCompositeScoreDirect(t *testing.T) {
+	w := RankingWeight{VectorWeight: 0.7, RecencyWeight: 0.3, DepthPenalty: 0.05}
 	cases := []struct {
 		name                string
 		sim, recency, depth float32
@@ -941,9 +931,9 @@ func TestCompositeScoreDirect(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := compositeScore(c.sim, c.recency, c.depth)
+			got := compositeScore(w, c.sim, c.recency, c.depth)
 			if !float32AlmostEqual(got, c.want) {
-				t.Errorf("compositeScore(%v, %v, %v) = %v, want %v (constants drift?)",
+				t.Errorf("compositeScore(%v, %v, %v) = %v, want %v",
 					c.sim, c.recency, c.depth, got, c.want)
 			}
 		})
@@ -980,7 +970,7 @@ func TestCompositeScorerNilMatchesDefault(t *testing.T) {
 	optsDefault := RetrieveContextOptions{
 		MaxDepth:        5,
 		QueryEmbedding:  []float32{1, 0, 0},
-		CompositeScorer: defaultCompositeScorer,
+		CompositeScorer: defaultCompositeScorer(RankingWeight{VectorWeight: 0.7, RecencyWeight: 0.3, DepthPenalty: 0.05}),
 	}
 
 	run := func(opts RetrieveContextOptions) *RetrievalResult {

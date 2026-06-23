@@ -170,6 +170,9 @@ func (s *Server) ReloadState(cfg *Config) {
 		validRelationTypes: rels,
 	})
 	s.worker.ReloadSchema(cfg.Schema)
+	// Sprint 5: also swap ranking weights and reranker on SIGHUP.
+	s.retrievalOpts.RankingWeight = cfg.Ranking
+	s.retrievalOpts.Reranker = cfg.NewReranker()
 }
 
 // decodeStrict parses JSON from an io.Reader into dst while rejecting
@@ -711,6 +714,7 @@ func (s *Server) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
 
 	opts := s.retrievalOpts
 	opts.QueryEmbedding = queryEmbedding
+	opts.QueryText = req.Query
 	opts.Ctx = r.Context()
 	opts.Explain = true
 

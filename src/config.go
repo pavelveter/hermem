@@ -66,7 +66,19 @@ type Config struct {
 	// world facts are permanent; observation nodes past ObservationTTL
 	// are flagged archived and excluded from graph walks.
 	Retention RetentionPolicy
-	Schema    SchemaConfig
+	// Ranking weights for the composite scorer. Populated from [ranking]
+	// config section. Zero values mean "use defaults" (0.7 / 0.3 / 0.05).
+	Ranking RankingWeight
+	// Reranker config for post-retrieval reordering. When RerankerProvider
+	// is empty, no reranker is used. Follows the same provider convention
+	// as embedder/extractor: "ollama" (cross-encoder /api/rerank),
+	// "openai" (chat-completion ranking).
+	RerankerProvider string
+	RerankerURL      string
+	RerankerModel    string
+	RerankerKey      string
+	RerankerTimeout  time.Duration
+	Schema           SchemaConfig
 }
 
 type SchemaConfig struct {
@@ -85,6 +97,16 @@ type RetentionPolicy struct {
 	ObservationTTL  time.Duration // observations older than this → archived
 	RunInterval     time.Duration // how often the GC loop fires
 	DeleteBatchSize int           // max nodes archived per cycle (0 = no limit)
+}
+
+// RankingWeight holds the three tunable parameters for the composite
+// ranker. Populated from the [ranking] config section. Any zero value
+// falls back to the default at point-of-use.
+type RankingWeight struct {
+	VectorWeight         float32
+	RecencyWeight        float32
+	DepthPenalty         float32
+	RecencyHalfLifeHours float32
 }
 
 // LoadConfig parses hermem.ini from `path` exactly as given — no
@@ -122,7 +144,14 @@ func LoadConfig(path string) (*Config, error) {
 			RunInterval:     1 * time.Hour,
 			DeleteBatchSize: 500,
 		},
-		Schema: defaultSchemaConfig(false),
+		Ranking: RankingWeight{
+			VectorWeight:         0.7,
+			RecencyWeight:        0.3,
+			DepthPenalty:         0.05,
+			RecencyHalfLifeHours: 720, // 30 days
+		},
+		RerankerTimeout: 30 * time.Second,
+		Schema:          defaultSchemaConfig(false),
 	}
 
 	f, err := os.Open(path)
@@ -261,6 +290,27 @@ func LoadConfig(path string) (*Config, error) {
 
 	cfg.EmbedderTimeout = getDuration("embedder", "timeout", cfg.EmbedderTimeout)
 	cfg.ExtractTimeout = getDuration("extraction", "timeout", cfg.ExtractTimeout)
+
+	// [ranking] section — tunable composite scorer weights
+	cfg.Ranking.VectorWeight = getFloat32("ranking", "vector_weight", cfg.Ranking.VectorWeight)
+	cfg.Ranking.RecencyWeight = getFloat32("ranking", "recency_weight", cfg.Ranking.RecencyWeight)
+	cfg.Ranking.DepthPenalty = getFloat32("ranking", "depth_penalty", cfg.Ranking.DepthPenalty)
+	cfg.Ranking.RecencyHalfLifeHours = getFloat32("ranking", "recency_half_life_hours", cfg.Ranking.RecencyHalfLifeHours)
+
+	// [reranker] section — optional post-retrieval reranker
+	if v, ok := getStr("reranker", "provider"); ok {
+		cfg.RerankerProvider = strings.ToLower(v)
+	}
+	if v, ok := getStr("reranker", "url"); ok {
+		cfg.RerankerURL = v
+	}
+	if v, ok := getStr("reranker", "model"); ok {
+		cfg.RerankerModel = v
+	}
+	if v, ok := getStr("reranker", "key"); ok {
+		cfg.RerankerKey = v
+	}
+	cfg.RerankerTimeout = getDuration("reranker", "timeout", cfg.RerankerTimeout)
 
 	cfg.ExtraCategories = getList("extraction", "extra_categories")
 	cfg.ExtraRelationTypes = getList("extraction", "extra_relation_types")
