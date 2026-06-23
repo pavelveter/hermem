@@ -63,8 +63,19 @@ func readInput() string {
 }
 
 func main() {
+	// --help / -h short-circuits before any DB work so a typo
+	// doesn't open a SQLite handle just to print the command list.
+	// Scans argv linearly (O(args)); args are typically <10 so the
+	// linear walk is cheaper than building a set.
+	for _, a := range os.Args[1:] {
+		if a == "--help" || a == "-h" {
+			printUsage(os.Stdout)
+			os.Exit(0)
+		}
+	}
+
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store            Store a fact (JSON on stdin)\n  search           Search memory (JSON on stdin)\n  query            Full pipeline: search + graph walk (JSON on stdin)\n  edge             Add an edge (JSON on stdin)\n  ingest           Ingest dialog (JSON on stdin)\n  task-status      Update task status (JSON on stdin)\n  task-executable  List executable tasks (JSON on stdin)\n  task-next        Alias for task-executable\n  task-list        List tasks with filters (JSON on stdin)\n  task-show        Show task + relations (JSON on stdin)\n  task-dep         Add/remove task dependency (JSON on stdin)\n  task-rollback    Find rollback task for failed task (JSON on stdin)\n  serve            Run HTTP server\n")
+		printUsage(os.Stderr)
 		os.Exit(1)
 	}
 
@@ -335,6 +346,42 @@ func main() {
 		}
 		fmt.Println(`{"status":"ok"}`)
 
+	case "task-create":
+		var req struct {
+			ID         string   `json:"id"`
+			Content    string   `json:"content"`
+			ContextIDs []string `json:"context_ids,omitempty"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.Content == "" {
+			log.Fatal("content required")
+		}
+		if req.ID == "" {
+			req.ID = fmt.Sprintf("task-%d", time.Now().UnixNano())
+		}
+		embedding, err := embedder.Embed(ctx, req.Content)
+		if err != nil {
+			log.Fatalf("Failed to embed: %v", err)
+		}
+		entity := Entity{ID: req.ID, Category: "task", Content: req.Content, Embedding: embedding}
+		if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
+			log.Fatalf("Failed to store: %v", err)
+		}
+		for _, cid := range req.ContextIDs {
+			if cid == "" {
+				continue
+			}
+			if err := AddEdge(db, req.ID, cid, "related_to"); err != nil {
+				slog.Error("failed to add context edge", "err", err, "from", req.ID, "to", cid)
+			}
+		}
+		if err := AutoLinkEdges(ctx, db, vi, embedder, req.ID, embedding); err != nil {
+			log.Fatalf("Failed to auto-link: %v", err)
+		}
+		fmt.Println(`{"status":"ok"}`)
+
 	case "task-rollback":
 		var req struct {
 			ID string `json:"id"`
@@ -383,6 +430,7 @@ func main() {
 		mux.HandleFunc("/task/list", srv.HandleTaskList)
 		mux.HandleFunc("/task/show", srv.HandleTaskShow)
 		mux.HandleFunc("/task/dep", srv.HandleTaskDep)
+		mux.HandleFunc("/task/create", srv.HandleTaskCreate)
 		mux.HandleFunc("/task/rollback", srv.HandleTaskRollback)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
