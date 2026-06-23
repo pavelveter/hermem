@@ -94,8 +94,8 @@ func isContradiction(existing, incoming string) bool {
 	}
 
 	// Check 2: sentiment-opposite pairs — direct lookup with inflected forms.
-	// TODO: add confidence comparison — when both sides have high confidence,
-	// keep both nodes instead of silently preferring one (see Phase 3 spec).
+	// Confidence comparison is handled by the caller (ProcessDialogWithProvenance)
+	// using highConfidenceThreshold to decide between keep-both vs archive-existing.
 	for w := range exWords {
 		if opp, ok := sentimentOpposites[w]; ok && inWords[opp] {
 			return true

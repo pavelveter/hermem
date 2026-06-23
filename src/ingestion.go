@@ -18,6 +18,13 @@ type IngestionWorker struct {
 	schema      SchemaConfig
 }
 
+// highConfidenceThreshold is the floor for treating an entity's confidence
+// as "reliable" during contradiction resolution. When an existing entity
+// with confidence below this threshold contradicts a freshly extracted
+// entity (confidence 1.0), the existing entity is archived in favor of
+// the new one rather than keeping both with a contradicts edge.
+const highConfidenceThreshold float32 = 0.7
+
 func NewIngestionWorker(db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, schema SchemaConfig) *IngestionWorker {
 	return &IngestionWorker{
 		db:          db,
@@ -127,20 +134,57 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 		// found by cosine similarity but the new statement contradicts
 		// the existing one (e.g. "likes Go" vs "hates Go"), keep both
 		// as separate nodes with a contradicts edge instead of merging.
+		//
+		// Phase 3: confidence comparison — when the existing entity
+		// has low confidence (< highConfidenceThreshold), archive it
+		// in favor of the freshly extracted incoming (confidence 1.0).
+		// When both are high-confidence, keep both with a contradicts edge.
 		if existing != nil && isContradiction(existing.Content, it.entity.Content) {
-			slog.Info("contradiction detected, creating separate node",
-				"event", "contradiction",
-				"existing_id", existing.ID,
-				"incoming_id", it.entity.ID,
-				"existing", truncate(existing.Content, 60),
-				"incoming", truncate(it.entity.Content, 60),
-			)
-			// Add a contradicts edge from the new entity to the existing one.
-			it.entity.Relations = append(it.entity.Relations, Relation{
-				TargetID:     existing.ID,
-				RelationType: "contradicts",
-			})
-			existing = nil // force create-new path, not merge
+			existingConf := existing.Confidence
+			if existingConf == 0 {
+				// Unset confidence (NULL→0, pre-migration entities):
+				// treat as reliable to avoid archiving all old entities
+				// on their first contradiction.
+				existingConf = 1.0
+			}
+
+			if existingConf >= highConfidenceThreshold {
+				// Both sides confident — keep both with contradicts edge.
+				slog.Info("contradiction detected, keeping both nodes",
+					"event", "contradiction",
+					"existing_id", existing.ID,
+					"incoming_id", it.entity.ID,
+					"existing_conf", existingConf,
+					"existing", truncate(existing.Content, 60),
+					"incoming", truncate(it.entity.Content, 60),
+				)
+				it.entity.Relations = append(it.entity.Relations, Relation{
+					TargetID:     existing.ID,
+					RelationType: "contradicts",
+				})
+				existing = nil // force create-new path, not merge
+			} else {
+				// Existing has low confidence — prefer incoming.
+				// Archive the existing entity and its vector index entry.
+				slog.Info("contradiction resolved: preferring incoming (higher confidence)",
+					"event", "contradiction_resolved",
+					"existing_id", existing.ID,
+					"incoming_id", it.entity.ID,
+					"existing_conf", existingConf,
+					"existing", truncate(existing.Content, 60),
+					"incoming", truncate(it.entity.Content, 60),
+				)
+				if _, err := w.db.ExecContext(ctx,
+					`UPDATE entities SET archived = 1 WHERE id = ?`,
+					existing.ID,
+				); err != nil {
+					slog.Warn("failed to archive low-confidence entity",
+						"entity_id", existing.ID, "err", err,
+					)
+				}
+				w.vi.Remove(ctx, []string{existing.ID})
+				existing = nil // create new node (no contradicts edge needed)
+			}
 		}
 
 		// Normalize before storing in vi: the index assumes unit

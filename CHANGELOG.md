@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Health levels** (Phase 6) — `/health/live` always returns 200 (liveness probe). `/health/ready` pings DB, returns 503 with per-dependency status if degraded (readiness probe).
 - **Vector index dedup** (Phase 5) — Removed `vec []float32` from `vectorEntry`; vectors live only in `flatMatrix`. ~50% RAM reduction on entries slice metadata.
 - **sync.Pool for search buffers** (Phase 5) — `dotPool` + `intBufPool` reuse dot-product and index buffers across `Search`/`SearchBatch`. Lower GC pressure on hot search paths.
+- **Contradiction detection** (Phase 3) — `isContradiction(existing, incoming)` heuristic (negation asymmetry, sentiment-opposite pairs via ~45 inflected-form antonym pairs). On contradiction: creates `contradicts` edge, forces separate node instead of merge. No LLM needed.
+- **Temporal memory retrieval** (Phase 10) — `RetrieveContextOptions.TimeFrom/TimeTo` filters CTE graph walk by `created_at` range; time filter in both anchor and recursive arms. `/query/temporal` endpoint + `temporal` CLI.
+- **Episodic memory** (Phase 10) — `sessions` + `conversations` tables via `004_episodic_sessions.sql` migration; `idx_entities_created_at` index. `/timeline[?limit=N]` endpoint + `timeline [limit]` CLI.
+- **Contradiction graph** (Phase 10) — `ContradictionPair` type (snake_case JSON); `GetContradictions(db, entityID)` bidirectional filter. `/contradictions[?id=X]` endpoint + `contradictions [entity_id]` CLI.
 
 ### Changed
 - `IngestionWorker` schema is now directly swappable (maps are immutable after construction).
