@@ -53,6 +53,15 @@ type EdgeRequest struct {
 	AutoCreate   bool   `json:"auto_create"`
 }
 
+type TaskStatusRequest struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type TaskExecutableResponse struct {
+	Tasks []Entity `json:"tasks"`
+}
+
 // ErrorResponse carries a human message plus an optional (code, field)
 // pair so clients can route the rejection without parsing prose. Both
 // optional fields are omitempty so non-strict errors (method-not-allowed,
@@ -339,6 +348,61 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req TaskStatusRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	if req.ID == "" || req.Status == "" {
+		writeError(w, http.StatusBadRequest, "id, status required")
+		return
+	}
+
+	if err := UpdateTaskStatus(s.db, req.ID, req.Status); err != nil {
+		incErr()
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	incTaskStatus()
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func (s *Server) HandleTaskExecutable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	goalID := r.URL.Query().Get("goal_id")
+
+	tasks, err := GetExecutableTasks(s.db, goalID)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if tasks == nil {
+		tasks = []Entity{}
+	}
+
+	incTaskExecutable()
+	writeJSON(w, http.StatusOK, TaskExecutableResponse{Tasks: tasks})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

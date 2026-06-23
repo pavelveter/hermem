@@ -599,9 +599,9 @@ func TestConfigAllowedCategoriesMergesDefaultsAndExtras(t *testing.T) {
 	if got["nonexistent"] {
 		t.Error("nonexistent present in AllowedCategories")
 	}
-	// Total size: 4 defaults + 2 extras = 6.
-	if len(got) != 6 {
-		t.Errorf("AllowedCategories size = %d, want 6 (4 defaults + 2 extras)", len(got))
+	// Total size: 5 defaults + 2 extras = 7.
+	if len(got) != 7 {
+		t.Errorf("AllowedCategories size = %d, want 7 (5 defaults + 2 extras)", len(got))
 	}
 }
 
@@ -625,8 +625,8 @@ func TestConfigAllowedRelationTypesMergesDefaultsAndExtras(t *testing.T) {
 	if got["nonexistent"] {
 		t.Error("nonexistent present in AllowedRelationTypes")
 	}
-	if len(got) != 9 {
-		t.Errorf("AllowedRelationTypes size = %d, want 9 (7 defaults + 2 extras)", len(got))
+	if len(got) != 11 {
+		t.Errorf("AllowedRelationTypes size = %d, want 11 (9 defaults + 2 extras)", len(got))
 	}
 }
 

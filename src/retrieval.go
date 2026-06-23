@@ -57,11 +57,11 @@ type rankedNode struct {
 //     includes UpdatedAt (recency input) and Category (informational
 //     only — default scorer does not weight by category).
 //   - nodeVec: the decoded `[]float32` for the row's embedding,
-//     precomputed once in the row-scan loop. nil when the row had
-//     no embedding bytes or the decode failed; custom scorers
-//     should treat nil as "no embedding signal available" rather
-//     than calling DecodeVector themselves (which would re-pay the
-//     decode cost the framework already paid).
+//     precomputed once in the row-scan loop. nil when the row has
+//     no embedding or the decode failed; custom scorers treat nil
+//     as "no embedding signal available" (this is the only embedding
+//     data path exposed to custom scorers — there is no raw-bytes
+//     fallback to re-decode from).
 //   - queryEmbedding: the user's original query vector (may be nil
 //     or empty when the caller asked for a recency-only ranking).
 //   - queryNorm: the precomputed L2 norm of queryEmbedding. 0 when
@@ -202,12 +202,15 @@ type RetrieveContextOptions struct {
 	// (rankVectorWeight*sim + rankRecencyWeight*recency -
 	// rankDepthPenaltyPerUnit*depth). Custom scorers receive the
 	// row's GraphNode (with Entity.UpdatedAt intact for recency),
-	// the decoded node embedding as nodeVec (the framework
-	// precomputed it once via DecodeVector so custom scorers don't
-	// pay the decode cost themselves), the query embedding, and
-	// the precomputed query norm (0 when QueryEmbedding is empty).
-	// See the CompositeScorer func-type comment for the full arg
-	// list and signature rationale.
+	// the decoded node embedding as nodeVec (precomputed once per
+	// row so callers don't pay a per-row DecodeVector cost), the
+	// user's query embedding, and the precomputed query norm
+	// (0 when QueryEmbedding is empty). Signature:
+	//
+	//	func(node GraphNode,
+	//	     nodeVec []float32,
+	//	     queryEmbedding []float32,
+	//	     queryNorm float32) float32
 	CompositeScorer CompositeScorer
 	// Ctx carries request-scoped values (request_id) through the
 	// retrieval pipeline for structured logging.
@@ -505,4 +508,124 @@ func writeBucket(sb *strings.Builder, heading string, facts []RetrievedFact) {
 		}
 	}
 	sb.WriteString("\n")
+}
+
+// GetExecutableTasks returns pending task nodes whose blocked_by
+// dependencies are all completed and whose own status is 'pending'.
+// When goalID is non-empty, the result is restricted to tasks
+// reachable from that goal via blocked_by edges (the goal's
+// transitive dependency tree). When goalID is empty, all leaf-ready
+// tasks across the entire graph are returned.
+//
+// The recursive CTE walks blocked_by edges starting from the goal
+// (or all pending tasks when goalID is empty), collecting every
+// task in the dependency tree. The outer filter then keeps only
+// pending tasks that have zero remaining blockers — tasks whose
+// every blocked_by target has status = 'completed'.
+func GetExecutableTasks(db *sql.DB, goalID string) ([]Entity, error) {
+	if goalID != "" {
+		return getExecutableTasksForGoal(db, goalID)
+	}
+	return getExecutableTasksGlobal(db)
+}
+
+func getExecutableTasksForGoal(db *sql.DB, goalID string) ([]Entity, error) {
+	query := `
+		WITH RECURSIVE dep_tree AS (
+			SELECT e.id, e.category, e.content, e.status, e.updated_at
+			FROM entities e
+			WHERE e.id = ? AND e.category = 'task' AND e.archived = 0
+
+			UNION ALL
+
+			SELECT e.id, e.category, e.content, e.status, e.updated_at
+			FROM dep_tree dt
+			JOIN edges ed ON ed.source_id = dt.id AND ed.relation_type = 'blocked_by'
+			JOIN entities e ON e.id = ed.target_id AND e.category = 'task' AND e.archived = 0
+		)
+		SELECT dt.id, dt.category, dt.content, dt.status, dt.updated_at
+		FROM dep_tree dt
+		WHERE dt.status = 'pending'
+		AND NOT EXISTS (
+			SELECT 1 FROM edges ed2
+			WHERE ed2.source_id = dt.id
+			AND ed2.relation_type = 'blocked_by'
+			AND EXISTS (
+				SELECT 1 FROM entities e3
+				WHERE e3.id = ed2.target_id
+				AND e3.status != 'completed'
+			)
+		)
+		ORDER BY dt.id
+	`
+
+	rows, err := db.Query(query, goalID)
+	if err != nil {
+		return nil, fmt.Errorf("get executable tasks for goal %s: %w", goalID, err)
+	}
+	defer rows.Close()
+
+	return scanTaskEntities(rows)
+}
+
+func getExecutableTasksGlobal(db *sql.DB) ([]Entity, error) {
+	query := `
+		SELECT e.id, e.category, e.content, e.status, e.updated_at
+		FROM entities e
+		WHERE e.category = 'task' AND e.status = 'pending' AND e.archived = 0
+		AND NOT EXISTS (
+			SELECT 1 FROM edges ed
+			WHERE ed.source_id = e.id
+			AND ed.relation_type = 'blocked_by'
+			AND EXISTS (
+				SELECT 1 FROM entities e2
+				WHERE e2.id = ed.target_id
+				AND e2.status != 'completed'
+			)
+		)
+		ORDER BY e.id
+	`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("get executable tasks: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTaskEntities(rows)
+}
+
+func scanTaskEntities(rows *sql.Rows) ([]Entity, error) {
+	var tasks []Entity
+	for rows.Next() {
+		var e Entity
+		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan executable task: %w", err)
+		}
+		tasks = append(tasks, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate executable tasks: %w", err)
+	}
+	return tasks, nil
+}
+
+// FindRollbackTask looks up the recovers_via edge from failedTaskID
+// and returns the target entity ID. Returns empty string and nil error
+// if no recovery arc is wired.
+func FindRollbackTask(db *sql.DB, failedTaskID string) (string, error) {
+	var targetID string
+	err := db.QueryRow(
+		`SELECT ed.target_id FROM edges ed
+		WHERE ed.source_id = ? AND ed.relation_type = 'recovers_via'
+		LIMIT 1`,
+		failedTaskID,
+	).Scan(&targetID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find rollback task: %w", err)
+	}
+	return targetID, nil
 }

@@ -64,7 +64,7 @@ func readInput() string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store    Store a fact (JSON on stdin)\n  search   Search memory (JSON on stdin)\n  query    Full pipeline: search + graph walk (JSON on stdin)\n  edge     Add an edge (JSON on stdin)\n  ingest   Ingest dialog (JSON on stdin)\n  serve    Run HTTP server\n")
+		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store         Store a fact (JSON on stdin)\n  search        Search memory (JSON on stdin)\n  query         Full pipeline: search + graph walk (JSON on stdin)\n  edge          Add an edge (JSON on stdin)\n  ingest        Ingest dialog (JSON on stdin)\n  task-status   Update task status (JSON on stdin)\n  task-executable  List executable tasks (JSON on stdin)\n  serve         Run HTTP server\n")
 		os.Exit(1)
 	}
 
@@ -214,6 +214,42 @@ func main() {
 		}
 		fmt.Println(`{"status":"ok"}`)
 
+	case "task-status":
+		var req struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.ID == "" || req.Status == "" {
+			log.Fatal("id, status required")
+		}
+		if err := UpdateTaskStatus(db, req.ID, req.Status); err != nil {
+			log.Fatalf("task status update failed: %v", err)
+		}
+		fmt.Println(`{"status":"ok"}`)
+
+	case "task-executable":
+		data := readInput()
+		if strings.TrimSpace(data) == "" {
+			data = "{}"
+		}
+		var req struct {
+			GoalID string `json:"goal_id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(data)), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		tasks, err := GetExecutableTasks(db, req.GoalID)
+		if err != nil {
+			log.Fatalf("failed to get executable tasks: %v", err)
+		}
+		if tasks == nil {
+			tasks = []Entity{}
+		}
+		json.NewEncoder(os.Stdout).Encode(TaskExecutableResponse{Tasks: tasks})
+
 	case "serve":
 		port := "8420"
 		if len(os.Args) > 2 {
@@ -240,6 +276,8 @@ func main() {
 		mux.HandleFunc("/ingest", srv.HandleIngest)
 		mux.HandleFunc("/query", srv.HandleQuery)
 		mux.HandleFunc("/edge", srv.HandleEdge)
+		mux.HandleFunc("/task/status", srv.HandleTaskStatus)
+		mux.HandleFunc("/task/executable", srv.HandleTaskExecutable)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 

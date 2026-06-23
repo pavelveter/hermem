@@ -444,6 +444,223 @@ func TestFormatContextMarkdownAllBucketsRender(t *testing.T) {
 	}
 }
 
+// ----- #20 task walk tests -------------------------------------------
+
+// TestGetExecutableTasksChain verifies the CTE task walk:
+// A blocks B, B blocks C (edges: B blocked_by A, C blocked_by B).
+// A has no blockers → initially executable. Complete A => B executable.
+// Complete B => C executable.
+func TestGetExecutableTasksChain(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "task-a", Category: "task", Content: "Step A", Embedding: []float32{1, 0, 0}},
+		{ID: "task-b", Category: "task", Content: "Step B", Embedding: []float32{0, 1, 0}},
+		{ID: "task-c", Category: "task", Content: "Step C", Embedding: []float32{0, 0, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+	}
+	// B blocked_by A, C blocked_by B.
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES
+		('task-b', 'task-a', 'blocked_by'),
+		('task-c', 'task-b', 'blocked_by')`); err != nil {
+		t.Fatalf("edges: %v", err)
+	}
+
+	// A has no blockers → executable; B blocked by A (pending); C blocked by B (pending).
+	exec, err := GetExecutableTasks(db, "")
+	if err != nil {
+		t.Fatalf("get executable: %v", err)
+	}
+	if len(exec) != 1 || exec[0].ID != "task-a" {
+		ids := make([]string, len(exec))
+		for i, e := range exec {
+			ids[i] = e.ID
+		}
+		t.Errorf("initial: executable = %v, want [task-a]", ids)
+	}
+
+	// Complete A → B should become executable.
+	if err := UpdateTaskStatus(db, "task-a", "completed"); err != nil {
+		t.Fatalf("complete A: %v", err)
+	}
+	exec, err = GetExecutableTasks(db, "")
+	if err != nil {
+		t.Fatalf("get executable after A done: %v", err)
+	}
+	if len(exec) != 1 || exec[0].ID != "task-b" {
+		ids := make([]string, len(exec))
+		for i, e := range exec {
+			ids[i] = e.ID
+		}
+		t.Errorf("after A completed: executable = %v, want [task-b]", ids)
+	}
+
+	// Complete B → C should become executable.
+	if err := UpdateTaskStatus(db, "task-b", "completed"); err != nil {
+		t.Fatalf("complete B: %v", err)
+	}
+	exec, err = GetExecutableTasks(db, "")
+	if err != nil {
+		t.Fatalf("get executable after B done: %v", err)
+	}
+	if len(exec) != 1 || exec[0].ID != "task-c" {
+		ids := make([]string, len(exec))
+		for i, e := range exec {
+			ids[i] = e.ID
+		}
+		t.Errorf("after B completed: executable = %v, want [task-c]", ids)
+	}
+}
+
+// TestGetExecutableTasksForGoal verifies the goal-scoped CTE walk:
+// only tasks reachable from the goal via blocked_by edges are returned.
+func TestGetExecutableTasksForGoal(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	// Chain 1: goal1 → blocked by X → blocked by Y
+	// Chain 2: goal2 → blocked by Z
+	for _, e := range []Entity{
+		{ID: "goal1", Category: "task", Content: "Goal 1", Embedding: []float32{1, 0}},
+		{ID: "task-x", Category: "task", Content: "Step X", Embedding: []float32{0, 1}},
+		{ID: "task-y", Category: "task", Content: "Step Y", Embedding: []float32{1, 1}},
+		{ID: "goal2", Category: "task", Content: "Goal 2", Embedding: []float32{0, 0}},
+		{ID: "task-z", Category: "task", Content: "Step Z", Embedding: []float32{1, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+	}
+	// goal1 blocked by X, X blocked by Y, goal2 blocked by Z.
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES
+		('goal1', 'task-x', 'blocked_by'),
+		('task-x', 'task-y', 'blocked_by'),
+		('goal2', 'task-z', 'blocked_by')`); err != nil {
+		t.Fatalf("edges: %v", err)
+	}
+
+	// With goal_id='goal1', dep_tree = {goal1, X, Y}.
+	// Y has no blockers → executable. X blocked by Y (pending) → not. goal1 blocked by X (pending) → not.
+	exec, err := GetExecutableTasks(db, "goal1")
+	if err != nil {
+		t.Fatalf("get executable for goal1: %v", err)
+	}
+	if len(exec) != 1 || exec[0].ID != "task-y" {
+		ids := make([]string, len(exec))
+		for i, e := range exec {
+			ids[i] = e.ID
+		}
+		t.Errorf("goal1 scoped executable = %v, want [task-y]", ids)
+	}
+
+	// With goal_id='goal2', dep_tree = {goal2, Z}. Z has no blockers → executable.
+	// Verify Y and X from goal1's tree do NOT appear.
+	exec, err = GetExecutableTasks(db, "goal2")
+	if err != nil {
+		t.Fatalf("get executable for goal2: %v", err)
+	}
+	if len(exec) != 1 || exec[0].ID != "task-z" {
+		ids := make([]string, len(exec))
+		for i, e := range exec {
+			ids[i] = e.ID
+		}
+		t.Errorf("goal2 scoped executable = %v, want [task-z]", ids)
+	}
+}
+
+// TestFindRollbackTask verifies recovers_via edge lookup.
+func TestFindRollbackTask(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "failed-step", Category: "task", Content: "Failed", Embedding: []float32{1, 0}},
+		{ID: "recovery-step", Category: "task", Content: "Recovery", Embedding: []float32{0, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+	}
+
+	// No edge yet — should return empty.
+	target, err := FindRollbackTask(db, "failed-step")
+	if err != nil {
+		t.Fatalf("find rollback: %v", err)
+	}
+	if target != "" {
+		t.Errorf("no edge: target = %q, want empty", target)
+	}
+
+	// Add recovers_via edge.
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('failed-step', 'recovery-step', 'recovers_via')`); err != nil {
+		t.Fatalf("edge: %v", err)
+	}
+	target, err = FindRollbackTask(db, "failed-step")
+	if err != nil {
+		t.Fatalf("find rollback after edge: %v", err)
+	}
+	if target != "recovery-step" {
+		t.Errorf("target = %q, want 'recovery-step'", target)
+	}
+
+	// Non-existent task — should return empty.
+	target, err = FindRollbackTask(db, "nonexistent")
+	if err != nil {
+		t.Fatalf("find rollback nonexistent: %v", err)
+	}
+	if target != "" {
+		t.Errorf("nonexistent target = %q, want empty", target)
+	}
+}
+
+// TestUpdateTaskStatus validates status transitions and error cases.
+func TestUpdateTaskStatus(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	if err := StoreEntityWithEmbedding(db, vi, Entity{
+		ID: "t1", Category: "task", Content: "do stuff", Embedding: []float32{1, 0},
+	}); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+
+	// Valid status.
+	if err := UpdateTaskStatus(db, "t1", "running"); err != nil {
+		t.Fatalf("update running: %v", err)
+	}
+	st, err := GetTaskStatus(db, "t1")
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if st != "running" {
+		t.Errorf("status = %q, want 'running'", st)
+	}
+
+	// Invalid status.
+	if err := UpdateTaskStatus(db, "t1", "bogus"); err == nil {
+		t.Error("expected error for invalid status")
+	}
+
+	// Non-existent task.
+	if err := UpdateTaskStatus(db, "nonexistent", "pending"); err == nil {
+		t.Error("expected error for non-existent task")
+	}
+
+	// Non-task entity.
+	if err := StoreEntityWithEmbedding(db, vi, Entity{
+		ID: "w1", Category: "world", Content: "a fact", Embedding: []float32{1, 0},
+	}); err != nil {
+		t.Fatalf("store world: %v", err)
+	}
+	if err := UpdateTaskStatus(db, "w1", "completed"); err == nil {
+		t.Error("expected error when updating non-task entity")
+	}
+}
+
 // ----- helpers for #16/#17 --------------------------------------------
 
 // float32AlmostEqual reports whether a and b are within ε of each

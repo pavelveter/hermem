@@ -22,6 +22,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 | `opinion` | User preferences, beliefs, subjective views |
 | `experience` | Past events, interactions, what happened |
 | `observation` | Patterns noticed, anomalies, derived insights |
+| `task` | Actionable work items, steps, to-dos with `pending|running|completed|failed` |
 
 ## Features
 
@@ -37,6 +38,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Metrics** — `/metrics` endpoint via `expvar`
 - **Graceful shutdown** — drains in-flight requests on SIGINT/SIGTERM
 - **Strict JSON validation** — unknown fields rejected with structured errors
+- **State-on-Graph (Batch 9)** — `task` entities with `status`, `blocked_by` / `recovers_via` relations, CTE-based executable-task walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
 - **Docker** — multi-stage build, non-root user
 
 ## Quick Start
@@ -482,9 +484,10 @@ as `INSERT OR IGNORE` edges (composite-PK dedup on
 ### Extraction validation
 
 `OllamaLLMExtractor` enforces a hardcoded allowlist of categories
-(`world` / `opinion` / `experience` / `observation`) and relation
-types (`prefers` / `uses` / `mentions` / `related_to` / `part_of` /
-`causes` / `contradicts`) at parse time via `filterEntities` and
+(`world` / `opinion` / `experience` / `observation` / `task`) and
+relation types (`prefers` / `uses` / `mentions` / `related_to` /
+`part_of` / `causes` / `contradicts` / `blocked_by` /
+`recovers_via`) at parse time via `filterEntities` and
 `filterRelations`. Out-of-allowlist values are silently dropped
 rather than aborting the ingest, so a partially-correct LLM output
 still yields graph-safe entities. The 5xx-retry / 4xx-no-retry path
