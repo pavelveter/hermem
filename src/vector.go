@@ -32,10 +32,17 @@ type SearchResult struct {
 	Similarity float32 `json:"similarity"`
 }
 
+// BulkPair is an ID+vector pair for batch ingestion.
+type BulkPair struct {
+	ID  string
+	Vec []float32
+}
+
 type VectorIndex interface {
 	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
 	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
 	Store(ctx context.Context, id string, vec []float32) error
+	BulkStore(ctx context.Context, pairs []BulkPair) error
 	Remove(ctx context.Context, ids []string) error
 }
 
@@ -59,8 +66,13 @@ func newVectorIndex(backend string, db *sql.DB, dim int) VectorIndex {
 }
 
 func SearchByVector(db *sql.DB, vi VectorIndex, queryEmbedding []float32, topK int) ([]SearchResult, error) {
+	_, span := Tracer().Start(context.Background(), "search.by_vector")
+	defer span.End()
+
 	if len(queryEmbedding) == 0 {
-		return nil, fmt.Errorf("empty query embedding")
+		err := fmt.Errorf("empty query embedding")
+		span.RecordError(err)
+		return nil, err
 	}
 
 	// Clamp topK to the SQLite IN-clause ceiling. SQLite's default

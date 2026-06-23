@@ -641,6 +641,15 @@ func main() {
 		if len(os.Args) > 2 {
 			port = os.Args[2]
 		}
+
+		// Phase 6: OpenTelemetry tracing setup
+		traceShutdown, err := InitTracing()
+		if err != nil {
+			slog.Warn("tracing init failed, continuing without traces", "event", "tracing_init_error", "error", err)
+		} else {
+			defer traceShutdown()
+		}
+
 		srv := NewServer(db, vi, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,

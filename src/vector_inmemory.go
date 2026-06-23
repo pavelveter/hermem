@@ -226,9 +226,27 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	idx.storeLocked(id, vec)
+	return nil
+}
 
-	// vec is already normalized by StoreEntityWithEmbedding caller.
-	// Only flatMatrix stores the vector; entries tracks id+norm only.
+// BulkStore adds multiple vectors in a single lock acquisition.
+// Useful during batch ingestion — avoids N individual Store calls
+// each with their own lock/unlock cycle.
+func (idx *InMemoryVectorIndex) BulkStore(_ context.Context, pairs []BulkPair) error {
+	if len(pairs) == 0 {
+		return nil
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	for _, p := range pairs {
+		idx.storeLocked(p.ID, p.Vec)
+	}
+	return nil
+}
+
+// storeLocked is the inner Store logic; caller must hold idx.mu.
+func (idx *InMemoryVectorIndex) storeLocked(id string, vec []float32) {
 	entry := vectorEntry{id: id, norm: 1}
 	if i, ok := idx.byID[id]; ok {
 		idx.entries[i] = entry
@@ -241,7 +259,6 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 		}
 		idx.flatMatrix = append(idx.flatMatrix, vec...)
 	}
-	return nil
 }
 
 func (idx *InMemoryVectorIndex) Remove(_ context.Context, ids []string) error {

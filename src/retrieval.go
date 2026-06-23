@@ -201,6 +201,14 @@ func resolvedRankingWeight(w RankingWeight) RankingWeight {
 }
 
 func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
+	parentCtx := opts.Ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, span := Tracer().Start(parentCtx, "retrieval.graph_walk")
+	defer span.End()
+	opts.Ctx = ctx
+
 	if len(seedIDs) == 0 {
 		return &RetrievalResult{}, nil
 	}
