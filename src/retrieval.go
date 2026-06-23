@@ -72,19 +72,26 @@ func defaultCompositeScorer(w RankingWeight) CompositeScorer {
 				recency = float32(math.Exp(-float64(hoursOld) / float64(w.RecencyHalfLifeHours)))
 			}
 		}
-		return compositeScore(w, sim, recency, float32(node.Depth))
+		// Temporal reranking: boost facts created near a reference time.
+		// Uses the same exponential decay formula as recency but applied
+		// to created_at rather than updated_at.
+		var temporalBoost float32 = 0
+		if node.Entity.CreatedAt != nil && !node.Entity.CreatedAt.IsZero() && w.TemporalHalfLifeHours > 0 {
+			hoursOld := float32(time.Since(*node.Entity.CreatedAt).Hours())
+			temporalBoost = float32(math.Exp(-float64(hoursOld) / float64(w.TemporalHalfLifeHours)))
+		}
+		return compositeScore(w, sim, recency, temporalBoost, float32(node.Depth))
 	}
 }
 
-// compositeScore combines vector similarity and recency decay with a
-// per-depth penalty using the config-driven RankingWeight values.
-// Formula: w.VectorWeight*sim + w.RecencyWeight*recency - w.DepthPenalty*depth.
-//
-// Pure helper: no logging, no I/O, no allocations, deterministic
-// for any sane inputs.
-func compositeScore(w RankingWeight, sim, recency, depth float32) float32 {
+// compositeScore combines vector similarity, recency decay, temporal
+// boost, and a per-depth penalty using the config-driven RankingWeight
+// values. Formula: VectorWeight*sim + RecencyWeight*recency +
+// TemporalWeight*temporalBoost - DepthPenalty*depth.
+func compositeScore(w RankingWeight, sim, recency, temporalBoost, depth float32) float32 {
 	return w.VectorWeight*sim +
-		w.RecencyWeight*recency -
+		w.RecencyWeight*recency +
+		w.TemporalWeight*temporalBoost -
 		w.DepthPenalty*depth
 }
 
@@ -201,6 +208,9 @@ func resolvedRankingWeight(w RankingWeight) RankingWeight {
 	}
 	if w.RecencyHalfLifeHours == 0 {
 		w.RecencyHalfLifeHours = 720
+	}
+	if w.TemporalHalfLifeHours == 0 {
+		w.TemporalHalfLifeHours = 720
 	}
 	return w
 }
