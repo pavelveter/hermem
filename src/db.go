@@ -18,7 +18,7 @@ type Entity struct {
 	Content        string    `json:"content"`
 	Embedding      []float32 `json:"embedding,omitempty"`
 	UpdatedAt      time.Time `json:"updated_at"`
-	LastAccessedAt time.Time `json:"last_accessed_at"`
+	LastAccessedAt *time.Time `json:"last_accessed_at"`
 	Archived       bool      `json:"archived"`
 	Status         string    `json:"status,omitempty"`
 }
@@ -135,7 +135,7 @@ func migrateSchema(db *sql.DB) error {
 		name string
 		sql  string
 	}{
-		{"last_accessed_at", `ALTER TABLE entities ADD COLUMN last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP`},
+		{"last_accessed_at", `ALTER TABLE entities ADD COLUMN last_accessed_at DATETIME`},
 		{"archived", `ALTER TABLE entities ADD COLUMN archived INTEGER DEFAULT 0`},
 		{"status", `ALTER TABLE entities ADD COLUMN status TEXT DEFAULT 'pending'`},
 	}
@@ -143,6 +143,12 @@ func migrateSchema(db *sql.DB) error {
 		if _, err := db.Exec(m.sql); err != nil {
 			// Column already exists — ignore
 		}
+	}
+	// Backfill last_accessed_at for rows added before the column existed.
+	// SQLite does not allow non-constant defaults in ALTER TABLE ADD COLUMN,
+	// so we add the column nullable and populate it in a separate pass.
+	if _, err := db.Exec("UPDATE entities SET last_accessed_at = updated_at WHERE last_accessed_at IS NULL"); err != nil {
+		return fmt.Errorf("backfill last_accessed_at: %w", err)
 	}
 	if err := migrateCategoryCheck(db); err != nil {
 		return err
@@ -299,4 +305,80 @@ func GetTaskStatus(db *sql.DB, id string) (string, error) {
 		return "", fmt.Errorf("get task status: %w", err)
 	}
 	return status, nil
+}
+
+// queryEdges runs a query and scans all rows into an Edge slice.
+func queryEdges(db *sql.DB, query string, args ...interface{}) ([]Edge, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Edge
+	for rows.Next() {
+		var ed Edge
+		if err := rows.Scan(&ed.SourceID, &ed.TargetID, &ed.RelationType); err != nil {
+			return nil, fmt.Errorf("scan edge: %w", err)
+		}
+		out = append(out, ed)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate edges: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteEdge removes a single edge row.
+func DeleteEdge(db *sql.DB, src, dst, rel string) error {
+	_, err := db.Exec("DELETE FROM edges WHERE source_id = ? AND target_id = ? AND relation_type = ?", src, dst, rel)
+	if err != nil {
+		return fmt.Errorf("delete edge: %w", err)
+	}
+	return nil
+}
+
+// ListTasks returns task entities filtered by optional status and
+// optional goal subtree. goalID scopes the result to the blocked_by
+// dependency tree rooted at the given goal.
+func ListTasks(db *sql.DB, status, goalID string) ([]Entity, error) {
+	var wheres []string
+	var args []interface{}
+	wheres = append(wheres, "e.category = 'task' AND e.archived = 0")
+	if status != "" {
+		wheres = append(wheres, "e.status = ?")
+		args = append(args, status)
+	}
+	if goalID != "" {
+		wheres = append(wheres, "e.id IN (WITH RECURSIVE subtree AS (SELECT id FROM entities WHERE id = ? AND category = 'task' AND archived = 0 UNION ALL SELECT e.id FROM subtree s JOIN edges ed ON ed.target_id = s.id AND ed.relation_type = 'blocked_by' JOIN entities e ON e.id = ed.source_id AND e.category = 'task' AND e.archived = 0) SELECT id FROM subtree)")
+		args = append(args, goalID)
+	}
+	query := "SELECT e.id, e.category, e.content, e.status, e.updated_at FROM entities e WHERE " + strings.Join(wheres, " AND ") + " ORDER BY e.id"
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list tasks: %w", err)
+	}
+	defer rows.Close()
+	return scanTaskEntities(rows)
+}
+
+// GetTaskWithRelations returns the task entity plus its blocked_by
+// and recovers_via outgoing edges.
+func GetTaskWithRelations(db *sql.DB, id string) (Entity, []Edge, []Edge, error) {
+	var e Entity
+	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category = 'task'", id).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return Entity{}, nil, nil, fmt.Errorf("task not found: %s", id)
+	}
+	if err != nil {
+		return Entity{}, nil, nil, fmt.Errorf("get task: %w", err)
+	}
+	blocked, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = 'blocked_by'", id)
+	if err != nil {
+		return Entity{}, nil, nil, err
+	}
+	recovers, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = 'recovers_via'", id)
+	if err != nil {
+		return Entity{}, nil, nil, err
+	}
+	return e, blocked, recovers, nil
 }

@@ -47,6 +47,16 @@ func setupTestServer(t *testing.T) *httptest.Server {
 			srv.HandleTaskStatus(w, r)
 		case "/task/executable":
 			srv.HandleTaskExecutable(w, r)
+		case "/task/next":
+			srv.HandleTaskExecutable(w, r)
+		case "/task/list":
+			srv.HandleTaskList(w, r)
+		case "/task/show":
+			srv.HandleTaskShow(w, r)
+		case "/task/dep":
+			srv.HandleTaskDep(w, r)
+		case "/task/rollback":
+			srv.HandleTaskRollback(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -452,7 +462,228 @@ func TestServerTaskExecutableMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// ----- /store method gate --------------------------------------------
+// ----- /task/next ------------------------------------------------------
+
+func TestServerTaskNext(t *testing.T) {
+	srv := setupTestServer(t)
+	for _, body := range []string{
+		`{"id":"na","category":"task","content":"A"}`,
+		`{"id":"nb","category":"task","content":"B"}`,
+	} {
+		doPost(t, srv.URL, "/store", body).Body.Close()
+	}
+	doPost(t, srv.URL, "/edge", `{"source_id":"nb","target_id":"na","relation_type":"blocked_by"}`).Body.Close()
+	resp := doPost(t, srv.URL, "/task/next", `{}`)
+	defer resp.Body.Close()
+	var result TaskExecutableResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "na" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("task/next = %v, want [na]", ids)
+	}
+}
+func TestServerTaskNextMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/next", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ----- /task/list ------------------------------------------------------
+
+func TestServerTaskList(t *testing.T) {
+	srv := setupTestServer(t)
+	for _, body := range []string{
+		`{"id":"t1","category":"task","content":"A"}`,
+		`{"id":"t2","category":"task","content":"B"}`,
+	} {
+		doPost(t, srv.URL, "/store", body).Body.Close()
+	}
+	doPost(t, srv.URL, "/task/status", `{"id":"t1","status":"completed"}`).Body.Close()
+
+	resp := doPost(t, srv.URL, "/task/list", `{}`)
+	defer resp.Body.Close()
+	var result TaskExecutableResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 2 {
+		t.Errorf("list all = %d, want 2", len(result.Tasks))
+	}
+
+	resp = doPost(t, srv.URL, "/task/list", `{"status":"pending"}`)
+	defer resp.Body.Close()
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "t2" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("list pending = %v, want [t2]", ids)
+	}
+
+	resp = doPost(t, srv.URL, "/task/list", `{"status":"completed"}`)
+	defer resp.Body.Close()
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Tasks) != 1 || result.Tasks[0].ID != "t1" {
+		ids := make([]string, len(result.Tasks))
+		for i, e := range result.Tasks {
+			ids[i] = e.ID
+		}
+		t.Errorf("list completed = %v, want [t1]", ids)
+	}
+}
+func TestServerTaskListMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/list", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ----- /task/show ------------------------------------------------------
+
+func TestServerTaskShow(t *testing.T) {
+	srv := setupTestServer(t)
+	doPost(t, srv.URL, "/store", `{"id":"t1","category":"task","content":"A"}`).Body.Close()
+	doPost(t, srv.URL, "/store", `{"id":"t2","category":"task","content":"B"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"t1","target_id":"t2","relation_type":"blocked_by"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"t1","target_id":"t2","relation_type":"recovers_via"}`).Body.Close()
+
+	resp := doPost(t, srv.URL, "/task/show", `{"id":"t1"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("show: status = %d", resp.StatusCode)
+	}
+	var result TaskShowResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result.Entity.ID != "t1" {
+		t.Errorf("entity id = %q, want t1", result.Entity.ID)
+	}
+	if len(result.BlockedBy) != 1 || result.BlockedBy[0].TargetID != "t2" {
+		t.Errorf("blocked_by = %+v, want [t2]", result.BlockedBy)
+	}
+	if len(result.RecoversVia) != 1 || result.RecoversVia[0].TargetID != "t2" {
+		t.Errorf("recovers_via = %+v, want [t2]", result.RecoversVia)
+	}
+
+	resp = doPost(t, srv.URL, "/task/show", `{"id":"nope"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("missing: status = %d, want 400", resp.StatusCode)
+	}
+}
+func TestServerTaskShowMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/show", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ----- /task/dep -------------------------------------------------------
+
+func TestServerTaskDep(t *testing.T) {
+	srv := setupTestServer(t)
+	doPost(t, srv.URL, "/store", `{"id":"d1","category":"task","content":"X"}`).Body.Close()
+	doPost(t, srv.URL, "/store", `{"id":"d2","category":"task","content":"Y"}`).Body.Close()
+
+	resp := doPost(t, srv.URL, "/task/dep", `{"source_id":"d1","target_id":"d2","add":true}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("add dep: status = %d", resp.StatusCode)
+	}
+
+	resp = doPost(t, srv.URL, "/task/dep", `{"source_id":"d1","target_id":"d2","add":false}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("remove dep: status = %d", resp.StatusCode)
+	}
+}
+func TestServerTaskDepMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/dep", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ----- /task/rollback --------------------------------------------------
+
+func TestServerTaskRollback(t *testing.T) {
+	srv := setupTestServer(t)
+	doPost(t, srv.URL, "/store", `{"id":"fail","category":"task","content":"F"}`).Body.Close()
+	doPost(t, srv.URL, "/store", `{"id":"fix","category":"task","content":"R"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"fail","target_id":"fix","relation_type":"recovers_via"}`).Body.Close()
+
+	resp := doPost(t, srv.URL, "/task/rollback", `{"id":"fail"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("rollback: status = %d", resp.StatusCode)
+	}
+	var result TaskRollbackResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result.RollbackTaskID != "fix" {
+		t.Errorf("rollback_id = %q, want fix", result.RollbackTaskID)
+	}
+
+	resp = doPost(t, srv.URL, "/task/rollback", `{"id":"none"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("missing rollback: status = %d, want 200", resp.StatusCode)
+	}
+}
+func TestServerTaskRollbackMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/rollback", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ----- /store method gate ----------------------------------------------
 
 func TestServerStoreMethodNotAllowed(t *testing.T) {
 	srv := setupTestServer(t)

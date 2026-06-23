@@ -64,7 +64,7 @@ func readInput() string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store         Store a fact (JSON on stdin)\n  search        Search memory (JSON on stdin)\n  query         Full pipeline: search + graph walk (JSON on stdin)\n  edge          Add an edge (JSON on stdin)\n  ingest        Ingest dialog (JSON on stdin)\n  task-status   Update task status (JSON on stdin)\n  task-executable  List executable tasks (JSON on stdin)\n  serve         Run HTTP server\n")
+		fmt.Fprintf(os.Stderr, "Usage: hermem <command> [args]\n\nCommands:\n  store            Store a fact (JSON on stdin)\n  search           Search memory (JSON on stdin)\n  query            Full pipeline: search + graph walk (JSON on stdin)\n  edge             Add an edge (JSON on stdin)\n  ingest           Ingest dialog (JSON on stdin)\n  task-status      Update task status (JSON on stdin)\n  task-executable  List executable tasks (JSON on stdin)\n  task-next        Alias for task-executable\n  task-list        List tasks with filters (JSON on stdin)\n  task-show        Show task + relations (JSON on stdin)\n  task-dep         Add/remove task dependency (JSON on stdin)\n  task-rollback    Find rollback task for failed task (JSON on stdin)\n  serve            Run HTTP server\n")
 		os.Exit(1)
 	}
 
@@ -250,6 +250,107 @@ func main() {
 		}
 		json.NewEncoder(os.Stdout).Encode(TaskExecutableResponse{Tasks: tasks})
 
+	case "task-next":
+		data := readInput()
+		if strings.TrimSpace(data) == "" {
+			data = "{}"
+		}
+		var req struct {
+			GoalID string `json:"goal_id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(data)), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		tasks, err := GetExecutableTasks(db, req.GoalID)
+		if err != nil {
+			log.Fatalf("failed to get next tasks: %v", err)
+		}
+		if tasks == nil {
+			tasks = []Entity{}
+		}
+		json.NewEncoder(os.Stdout).Encode(TaskExecutableResponse{Tasks: tasks})
+
+	case "task-list":
+		var req struct {
+			Status string `json:"status"`
+			GoalID string `json:"goal_id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		tasks, err := ListTasks(db, req.Status, req.GoalID)
+		if err != nil {
+			log.Fatalf("failed to list tasks: %v", err)
+		}
+		if tasks == nil {
+			tasks = []Entity{}
+		}
+		json.NewEncoder(os.Stdout).Encode(TaskExecutableResponse{Tasks: tasks})
+
+	case "task-show":
+		var req struct {
+			ID string `json:"id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.ID == "" {
+			log.Fatal("id required")
+		}
+		entity, blocked, recovers, err := GetTaskWithRelations(db, req.ID)
+		if err != nil {
+			log.Fatalf("task show failed: %v", err)
+		}
+		json.NewEncoder(os.Stdout).Encode(TaskShowResponse{Entity: entity, BlockedBy: blocked, RecoversVia: recovers})
+
+	case "task-dep":
+		var req struct {
+			SourceID     string `json:"source_id"`
+			TargetID     string `json:"target_id"`
+			RelationType string `json:"relation_type"`
+			Add          bool   `json:"add"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.SourceID == "" || req.TargetID == "" {
+			log.Fatal("source_id, target_id required")
+		}
+		rel := req.RelationType
+		if rel == "" {
+			rel = "blocked_by"
+		}
+		validRels := cfg.AllowedRelationTypes()
+		if !validRels[rel] {
+			log.Fatalf("invalid relation_type: %s", rel)
+		}
+		if req.Add {
+			if err := AddEdge(db, req.SourceID, req.TargetID, rel); err != nil {
+				log.Fatalf("failed to add dependency: %v", err)
+			}
+		} else {
+			if err := DeleteEdge(db, req.SourceID, req.TargetID, rel); err != nil {
+				log.Fatalf("failed to remove dependency: %v", err)
+			}
+		}
+		fmt.Println(`{"status":"ok"}`)
+
+	case "task-rollback":
+		var req struct {
+			ID string `json:"id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.ID == "" {
+			log.Fatal("id required")
+		}
+		rollbackID, err := FindRollbackTask(db, req.ID)
+		if err != nil {
+			log.Fatalf("failed to find rollback task: %v", err)
+		}
+		json.NewEncoder(os.Stdout).Encode(TaskRollbackResponse{RollbackTaskID: rollbackID})
+
 	case "serve":
 		port := "8420"
 		if len(os.Args) > 2 {
@@ -278,6 +379,11 @@ func main() {
 		mux.HandleFunc("/edge", srv.HandleEdge)
 		mux.HandleFunc("/task/status", srv.HandleTaskStatus)
 		mux.HandleFunc("/task/executable", srv.HandleTaskExecutable)
+		mux.HandleFunc("/task/next", srv.HandleTaskExecutable)
+		mux.HandleFunc("/task/list", srv.HandleTaskList)
+		mux.HandleFunc("/task/show", srv.HandleTaskShow)
+		mux.HandleFunc("/task/dep", srv.HandleTaskDep)
+		mux.HandleFunc("/task/rollback", srv.HandleTaskRollback)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 
