@@ -65,8 +65,6 @@ func readInput() string {
 func main() {
 	// --help / -h short-circuits before any DB work so a typo
 	// doesn't open a SQLite handle just to print the command list.
-	// Scans argv linearly (O(args)); args are typically <10 so the
-	// linear walk is cheaper than building a set.
 	for _, a := range os.Args[1:] {
 		if a == "--help" || a == "-h" {
 			printUsage(os.Stdout)
@@ -100,6 +98,10 @@ func main() {
 	embedder := cfg.NewEmbedder()
 	extractor := cfg.NewExtractor()
 
+	// Sprint 1: Runtime struct is defined in runtime.go for future
+	// multi-tenant/library use. For now, per-command access goes
+	// through local db/vi/cfg.Schema references.
+
 	cmd := os.Args[1]
 	ctx := context.Background()
 
@@ -128,7 +130,7 @@ func main() {
 			}
 			entity.Embedding = embedding
 		}
-		if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, cfg.Schema, entity); err != nil {
 			log.Fatalf("Failed to store: %v", err)
 		}
 		if err := AutoLinkEdges(ctx, db, vi, embedder, entity.ID, entity.Embedding); err != nil {
@@ -194,9 +196,6 @@ func main() {
 		if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
 			log.Fatal("source_id, target_id, relation_type required")
 		}
-		// Build the merged relations map at request time so the CLI
-		// handler picks up any operator-configured extras via Config,
-		// matching the runtime filter the ingester applies.
 		if err := cfg.ValidateRelation(req.RelationType); err != nil {
 			log.Fatalf("invalid request: %v", err)
 		}
@@ -221,7 +220,7 @@ func main() {
 		if req.Dialog == "" {
 			log.Fatal("dialog required")
 		}
-		worker := NewIngestionWorker(db, vi, extractor, embedder, cfg.DedupThreshold)
+		worker := NewIngestionWorker(db, vi, extractor, embedder, cfg.DedupThreshold, cfg.Schema)
 		if err := worker.ProcessDialog(ctx, req.Dialog); err != nil {
 			log.Fatalf("Ingest failed: %v", err)
 		}
@@ -238,7 +237,7 @@ func main() {
 		if req.ID == "" || req.Status == "" {
 			log.Fatal("id, status required")
 		}
-		if err := UpdateTaskStatus(db, req.ID, req.Status); err != nil {
+		if err := UpdateTaskStatus(db, cfg.Schema, req.ID, req.Status); err != nil {
 			log.Fatalf("task status update failed: %v", err)
 		}
 		fmt.Println(`{"status":"ok"}`)
@@ -254,7 +253,7 @@ func main() {
 		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(data)), &req); !ok {
 			log.Fatalf("invalid request: %s", msg)
 		}
-		tasks, err := GetExecutableTasks(db, req.GoalID)
+		tasks, err := GetExecutableTasks(db, cfg.Schema, req.GoalID)
 		if err != nil {
 			log.Fatalf("failed to get executable tasks: %v", err)
 		}
@@ -274,7 +273,7 @@ func main() {
 		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(data)), &req); !ok {
 			log.Fatalf("invalid request: %s", msg)
 		}
-		tasks, err := GetExecutableTasks(db, req.GoalID)
+		tasks, err := GetExecutableTasks(db, cfg.Schema, req.GoalID)
 		if err != nil {
 			log.Fatalf("failed to get next tasks: %v", err)
 		}
@@ -291,7 +290,7 @@ func main() {
 		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
 			log.Fatalf("invalid request: %s", msg)
 		}
-		tasks, err := ListTasks(db, req.Status, req.GoalID)
+		tasks, err := ListTasks(db, cfg.Schema, req.Status, req.GoalID)
 		if err != nil {
 			log.Fatalf("failed to list tasks: %v", err)
 		}
@@ -310,7 +309,7 @@ func main() {
 		if req.ID == "" {
 			log.Fatal("id required")
 		}
-		entity, blocked, recovers, err := GetTaskWithRelations(db, req.ID)
+		entity, blocked, recovers, err := GetTaskWithRelations(db, cfg.Schema, req.ID)
 		if err != nil {
 			log.Fatalf("task show failed: %v", err)
 		}
@@ -358,7 +357,7 @@ func main() {
 		if req.ID != "" {
 			req.GoalID = req.ID
 		}
-		nodes, err := GetTaskTree(db, req.GoalID)
+		nodes, err := GetTaskTree(db, cfg.Schema, req.GoalID)
 		if err != nil {
 			log.Fatalf("failed to get task tree: %v", err)
 		}
@@ -388,7 +387,7 @@ func main() {
 			log.Fatal("no stateful category configured")
 		}
 		entity := Entity{ID: req.ID, Category: category, Content: req.Content, Embedding: embedding}
-		if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, cfg.Schema, entity); err != nil {
 			log.Fatalf("Failed to store: %v", err)
 		}
 		for _, cid := range req.ContextIDs {
@@ -414,11 +413,22 @@ func main() {
 		if req.ID == "" {
 			log.Fatal("id required")
 		}
-		rollbackID, err := FindRollbackTask(db, req.ID)
+		rollbackID, err := FindRollbackTask(db, cfg.Schema, req.ID)
 		if err != nil {
 			log.Fatalf("failed to find rollback task: %v", err)
 		}
 		json.NewEncoder(os.Stdout).Encode(TaskRollbackResponse{RollbackTaskID: rollbackID})
+
+	case "verify":
+		// Sprint 1: graph integrity verifier — read-only sanity checks.
+		report, err := VerifyGraph(db, cfg.Schema, cfg.VectorDim)
+		if err != nil {
+			log.Fatalf("verify failed: %v", err)
+		}
+		fmt.Print(report.String())
+		if !report.Pass() {
+			os.Exit(1)
+		}
 
 	case "serve":
 		port := "8420"

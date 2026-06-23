@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Sprint 1 refactor** — Structural overhaul: globals removed, explicit schema threading, transactional ingestion, FK enforcement, graph integrity CLI.
+  - Dropped global `activeSchema` (`SetActiveSchema`/`ActiveSchema`). All functions now take explicit `schema SchemaConfig` parameter.
+  - Dropped global `iniRef`. INI parser state now scoped to `LoadConfig` via local closures.
+  - New `Runtime` struct (`src/runtime.go`) bundles DB, VI, Embedder, Extractor, Config — built once in `main.go`.
+  - Transactional ingestion: `ProcessDialog` wraps entity INSERT + edges INSERT in a single per-item SQL transaction — no half-written graph states.
+  - Foreign-key enforcement: `_fk=true` in DSN, ON DELETE CASCADE on edges, verified with post-init PRAGMA check.
+  - `verify` CLI command: checks entity count, edge count, embedding count, corrupt blobs, orphan edges, invalid status, invalid relation types. Exits 0 when clean.
+  - `VerifyReport` struct with `Pass()` and formatted text output; `VerifyGraph(db, schema, dim)` performs the check.
+  - `NormalizeVector` called before `vi.Store` in both merge and non-merge ingestion paths; merge-path `vi.Store` deferred to post-commit.
 - `extraction.provider` / `extraction.url` / `extraction.key` config keys with fallback to `[embedder]` values.
 - `PRAGMA auto_vacuum = INCREMENTAL` in `InitDB` — `vacuumAfter()` now works.
 - Auth middleware: `server.api_key` config key, validated via `X-API-Key` header (empty = disabled).

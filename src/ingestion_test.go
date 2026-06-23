@@ -57,7 +57,7 @@ func TestProcessDialogHappyPath(t *testing.T) {
 		{ID: "e2", Category: "world", Content: "Berlin is capital of Germany"},
 	}}}
 	emb := &stubEmbedder{}
-	w := NewIngestionWorker(db, vi, ext, emb, 0.99) // high threshold → no dedup
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99, defaultSchemaConfig(false)) // high threshold → no dedup
 	if err := w.ProcessDialog(ictx, "user dialog text"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestProcessDialogMergesNearDuplicate(t *testing.T) {
 	defer db.Close()
 
 	existingEmbed := []float32{0.4, 0.6, 0.8}
-	if err := StoreEntityWithEmbedding(db, vi, Entity{
+	if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 		ID: "old-1", Category: "world", Content: "Existing fact", Embedding: existingEmbed,
 	}); err != nil {
 		t.Fatalf("seed store: %v", err)
@@ -99,7 +99,7 @@ func TestProcessDialogMergesNearDuplicate(t *testing.T) {
 	emb := &stubEmbedder{vecs: map[string][]float32{
 		"Existing fact": existingEmbed,
 	}}
-	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99, defaultSchemaConfig(false))
 	if err := w.ProcessDialog(ictx, "d"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestProcessDialogEmbedderError(t *testing.T) {
 		{ID: "x", Category: "world", Content: "x"},
 	}}}
 	emb := &stubEmbedder{err: embErr}
-	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99, defaultSchemaConfig(false))
 	err := w.ProcessDialog(ictx, "d")
 	if err != nil {
 		t.Fatalf("expected no error (entity errors are non-fatal), got %v", err)
@@ -144,7 +144,7 @@ func TestProcessDialogExtractorError(t *testing.T) {
 	extErr := errors.New("ollama offline")
 	ext := &stubExtractor{err: extErr}
 	emb := &stubEmbedder{}
-	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99, defaultSchemaConfig(false))
 	err := w.ProcessDialog(ictx, "d")
 	if err == nil {
 		t.Fatal("expected extractor error, got nil")
@@ -169,7 +169,7 @@ func TestMemoryWorkerDrainsChannel(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "hello"}
 	close(ch)
 
-	MemoryWorker(ictx, db, vi, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, vi, ext, emb, 0.99, defaultSchemaConfig(false), ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "m1").Scan(&n); err != nil {
@@ -197,7 +197,7 @@ func TestMemoryWorkerExtractorErrorHaltsAllIngest(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "second"}
 	close(ch)
 
-	MemoryWorker(ictx, db, vi, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, vi, ext, emb, 0.99, defaultSchemaConfig(false), ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities`).Scan(&n); err != nil {
@@ -251,7 +251,7 @@ func TestMemoryWorkerContinuesAfterSingleError(t *testing.T) {
 	ch <- MemoryMessage{Dialog: "second (succeeds)"}
 	close(ch)
 
-	MemoryWorker(ictx, db, vi, ext, emb, 0.99, ch)
+	MemoryWorker(ictx, db, vi, ext, emb, 0.99, defaultSchemaConfig(false), ch)
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "good-m2").Scan(&n); err != nil {
@@ -277,7 +277,7 @@ func TestProcessDialogAppendsDifferentContentOnMerge(t *testing.T) {
 	defer db.Close()
 
 	existingEmbed := []float32{0.4, 0.6, 0.8}
-	if err := StoreEntityWithEmbedding(db, vi, Entity{
+	if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 		ID: "old-2", Category: "world", Content: "apple", Embedding: existingEmbed,
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -293,7 +293,7 @@ func TestProcessDialogAppendsDifferentContentOnMerge(t *testing.T) {
 		"banana":        existingEmbed,
 		"apple; banana": existingEmbed,
 	}}
-	w := NewIngestionWorker(db, vi, ext, emb, 0.99)
+	w := NewIngestionWorker(db, vi, ext, emb, 0.99, defaultSchemaConfig(false))
 	if err := w.ProcessDialog(ictx, "d"); err != nil {
 		t.Fatalf("ProcessDialog: %v", err)
 	}
@@ -325,11 +325,7 @@ func TestCreateEdgesBulkInsertFirstChunk(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
 
-	// FK enforcement is OFF in this codebase (no PRAGMA foreign_keys),
-	// so the target rows don't need to exist as entities. We only
-	// need entityID to be insertable as source_id, which has no
-	// additional constraint beyond edges.source_id NOT NULL.
-	w := NewIngestionWorker(db, vi, nil, nil, 0.99)
+	w := NewIngestionWorker(db, vi, nil, nil, 0.99, defaultSchemaConfig(false))
 
 	const n = 150
 	rels := make([]Relation, n)
@@ -339,7 +335,18 @@ func TestCreateEdgesBulkInsertFirstChunk(t *testing.T) {
 			RelationType: "related_to",
 		}
 	}
-	if err := w.createEdges("src", rels); err != nil {
+
+	// FK enforcement is ON (Sprint 1). Pre-create source and target
+	// entities so edge inserts pass the foreign-key gate.
+	if _, err := db.Exec(`INSERT INTO entities (id, category, content) VALUES (?, 'world', 'src')`, "src"); err != nil {
+		t.Fatalf("insert source entity: %v", err)
+	}
+	for i := range rels {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO entities (id, category, content) VALUES (?, 'world', 't')`, rels[i].TargetID); err != nil {
+			t.Fatalf("insert target %s: %v", rels[i].TargetID, err)
+		}
+	}
+	if err := w.createEdgesItem(ictx, "src", rels); err != nil {
 		t.Fatalf("createEdges %d: %v", n, err)
 	}
 	var count int
@@ -362,7 +369,7 @@ func TestCreateEdgesBulkInsertMultiChunk(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
 
-	w := NewIngestionWorker(db, vi, nil, nil, 0.99)
+	w := NewIngestionWorker(db, vi, nil, nil, 0.99, defaultSchemaConfig(false))
 
 	const n = 700
 	rels := make([]Relation, n)
@@ -372,7 +379,19 @@ func TestCreateEdgesBulkInsertMultiChunk(t *testing.T) {
 			RelationType: "related_to",
 		}
 	}
-	if err := w.createEdges("src", rels); err != nil {
+
+	// FK enforcement is ON (Sprint 1). Pre-create source and target
+	// entities so edge inserts pass the foreign-key gate.
+	if _, err := db.Exec(`INSERT INTO entities (id, category, content) VALUES (?, 'world', 'src')`, "src"); err != nil {
+		t.Fatalf("insert source entity: %v", err)
+	}
+	for i := range rels {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO entities (id, category, content) VALUES (?, 'world', 't')`, rels[i].TargetID); err != nil {
+			t.Fatalf("insert target %s: %v", rels[i].TargetID, err)
+		}
+	}
+
+	if err := w.createEdgesItem(ictx, "src", rels); err != nil {
 		t.Fatalf("createEdges %d: %v", n, err)
 	}
 	var count int
@@ -392,12 +411,12 @@ func TestCreateEdgesBulkEmptyInput(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
 
-	w := NewIngestionWorker(db, vi, nil, nil, 0.99)
+	w := NewIngestionWorker(db, vi, nil, nil, 0.99, defaultSchemaConfig(false))
 
-	if err := w.createEdges("src", nil); err != nil {
+	if err := w.createEdgesItem(ictx, "src", nil); err != nil {
 		t.Fatalf("createEdges(nil): %v", err)
 	}
-	if err := w.createEdges("src", []Relation{}); err != nil {
+	if err := w.createEdgesItem(ictx, "src", []Relation{}); err != nil {
 		t.Fatalf("createEdges([]): %v", err)
 	}
 	var count int
@@ -466,7 +485,7 @@ func TestStoreEntityConcurrentIndexOrderingFix(t *testing.T) {
 				Content:   "content-" + strconv.Itoa(i),
 				Embedding: embeddings[i],
 			}
-			if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
+			if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), entity); err != nil {
 				errCh <- fmt.Errorf("goroutine %d: %w", i, err)
 			}
 		}(i)
@@ -523,7 +542,7 @@ func TestStoreEntityRollbackOnSQLiteFailure(t *testing.T) {
 	for i := range seedEmb {
 		seedEmb[i] = float32(i+1) / 100000.0
 	}
-	if err := StoreEntityWithEmbedding(db, vi, Entity{
+	if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 		ID:        "ghost",
 		Category:  "world",
 		Content:   "old",
@@ -545,7 +564,7 @@ func TestStoreEntityRollbackOnSQLiteFailure(t *testing.T) {
 	// vi.Remove to undo it.
 	db.Close()
 
-	err := StoreEntityWithEmbedding(db, vi, Entity{
+	err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 		ID:        "ghost",
 		Category:  "world",
 		Content:   "new",

@@ -38,6 +38,7 @@ Commands:
   task-create      Create task with auto-linked context edges (JSON on stdin)
   task-tree        Print task tree (blocked_by parents) as human-readable text
   task-rollback    Find rollback task for failed task (JSON on stdin)
+  verify           Run graph integrity checks
   serve            Run HTTP server`
 
 // printUsage writes the HERMEM banner followed by the command

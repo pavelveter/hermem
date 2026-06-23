@@ -13,7 +13,6 @@ import (
 // `db, vi := memDB(t)` without redeclaration.
 func memDB(t testing.TB) (*sql.DB, VectorIndex) {
 	t.Helper()
-	SetActiveSchema(defaultSchemaConfig(false))
 	db, err := InitDB(":memory:", 768)
 	if err != nil {
 		t.Fatalf("InitDB: %v", err)

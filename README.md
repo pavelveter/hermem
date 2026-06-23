@@ -40,6 +40,8 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Strict JSON validation** — unknown fields rejected with structured errors
 - **State-on-Graph (Batch 9)** — stateful entities with `status`, configurable dependency relations, CTE-based executable-node walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
 - **Declarative schema** — categories, relation types, FSM rules defined in `hermem.ini` `[schema]`; no recompilation needed
+- **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
+- **Graph integrity verify** — `verify` CLI command checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types
 - **Docker** — multi-stage build, non-root user
 
 ## Quick Start
@@ -160,6 +162,24 @@ dim = 768                       # embedding dimension for vec0 table (must match
 
 [server]
 api_key =                       # X-API-Key auth (empty = disabled)
+
+[schema]
+; Declarative graph schema + FSM harness.
+; If absent, classic defaults are used and stateful features are disabled.
+; Comma-separated entity category allowlist; unknown categories return HTTP 422.
+allowed_categories = world,opinion,experience,observation,task,milestone
+; Comma-separated relation type allowlist; unknown relations return HTTP 422.
+allowed_relations = prefers,uses,mentions,related_to,part_of,causes,contradicts,blocked_by,recovers_via
+; Categories whose nodes get a lifecycle `status` field (auto-init to first valid state).
+stateful_categories = task
+; Ordered valid lifecycle states for stateful nodes; invalid transitions return HTTP 422.
+valid_states = pending,running,completed,failed
+; Relation name used for blocking dependencies.
+relation_blocking = blocked_by
+; Target status that unblocks a dependency.
+state_unblocking = completed
+; Relation name for recovery/rollback edges.
+relation_recovery = recovers_via
 ```
 
 ### Provider examples
@@ -273,7 +293,7 @@ entity := Entity{
     Content:   "Paris is the capital of France",
     Embedding: []float32{0.1, 0.2, 0.3}, // from your embedder
 }
-StoreEntityWithEmbedding(db, entity)
+StoreEntityWithEmbedding(db, vi, schema, entity)
 ```
 
 ### 2. Vector search
@@ -368,6 +388,7 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/task/create` | POST | Create task with auto-linked context edges |
 | `/task/tree` | POST | Print task tree (blocked_by parents) |
 | `/task/rollback` | POST | Find rollback task for a failed task |
+| `/verify` | POST | Graph integrity check (entities, edges, corrupt blobs, orphan edges) |
 | `/metrics` | GET | expvar counters (stores / searches / retrieves / queries / errors / task ops) |
 | `/edge` | POST | Add a typed edge between two entities (or auto-create missing ones) |
 

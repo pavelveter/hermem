@@ -24,7 +24,7 @@ func BenchmarkInMemorySearch(b *testing.B) {
 			defer db.Close()
 
 			for i := 0; i < n; i++ {
-				if err := StoreEntityWithEmbedding(db, vi, Entity{
+				if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 					ID:        fmt.Sprintf("mem-%d", i),
 					Category:  "world",
 					Content:   fmt.Sprintf("fact-%d", i),

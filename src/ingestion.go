@@ -14,18 +14,50 @@ type IngestionWorker struct {
 	extractor   LLMExtractor
 	embedder    Embedder
 	dedupThresh float32
+	schema      SchemaConfig
 }
 
-func NewIngestionWorker(db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32) *IngestionWorker {
+func NewIngestionWorker(db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, schema SchemaConfig) *IngestionWorker {
 	return &IngestionWorker{
 		db:          db,
 		vi:          vi,
 		extractor:   extractor,
 		embedder:    embedder,
 		dedupThresh: dedupThreshold,
+		schema:      schema,
 	}
-}
-
+} // ProcessDialog loads, embeds, stores entities from one dialog.
+// Sprint 1 transaction model (per-item, entity+edges atomic):
+//
+//	for each item in result.Entities:
+//	  vi.Store(entityID, embedding)       // outside SQL txn — network-shaped
+//	  tx.Begin
+//	    INSERT OR REPLACE entity          // status default from schema
+//	    INSERT edges (chunked)            // FK enforcement gate
+//	  tx.Commit                           // entity+edges land atomically
+//	  on any failure: tx.Rollback + vi.Remove
+//
+// The entity INSERT and edges INSERT live inside the same SQL
+// transaction so that an edge failure rolls back both writes — no
+// half-written graph states (Sprint 1 goal). The per-item boundary
+// is chosen because:
+//   - LLM extraction is already the per-item bottleneck; the
+//     per-item SQL round-trip amortizes into that cost.
+//   - A failure on item N does not abort items N+1: each item has
+//     independent atomicity.
+//   - vi.Store precedes the tx so the index never lags (invariant
+//     preserved from pre-Sprint-1 code).
+//
+// What stays outside the SQL txn:
+//   - embedder.Embed: network call; must NOT hold a write transaction
+//     open that would block concurrent reads.
+//   - vi.Store: maintains the "index never points to row the DB
+//     doesn't hold" invariant.
+//
+// Failure mode summary:
+//   - LLM extract failure → no DB writes; log + return.
+//   - Per-item embed failure → slog + continue to next item.
+//   - Any SQL failure (entity, edges, commit) → tx.Rollback + vi.Remove.
 func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) error {
 	result, err := w.extractor.ExtractEntities(ctx, dialog)
 	if err != nil {
@@ -77,13 +109,18 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 			continue
 		}
 
-		if existing != nil {
-			targetID = existing.ID
-			err = w.mergeEntities(ctx, existing, it.entity, it.embedding)
-		} else {
-			err = w.createEntity(it.entity, it.embedding)
-		}
-		if err != nil {
+		// Normalize before storing in vi: the index assumes unit
+		// vectors (Search divides by queryNorm only, not entry norms).
+		// NormalizeVector is non-blocking and safe to call pre-tx.
+		NormalizeVector(it.embedding)
+
+		// store/update the index BEFORE the SQL txn runs. This keeps
+		// the "no lag" invariant for concurrent Search while we wait
+		// for the COMMIT: if a parallel Search hits the index entry,
+		// it sees the row in the DB (the eventual commit happens
+		// before index entry removal becomes necessary, indexes only
+		// roll back on failure).
+		if err := w.vi.Store(ctx, it.entity.ID, it.embedding); err != nil {
 			slog.Error("entity processing failed, continuing",
 				"event", "entity_failed",
 				"entity_id", it.entity.ID,
@@ -92,15 +129,223 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 			continue
 		}
 
-		if err := w.createEdges(targetID, it.entity.Relations); err != nil {
+		// ---- pre-tx phase: re-embed if merging, update vector index -----
+		// Network calls and vi mutations happen here, BEFORE any SQL
+		// transaction opens, so write locks are never held across I/O.
+		var mergeEntity *Entity
+		if existing != nil {
+			targetID = existing.ID
+			mergedContent := existing.Content
+			if !strings.Contains(existing.Content, it.entity.Content) {
+				mergedContent = existing.Content + "; " + it.entity.Content
+			}
+			updatedEmb, embErr := w.embedder.Embed(ctx, mergedContent)
+			if embErr != nil {
+				w.vi.Remove(ctx, []string{it.entity.ID})
+				slog.Error("entity processing failed, continuing",
+					"event", "entity_failed",
+					"entity_id", it.entity.ID,
+					"err", embErr,
+				)
+				continue
+			}
+			NormalizeVector(updatedEmb)
+			mergeEntity = &Entity{
+				ID:        existing.ID,
+				Category:  existing.Category,
+				Content:   mergedContent,
+				Embedding: updatedEmb,
+				Status:    existing.Status,
+			}
+			// Remove the incoming entity's dangling index entry — after
+			// merge, the only entity in the DB is the existing one.
+			// The existing entity's vi entry is NOT overwritten here:
+			// vi.Store(existing.ID, updatedEmb) is deferred to after
+			// tx.Commit so a tx failure doesn't lose the old embedding.
+			w.vi.Remove(ctx, []string{it.entity.ID})
+		}
+
+		// ---- tx phase: entity + edges land atomically --------------------
+		itemTx, itemErr := w.db.BeginTx(ctx, nil)
+		if itemErr != nil {
+			if mergeEntity != nil {
+				// Pre-tx already removed it.entity.ID; mergeEntity.ID
+				// (existing) was never touched in this iteration — its
+				// vi.Store is deferred to post-commit. No cleanup needed.
+			} else {
+				w.vi.Remove(ctx, []string{it.entity.ID})
+			}
+			slog.Error("entity processing failed, continuing",
+				"event", "entity_failed",
+				"entity_id", it.entity.ID,
+				"err", itemErr,
+			)
+			continue
+		}
+
+		var writeErr error
+		if mergeEntity != nil {
+			writeErr = w.mergeEntityInTx(ctx, itemTx, *mergeEntity)
+		} else {
+			writeErr = w.createEntityInTx(ctx, itemTx, it.entity, it.embedding)
+		}
+		if writeErr == nil {
+			writeErr = w.createEdgesInTx(ctx, itemTx, targetID, it.entity.Relations)
+		}
+
+		rollbackID := it.entity.ID
+		if mergeEntity != nil {
+			// Pre-tx already removed it.entity.ID from vi.
+			// mergeEntity.ID (existing) vi entry was never updated
+			// — vi.Store is deferred to post-commit. Skip vi.Remove
+			// on failure to preserve the existing entity's valid vec.
+			rollbackID = ""
+		}
+		if writeErr != nil {
+			itemTx.Rollback()
+			if rollbackID != "" {
+				if rmErr := w.vi.Remove(ctx, []string{rollbackID}); rmErr != nil {
+					slog.Warn("vector index rollback after item failure",
+						"event", "vector_rollback_fail",
+						"entity_id", rollbackID,
+						"rm_err", rmErr,
+					)
+				}
+			}
+			slog.Error("entity processing failed, continuing",
+				"event", "entity_failed",
+				"entity_id", it.entity.ID,
+				"err", writeErr,
+			)
+			continue
+		}
+
+		if err := itemTx.Commit(); err != nil {
+			if rollbackID != "" {
+				if rmErr := w.vi.Remove(ctx, []string{rollbackID}); rmErr != nil {
+					slog.Warn("vector index rollback after commit failure",
+						"event", "vector_rollback_fail",
+						"entity_id", rollbackID,
+						"rm_err", rmErr,
+					)
+				}
+			}
 			slog.Error("entity processing failed, continuing",
 				"event", "entity_failed",
 				"entity_id", it.entity.ID,
 				"err", err,
 			)
+			continue
+		}
+
+		// Post-commit: update the existing entity's vi entry with
+		// the merged embedding. Deferred to here so a tx failure
+		// leaves the old (functional) embedding intact.
+		if mergeEntity != nil {
+			w.vi.Store(ctx, mergeEntity.ID, mergeEntity.Embedding)
 		}
 	}
 	return nil
+}
+
+// mergeEntityInTx INSERTs an already-merged entity on the supplied
+// transaction. The caller must have already re-embedded the merged
+// content (network call) before opening the transaction — this method
+// is SQL-only so the tx is never held open across outbound I/O.
+func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e Entity) error {
+	embeddingBytes := EmbeddingToBytes(e.Embedding)
+	status := e.Status
+	if status == "" && w.schema.StatefulCategories[e.Category] && len(w.schema.ValidStateOrder) > 0 {
+		status = w.schema.ValidStateOrder[0]
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+	`, e.ID, e.Category, e.Content, embeddingBytes, nullString(status))
+	if err != nil {
+		return fmt.Errorf("merge entity: %w", err)
+	}
+	return nil
+}
+
+// createEntityInTx normalises and INSERTs one entity on the supplied
+// transaction. Does NOT open or commit its own transaction.
+func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, entity ExtractedEntity, embedding []float32) error {
+	NormalizeVector(embedding)
+	dbEntity := Entity{
+		ID:        entity.ID,
+		Category:  entity.Category,
+		Content:   entity.Content,
+		Embedding: embedding,
+	}
+	embeddingBytes := EmbeddingToBytes(dbEntity.Embedding)
+	status := dbEntity.Status
+	if status == "" && w.schema.StatefulCategories[dbEntity.Category] && len(w.schema.ValidStateOrder) > 0 {
+		status = w.schema.ValidStateOrder[0]
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+	`, dbEntity.ID, dbEntity.Category, dbEntity.Content, embeddingBytes, nullString(status))
+	if err != nil {
+		return fmt.Errorf("insert entity: %w", err)
+	}
+	return nil
+}
+
+// createEdgesInTx inserts all relations on the supplied transaction.
+// Does NOT open or commit its own transaction.
+func (w *IngestionWorker) createEdgesInTx(ctx context.Context, tx *sql.Tx, entityID string, relations []Relation) error {
+	if len(relations) == 0 {
+		return nil
+	}
+
+	const edgesPerChunk = DefaultSQLBatchSize / 3
+
+	for start := 0; start < len(relations); start += edgesPerChunk {
+		end := start + edgesPerChunk
+		if end > len(relations) {
+			end = len(relations)
+		}
+		chunk := relations[start:end]
+
+		args := make([]interface{}, 0, len(chunk)*3)
+		phs := make([]string, len(chunk))
+		for i, rel := range chunk {
+			if !w.schema.AllowedRelations[rel.RelationType] {
+				return fmt.Errorf("unknown relation_type: %s", rel.RelationType)
+			}
+			args = append(args, entityID, rel.TargetID, rel.RelationType)
+			phs[i] = "(?, ?, ?)"
+		}
+		q := `INSERT OR IGNORE INTO edges (source_id, target_id, relation_type) VALUES ` +
+			strings.Join(phs, ",")
+		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+			return fmt.Errorf("bulk insert edges for %s: chunk [%d-%d] of %d: %w",
+				entityID, start, end, len(relations), err)
+		}
+	}
+	return nil
+}
+
+// createEdgesItem is the test-facing wrapper that opens+commits its own
+// transaction. ProcessDialog uses createEdgesInTx directly on its
+// per-item tx. Kept public so TestCreateEdgesBulk* can test the
+// chunk-insert logic without constructing a ProcessDialog harness.
+func (w *IngestionWorker) createEdgesItem(ctx context.Context, entityID string, relations []Relation) error {
+	if len(relations) == 0 {
+		return nil
+	}
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := w.createEdgesInTx(ctx, tx, entityID, relations); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, selfID string) (*Entity, error) {
@@ -143,88 +388,12 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 	return nil, nil
 }
 
-func (w *IngestionWorker) createEntity(entity ExtractedEntity, embedding []float32) error {
-	if !ActiveSchema().AllowedCategories[entity.Category] {
-		return fmt.Errorf("unknown category: %s", entity.Category)
-	}
-	dbEntity := Entity{
-		ID:        entity.ID,
-		Category:  entity.Category,
-		Content:   entity.Content,
-		Embedding: embedding,
-	}
-	return StoreEntityWithEmbedding(w.db, w.vi, dbEntity)
-}
-
-func (w *IngestionWorker) mergeEntities(ctx context.Context, existing *Entity, newEntity ExtractedEntity, newEmbedding []float32) error {
-	mergedContent := existing.Content
-	if !strings.Contains(existing.Content, newEntity.Content) {
-		mergedContent = existing.Content + "; " + newEntity.Content
-	}
-
-	updatedEmbedding, err := w.embedder.Embed(ctx, mergedContent)
-	if err != nil {
-		return fmt.Errorf("failed to re-embed merged content: %w", err)
-	}
-
-	existing.Content = mergedContent
-	existing.Embedding = updatedEmbedding
-
-	return StoreEntityWithEmbedding(w.db, w.vi, *existing)
-}
-
-// createEdges inserts all relations for entityID in bounded chunks
-// of multi-VALUES INSERTs. Each edge consumes 3 host parameters
-// (source_id, target_id, relation_type). edgesPerChunk is derived
-// from DefaultSQLBatchSize / 3 so that adding a schema column
-// (weight, updated_at, ...) on this table will automatically shrink
-// the per-edge parameter count and retune the ceiling without a
-// code edit here.
-//
-// Behaviour preserved: empty input short-circuits to nil; on the
-// first chunk that fails the function returns that chunk's error
-// immediately (matching the previous per-edge abort semantics).
-// INSERT OR IGNORE continues to collapse duplicate
-// (source, target, relation_type) tuples silently.
-func (w *IngestionWorker) createEdges(entityID string, relations []Relation) error {
-	if len(relations) == 0 {
-		return nil
-	}
-
-	const edgesPerChunk = DefaultSQLBatchSize / 3
-
-	for start := 0; start < len(relations); start += edgesPerChunk {
-		end := start + edgesPerChunk
-		if end > len(relations) {
-			end = len(relations)
-		}
-		chunk := relations[start:end]
-
-		args := make([]interface{}, 0, len(chunk)*3)
-		phs := make([]string, len(chunk))
-		for i, rel := range chunk {
-			if !ActiveSchema().AllowedRelations[rel.RelationType] {
-				return fmt.Errorf("unknown relation_type: %s", rel.RelationType)
-			}
-			args = append(args, entityID, rel.TargetID, rel.RelationType)
-			phs[i] = "(?, ?, ?)"
-		}
-		q := `INSERT OR IGNORE INTO edges (source_id, target_id, relation_type) VALUES ` +
-			strings.Join(phs, ",")
-		if _, err := w.db.Exec(q, args...); err != nil {
-			return fmt.Errorf("bulk insert edges for %s: chunk [%d-%d] of %d: %w",
-				entityID, start, end, len(relations), err)
-		}
-	}
-	return nil
-}
-
 type MemoryMessage struct {
 	Dialog string
 }
 
-func MemoryWorker(ctx context.Context, db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, ch <-chan MemoryMessage) {
-	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold)
+func MemoryWorker(ctx context.Context, db *sql.DB, vi VectorIndex, extractor LLMExtractor, embedder Embedder, dedupThreshold float32, schema SchemaConfig, ch <-chan MemoryMessage) {
+	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema)
 	for msg := range ch {
 		if err := worker.ProcessDialog(ctx, msg.Dialog); err != nil {
 			slog.Error("dialog processing failed",

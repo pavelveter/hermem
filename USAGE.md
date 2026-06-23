@@ -196,7 +196,7 @@ one-shot read-process-print.
 | `task-dep` | `{source_id, target_id, relation_type?, add?}` | `{"status":"ok"}` |
 | `task-create` | `{content, context_ids?, id?}` | `{"id":"…","status":"ok"}` |
 | `task-rollback` | `{id}` | `{"rollback_task_id":"…"}` |
-| `serve` | (no stdin; takes optional port)  | logs to stderr                   |
+| `verify` | `{dim?}` | `{"status":"ok"}` (or report) |
 
 The CLI uses the **same strict JSON contract as the HTTP server**
 (`DisallowUnknownFields` etc.), so a payload that works against
@@ -340,6 +340,7 @@ paths). Pipe stderr to your log aggregator.
 | POST | `/task/show` | `{"id"}` | `{"entity":{…},"blocked_by":[…],"recovers_via":[…]}` |
 | POST | `/task/dep` | `{"source_id","target_id","relation_type?","add?"}` | `{"status":"ok"}` |
 | POST | `/task/rollback` | `{"id"}` | `{"rollback_task_id":"…"}` |
+| POST | `/verify` | `{"dim"?}` | `VerifyReport` (text report) |
 
 Every POST endpoint goes through a strict JSON decoder; fields not in
 the request schema are rejected with `400`. See §9 for the error
@@ -569,6 +570,7 @@ If no rollback task is linked, `rollback_task_id` is empty string.
 | Create task         | `… \| ./hermem task-create`                            | `curl -X POST …/task/create`                           |
 | Rollback task       | `… \| ./hermem task-rollback`                          | `curl -X POST …/task/rollback`                         |
 | Task tree           | `… \| ./hermem task-tree`                              | `curl -X POST …/task/tree`                             |
+| Verify graph       | `… \| ./hermem verify`                                | `curl -X POST …/verify -d '{…}'`                       |
 | Health              | n/a (CLI is one-shot)                                  | `curl …/health`                                       |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
 | Errors              | Exit non-zero + `log.Fatalf` to stderr                 | `HTTP 400` + structured `ErrorResponse` body          |
@@ -860,7 +862,7 @@ A single SQLite file with two (or three) tables. The schema lives in
 | Column          | SQLite type | Notes                                                 |
 |-----------------|-------------|-------------------------------------------------------|
 | `id`            | TEXT PK     | Stable identifier.                                    |
-| `category`      | TEXT        | One of `world`/`opinion`/`experience`/`observation`.  |
+| `category`      | TEXT        | One of the categories defined in `[schema] allowed_categories` (defaults: `world`/`opinion`/`experience`/`observation`). |
 | `content`       | TEXT        | Free text.                                            |
 | `embedding`     | BLOB        | `len(embedding) * 4` raw little-endian float32 bytes. |
 | `updated_at`    | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
@@ -880,7 +882,7 @@ the float32 stride does not change.
 |-----------------|-------------|-----------------------------------------------------|
 | `source_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
 | `target_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
-| `relation_type` | TEXT        | `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts` (canonical allowlist enforced by `filterRelations` in `extractor.go`). |
+| `relation_type` | TEXT        | Relation label from `[schema] allowed_relations` (defaults: `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts`, `blocked_by`, `recovers_via`). Unknown values are rejected with HTTP 422. |
 
 Composite PK `(source_id, target_id, relation_type)` means duplicate
 edges auto-dedupe on insert. There is no `weight` or timestamp column
