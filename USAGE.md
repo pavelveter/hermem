@@ -186,6 +186,7 @@ one-shot read-process-print.
 | `store` | `{id, category, content, …}`     | `{"status":"ok"}`                |
 | `search`| `{query, top_k?}`                | `[{entity, similarity}, …]`      |
 | `query` | `{query}`                        | `{"context": "<markdown>"}`      |
+| `explain` | `{query}` | `RetrievalResult` (with score breakdown) |
 | `edge`  | `{source_id, target_id, relation_type, auto_create?}` | `{"status":"ok"}` |
 | `ingest`| `{dialog}`                       | `{"status":"ok"}`                |
 | `task-status` | `{id, status}` | `{"status":"ok"}` |

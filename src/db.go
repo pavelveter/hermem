@@ -21,6 +21,17 @@ type Entity struct {
 	LastAccessedAt *time.Time `json:"last_accessed_at"`
 	Archived       bool       `json:"archived"`
 	Status         string     `json:"status,omitempty"`
+	// Sprint 2: entity metadata
+	Confidence float32    `json:"confidence,omitempty"`
+	Source     string     `json:"source,omitempty"`
+	SourceType string     `json:"source_type,omitempty"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	ValidFrom  *time.Time `json:"valid_from,omitempty"`
+	ValidTo    *time.Time `json:"valid_to,omitempty"`
+	// Sprint 2: memory provenance
+	ConversationID string `json:"conversation_id,omitempty"`
+	MessageID      string `json:"message_id,omitempty"`
+	ExtractedFrom  string `json:"extracted_from,omitempty"`
 }
 
 type Edge struct {
@@ -172,6 +183,16 @@ func migrateSchema(db *sql.DB) error {
 		{"last_accessed_at", `ALTER TABLE entities ADD COLUMN last_accessed_at DATETIME`},
 		{"archived", `ALTER TABLE entities ADD COLUMN archived INTEGER DEFAULT 0`},
 		{"status", `ALTER TABLE entities ADD COLUMN status TEXT DEFAULT NULL`},
+		// Sprint 2: entity metadata + provenance columns
+		{"confidence", `ALTER TABLE entities ADD COLUMN confidence REAL DEFAULT 1.0`},
+		{"source", `ALTER TABLE entities ADD COLUMN source TEXT DEFAULT ''`},
+		{"source_type", `ALTER TABLE entities ADD COLUMN source_type TEXT DEFAULT ''`},
+		{"created_at", `ALTER TABLE entities ADD COLUMN created_at DATETIME`},
+		{"valid_from", `ALTER TABLE entities ADD COLUMN valid_from DATETIME`},
+		{"valid_to", `ALTER TABLE entities ADD COLUMN valid_to DATETIME`},
+		{"conversation_id", `ALTER TABLE entities ADD COLUMN conversation_id TEXT DEFAULT ''`},
+		{"message_id", `ALTER TABLE entities ADD COLUMN message_id TEXT DEFAULT ''`},
+		{"extracted_from", `ALTER TABLE entities ADD COLUMN extracted_from TEXT DEFAULT ''`},
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m.sql); err != nil {
