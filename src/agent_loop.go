@@ -35,20 +35,20 @@ func ExecutionPlan(db *sql.DB, schema SchemaConfig, goalID string) ([]Entity, er
 
 	query := fmt.Sprintf(`
 		WITH RECURSIVE dep_tree AS (
-			SELECT e.id, e.category, e.content, e.status, e.updated_at, 0 as layer
+			SELECT e.id, e.category, e.content, e.status, e.updated_at, e.priority, 0 as layer
 			FROM entities e
 			WHERE e.id = ? AND e.category IN (%s) AND e.archived = 0
 
 			UNION ALL
 
-			SELECT e.id, e.category, e.content, e.status, e.updated_at, dt.layer + 1
+			SELECT e.id, e.category, e.content, e.status, e.updated_at, e.priority, dt.layer + 1
 			FROM dep_tree dt
 			JOIN edges ed ON ed.source_id = dt.id AND ed.relation_type = ?
 			JOIN entities e ON e.id = ed.target_id AND e.category IN (%s) AND e.archived = 0
 		)
-		SELECT DISTINCT dt.id, dt.category, dt.content, dt.status, dt.updated_at
+		SELECT DISTINCT dt.id, dt.category, dt.content, dt.status, dt.updated_at, dt.priority
 		FROM dep_tree dt
-		ORDER BY dt.layer DESC, dt.id ASC
+		ORDER BY dt.priority DESC, dt.layer DESC, dt.id ASC
 	`, catPH, catPH)
 
 	rows, err := db.Query(query, args...)
@@ -60,7 +60,7 @@ func ExecutionPlan(db *sql.DB, schema SchemaConfig, goalID string) ([]Entity, er
 	var tasks []Entity
 	for rows.Next() {
 		var e Entity
-		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt, &e.Priority); err != nil {
 			return nil, fmt.Errorf("scan execution plan: %w", err)
 		}
 		tasks = append(tasks, e)
@@ -231,6 +231,108 @@ func AgentLoop(
 			return fmt.Errorf("agent loop: execute complete: %w", err)
 		}
 	}
+}
+
+// CriticalPath returns the longest weighted path from any leaf task
+// (task with no blocking dependents) to the goalID in the blocked_by
+// dependency graph. Path length is the sum of COALESCE(ed.weight, 1.0)
+// along each edge. Returns the ordered list of task IDs on the critical
+// path (from leaf to goal) and the total path weight.
+//
+// If goalID is not stateful or has no blockers, returns a single-element
+// slice containing just the goal.
+func CriticalPath(db *sql.DB, schema SchemaConfig, goalID string) ([]string, float64, error) {
+	if goalID == "" || !schema.StatefulEnabled {
+		return nil, 0, fmt.Errorf("goal_id required and stateful schema must be enabled")
+	}
+
+	catPH, catArgs := boolMapInClause(schema.StatefulCategories)
+	rel := schema.RelationBlocking
+
+	// CTE walks from goal downwards to leaves, accumulating path weight.
+	// At each step we track which path gave the max weight so we can
+	// reconstruct the critical path afterwards.
+	args := append([]interface{}{goalID}, catArgs...)
+	args = append(args, rel, rel)
+	args = append(args, catArgs...)
+
+	// Phase 1: find the max path weight from any leaf to the goal.
+	// Phase 2: reconstruct the path by walking back from the max leaf.
+	// We do this in a single query: find all leaf nodes with their
+	// accumulated weight, pick the max, then reconstruct the path.
+
+	// First, collect all leaf nodes and their weights.
+	query := fmt.Sprintf(`
+		WITH RECURSIVE path_tree AS (
+			-- Anchor: start at the goal
+			SELECT e.id, e.id as leaf_id, 0.0 as path_weight, 0 as depth
+			FROM entities e
+			WHERE e.id = ? AND e.category IN (%s) AND e.archived = 0
+
+			UNION ALL
+
+			-- Walk from dependents to blockers (reverse of dep_tree)
+			SELECT e.id, pt.leaf_id,
+			       pt.path_weight + COALESCE(ed.weight, 1.0),
+			       pt.depth + 1
+			FROM path_tree pt
+			JOIN edges ed ON ed.source_id = pt.id AND ed.relation_type = ?
+			JOIN entities e ON e.id = ed.target_id AND e.category IN (%s) AND e.archived = 0
+		)
+		SELECT pt.id, pt.path_weight
+		FROM path_tree pt
+		WHERE pt.id NOT IN (
+			SELECT ed2.source_id FROM edges ed2
+			WHERE ed2.relation_type = ?
+		)
+		ORDER BY pt.path_weight DESC
+		LIMIT 1
+	`, catPH, catPH)
+
+	var maxLeafID string
+	var maxWeight float64
+	err := db.QueryRow(query, args...).Scan(&maxLeafID, &maxWeight)
+	if err == sql.ErrNoRows {
+		// No dependencies — critical path is just the goal.
+		return []string{goalID}, 0, nil
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("critical path: find max leaf: %w", err)
+	}
+
+	// Phase 2: walk back from the max leaf to the goal through blocked_by edges.
+	// We follow edges WHERE source_id is blocked_by target_id.
+	var path []string
+	current := maxLeafID
+	visited := make(map[string]bool)
+	for current != "" && !visited[current] {
+		visited[current] = true
+		path = append(path, current)
+		if current == goalID {
+			break
+		}
+		// Find the parent (the task that this one blocks).
+		// blocked_by edge: source depends on target → source_id = dependent, target_id = blocker.
+		// We walk from blocker → dependent, so: target_id = current, find source_id.
+		var parent string
+		err := db.QueryRow(
+			`SELECT ed.source_id FROM edges ed
+			JOIN entities e ON e.id = ed.source_id AND e.archived = 0
+			WHERE ed.target_id = ? AND ed.relation_type = ?
+			ORDER BY COALESCE(ed.weight, 1.0) DESC
+			LIMIT 1`,
+			current, schema.RelationBlocking,
+		).Scan(&parent)
+		if err == sql.ErrNoRows {
+			break
+		}
+		if err != nil {
+			return nil, 0, fmt.Errorf("critical path: trace from %s: %w", current, err)
+		}
+		current = parent
+	}
+
+	return path, maxWeight, nil
 }
 
 // nextValidState returns the next state after currentStatus in the

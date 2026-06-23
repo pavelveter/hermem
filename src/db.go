@@ -42,6 +42,8 @@ type Entity struct {
 	ExtractedFrom  string `json:"extracted_from,omitempty"`
 	// P1: graph centrality — total edges (in + out). Auto-maintained via triggers.
 	Degree int `json:"degree,omitempty"`
+	// P2: task priority — higher = scheduled first. 0 = default.
+	Priority int `json:"priority,omitempty"`
 }
 
 type Edge struct {
@@ -771,7 +773,7 @@ func ListTasks(db *sql.DB, schema SchemaConfig, status, goalID string) ([]Entity
 		args = append(args, schema.RelationBlocking)
 		args = append(args, catArgs...)
 	}
-	query := "SELECT e.id, e.category, e.content, e.status, e.updated_at FROM entities e WHERE " + strings.Join(wheres, " AND ") + " ORDER BY e.id"
+	query := "SELECT e.id, e.category, e.content, e.status, e.updated_at, COALESCE(e.priority, 0) FROM entities e WHERE " + strings.Join(wheres, " AND ") + " ORDER BY e.id"
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
@@ -902,7 +904,7 @@ func GetRootTasks(db *sql.DB, schema SchemaConfig) ([]Entity, error) {
 		return []Entity{}, nil
 	}
 	query := `
-		SELECT e.id, e.category, e.content, e.status, e.updated_at
+		SELECT e.id, e.category, e.content, e.status, e.updated_at, COALESCE(e.priority, 0)
 		FROM entities e
 		WHERE e.category IN (` + catPH + `) AND e.archived = 0
 		AND e.id NOT IN (
