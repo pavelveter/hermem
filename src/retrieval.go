@@ -175,6 +175,11 @@ type RetrieveContextOptions struct {
 	// reranker for relevance comparison. Optional — reranker skips
 	// if empty (e.g. /retrieve endpoint with explicit seed IDs).
 	QueryText string
+	// Phase 10: multi-hop retrieval — number of search→expand→repeat cycles.
+	// 0 or 1 = single hop (default). 2+ = expand from top-scored discovered
+	// facts in each hop, embedding their content as new queries.
+	MultiHopCount int
+
 	// Phase 10: temporal retrieval — optional time range filter.
 	// When non-zero, only entities with created_at in [TimeFrom, TimeTo]
 	// are returned. Zero values mean "no bound" (open range).

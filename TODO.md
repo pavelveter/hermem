@@ -332,26 +332,23 @@ Tasks:
 
 ----------------------------------------------------------
 
-[ ] Multi-hop retrieval
+[x] Multi-hop retrieval  ✅ (this commit)
 
-Search
-    ->
-Graph expansion
-    ->
-Expansion from discovered nodes
-    ->
-Reranker
+    src/multi_hop.go — MultiHopRetrieveContext: iterative search→expand→
+    re-expand from top-3 discovered facts. Embed content as queries,
+    SearchBatch for single lock, merge results dedup by content.
+    MultiHopCount field on RetrieveContextOptions (0/1 = single hop).
+    Wired into GenerateResponse in main.go.
 
 ----------------------------------------------------------
 
-[ ] Agent state engine
+[x] Agent state engine  ✅ (this commit)
 
-Task graph
-FSM
-Rollback
-Execution planner
-
-Convert Hermem from memory store into agent substrate.
+    src/agent_loop.go — ExecutionPlan (CTE topological sort, leaf-first),
+    ExecuteNext (auto-transition to running), ExecuteComplete (advance state
+    machine), ExecuteFail (mark failed + return rollback task),
+    AgentLoop (loop: ExecuteNext → callback → ExecuteComplete),
+    nextValidState helper. agent-loop CLI command wired.
 
 ==========================================================
 RECOMMENDED ORDER
