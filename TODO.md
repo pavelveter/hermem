@@ -11,65 +11,19 @@ Eliminate global mutable state and prepare codebase for future multi-tenant, ser
 
 Tasks:
 
-[ ] Remove global activeSchema singleton
+[x] Remove global activeSchema singleton  ✅ Sprint 1
 
-Current:
-
-    ActiveSchema()
-    SetActiveSchema()
-
-Problem:
-
-    Process-wide mutable state
-    Race potential
-    Impossible per-request schemas
-
-Implement:
-
-    type Runtime struct {
-        Schema SchemaConfig
-    }
-
-Pass schema through:
-
-    StoreEntity()
-    ProcessDialog()
-    RetrieveContext()
-    HTTP handlers
-
-Expected result:
-
-    No global schema state.
+    ActiveSchema() / SetActiveSchema() removed.
+    Replaced by Runtime struct with explicit DB/VI/Embedder/Extractor/Config fields.
+    Server uses atomic.Pointer[ServerState] for lock-free per-request schema access.
 
 ----------------------------------------------------------
 
-[ ] Remove global iniRef
+[x] Remove global iniRef  ✅ Sprint 1
 
-Current:
-
-    var iniRef *ini.File
-
-Problem:
-
-    Hidden dependency
-    Multiple config loads overwrite state
-
-Implement:
-
-    type Config struct {
-        ...
-        rawINI *ini.File
-    }
-
-or
-
-    type Loader struct {
-        ini *ini.File
-    }
-
-Expected result:
-
-    Config becomes immutable after load.
+    iniRef variable removed. Config loaded via gopkg.in/ini.v1, parsed into
+    Config struct. getStr/getInt/getFloat32/getDuration closures over local
+    iniFile, no package-level mutable state.
 
 ==========================================================
 PHASE 2 — INGESTION CONSISTENCY
@@ -83,71 +37,25 @@ Prevent half-written graph states.
 
 Tasks:
 
-[ ] Make ingestion transactional
+[x] Make ingestion transactional  ✅ Sprint 1
 
-Current flow:
-
-    create entity
-    create edges
-    update embedding
-    merge
-
-Problem:
-
-    Failure in middle leaves broken graph.
-
-Implement:
-
-    tx.Begin()
-
-    store entity
-    merge entity
-    create edges
-    update vectors
-
-    tx.Commit()
-
-Rollback on any failure.
+    Per-item transactions: entity INSERT + edges INSERT in same SQL tx.
+    On failure: tx.Rollback + vi.Remove rollback. No half-written graphs.
+    vi.Store executed pre-tx (network-shaped), vi updates post-commit.
 
 ----------------------------------------------------------
 
-[ ] Enable foreign keys
+[x] Enable foreign keys  ✅ Sprint 1
 
-Current:
-
-    FK OFF
-
-Add:
-
-    PRAGMA foreign_keys = ON
-
-Schema:
-
-    FOREIGN KEY (...) REFERENCES entities(id)
-    ON DELETE CASCADE
-
-Expected result:
-
-    No orphan edges.
+    PRAGMA foreign_keys = ON (DSN _fk=true + belt-and-suspenders PRAGMA)
+    FOREIGN KEY (...) REFERENCES entities(id) ON DELETE CASCADE
 
 ----------------------------------------------------------
 
-[ ] Add graph integrity verifier
+[x] Add graph integrity verifier  ✅ Sprint 1
 
-CLI:
-
-    hermem verify
-
-Checks:
-
-    orphan nodes
-    orphan edges
-    broken references
-    duplicate relations
-
-Output:
-
-    human readable report
+    CLI: hermem verify
+    Checks: orphan nodes, orphan edges, broken references, duplicate relations
 
 ==========================================================
 PHASE 3 — MEMORY MODEL V2
@@ -161,24 +69,10 @@ Support contradictory knowledge and memory evolution.
 
 Tasks:
 
-[ ] Extend Entity schema
+[x] Extend Entity schema  ✅ Sprint 2
 
-Add:
-
-    confidence REAL
-    source TEXT
-    source_type TEXT
-    created_at
-    updated_at
-    valid_from
-    valid_to
-
-Example:
-
-    User likes Go
-
-confidence=0.95
-source=user
+    Added: confidence, source, source_type, created_at, valid_from, valid_to
+    Migration 002_entity_metadata.sql
 
 ----------------------------------------------------------
 
@@ -217,21 +111,10 @@ Otherwise:
 
 ----------------------------------------------------------
 
-[ ] Add memory provenance
+[x] Add memory provenance  ✅ Sprint 2
 
-Store:
-
-    extracted_from
-    conversation_id
-    message_id
-
-Goal:
-
-Explain why memory exists.
-
-Future:
-
-    memory explain endpoint
+    Added: conversation_id, message_id, extracted_from
+    Migration 003_provenance.sql
 
 ==========================================================
 PHASE 4 — RETRIEVAL V2
@@ -245,58 +128,27 @@ Improve retrieval quality.
 
 Tasks:
 
-[ ] Configurable ranking weights
+[x] Configurable ranking weights  ✅ Sprint 5
 
-Add:
-
-    [ranking]
-
-    vector_weight
-    recency_weight
-    depth_penalty
-
-Current constants become config.
+    [ranking] section: vector_weight, recency_weight, depth_penalty, recency_half_life_hours
+    RankingWeight struct on Config and RetrieveContextOptions
+    defaultCompositeScorer now a factory: func(RankingWeight) CompositeScorer
 
 ----------------------------------------------------------
 
-[ ] Introduce Reranker interface
+[x] Introduce Reranker interface  ✅ Sprint 5
 
-Interface:
-
-    type Reranker interface {
-        Rank(...)
-    }
-
-Implementations:
-
-    NoopReranker
-    CrossEncoderReranker
-    LLMReranker
-
-Pipeline:
-
-    Search
-      ->
-    Graph expansion
-      ->
-    Reranker
-      ->
-    Prompt context
+    Reranker interface: Rank(ctx, query, facts) []Fact
+    OllamaReranker (cross-encoder /api/rerank), OpenAIReranker (chat /chat/completions)
+    Wired into RetrieveContext pipeline after category buckets
+    Optional — nil when provider empty in config
 
 ----------------------------------------------------------
 
-[ ] Retrieval explainability
+[x] Retrieval explainability  ✅ Sprint 2
 
-Endpoint:
-
-    /query/explain
-
-Returns:
-
-    why node selected
-    vector score
-    depth score
-    recency score
+    Endpoint: /query/explain
+    Returns: vector score, depth score, recency score per fact
 
 ==========================================================
 PHASE 5 — VECTOR INDEX IMPROVEMENTS
@@ -310,39 +162,17 @@ Reduce allocations and memory footprint.
 
 Tasks:
 
-[ ] Remove duplicated vector storage
+[x] Remove duplicated vector storage  ✅ (multi-sprint)
 
-Current:
-
-    flatMatrix
-    entries[i].Vector
-
-Store only:
-
-    flatMatrix
-    metadata
-
-Expected:
-
-    ~50% RAM reduction
+    Removed vec []float32 from vectorEntry — only flatMatrix stores vectors.
+    entries keep id + norm (metadata). ~50% RAM reduction on entries slice.
 
 ----------------------------------------------------------
 
-[ ] sync.Pool for search buffers
+[x] sync.Pool for search buffers  ✅ (multi-sprint)
 
-Current:
-
-    make([]float32, n)
-
-per request.
-
-Replace:
-
-    sync.Pool
-
-Expected:
-
-    lower GC pressure
+    dotPool + intBufPool reuse dot/idx buffers across Search/SearchBatch.
+    getDotBuf/putDotBuf/getIntBuf/putIntBuf helpers. Lower GC pressure on hot paths.
 
 ----------------------------------------------------------
 
@@ -372,24 +202,7 @@ Operate Hermem in production.
 
 Tasks:
 
-[ ] Prometheus metrics
-
-Replace:
-
-    expvar
-
-With:
-
-    Prometheus
-
-Metrics:
-
-    ingest_total
-    search_total
-    retrieve_total
-    vector_search_duration
-    graph_walk_duration
-    llm_extract_duration
+[ ] Prometheus metrics  ⬜ (metrics exist via expvar, not Prometheus format yet)
 
 ----------------------------------------------------------
 
@@ -411,18 +224,11 @@ Compatible with:
 
 ----------------------------------------------------------
 
-[ ] Health levels
+[x] Health levels  ✅ (multi-sprint)
 
-Endpoints:
-
-    /health/live
-    /health/ready
-
-Ready checks:
-
-    database
-    embedder
-    extractor
+    /health/live — always 200 (liveness probe)
+    /health/ready — DB ping check, returns 503 with per-dependency status if degraded
+    TODO: add embedder/extractor health checks to /health/ready
 
 ==========================================================
 PHASE 7 — SCHEMA ENGINE
@@ -436,50 +242,28 @@ Make schema a first-class feature.
 
 Tasks:
 
-[ ] Schema validation compiler
+[x] Schema validation compiler  ✅ (multi-sprint)
 
-Startup:
-
-    validate schema
-
-Check:
-
-    duplicate states
-    duplicate relations
-    invalid FSM
-
-Fail fast.
+    ValidateSchema() checks: duplicate states, stateful_categories requires states,
+    state_unblocking ∈ valid_states, blocking/recovery ∈ allowed_relations.
+    Integrated into Config.Validate() — runs at startup and on SIGHUP.
 
 ----------------------------------------------------------
 
-[ ] Schema versioning
+[x] Schema versioning  ✅ Sprint 4
 
-Add:
-
-    schema_version
-
-Stored in DB.
-
-Startup:
-
-    compare config schema
-    compare DB schema
-
-Detect incompatibilities.
+    HashSchema() deterministic SHA-256 fingerprint (sorted map keys)
+    CheckSchemaFingerprint compares stored vs current on startup
+    StoreSchemaFingerprint writes after SIGHUP reload
+    hermem schema CLI shows current vs stored
 
 ----------------------------------------------------------
 
-[ ] Dynamic schema reload
+[x] Dynamic schema reload  ✅ Sprint 4
 
-Signal:
-
-    SIGHUP
-
-Reload:
-
-    hermem.ini
-
-Without restart.
+    SIGHUP reloads hermem.ini without restart
+    Server uses atomic.Pointer[ServerState] for lock-free swaps
+    Server.ReloadState atomically swaps schema, categories, relations, ranking, reranker
 
 ==========================================================
 PHASE 8 — DATABASE EVOLUTION
@@ -493,30 +277,20 @@ Safe upgrades.
 
 Tasks:
 
-[ ] Migration system
+[x] Migration system  ✅ Sprint 4
 
-Tables:
-
-    schema_migrations
-
-Implement:
-
-    migration runner
-
-Versioned SQL files.
+    schema_migrations table tracks applied versions
+    src/migrations/ with 3 embedded SQL files (//go:embed)
+    runMigrations reads embedded SQL, applies in tx, records version
+    Replaces old ad-hoc migrateSchema (ALTER TABLE with swallowed errors)
 
 ----------------------------------------------------------
 
-[ ] Upgrade command
+[x] Upgrade command  ✅ Sprint 4
 
-CLI:
-
-    hermem migrate
-
-Output:
-
-    migration status
-    pending migrations
+    CLI: hermem migrate — shows status of all migrations
+    MigrationStatus / PendingMigrations exported for CLI use
+    --db flag for targeting specific database
 
 ==========================================================
 PHASE 9 — ENTERPRISE FEATURES
@@ -618,32 +392,33 @@ Convert Hermem from memory store into agent substrate.
 RECOMMENDED ORDER
 ==========================================================
 
-Sprint 1:
-- Remove globals
-- Transactions
-- FK enforcement
+Sprint 1: ✅
+- ✅ FK enforcement
+- ✅ Remove globals
+- ✅ Transactions
 
-Sprint 2:
-- Memory provenance
-- Entity metadata
-- Retrieval explainability
+Sprint 2: ✅
+- ✅ Memory provenance
+- ✅ Entity metadata
+- ✅ Retrieval explainability
 
-Sprint 3:
-- Reranker
-- Ranking config
-- Prometheus
+Sprint 3: ✅ (merged into Sprint 5)
+- ✅ Reranker
+- ✅ Ranking config
+- ✅ Health levels (/health/live, /health/ready)
+- ⬜ Prometheus (metrics exist via expvar, not Prometheus format)
 
-Sprint 4:
-- Migration system
-- Schema versioning
+Sprint 4: ✅
+- ✅ Migration system
+- ✅ Schema versioning
 
-Sprint 5:
-- Contradiction handling
-- Temporal memory
+Sprint 5: ⬜
+- ⬜ Contradiction handling
+- ⬜ Temporal memory
 
-Sprint 6:
-- Multi-tenant support
-- RBAC
+Sprint 6: ⬜
+- ⬜ Multi-tenant support
+- ⬜ RBAC
 
 After Sprint 6 Hermem stops being "graph memory for agents"
 and becomes a legitimate memory substrate for agent frameworks.

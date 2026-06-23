@@ -540,6 +540,8 @@ func main() {
 
 		mux := http.NewServeMux()
 		mux.HandleFunc("/health", srv.HandleHealth)
+		mux.HandleFunc("/health/live", srv.HandleHealthLive)
+		mux.HandleFunc("/health/ready", srv.HandleHealthReady)
 		mux.HandleFunc("/metrics", metricsHandler)
 		mux.HandleFunc("/store", srv.HandleStore)
 		mux.HandleFunc("/search", srv.HandleSearch)

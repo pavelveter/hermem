@@ -8,10 +8,20 @@ import (
 	"sync"
 )
 
+// dotPool reuses []float32 buffers across Search/SearchBatch calls.
+// Each call needs n-sized dot and idx buffers; pooling eliminates
+// per-request allocation and reduces GC pressure on hot search paths.
+var dotPool = sync.Pool{
+	New: func() interface{} {
+		// 1024 is a reasonable starting capacity; grows via append if needed.
+		s := make([]float32, 0, 1024)
+		return &s
+	},
+}
+
 type vectorEntry struct {
 	id   string
-	vec  []float32
-	norm float32
+	norm float32 // always 1 (unit vectors stored post-Sprint 5); metadata only
 }
 
 type InMemoryVectorIndex struct {
@@ -57,11 +67,7 @@ func (idx *InMemoryVectorIndex) load() {
 				idx.cols = len(emb)
 			}
 			idx.byID[id] = len(idx.entries)
-			idx.entries = append(idx.entries, vectorEntry{
-				id:   id,
-				vec:  emb,
-				norm: 1,
-			})
+			idx.entries = append(idx.entries, vectorEntry{id: id, norm: 1})
 			idx.flatMatrix = append(idx.flatMatrix, emb...)
 		}
 	}
@@ -73,6 +79,43 @@ func vectorNorm(v []float32) float32 {
 		return 0
 	}
 	return VectorNorm(v)
+}
+
+// ---- sync.Pool helpers for Search/SearchBatch buffers ----
+
+func getDotBuf(n int) *[]float32 {
+	b := dotPool.Get().(*[]float32)
+	if cap(*b) < n {
+		*b = make([]float32, n)
+	} else {
+		*b = (*b)[:n]
+	}
+	return b
+}
+
+func putDotBuf(b *[]float32) {
+	dotPool.Put(b)
+}
+
+var intBufPool = sync.Pool{
+	New: func() interface{} {
+		s := make([]int, 0, 1024)
+		return &s
+	},
+}
+
+func getIntBuf(n int) *[]int {
+	b := intBufPool.Get().(*[]int)
+	if cap(*b) < n {
+		*b = make([]int, n)
+	} else {
+		*b = (*b)[:n]
+	}
+	return b
+}
+
+func putIntBuf(b *[]int) {
+	intBufPool.Put(b)
 }
 
 func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float32, topK int) ([]string, error) {
@@ -96,26 +139,28 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 		return nil, fmt.Errorf("zero query embedding")
 	}
 
-	dots := make([]float32, n)
-	BatchDotProducts(queryEmbedding, flatMatrix, n, cols, dots)
+	dots := getDotBuf(n)
+	defer putDotBuf(dots)
+	BatchDotProducts(queryEmbedding, flatMatrix, n, cols, *dots)
 
-	for i := range dots {
-		dots[i] /= queryNorm
+	for i := range *dots {
+		(*dots)[i] /= queryNorm
 	}
 
-	idxs := make([]int, n)
-	for i := range idxs {
-		idxs[i] = i
+	idxs := getIntBuf(n)
+	defer putIntBuf(idxs)
+	for i := range *idxs {
+		(*idxs)[i] = i
 	}
-	sort.Slice(idxs, func(i, j int) bool {
-		return dots[idxs[i]] > dots[idxs[j]]
+	sort.Slice(*idxs, func(i, j int) bool {
+		return (*dots)[(*idxs)[i]] > (*dots)[(*idxs)[j]]
 	})
 	if topK > 0 && topK < n {
-		idxs = idxs[:topK]
+		*idxs = (*idxs)[:topK]
 	}
 
-	ids := make([]string, len(idxs))
-	for i, pos := range idxs {
+	ids := make([]string, len(*idxs))
+	for i, pos := range *idxs {
 		ids[i] = entries[pos].id
 	}
 	return ids, nil
@@ -138,7 +183,8 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 	cols := idx.cols
 	idx.mu.RUnlock()
 
-	dots := make([]float32, n)
+	dots := getDotBuf(n)
+	defer putDotBuf(dots)
 	results := make([][]string, len(queries))
 
 	for qi, q := range queries {
@@ -150,28 +196,29 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 			return nil, fmt.Errorf("zero query embedding")
 		}
 
-		BatchDotProducts(q, flatMatrix, n, cols, dots)
+		BatchDotProducts(q, flatMatrix, n, cols, *dots)
 
-		for i := range dots {
-			dots[i] /= queryNorm
+		for i := range *dots {
+			(*dots)[i] /= queryNorm
 		}
 
-		idxs := make([]int, n)
-		for i := range idxs {
-			idxs[i] = i
+		idxs := getIntBuf(n)
+		for i := range *idxs {
+			(*idxs)[i] = i
 		}
-		sort.Slice(idxs, func(i, j int) bool {
-			return dots[idxs[i]] > dots[idxs[j]]
+		sort.Slice(*idxs, func(i, j int) bool {
+			return (*dots)[(*idxs)[i]] > (*dots)[(*idxs)[j]]
 		})
 		if limit > 0 && limit < n {
-			idxs = idxs[:limit]
+			*idxs = (*idxs)[:limit]
 		}
 
-		ids := make([]string, len(idxs))
-		for i, pos := range idxs {
+		ids := make([]string, len(*idxs))
+		for i, pos := range *idxs {
 			ids[i] = entries[pos].id
 		}
 		results[qi] = ids
+		putIntBuf(idxs)
 	}
 	return results, nil
 }
@@ -180,8 +227,9 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	// vec is already normalized by StoreEntityWithEmbedding caller
-	entry := vectorEntry{id: id, vec: vec, norm: 1}
+	// vec is already normalized by StoreEntityWithEmbedding caller.
+	// Only flatMatrix stores the vector; entries tracks id+norm only.
+	entry := vectorEntry{id: id, norm: 1}
 	if i, ok := idx.byID[id]; ok {
 		idx.entries[i] = entry
 		copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], vec)

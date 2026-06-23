@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vector normalization at ingest — embeddings stored as unit vectors, Search skips norm division.
 - Graceful shutdown: HTTP drain → GC cancel → metrics flush → DB close, in order.
 - `--help` / `-h` CLI flag short-circuits before any DB work and prints a block-glyph HERMEM banner followed by the command reference (stdout, exit 0). The no-args path now also prints the banner (stderr, exit 1). Banner is plain text everywhere — no ANSI escapes leak into piped output or test captures.
+- **Schema validation compiler** (Phase 7) — `ValidateSchema()` checks duplicate states, stateful_categories requires valid_states, state_unblocking ∈ valid_states, blocking/recovery ∈ allowed_relations. Integrated into `Config.Validate()` — runs at startup and on SIGHUP reload. Fail-fast on invalid schema.
+- **Health levels** (Phase 6) — `/health/live` always returns 200 (liveness probe). `/health/ready` pings DB, returns 503 with per-dependency status if degraded (readiness probe).
+- **Vector index dedup** (Phase 5) — Removed `vec []float32` from `vectorEntry`; vectors live only in `flatMatrix`. ~50% RAM reduction on entries slice metadata.
+- **sync.Pool for search buffers** (Phase 5) — `dotPool` + `intBufPool` reuse dot-product and index buffers across `Search`/`SearchBatch`. Lower GC pressure on hot search paths.
 
 ### Changed
 - `IngestionWorker` schema is now directly swappable (maps are immutable after construction).

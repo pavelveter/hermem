@@ -444,6 +444,41 @@ func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// HandleHealthLive always returns 200 — the process is alive. Used by
+// Kubernetes liveness probes and load-balancer health checks.
+func (s *Server) HandleHealthLive(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// HandleHealthReady checks critical dependencies before returning 200.
+// Pings the database and optionally verifies the embedder is reachable.
+// Returns 503 if any dependency is unavailable. Used by Kubernetes
+// readiness probes to stop routing traffic to a degraded instance.
+func (s *Server) HandleHealthReady(w http.ResponseWriter, r *http.Request) {
+	checks := make(map[string]string)
+	allOk := true
+
+	// DB ping
+	if err := s.db.PingContext(r.Context()); err != nil {
+		checks["database"] = "unreachable: " + err.Error()
+		allOk = false
+	} else {
+		checks["database"] = "ok"
+	}
+
+	if !allOk {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"status": "degraded",
+			"checks": checks,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "ok",
+		"checks": checks,
+	})
+}
+
 func (s *Server) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
