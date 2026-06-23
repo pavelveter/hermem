@@ -54,10 +54,11 @@ type IngestRequest struct {
 }
 
 type EdgeRequest struct {
-	SourceID     string `json:"source_id"`
-	TargetID     string `json:"target_id"`
-	RelationType string `json:"relation_type"`
-	AutoCreate   bool   `json:"auto_create"`
+	SourceID     string  `json:"source_id"`
+	TargetID     string  `json:"target_id"`
+	RelationType string  `json:"relation_type"`
+	AutoCreate   bool    `json:"auto_create"`
+	Weight       float32 `json:"weight,omitempty"`
 }
 
 type TaskStatusRequest struct {
@@ -429,7 +430,7 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 	if req.AutoCreate {
 		err = AddEdgeWithAutoCreate(r.Context(), s.db, s.vi, s.embedder, req.SourceID, req.TargetID, req.RelationType)
 	} else {
-		err = AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType)
+		err = AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType, req.Weight)
 	}
 	if err != nil {
 		incErr()
@@ -634,7 +635,7 @@ func (s *Server) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.Add {
-		err = AddEdge(s.db, req.SourceID, req.TargetID, rel)
+		err = AddEdge(s.db, req.SourceID, req.TargetID, rel, 1.0)
 	} else {
 		err = DeleteEdge(s.db, req.SourceID, req.TargetID, rel)
 	}
@@ -765,6 +766,27 @@ func (s *Server) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// HandleProvenance returns entities matching provenance filters.
+// GET /provenance?conversation_id=X&message_id=Y&source=Z&limit=50
+func (s *Server) HandleProvenance(w http.ResponseWriter, r *http.Request) {
+	conversationID := r.URL.Query().Get("conversation_id")
+	messageID := r.URL.Query().Get("message_id")
+	source := r.URL.Query().Get("source")
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	entities, err := GetEntitiesByProvenance(s.db, conversationID, messageID, source, limit)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, entities)
+}
+
 func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -811,7 +833,7 @@ func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		if cid == "" {
 			continue
 		}
-		if err := AddEdge(s.db, req.ID, cid, "related_to"); err != nil {
+		if err := AddEdge(s.db, req.ID, cid, "related_to", 1.0); err != nil {
 			slog.Error("failed to add context edge", "err", err, "from", req.ID, "to", cid)
 		}
 	}

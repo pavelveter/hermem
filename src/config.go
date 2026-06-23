@@ -109,6 +109,7 @@ type RankingWeight struct {
 	RecencyHalfLifeHours  float32
 	TemporalWeight        float32
 	TemporalHalfLifeHours float32
+	CentralityWeight      float32
 }
 
 // LoadConfig parses hermem.ini from `path` exactly as given — no
@@ -153,6 +154,7 @@ func LoadConfig(path string) (*Config, error) {
 			RecencyHalfLifeHours:  720,
 			TemporalWeight:        0.1,
 			TemporalHalfLifeHours: 720,
+			CentralityWeight:      0.05,
 		},
 		RerankerTimeout: 30 * time.Second,
 		Schema:          defaultSchemaConfig(false),
@@ -300,6 +302,9 @@ func LoadConfig(path string) (*Config, error) {
 	cfg.Ranking.RecencyWeight = getFloat32("ranking", "recency_weight", cfg.Ranking.RecencyWeight)
 	cfg.Ranking.DepthPenalty = getFloat32("ranking", "depth_penalty", cfg.Ranking.DepthPenalty)
 	cfg.Ranking.RecencyHalfLifeHours = getFloat32("ranking", "recency_half_life_hours", cfg.Ranking.RecencyHalfLifeHours)
+	cfg.Ranking.TemporalWeight = getFloat32("ranking", "temporal_weight", cfg.Ranking.TemporalWeight)
+	cfg.Ranking.TemporalHalfLifeHours = getFloat32("ranking", "temporal_half_life_hours", cfg.Ranking.TemporalHalfLifeHours)
+	cfg.Ranking.CentralityWeight = getFloat32("ranking", "centrality_weight", cfg.Ranking.CentralityWeight)
 
 	// [reranker] section — optional post-retrieval reranker
 	if v, ok := getStr("reranker", "provider"); ok {

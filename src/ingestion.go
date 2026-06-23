@@ -417,10 +417,10 @@ func (w *IngestionWorker) createEdgesInTx(ctx context.Context, tx *sql.Tx, entit
 			if !w.schema.AllowedRelations[rel.RelationType] {
 				return fmt.Errorf("unknown relation_type: %s", rel.RelationType)
 			}
-			args = append(args, entityID, rel.TargetID, rel.RelationType)
-			phs[i] = "(?, ?, ?)"
+			args = append(args, entityID, rel.TargetID, rel.RelationType, 1.0)
+			phs[i] = "(?, ?, ?, ?)"
 		}
-		q := `INSERT OR IGNORE INTO edges (source_id, target_id, relation_type) VALUES ` +
+		q := `INSERT OR IGNORE INTO edges (source_id, target_id, relation_type, weight) VALUES ` +
 			strings.Join(phs, ",")
 		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
 			return fmt.Errorf("bulk insert edges for %s: chunk [%d-%d] of %d: %w",

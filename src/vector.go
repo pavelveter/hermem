@@ -151,7 +151,7 @@ func SearchByVector(db *sql.DB, vi VectorIndex, queryEmbedding []float32, topK i
 	return results, nil
 }
 
-func AddEdge(db *sql.DB, src, dst, rel string) error {
+func AddEdge(db *sql.DB, src, dst, rel string, weight float32) error {
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM entities WHERE id IN (?, ?)", src, dst).Scan(&count)
 	if err != nil {
@@ -160,10 +160,13 @@ func AddEdge(db *sql.DB, src, dst, rel string) error {
 	if count != 2 {
 		return fmt.Errorf("both source and target entities must exist (found %d of 2)", count)
 	}
+	if weight == 0 {
+		weight = 1.0
+	}
 	_, err = db.Exec(`
-		INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
-		VALUES (?, ?, ?)
-	`, src, dst, rel)
+		INSERT OR IGNORE INTO edges (source_id, target_id, relation_type, weight)
+		VALUES (?, ?, ?, ?)
+	`, src, dst, rel, weight)
 	if err != nil {
 		return fmt.Errorf("failed to insert edge: %w", err)
 	}
@@ -192,7 +195,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi VectorIndex, embe
 			}
 		}
 	}
-	return AddEdge(db, src, dst, rel)
+	return AddEdge(db, src, dst, rel, 1.0)
 }
 
 func AutoLinkEdges(ctx context.Context, db *sql.DB, vi VectorIndex, embedder Embedder, newID string, newEmbedding []float32) error {
@@ -217,8 +220,8 @@ func AutoLinkEdges(ctx context.Context, db *sql.DB, vi VectorIndex, embedder Emb
 			continue
 		}
 		_, err := db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type)
-			VALUES (?, ?, 'related_to')
+			INSERT OR IGNORE INTO edges (source_id, target_id, relation_type, weight)
+			VALUES (?, ?, 'related_to', 1.0)
 		`, newID, r.Entity.ID)
 		if err != nil {
 			return fmt.Errorf("auto-link insert: %w", err)

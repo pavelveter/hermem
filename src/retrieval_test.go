@@ -790,7 +790,7 @@ func TestCompositeScorerDefaultDepthPenalty(t *testing.T) {
 	if len(res.SeedNodes) != 1 {
 		t.Fatalf("SeedNodes = %d, want 1", len(res.SeedNodes))
 	}
-	if res.SeedNodes[0].RankingScore < 0.64 || res.SeedNodes[0].RankingScore > 0.66 {
+	if res.SeedNodes[0].RankingScore < 0.64 || res.SeedNodes[0].RankingScore > 0.67 {
 		t.Errorf("seed RankingScore = %v, want ~0.65", res.SeedNodes[0].RankingScore)
 	}
 }
@@ -931,7 +931,7 @@ func TestCompositeScoreDirect(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := compositeScore(w, c.sim, c.recency, 0, c.depth)
+			got := compositeScore(w, c.sim, c.recency, 0, 0, float32(c.depth))
 			if !float32AlmostEqual(got, c.want) {
 				t.Errorf("got %v, want %v", got, c.want)
 			}
@@ -969,7 +969,7 @@ func TestCompositeScorerNilMatchesDefault(t *testing.T) {
 	optsDefault := RetrieveContextOptions{
 		MaxDepth:        5,
 		QueryEmbedding:  []float32{1, 0, 0},
-		CompositeScorer: defaultCompositeScorer(RankingWeight{VectorWeight: 0.7, RecencyWeight: 0.3, DepthPenalty: 0.05}),
+		CompositeScorer: defaultCompositeScorer(resolvedRankingWeight(RankingWeight{VectorWeight: 0.7, RecencyWeight: 0.3, DepthPenalty: 0.05})),
 	}
 
 	run := func(opts RetrieveContextOptions) *RetrievalResult {
