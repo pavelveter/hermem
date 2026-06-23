@@ -820,6 +820,57 @@ func buildNode(db *sql.DB, schema SchemaConfig, id string, visited map[string]bo
 	return node, nil
 }
 
+// ContradictionPair is one directed contradicts edge with content on both sides.
+type ContradictionPair struct {
+	SourceID      string `json:"source_id"`
+	SourceContent string `json:"source_content"`
+	TargetID      string `json:"target_id"`
+	TargetContent string `json:"target_content"`
+}
+
+// GetContradictions returns contradicts edges, optionally filtered by
+// entity ID (checks both source and target sides). When entityID is
+// empty, returns all contradiction pairs.
+func GetContradictions(db *sql.DB, entityID string) ([]ContradictionPair, error) {
+	var rows *sql.Rows
+	var err error
+	if entityID != "" {
+		rows, err = db.Query(`
+			SELECT e1.id, e1.content, e2.id, e2.content
+			FROM edges ed
+			JOIN entities e1 ON e1.id = ed.source_id
+			JOIN entities e2 ON e2.id = ed.target_id
+			WHERE ed.relation_type = 'contradicts'
+			  AND e1.archived = 0 AND e2.archived = 0
+			  AND (ed.source_id = ? OR ed.target_id = ?)
+			ORDER BY e1.id
+		`, entityID, entityID)
+	} else {
+		rows, err = db.Query(`
+			SELECT e1.id, e1.content, e2.id, e2.content
+			FROM edges ed
+			JOIN entities e1 ON e1.id = ed.source_id
+			JOIN entities e2 ON e2.id = ed.target_id
+			WHERE ed.relation_type = 'contradicts'
+			  AND e1.archived = 0 AND e2.archived = 0
+			ORDER BY e1.id
+		`)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query contradictions: %w", err)
+	}
+	defer rows.Close()
+	var out []ContradictionPair
+	for rows.Next() {
+		var p ContradictionPair
+		if err := rows.Scan(&p.SourceID, &p.SourceContent, &p.TargetID, &p.TargetContent); err != nil {
+			return nil, fmt.Errorf("scan contradiction: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // RenderTaskTree returns a human-readable tree representation.
 // Example: "[id] content (status)"
 //

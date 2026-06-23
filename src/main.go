@@ -407,6 +407,123 @@ func main() {
 		}
 		fmt.Println(`{"status":"ok"}`)
 
+	case "temporal":
+		// Phase 10: temporal retrieval — query with time range.
+		var req struct {
+			Query    string `json:"query"`
+			TimeFrom string `json:"time_from"`
+			TimeTo   string `json:"time_to"`
+			TopK     int    `json:"top_k"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.Query == "" {
+			log.Fatal("query required")
+		}
+		if req.TopK <= 0 {
+			req.TopK = 3
+		}
+		queryEmbedding, err := embedder.Embed(ctx, req.Query)
+		if err != nil {
+			log.Fatalf("Embed failed: %v", err)
+		}
+		searchResults, err := SearchByVector(db, vi, queryEmbedding, req.TopK)
+		if err != nil {
+			log.Fatalf("Search failed: %v", err)
+		}
+		var seedIDs []string
+		for _, res := range searchResults {
+			seedIDs = append(seedIDs, res.Entity.ID)
+		}
+		opts := RetrieveContextOptions{
+			MaxDepth:          2,
+			DepthCeiling:      cfg.MaxDepthCeiling,
+			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+			QueryEmbedding:    queryEmbedding,
+			QueryText:         req.Query,
+			RankingWeight:     cfg.Ranking,
+			Reranker:          reranker,
+		}
+		if req.TimeFrom != "" {
+			if t, err := time.Parse(time.RFC3339, req.TimeFrom); err == nil {
+				opts.TimeFrom = t
+			}
+		}
+		if req.TimeTo != "" {
+			if t, err := time.Parse(time.RFC3339, req.TimeTo); err == nil {
+				opts.TimeTo = t
+			}
+		}
+		result, err := RetrieveContext(db, seedIDs, opts)
+		if err != nil {
+			log.Fatalf("Temporal retrieval failed: %v", err)
+		}
+		json.NewEncoder(os.Stdout).Encode(result)
+
+	case "timeline":
+		// Phase 10: episodic memory — timeline of recent entities.
+		limit := 50
+		if len(os.Args) > 2 {
+			if n, err := fmt.Sscanf(os.Args[2], "%d", &limit); err != nil || n != 1 || limit <= 0 {
+				limit = 50
+			}
+		}
+		rows, err := db.QueryContext(ctx, `
+			SELECT id, category, content, created_at,
+			       source, source_type, conversation_id, message_id
+			FROM entities
+			WHERE archived = 0 AND created_at IS NOT NULL
+			ORDER BY created_at DESC
+			LIMIT ?
+		`, limit)
+		if err != nil {
+			log.Fatalf("timeline: %v", err)
+		}
+		defer rows.Close()
+		count := 0
+		for rows.Next() {
+			var id, category, content string
+			var createdAt sql.NullTime
+			var source, sourceType, convID, msgID sql.NullString
+			if err := rows.Scan(&id, &category, &content, &createdAt,
+				&source, &sourceType, &convID, &msgID); err != nil {
+				log.Fatalf("scan timeline: %v", err)
+			}
+			ts := "(unknown)"
+			if createdAt.Valid {
+				ts = createdAt.Time.Format(time.RFC3339)
+			}
+			info := ""
+			if convID.Valid && convID.String != "" {
+				info += fmt.Sprintf(" conv=%s", convID.String)
+			}
+			fmt.Printf("[%s] %s  %s  [%s]%s\n", ts, id, content, category, info)
+			count++
+		}
+		if count == 0 {
+			fmt.Println("No timeline entries found.")
+		}
+
+	case "contradictions":
+		// Phase 10: contradiction graph — list contradicts edges.
+		// Optional entity ID from argv[2] to filter by entity.
+		entityID := ""
+		if len(os.Args) > 2 {
+			entityID = os.Args[2]
+		}
+		pairs, err := GetContradictions(db, entityID)
+		if err != nil {
+			log.Fatalf("contradictions: %v", err)
+		}
+		if len(pairs) == 0 {
+			fmt.Println("No contradictions found.")
+		} else {
+			for _, p := range pairs {
+				fmt.Printf("[%s] %s\n  contradicts [%s] %s\n\n", p.SourceID, p.SourceContent, p.TargetID, p.TargetContent)
+			}
+		}
+
 	case "explain":
 		// Sprint 2: retrieval explainability — full pipeline with
 		// vector/recency/depth breakdown per fact.
@@ -559,6 +676,9 @@ func main() {
 		mux.HandleFunc("/task/create", srv.HandleTaskCreate)
 		mux.HandleFunc("/task/rollback", srv.HandleTaskRollback)
 		mux.HandleFunc("/query/explain", srv.HandleQueryExplain)
+		mux.HandleFunc("/contradictions", srv.HandleContradictions)
+		mux.HandleFunc("/query/temporal", srv.HandleQueryTemporal)
+		mux.HandleFunc("/timeline", srv.HandleTimeline)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 

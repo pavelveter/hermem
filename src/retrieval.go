@@ -175,6 +175,11 @@ type RetrieveContextOptions struct {
 	// reranker for relevance comparison. Optional — reranker skips
 	// if empty (e.g. /retrieve endpoint with explicit seed IDs).
 	QueryText string
+	// Phase 10: temporal retrieval — optional time range filter.
+	// When non-zero, only entities with created_at in [TimeFrom, TimeTo]
+	// are returned. Zero values mean "no bound" (open range).
+	TimeFrom time.Time
+	TimeTo   time.Time
 }
 
 // resolvedRankingWeight returns the effective ranking weights,
@@ -250,6 +255,19 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 		args[i] = id
 	}
 
+	// Phase 10: temporal retrieval — filter by created_at range.
+	// Time args must come BEFORE depth because the CTE anchor arm
+	// references them before the recursive arm's depth placeholder.
+	var timeFilter string
+	if !opts.TimeFrom.IsZero() {
+		timeFilter += " AND e.created_at >= ?"
+		args = append(args, opts.TimeFrom)
+	}
+	if !opts.TimeTo.IsZero() {
+		timeFilter += " AND e.created_at <= ?"
+		args = append(args, opts.TimeTo)
+	}
+
 	args = append(args, effectiveDepth)
 
 	// graph_walk recursion terminates on cycles via a `visited`
@@ -284,10 +302,10 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 				'' as parent_id,
 				'' as relation_type,
 				char(31) || e.id || char(31) as visited
-			FROM entities e
-			WHERE e.id IN (%[1]s) AND e.archived = 0
+		FROM entities e
+		WHERE e.id IN (%[1]s) AND e.archived = 0`+timeFilter+`
 
-			UNION ALL
+		UNION ALL
 
 			SELECT
 				e.id, e.category, e.content, e.updated_at, e.embedding,
@@ -303,9 +321,9 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) 
 					ELSE ed.source_id = e.id
 				END
 			)
-			WHERE gw.depth < ?
-				AND instr(gw.visited, char(31) || e.id || char(31)) = 0
-				AND e.archived = 0
+			WHERE gw.depth < ?			AND instr(gw.visited, char(31) || e.id || char(31)) = 0
+			AND e.archived = 0
+			`+timeFilter+`
 		)
 		SELECT DISTINCT id, category, content, updated_at, embedding, depth, parent_id, relation_type
 		FROM graph_walk
