@@ -339,31 +339,27 @@ ETA: 2-4 weeks
 
 Tasks:
 
-[ ] Temporal memory retrieval
+[x] Temporal memory retrieval  ✅ Phase 10
 
-Query:
-
-    what did user believe in March?
-
-----------------------------------------------------------
-
-[ ] Contradiction graph
-
-Relations:
-
-    contradicts
-
-Automatic detection.
+    RetrieveContextOptions.TimeFrom/TimeTo — CTE filters both anchor and recursive arms.
+    /query/temporal endpoint + temporal CLI — query with time window.
+    Time parse warnings on malformed RFC3339 input.
 
 ----------------------------------------------------------
 
-[ ] Episodic memory
+[x] Contradiction graph  ✅ Phase 10
 
-Store:
+    ContradictionPair type with json tags. GetContradictions(db, entityID) —
+    bidirectional filtering (source_id OR target_id). /contradictions[?id=X] endpoint.
+    contradictions CLI [entity_id]. contradict edges included in graph walks.
 
-    sessions
-    conversations
-    timelines
+----------------------------------------------------------
+
+[x] Episodic memory  ✅ Phase 10
+
+    Migration 004_episodic_sessions.sql: sessions + conversations tables.
+    /timeline endpoint + timeline CLI — entities ordered by created_at DESC.
+    idx_entities_created_at index for timeline queries.
 
 ----------------------------------------------------------
 
@@ -412,9 +408,10 @@ Sprint 4: ✅
 - ✅ Migration system
 - ✅ Schema versioning
 
-Sprint 5: 🔄
+Sprint 5: ✅
 - ✅ Contradiction handling (heuristic-based, no LLM)
-- ⬜ Temporal memory
+- ✅ Temporal memory retrieval
+- ✅ Episodic memory (sessions, timeline)
 
 Sprint 6: ⬜
 - ⬜ Multi-tenant support

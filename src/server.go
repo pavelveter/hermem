@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -823,6 +824,169 @@ func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 
 	incTaskCreate()
 	writeJSON(w, http.StatusOK, TaskCreateResponse{ID: req.ID, Status: "ok"})
+}
+
+// HandleQueryTemporal filters retrieval by time range. Accepts JSON:
+// {"query":"...", "time_from":"2024-03-01T00:00:00Z", "time_to":"2024-03-31T23:59:59Z"}
+// Returns context limited to entities created in the specified window.
+func (s *Server) HandleQueryTemporal(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		Query    string `json:"query"`
+		TimeFrom string `json:"time_from"`
+		TimeTo   string `json:"time_to"`
+		TopK     int    `json:"top_k"`
+	}
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+	if req.Query == "" {
+		writeError(w, http.StatusBadRequest, "query required")
+		return
+	}
+	if req.TopK <= 0 {
+		req.TopK = 3
+	}
+
+	queryEmbedding, err := s.embedder.Embed(r.Context(), req.Query)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("embed failed: %v", err))
+		return
+	}
+
+	searchResults, err := SearchByVector(s.db, s.vi, queryEmbedding, req.TopK)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var seedIDs []string
+	for _, res := range searchResults {
+		seedIDs = append(seedIDs, res.Entity.ID)
+	}
+
+	opts := s.retrievalOpts
+	opts.QueryEmbedding = queryEmbedding
+	opts.QueryText = req.Query
+	opts.Ctx = r.Context()
+	if req.TimeFrom != "" {
+		if t, err := time.Parse(time.RFC3339, req.TimeFrom); err == nil {
+			opts.TimeFrom = t
+		}
+	}
+	if req.TimeTo != "" {
+		if t, err := time.Parse(time.RFC3339, req.TimeTo); err == nil {
+			opts.TimeTo = t
+		}
+	}
+
+	result, err := RetrieveContext(s.db, seedIDs, opts)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	incQuery()
+	writeJSON(w, http.StatusOK, result)
+}
+
+// HandleTimeline returns entities ordered by created_at, grouped by
+// source/conversation. Accepts optional ?limit=N (default 50).
+// GET /timeline[?limit=50]
+func (s *Server) HandleTimeline(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	rows, err := s.db.QueryContext(r.Context(), `
+		SELECT id, category, content, created_at,
+		       source, source_type, conversation_id, message_id
+		FROM entities
+		WHERE archived = 0 AND created_at IS NOT NULL
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	type TimelineEntry struct {
+		ID             string     `json:"id"`
+		Category       string     `json:"category"`
+		Content        string     `json:"content"`
+		CreatedAt      *time.Time `json:"created_at"`
+		Source         string     `json:"source,omitempty"`
+		SourceType     string     `json:"source_type,omitempty"`
+		ConversationID string     `json:"conversation_id,omitempty"`
+		MessageID      string     `json:"message_id,omitempty"`
+	}
+	var entries []TimelineEntry
+	for rows.Next() {
+		var e TimelineEntry
+		var cat, content string
+		var createdAt sql.NullTime
+		var source, sourceType, convID, msgID sql.NullString
+		if err := rows.Scan(&e.ID, &cat, &content, &createdAt,
+			&source, &sourceType, &convID, &msgID); err != nil {
+			incErr()
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		e.Category = cat
+		e.Content = content
+		if createdAt.Valid {
+			t := createdAt.Time
+			e.CreatedAt = &t
+		}
+		if source.Valid {
+			e.Source = source.String
+		}
+		if sourceType.Valid {
+			e.SourceType = sourceType.String
+		}
+		if convID.Valid {
+			e.ConversationID = convID.String
+		}
+		if msgID.Valid {
+			e.MessageID = msgID.String
+		}
+		entries = append(entries, e)
+	}
+	if entries == nil {
+		entries = []TimelineEntry{}
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
+// HandleContradictions returns contradicts edges. Accepts optional
+// ?id=X query param to filter by entity (checks both sides).
+// GET /contradictions[?id=entity-x]
+func (s *Server) HandleContradictions(w http.ResponseWriter, r *http.Request) {
+	entityID := r.URL.Query().Get("id")
+	pairs, err := GetContradictions(s.db, entityID)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if pairs == nil {
+		pairs = []ContradictionPair{}
+	}
+	writeJSON(w, http.StatusOK, pairs)
 }
 
 func firstStatefulCategory(schema SchemaConfig) string {
