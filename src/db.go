@@ -1,16 +1,24 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"embed"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+//go:embed migrations/*.sql
+var migrationFS embed.FS
 
 type Entity struct {
 	ID             string     `json:"id"`
@@ -151,9 +159,26 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create id_map table: %w", err)
 	}
 
-	if err := migrateSchema(db); err != nil {
+	// Create migration tracking table before running migrations
+	// so the runner can record its own progress.
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version     TEXT PRIMARY KEY,
+			applied_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create schema_migrations: %w", err)
+	}
+
+	if err := runMigrations(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("schema migration: %w", err)
+	}
+
+	if err := migrateEntitiesFlexibleSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("flexible schema migration: %w", err)
 	}
 
 	if err := checkMeta(db, vectorDim); err != nil {
@@ -175,40 +200,159 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	return db, nil
 }
 
-func migrateSchema(db *sql.DB) error {
-	migrations := []struct {
-		name string
-		sql  string
-	}{
-		{"last_accessed_at", `ALTER TABLE entities ADD COLUMN last_accessed_at DATETIME`},
-		{"archived", `ALTER TABLE entities ADD COLUMN archived INTEGER DEFAULT 0`},
-		{"status", `ALTER TABLE entities ADD COLUMN status TEXT DEFAULT NULL`},
-		// Sprint 2: entity metadata + provenance columns
-		{"confidence", `ALTER TABLE entities ADD COLUMN confidence REAL DEFAULT 1.0`},
-		{"source", `ALTER TABLE entities ADD COLUMN source TEXT DEFAULT ''`},
-		{"source_type", `ALTER TABLE entities ADD COLUMN source_type TEXT DEFAULT ''`},
-		{"created_at", `ALTER TABLE entities ADD COLUMN created_at DATETIME`},
-		{"valid_from", `ALTER TABLE entities ADD COLUMN valid_from DATETIME`},
-		{"valid_to", `ALTER TABLE entities ADD COLUMN valid_to DATETIME`},
-		{"conversation_id", `ALTER TABLE entities ADD COLUMN conversation_id TEXT DEFAULT ''`},
-		{"message_id", `ALTER TABLE entities ADD COLUMN message_id TEXT DEFAULT ''`},
-		{"extracted_from", `ALTER TABLE entities ADD COLUMN extracted_from TEXT DEFAULT ''`},
+// runMigrations discovers embedded SQL migration files, compares them
+// against the schema_migrations tracking table, and applies any
+// unapplied migrations in order. Each migration runs inside a single
+// SQLite transaction so a partial failure rolls back atomically.
+// After the SQL succeeds, the migration version is recorded in
+// schema_migrations with a UTC timestamp.
+//
+// Sprint 4: replaces the old ad-hoc migrateSchema (hardcoded ALTER
+// TABLE with swallowed errors). Versioned migrations give operators
+// visibility into the DB state via `hermem migrate` and prevent
+// silent schema drift.
+func runMigrations(db *sql.DB) error {
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		return fmt.Errorf("read embedded migrations: %w", err)
 	}
-	for _, m := range migrations {
-		if _, err := db.Exec(m.sql); err != nil {
-			// Column already exists — ignore
+
+	// Collect and sort migration files by name (version prefix).
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
 		}
+		files = append(files, e.Name())
 	}
-	// Backfill last_accessed_at for rows added before the column existed.
-	// SQLite does not allow non-constant defaults in ALTER TABLE ADD COLUMN,
-	// so we add the column nullable and populate it in a separate pass.
-	if _, err := db.Exec("UPDATE entities SET last_accessed_at = updated_at WHERE last_accessed_at IS NULL"); err != nil {
-		return fmt.Errorf("backfill last_accessed_at: %w", err)
+	sort.Strings(files)
+
+	applied, err := appliedMigrations(db)
+	if err != nil {
+		return fmt.Errorf("read applied migrations: %w", err)
 	}
-	if err := migrateEntitiesFlexibleSchema(db); err != nil {
-		return err
+
+	for _, name := range files {
+		if applied[name] {
+			continue
+		}
+		slog.Info("applying migration", "migration", name)
+
+		sqlBytes, err := migrationFS.ReadFile("migrations/" + name)
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", name, err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin tx for %s: %w", name, err)
+		}
+
+		if _, err := tx.Exec(string(sqlBytes)); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("apply migration %s: %w", name, err)
+		}
+
+		if _, err := tx.Exec(
+			"INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)",
+			name,
+		); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", name, err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", name, err)
+		}
+
+		slog.Info("migration applied", "migration", name)
 	}
+
 	return nil
+}
+
+// appliedMigrations returns the set of migration file names already
+// recorded in the schema_migrations table.
+func appliedMigrations(db *sql.DB) (map[string]bool, error) {
+	rows, err := db.Query("SELECT version FROM schema_migrations")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	applied := make(map[string]bool)
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		applied[v] = true
+	}
+	return applied, rows.Err()
+}
+
+// PendingMigrations returns a list of migration file names that have
+// not yet been applied. Used by the `hermem migrate` CLI command.
+func PendingMigrations() ([]string, error) {
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		files = append(files, e.Name())
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+// MigrationStatus returns the list of all migration files with their
+// applied status. Used by the `hermem migrate` CLI command.
+func MigrationStatus(db *sql.DB) ([]struct {
+	Name      string
+	Applied   bool
+	AppliedAt string
+}, error) {
+	applied, err := appliedMigrations(db)
+	if err != nil {
+		return nil, err
+	}
+
+	appliedAt := make(map[string]string)
+	rows, err := db.Query("SELECT version, applied_at FROM schema_migrations ORDER BY applied_at")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v, at string
+		if err := rows.Scan(&v, &at); err != nil {
+			return nil, err
+		}
+		appliedAt[v] = at
+	}
+
+	files, err := PendingMigrations()
+	if err != nil {
+		return nil, err
+	}
+
+	var out []struct {
+		Name      string
+		Applied   bool
+		AppliedAt string
+	}
+	for _, name := range files {
+		out = append(out, struct {
+			Name      string
+			Applied   bool
+			AppliedAt string
+		}{name, applied[name], appliedAt[name]})
+	}
+	return out, nil
 }
 
 // migrateEntitiesFlexibleSchema rebuilds the entities table to add
@@ -326,6 +470,70 @@ func checkMeta(db *sql.DB, dim int) error {
 		return fmt.Errorf("embedding_dim mismatch: database has %d, config specifies %d — re-embedding required", existingDim, dim)
 	}
 	return nil
+}
+
+// HashSchema produces a deterministic SHA-256 fingerprint of the
+// schema config. Keys in maps are sorted before serialization so the
+// hash is stable across process restarts regardless of map iteration
+// order. Used by CheckSchemaFingerprint to detect config drift.
+func HashSchema(schema SchemaConfig) string {
+	// Build a JSON-serializable representation with sorted keys.
+	rep := map[string]interface{}{
+		"categories":  sortedMapKeys(schema.AllowedCategories),
+		"relations":   sortedMapKeys(schema.AllowedRelations),
+		"stateful":    sortedMapKeys(schema.StatefulCategories),
+		"states":      schema.ValidStateOrder,
+		"blocking":    schema.RelationBlocking,
+		"unblocking":  schema.StateUnblocking,
+		"recovery":    schema.RelationRecovery,
+		"stateful_en": schema.StatefulEnabled,
+	}
+	b, err := json.Marshal(rep)
+	if err != nil {
+		// rep is built from sorted string keys and simple values —
+		// json.Marshal cannot fail on these types. If it does, it's
+		// a programming error, so panic to fail fast.
+		panic(fmt.Sprintf("HashSchema: marshal: %v", err))
+	}
+	h := sha256.Sum256(b)
+	return fmt.Sprintf("%x", h[:8]) // first 8 bytes → 16-char hex
+}
+
+// sortedMapKeys returns the keys of a map sorted alphabetically.
+func sortedMapKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// CheckSchemaFingerprint compares the current schema fingerprint
+// against the value stored in the meta table. On a fresh database
+// (no stored fingerprint), it writes the current fingerprint silently.
+// On mismatch it returns the stored and current fingerprints so the
+// caller can decide whether to warn, block, or proceed.
+func CheckSchemaFingerprint(db *sql.DB, schema SchemaConfig) (stored, current string, err error) {
+	current = HashSchema(schema)
+
+	err = db.QueryRow("SELECT value FROM meta WHERE key = 'schema_fingerprint'").Scan(&stored)
+	if err == sql.ErrNoRows {
+		_, err = db.Exec("INSERT INTO meta (key, value) VALUES ('schema_fingerprint', ?)", current)
+		return "", current, err
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return stored, current, nil
+}
+
+// StoreSchemaFingerprint writes (or overwrites) the schema fingerprint
+// in the meta table. Called after a successful SIGHUP reload.
+func StoreSchemaFingerprint(db *sql.DB, schema SchemaConfig) error {
+	fp := HashSchema(schema)
+	_, err := db.Exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_fingerprint', ?)", fp)
+	return err
 }
 
 // SetStatus updates a single stateful entity's status column. Schema

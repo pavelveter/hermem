@@ -29,6 +29,15 @@ func NewIngestionWorker(db *sql.DB, vi VectorIndex, extractor LLMExtractor, embe
 	}
 }
 
+// ReloadSchema swaps the worker's schema. Called on SIGHUP after the
+// server reloads its own state. The maps inside SchemaConfig are never
+// mutated after construction, so the struct-value replacement is safe
+// without synchronization — readers always see a fully-constructed,
+// immutable map tree regardless of which assignment they observe.
+func (w *IngestionWorker) ReloadSchema(schema SchemaConfig) {
+	w.schema = schema
+}
+
 // Provenance records where an ingested entity came from.
 type Provenance struct {
 	ConversationID string

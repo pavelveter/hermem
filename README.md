@@ -46,6 +46,14 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Memory provenance** — tracks `conversation_id`, `message_id`, `extracted_from` per entity; entity metadata (`confidence`, `source`, `source_type`, temporal validity)
 - **Docker** — multi-stage build, non-root user
 
+## CLI Commands
+
+```
+hermem migrate       # Show versioned migration status
+hermem schema        # Show current vs stored schema fingerprint
+hermem serve         # Start HTTP server (SIGHUP to reload config)
+```
+
 ## Quick Start
 
 ```bash
@@ -338,8 +346,8 @@ The ingestion worker:
 ```
 hermem/
 ├── src/
-│   ├── db.go                # SQLite schema, embedding serialization
-│   ├── config.go            # INI config loader
+│   ├── db.go                # SQLite schema, migration runner, fingerprint
+│   ├── config.go            # INI config loader, schema validation
 │   ├── embedder.go          # Embedder interface (Ollama / OpenAI)
 │   ├── extractor.go         # LLMExtractor interface + allowlist filtering
 │   ├── vector.go            # VectorIndex interface + wrappers
@@ -354,6 +362,10 @@ hermem/
 │   ├── metrics.go           # expvar metrics endpoint
 │   ├── middleware.go        # Auth + request-id middleware
 │   ├── retention.go         # Garbage collector + retention policy
+│   ├── migrations/          # Versioned SQL migration files (embedded)
+│   │   ├── 001_initial_schema.sql
+│   │   ├── 002_entity_metadata.sql
+│   │   └── 003_provenance.sql
 │   ├── *_test.go            # Per-package tests (90 tests)
 ├── hermem.ini               # Sample config file
 ├── plugins/

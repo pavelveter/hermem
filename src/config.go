@@ -498,6 +498,13 @@ func (c *Config) NewEmbedder() Embedder {
 	}
 }
 
+// Fingerprint returns a deterministic hash of the schema config.
+// Delegates to the package-level HashSchema for use outside InitDB
+// (e.g. in config reload paths that need to compare fingerprints).
+func (s SchemaConfig) Fingerprint() string {
+	return HashSchema(s)
+}
+
 func (c *Config) NewExtractor() LLMExtractor {
 	provider := orDefault(c.ExtractProvider, c.Provider)
 	url := orDefault(c.ExtractURL, c.URL)

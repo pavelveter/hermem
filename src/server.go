@@ -9,18 +9,26 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
-type Server struct {
-	db                 *sql.DB
-	vi                 VectorIndex
-	worker             *IngestionWorker
-	embedder           Embedder
-	retrievalOpts      RetrieveContextOptions
+// ServerState holds the schema-derived fields that can change at
+// runtime via SIGHUP reload. Grouped into a single struct so
+// atomic.Pointer swaps all three fields atomically without locks.
+type ServerState struct {
+	schema             SchemaConfig
 	validCategories    map[string]bool
 	validRelationTypes map[string]bool
-	schema             SchemaConfig
+}
+
+type Server struct {
+	db            *sql.DB
+	vi            VectorIndex
+	worker        *IngestionWorker
+	embedder      Embedder
+	retrievalOpts RetrieveContextOptions
+	state         atomic.Pointer[ServerState]
 }
 
 type StoreRequest struct {
@@ -129,16 +137,39 @@ func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtra
 	if validRelationTypes == nil {
 		validRelationTypes = map[string]bool{}
 	}
-	return &Server{
-		db:                 db,
-		vi:                 vi,
-		worker:             NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema),
-		embedder:           embedder,
-		retrievalOpts:      retrievalOpts,
+	s := &Server{
+		db:            db,
+		vi:            vi,
+		worker:        NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema),
+		embedder:      embedder,
+		retrievalOpts: retrievalOpts,
+	}
+	s.state.Store(&ServerState{
+		schema:             schema,
 		validCategories:    validCategories,
 		validRelationTypes: validRelationTypes,
-		schema:             schema,
+	})
+	return s
+}
+
+// ReloadState atomically swaps the server's schema state. Called on
+// SIGHUP after validating the new config. Handlers already in flight
+// continue using their snapshot; new requests see the updated state.
+func (s *Server) ReloadState(cfg *Config) {
+	cats := cfg.Schema.AllowedCategories
+	if cats == nil {
+		cats = map[string]bool{}
 	}
+	rels := cfg.Schema.AllowedRelations
+	if rels == nil {
+		rels = map[string]bool{}
+	}
+	s.state.Store(&ServerState{
+		schema:             cfg.Schema,
+		validCategories:    cats,
+		validRelationTypes: rels,
+	})
+	s.worker.ReloadSchema(cfg.Schema)
 }
 
 // decodeStrict parses JSON from an io.Reader into dst while rejecting
@@ -202,7 +233,8 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "id, category, content required")
 		return
 	}
-	if !s.validCategories[req.Category] {
+	state := s.state.Load()
+	if !state.validCategories[req.Category] {
 		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown category: %s", req.Category))
 		return
 	}
@@ -214,7 +246,7 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 		Embedding: req.Embedding,
 	}
 
-	if err := StoreEntityWithEmbedding(s.db, s.vi, s.schema, entity); err != nil {
+	if err := StoreEntityWithEmbedding(s.db, s.vi, state.schema, entity); err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -383,7 +415,8 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.validRelationTypes[req.RelationType] {
+	state := s.state.Load()
+	if !state.validRelationTypes[req.RelationType] {
 		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown relation_type: %s", req.RelationType))
 		return
 	}
@@ -426,7 +459,8 @@ func (s *Server) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := UpdateTaskStatus(s.db, s.schema, req.ID, req.Status); err != nil {
+	state := s.state.Load()
+	if err := UpdateTaskStatus(s.db, state.schema, req.ID, req.Status); err != nil {
 		incErr()
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -448,7 +482,8 @@ func (s *Server) HandleTaskExecutable(w http.ResponseWriter, r *http.Request) {
 
 	goalID := r.URL.Query().Get("goal_id")
 
-	tasks, err := GetExecutableTasks(s.db, s.schema, goalID)
+	state := s.state.Load()
+	tasks, err := GetExecutableTasks(s.db, state.schema, goalID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -476,7 +511,8 @@ func (s *Server) HandleTaskList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := ListTasks(s.db, s.schema, req.Status, req.GoalID)
+	state := s.state.Load()
+	tasks, err := ListTasks(s.db, state.schema, req.Status, req.GoalID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -509,7 +545,8 @@ func (s *Server) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity, blocked, recovers, err := GetTaskWithRelations(s.db, s.schema, req.ID)
+	state := s.state.Load()
+	entity, blocked, recovers, err := GetTaskWithRelations(s.db, state.schema, req.ID)
 	if err != nil {
 		incErr()
 		if strings.Contains(err.Error(), "not found") {
@@ -543,10 +580,11 @@ func (s *Server) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rel := req.RelationType
+	state := s.state.Load()
 	if rel == "" {
-		rel = s.schema.RelationBlocking
+		rel = state.schema.RelationBlocking
 	}
-	validRels := s.validRelationTypes
+	validRels := state.validRelationTypes
 	if validRels == nil {
 		validRels = map[string]bool{}
 	}
@@ -593,7 +631,8 @@ func (s *Server) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rollbackID, err := FindRollbackTask(s.db, s.schema, req.ID)
+	state := s.state.Load()
+	rollbackID, err := FindRollbackTask(s.db, state.schema, req.ID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -617,7 +656,8 @@ func (s *Server) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := GetTaskTree(s.db, s.schema, req.GoalID)
+	state := s.state.Load()
+	nodes, err := GetTaskTree(s.db, state.schema, req.GoalID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -714,13 +754,14 @@ func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	category := firstStatefulCategory(s.schema)
+	state := s.state.Load()
+	category := firstStatefulCategory(state.schema)
 	if category == "" {
 		writeError(w, http.StatusUnprocessableEntity, "no stateful category configured")
 		return
 	}
 	entity := Entity{ID: req.ID, Category: category, Content: req.Content, Embedding: embedding}
-	if err := StoreEntityWithEmbedding(s.db, s.vi, s.schema, entity); err != nil {
+	if err := StoreEntityWithEmbedding(s.db, s.vi, state.schema, entity); err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

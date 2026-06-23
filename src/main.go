@@ -467,6 +467,51 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "migrate":
+		// Sprint 4: versioned migration system — show status and
+		// apply pending migrations. Safe to call on a fresh DB
+		// (runMigrations is idempotent).
+		status, err := MigrationStatus(db)
+		if err != nil {
+			log.Fatalf("migration status: %v", err)
+		}
+		pending := 0
+		for _, m := range status {
+			mark := "  "
+			if m.Applied {
+				mark = "OK"
+			} else {
+				mark = "--"
+				pending++
+			}
+			fmt.Printf("[%s] %s", mark, m.Name)
+			if m.AppliedAt != "" {
+				fmt.Printf("  (%s)", m.AppliedAt)
+			}
+			fmt.Println()
+		}
+		if pending > 0 {
+			fmt.Printf("\n%d pending migration(s) — run 'hermem migrate' again after InitDB has applied them.\n", pending)
+		}
+
+	case "schema":
+		// Sprint 4: show current vs stored schema fingerprint.
+		stored, current, err := CheckSchemaFingerprint(db, cfg.Schema)
+		if err != nil {
+			log.Fatalf("schema fingerprint: %v", err)
+		}
+		fmt.Printf("Current schema fingerprint:  %s\n", current)
+		if stored != "" {
+			fmt.Printf("Stored schema fingerprint:   %s\n", stored)
+			if stored != current {
+				fmt.Println("WARNING: schema has changed since last stored fingerprint.")
+				fmt.Println("Run 'hermem migrate' to apply any pending migrations.")
+				fmt.Println("Send SIGHUP to the serve process to reload schema at runtime.")
+			}
+		} else {
+			fmt.Println("Stored schema fingerprint:   (none — fresh database)")
+		}
+
 	case "serve":
 		port := "8420"
 		if len(os.Args) > 2 {
@@ -517,6 +562,16 @@ func main() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+		// Sprint 4: schema fingerprint check at startup.
+		if stored, current, err := CheckSchemaFingerprint(db, cfg.Schema); err != nil {
+			slog.Warn("schema fingerprint check failed", "error", err)
+		} else if stored != "" && stored != current {
+			slog.Warn("schema fingerprint mismatch",
+				"stored", stored,
+				"current", current,
+			)
+		}
+
 		go func() {
 			slog.Info("server ready",
 				"event", "server_ready",
@@ -524,6 +579,35 @@ func main() {
 			)
 			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				log.Fatalf("server error: %v", err)
+			}
+		}()
+
+		// Sprint 4: SIGHUP loop for dynamic config reload.
+		// Runs in the background, reloads hermem.ini on SIGHUP,
+		// validates the new config, and atomically swaps the
+		// server's schema state. A failed reload logs an error
+		// but does not crash the server.
+		go func() {
+			sighup := make(chan os.Signal, 1)
+			signal.Notify(sighup, syscall.SIGHUP)
+			for range sighup {
+				slog.Info("SIGHUP received, reloading config")
+				newCfg, err := LoadConfigFromBinaryDir()
+				if err != nil {
+					slog.Error("SIGHUP reload failed: cannot load config", "error", err)
+					continue
+				}
+				if err := newCfg.Validate(); err != nil {
+					slog.Error("SIGHUP reload failed: invalid config", "error", err)
+					continue
+				}
+				srv.ReloadState(newCfg)
+				if err := StoreSchemaFingerprint(db, newCfg.Schema); err != nil {
+					slog.Warn("SIGHUP: failed to store schema fingerprint", "error", err)
+				}
+				slog.Info("SIGHUP reload complete",
+					"schema_fingerprint", HashSchema(newCfg.Schema),
+				)
 			}
 		}()
 
