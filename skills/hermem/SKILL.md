@@ -56,6 +56,7 @@ Always verify retrieval before considering a memory write complete:
 1. store or ingest
 2. re-run the same query with natural subject language
 3. treat empty `{"context":""}` as “not yet retrievable,” not as success
+4. Task status lifecycle: completed/failed/etc should be reflected via `~/.hermes/bin/hermem task-status` against task entities (`category=task`). Verify status changes with `task-list`.
 
 ### 1. Store a fact
 
