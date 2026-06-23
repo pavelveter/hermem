@@ -154,13 +154,20 @@ one-shot read-process-print.
 
 ### Commands
 
-| Command | Reads (stdin JSON)              | Writes (stdout JSON)             |
+|| Command | Reads (stdin JSON)              | Writes (stdout JSON)             |
 |---------|----------------------------------|----------------------------------|
 | `store` | `{id, category, content, …}`     | `{"status":"ok"}`                |
 | `search`| `{query, top_k?}`                | `[{entity, similarity}, …]`      |
 | `query` | `{query}`                        | `{"context": "<markdown>"}`      |
 | `edge`  | `{source_id, target_id, relation_type, auto_create?}` | `{"status":"ok"}` |
 | `ingest`| `{dialog}`                       | `{"status":"ok"}`                |
+| `task-status` | `{id, status}` | `{"status":"ok"}` |
+| `task-executable` | `{goal_id?}` | `{"tasks":[{"id","category","content","status","updated_at"}, …]}` |
+| `task-next` | `{goal_id?}` | `{"tasks":[{"id","category","content","status","updated_at"}, …]}` |
+| `task-list` | `{status?, goal_id?}` | `{"tasks":[{"id","category","content","status","updated_at"}, …]}` |
+| `task-show` | `{id}` | `{"entity":{…},"blocked_by":[…],"recovers_via":[…]}` |
+| `task-dep` | `{source_id, target_id, relation_type?, add?}` | `{"status":"ok"}` |
+| `task-rollback` | `{id}` | `{"rollback_task_id":"…"}` |
 | `serve` | (no stdin; takes optional port)  | logs to stderr                   |
 
 The CLI uses the **same strict JSON contract as the HTTP server**
@@ -292,8 +299,13 @@ paths). Pipe stderr to your log aggregator.
 | POST | `/edge` | `EdgeRequest` | `{"status":"ok"}` |
 | POST | `/ingest` | `IngestRequest` | `{"status":"ok"}` |
 | POST | `/query` | `QueryRequest` | `{"context":"..."}` |
-| POST | `/task/status` | `{"id", "status"}` | `204 No Content` |
-| POST | `/task/executable` | query `goal_id?` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
+|| POST | `/task/status` | `{"id", "status"}` | `204 No Content` |
+|| POST | `/task/executable` | query `goal_id?` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
+|| POST | `/task/next` | `{"goal_id?":…}` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
+|| POST | `/task/list` | `{"status?", "goal_id?"}` | `{"tasks":[{"id","category","content","status","updated_at"}]}` |
+|| POST | `/task/show` | `{"id"}` | `{"entity":{…},"blocked_by":[…],"recovers_via":[…]}` |
+|| POST | `/task/dep` | `{"source_id","target_id","relation_type?","add?"}` | `{"status":"ok"}` |
+|| POST | `/task/rollback` | `{"id"}` | `{"rollback_task_id":"…"}` |
 
 Every POST endpoint goes through a strict JSON decoder; fields not in
 the request schema are rejected with `400`. See §9 for the error
@@ -409,6 +421,100 @@ curl -X POST "http://localhost:8420/task/executable?goal_id=goal-1" \
   -d '{}'
 ```
 
+### `/task/next`
+
+Alias for `/task/executable`. Same response shape.
+
+```bash
+curl -X POST http://localhost:8420/task/next \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+### `/task/list`
+
+Filter tasks by `status` and optional `goal_id`.
+
+```bash
+# all pending tasks globally
+curl -X POST http://localhost:8420/task/list \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"pending"}'
+
+# all tasks under a goal
+curl -X POST http://localhost:8420/task/list \
+  -H 'Content-Type: application/json' \
+  -d '{"goal_id":"goal-1"}'
+```
+
+### `/task/show`
+
+Show a single task and its `blocked_by` / `recovers_via` relations.
+
+```bash
+curl -X POST http://localhost:8420/task/show \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"step-1"}'
+```
+
+Response:
+
+```json
+{
+  "entity": {
+    "id": "step-1",
+    "category": "task",
+    "content": "Run tests",
+    "status": "pending",
+    "updated_at": "2026-06-23T10:00:00Z"
+  },
+  "blocked_by": [
+    {"id":"step-0","status":"pending"}
+  ],
+  "recovers_via": [
+    {"id":"step-2","status":"pending"}
+  ]
+}
+```
+
+### `/task/dep`
+
+Manage `blocked_by` (or other allowed) relations between tasks.
+
+```bash
+# add dependency: step-1 is blocked by step-0
+curl -X POST http://localhost:8420/task/dep \
+  -H 'Content-Type: application/json' \
+  -d '{"source_id":"step-1","target_id":"step-0","add":true}'
+
+# remove it
+curl -X POST http://localhost:8420/task/dep \
+  -H 'Content-Type: application/json' \
+  -d '{"source_id":"step-1","target_id":"step-0","add":false}'
+```
+
+`relation_type` defaults to `blocked_by`. Allowed values:
+`prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`,
+`contradicts`, `blocked_by`, `recovers_via`.
+
+### `/task/rollback`
+
+Find the task linked via `recovers_via` from a failed task.
+
+```bash
+curl -X POST http://localhost:8420/task/rollback \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"step-1"}'
+```
+
+Response:
+
+```json
+{"rollback_task_id":"step-recover-1"}
+```
+
+If no rollback task is linked, `rollback_task_id` is empty string.
+
 ---
 
 ## 6. CLI vs. Server — side-by-side
@@ -421,6 +527,11 @@ curl -X POST "http://localhost:8420/task/executable?goal_id=goal-1" \
 | Ingest dialog       | `… \| ./hermem ingest`                                 | `curl -X POST …/ingest -d '{…}'`                      |
 | Update task status  | `… \| ./hermem task-status`                            | `curl -X POST …/task/status -d '{…}'`                 |
 | List executable     | `… \| ./hermem task-executable`                        | `curl -X POST …/task/executable`                       |
+| Next executable     | `… \| ./hermem task-next`                              | `curl -X POST …/task/next`                             |
+| List tasks          | `… \| ./hermem task-list`                              | `curl -X POST …/task/list`                             |
+| Show task           | `… \| ./hermem task-show`                              | `curl -X POST …/task/show`                             |
+| Task dependency     | `… \| ./hermem task-dep`                               | `curl -X POST …/task/dep`                              |
+| Rollback task       | `… \| ./hermem task-rollback`                          | `curl -X POST …/task/rollback`                         |
 | Health              | n/a (CLI is one-shot)                                  | `curl …/health`                                       |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
 | Errors              | Exit non-zero + `log.Fatalf` to stderr                 | `HTTP 400` + structured `ErrorResponse` body          |
@@ -480,7 +591,7 @@ struct field unless noted.
 | `id`     | string | yes      | Task entity ID.                             |
 | `status` | string | yes      | One of: `pending`, `running`, `completed`, `failed`. |
 
-### `TaskExecutableRequest` (`/task/executable`, CLI `task-executable`)
+### `TaskExecutableRequest` (`/task/executable`, `/task/next`, CLI `task-executable`, CLI `task-next`)
 
 HTTP: body ignored; `goal_id` comes from the query string.
 CLI: pass `goal_id` in the JSON body (omit or leave empty for global view).
@@ -488,6 +599,34 @@ CLI: pass `goal_id` in the JSON body (omit or leave empty for global view).
 | Field     | Type   | Required | Notes                                          |
 |-----------|--------|----------|------------------------------------------------|
 | `goal_id` | string | no       | Restrict CTE walk to a specific goal subtree.  |
+
+### `TaskListRequest` (`/task/list`, CLI `task-list`)
+
+| Field     | Type   | Required | Notes                                          |
+|-----------|--------|----------|------------------------------------------------|
+| `status`  | string | no       | Filter by `pending` / `running` / `completed` / `failed`. |
+| `goal_id` | string | no       | Restrict to a goal subtree.                    |
+
+### `TaskShowRequest` (`/task/show`, CLI `task-show`)
+
+| Field | Type   | Required | Notes                  |
+|-------|--------|----------|------------------------|
+| `id`  | string | yes      | Task entity ID.        |
+
+### `TaskDepRequest` (`/task/dep`, CLI `task-dep`)
+
+| Field           | Type    | Required | Notes                                          |
+|-----------------|---------|----------|------------------------------------------------|
+| `source_id`     | string  | yes      | Task that has the dependency.                  |
+| `target_id`     | string  | yes      | Dependency target.                             |
+| `relation_type` | string  | no       | Default `blocked_by`. Allowed values listed above. |
+| `add`           | bool    | no       | Default `true`. `false` removes the edge.      |
+
+### `TaskRollbackRequest` (`/task/rollback`, CLI `task-rollback`)
+
+| Field | Type   | Required | Notes                  |
+|-------|--------|----------|------------------------|
+| `id`  | string | yes      | Failed task entity ID. |
 
 ---
 
@@ -551,7 +690,7 @@ why each fact was pulled in. `seed_nodes` is `[]GraphNode` with full
 {"context":"## world\n- Paris is the capital of France\n..."}
 ```
 
-### `TaskExecutableResponse`
+### `TaskExecutableResponse` (`/task/executable`, `/task/next`, `/task/list`)
 
 ```json
 {
@@ -566,6 +705,34 @@ why each fact was pulled in. `seed_nodes` is `[]GraphNode` with full
   ]
 }
 ```
+
+### `TaskShowResponse` (`/task/show`)
+
+```json
+{
+  "entity": {
+    "id": "step-1",
+    "category": "task",
+    "content": "Run tests",
+    "status": "pending",
+    "updated_at": "2026-06-23T10:00:00Z"
+  },
+  "blocked_by": [
+    {"id":"step-0","status":"pending"}
+  ],
+  "recovers_via": [
+    {"id":"step-recover-1","status":"pending"}
+  ]
+}
+```
+
+### `TaskRollbackResponse` (`/task/rollback`)
+
+```json
+{"rollback_task_id":"step-recover-1"}
+```
+
+When no rollback task is found, `rollback_task_id` is `""`.
 
 ### `HealthResponse`
 
