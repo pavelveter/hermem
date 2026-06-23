@@ -215,6 +215,10 @@ one-shot read-process-print.
 | `verify` | `{dim?}` | `{"status":"ok"}` (or report) |
 | `migrate` | (none — reads DB) | Migration status table |
 | `schema` | (none — reads DB + config) | Stored vs current schema fingerprint |
+| `explain` | `{query}` | `RetrievalResult` (with score breakdown) |
+| `temporal` | `{query, time_from?, time_to?, top_k?}` | `RetrievalResult` (time-filtered) |
+| `timeline` | (none — arg: limit) | Recent entities by created_at |
+| `contradictions` | (none — arg: entity_id?) | Contradiction pairs |
 
 ### `migrate`
 
@@ -225,9 +229,10 @@ operator visibility into the schema_migrations table.
 
 ```bash
 ./hermem migrate
-# [OK] 001_initial_schema.sql  (2026-06-23T10:00:00)
-# [OK] 002_entity_metadata.sql (2026-06-23T10:00:00)
-# [OK] 003_provenance.sql      (2026-06-23T10:00:00)
+# [OK] 001_initial_schema.sql      (2026-06-23T10:00:00)
+# [OK] 002_entity_metadata.sql     (2026-06-23T10:00:00)
+# [OK] 003_provenance.sql          (2026-06-23T10:00:00)
+# [OK] 004_episodic_sessions.sql   (2026-06-23T10:00:00)
 ```
 
 ### `schema`
@@ -370,6 +375,8 @@ paths). Pipe stderr to your log aggregator.
 | Method | Path | Body | Returns |
 |--------|------|------|---------|
 | GET | `/health` | — | `{"status":"ok"}` |
+| GET | `/health/live` | — | `{"status":"ok"}` |
+| GET | `/health/ready` | — | `{"status":"ok"}` or `{"status":"degraded","checks":{...}}` (503) |
 | GET | `/metrics` | — | expvar JSON |
 | POST | `/store` | `StoreRequest` | `{"status":"ok"}` |
 | POST | `/search` | `SearchRequest` | `[{"entity", "similarity"}]` |
@@ -385,6 +392,9 @@ paths). Pipe stderr to your log aggregator.
 | POST | `/task/dep` | `{"source_id","target_id","relation_type?","add?"}` | `{"status":"ok"}` |
 | POST | `/task/rollback` | `{"id"}` | `{"rollback_task_id":"…"}` |
 | POST | `/verify` | `{"dim"?}` | `VerifyReport` (text report) |
+| GET | `/contradictions` | — (opt `?id=X`) | `[{"source_id","source_content","target_id","target_content"}]` |
+| POST | `/query/temporal` | `{query, time_from?, time_to?, top_k?}` | `RetrievalResult` (time-filtered) |
+| GET | `/timeline` | — (opt `?limit=N`) | `[{"id","category","content","created_at",...}]` |
 
 Every POST endpoint goes through a strict JSON decoder; fields not in
 the request schema are rejected with `400`. See §9 for the error
@@ -392,12 +402,32 @@ shape and the full list of codes.
 
 ### `/health`
 
-Liveness probe. No request body, no DB hit beyond the open
-connection.
+Basic liveness check — no DB hit beyond the open connection. Always returns 200.
 
 ```bash
 curl -s http://localhost:8420/health
 # → {"status":"ok"}
+```
+
+### `/health/live`
+
+Kubernetes-style liveness probe. Always returns 200 — used by orchestrators
+to decide whether to restart the container.
+
+```bash
+curl -s http://localhost:8420/health/live
+# → {"status":"ok"}
+```
+
+### `/health/ready`
+
+Readiness probe — pings the database. Returns 200 if the DB is reachable,
+503 with per-dependency status if degraded.
+
+```bash
+curl -s http://localhost:8420/health/ready
+# → {"status":"ok"}                    (DB reachable)
+# → {"status":"degraded","checks":{"database":"unreachable"}}  (DB down, 503)
 ```
 
 ### `/store`
@@ -595,6 +625,47 @@ Response:
 
 If no rollback task is linked, `rollback_task_id` is empty string.
 
+### `/query/temporal`
+
+Full pipeline (embed → search → graph walk → markdown) filtered by time range.
+`time_from` and `time_to` use RFC3339 format. Both are optional — omit to
+leave that bound unbounded.
+
+```bash
+curl -s -X POST http://localhost:8420/query/temporal \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"user beliefs about Go","time_from":"2026-03-01T00:00:00Z","time_to":"2026-04-01T00:00:00Z","top_k":5}'
+```
+
+Response shape is identical to `/query` — the markdown context only includes
+entities whose `created_at` falls within the time window.
+
+### `/timeline`
+
+Returns entities ordered by `created_at` DESC, grouped by category with
+provenance fields. Optional `?limit=N` (default 50).
+
+```bash
+curl -s http://localhost:8420/timeline?limit=10
+# → [{"id":"...","category":"observation","content":"...","created_at":"2026-06-24T10:00:00Z",
+#     "source":"dialog","conversation_id":"conv-1","message_id":"msg-3"}, ...]
+```
+
+### `/contradictions`
+
+Lists all `contradicts` edges in the graph. Optional `?id=X` filters to
+contradictions involving a specific entity (checked bidirectionally).
+
+```bash
+# all contradictions
+curl -s http://localhost:8420/contradictions
+# → [{"source_id":"e1","source_content":"User likes Go",
+#     "target_id":"e2","target_content":"User hates Go"}]
+
+# filter by entity
+curl -s "http://localhost:8420/contradictions?id=e1"
+```
+
 ---
 
 ## 6. CLI vs. Server — side-by-side
@@ -604,6 +675,7 @@ If no rollback task is linked, `rollback_task_id` is empty string.
 | Store a fact        | `… \| ./hermem store`                                  | `curl -X POST …/store -d '{…}'`                       |
 | Search by query     | `… \| ./hermem search`                                 | `curl -X POST …/search -d '{…}'`                      |
 | Full query → md   | `… \| ./hermem query`                                  | `curl -X POST …/query -d '{…}'`                       |
+| Query with time     | `… \| ./hermem temporal`                               | `curl -X POST …/query/temporal -d '{…}'`              |
 | Ingest dialog       | `… \| ./hermem ingest`                                 | `curl -X POST …/ingest -d '{…}'`                      |
 | Update task status  | `… \| ./hermem task-status`                            | `curl -X POST …/task/status -d '{…}'`                 |
 | List executable     | `… \| ./hermem task-executable`                        | `curl -X POST …/task/executable`                       |
@@ -615,6 +687,8 @@ If no rollback task is linked, `rollback_task_id` is empty string.
 | Rollback task       | `… \| ./hermem task-rollback`                          | `curl -X POST …/task/rollback`                         |
 | Task tree           | `… \| ./hermem task-tree`                              | `curl -X POST …/task/tree`                             |
 | Verify graph       | `… \| ./hermem verify`                                | `curl -X POST …/verify -d '{…}'`                       |
+| Timeline            | `./hermem timeline [limit]`                            | `curl …/timeline?limit=N`                             |
+| Contradictions      | `./hermem contradictions [entity_id]`                  | `curl …/contradictions[?id=X]`                        |
 | Health              | n/a (CLI is one-shot)                                  | `curl …/health`                                       |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
 | Errors              | Exit non-zero + `log.Fatalf` to stderr                 | `HTTP 400` + structured `ErrorResponse` body          |
@@ -949,9 +1023,16 @@ Only created when `[database] backend = sqlite-vec`; the default
 
 ### Migrations
 
-There is no migration system. To change the schema, write a new
-`hermem.db` and re-ingest (`hermem ingest` against every persisted
-dialog is sufficient; the embedded text regenerates).
+Hermem uses a versioned migration system (`schema_migrations` table).
+Each embedded SQL migration in `src/migrations/` is tracked with an
+applied-at timestamp. `InitDB` applies unapplied files in ordered
+transactions at startup; `hermem migrate` shows status for operator
+visibility. To change the schema, write a new migration file and
+re-build.
+
+For full embedder-model switches, write a new `hermem.db` and
+re-ingest (`hermem ingest` against every persisted dialog is
+sufficient; the embedded text regenerates).
 
 ---
 
@@ -1044,6 +1125,7 @@ silently produce wrong cosine scores.
 | VectorIndex interface, search backends (InMemory / SqliteVec) | `src/vector.go` |
 | Graph walk, ranking, formatting | `src/retrieval.go`                |
 | Background worker, dedup, edges | `src/ingestion.go`                |
+| Contradiction detection        | `src/contradiction.go`            |
 | Ollama / OpenAI HTTP            | `src/embedder.go`, `src/extractor.go` |
 | HTTP handlers, strict decoder   | `src/server.go`                   |
 | CLI entry-point                 | `src/main.go`                     |

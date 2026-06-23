@@ -43,15 +43,21 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
 - **Graph integrity verify** — `verify` CLI command checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types
 - **Retrieval explainability** — `/query/explain` endpoint returns vector/recency/depth score breakdown per retrieved fact
+- **Contradiction detection** — heuristic `isContradiction` detects conflicting statements at ingest; prevents merging, creates `contradicts` edges instead
+- **Temporal retrieval** — `/query/temporal` endpoint filters graph walk by time range (`time_from`/`time_to` RFC3339)
+- **Episodic memory** — `/timeline` endpoint returns entities ordered by `created_at` DESC with provenance
 - **Memory provenance** — tracks `conversation_id`, `message_id`, `extracted_from` per entity; entity metadata (`confidence`, `source`, `source_type`, temporal validity)
 - **Docker** — multi-stage build, non-root user
 
 ## CLI Commands
 
 ```
-hermem migrate       # Show versioned migration status
-hermem schema        # Show current vs stored schema fingerprint
-hermem serve         # Start HTTP server (SIGHUP to reload config)
+hermem migrate         # Show versioned migration status
+hermem schema          # Show current vs stored schema fingerprint
+hermem serve           # Start HTTP server (SIGHUP to reload config)
+hermem contradictions  # List contradicts edges (optional: [entity_id])
+hermem temporal        # Query with time range (JSON stdin with time_from/time_to)
+hermem timeline [limit]  # Show recent entities ordered by created_at
 ```
 
 ## Quick Start
@@ -142,6 +148,7 @@ provider = ollama               # "ollama" | "openai"
 url = http://localhost:11434
 model = nomic-embed-text
 key =                           # API key for OpenAI (not needed for Ollama)
+timeout = 30s                   # HTTP request timeout (Go duration)
 
 [extraction]
 ; provider, url, key — optional, fall back to [embedder] values
@@ -150,6 +157,7 @@ url = http://localhost:11434
 key =                           # API key for OpenAI
 model = qwen2.5-coder:7b
 temperature = 0.1
+timeout = 300s                  # HTTP request timeout (Go duration)
 
 [ingestion]
 dedup_threshold = 0.88          # cosine floor for merge-during-ingest (0.0–1.0)
@@ -357,6 +365,7 @@ hermem/
 │   ├── cosine_darwin.go     # CosineSimilarity — Apple Accelerate AMX (darwin)
 │   ├── retrieval.go         # Recursive CTE graph walk, ranking, markdown
 │   ├── ingestion.go         # Ingestion worker, entity extraction, dedup
+│   ├── contradiction.go     # Contradiction detection heuristic (no LLM)
 │   ├── server.go            # HTTP API server + strict JSON decoder
 │   ├── main.go              # Entry point (CLI subcommands + serve)
 │   ├── metrics.go           # expvar metrics endpoint
@@ -365,7 +374,8 @@ hermem/
 │   ├── migrations/          # Versioned SQL migration files (embedded)
 │   │   ├── 001_initial_schema.sql
 │   │   ├── 002_entity_metadata.sql
-│   │   └── 003_provenance.sql
+│   │   ├── 003_provenance.sql
+│   │   └── 004_episodic_sessions.sql
 │   ├── *_test.go            # Per-package tests (90 tests)
 ├── hermem.ini               # Sample config file
 ├── plugins/
@@ -387,12 +397,16 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check |
+| `/health` | GET | Liveness check (always 200) |
+| `/health/live` | GET | Kubernetes liveness probe |
+| `/health/ready` | GET | Readiness probe (DB ping, 503 if degraded) |
 | `/store` | POST | Store an entity |
 | `/search` | POST | Vector similarity search |
 | `/retrieve` | POST | Graph walk from seed IDs |
 | `/ingest` | POST | Ingest dialog text |
 | `/query` | POST | Full pipeline: search + graph walk + markdown |
+| `/query/explain` | POST | Query with vector/recency/depth score breakdown |
+| `/query/temporal` | POST | Query filtered by time range (time_from/time_to) |
 | `/task/status` | POST | Update task execution status |
 | `/task/executable` | POST | List executable tasks (CTE dependency walk) |
 | `/task/next` | POST | Alias for executable |
@@ -405,6 +419,8 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/verify` | POST | Graph integrity check (entities, edges, corrupt blobs, orphan edges) |
 | `/metrics` | GET | expvar counters (stores / searches / retrieves / queries / errors / task ops) |
 | `/edge` | POST | Add a typed edge between two entities (or auto-create missing ones) |
+| `/contradictions` | GET | List contradict edges (optional `?id=X` filter) |
+| `/timeline` | GET | Recent entities by created_at DESC (optional `?limit=N`) |
 
 ### Examples
 
@@ -551,10 +567,13 @@ Entities are stored in a flat SQLite table with a BLOB column for embeddings (ra
 When ingesting new facts, the ingestion worker reads the top-1
 candidate by cosine similarity; if the score is at or above the
 `[ingestion] dedup_threshold` (default `0.88`, configurable; cosine
-similarity ∈ [0, 1] for unit-length embeddings), the new content is
-merged into the existing entity (concatenated with `"; "` if not
-already substring-contained), re-embedded, and persisted. Otherwise a
-new row is created and the relations from the extraction are appended
+similarity ∈ [0, 1] for unit-length embeddings), the system checks
+for contradiction before merging. If `isContradiction` detects
+conflicting statements (negation asymmetry, sentiment opposites),
+a `contradicts` edge is created and the new entity is stored as a
+separate node. Otherwise, the new content is merged into the existing
+entity (concatenated with `"; "` if not already substring-contained),
+re-embedded, and persisted. Relations from the extraction are appended
 as `INSERT OR IGNORE` edges (composite-PK dedup on
 `(source_id, target_id, relation_type)`).
 
@@ -618,7 +637,7 @@ Benchmarked on Apple M1 Pro (768D embeddings, `topK=10`, 3 runs, medians):
 ## Testing
 
 ```bash
-go test -count=1 ./src                     # full suite (90 tests, ~3s)
+go test -count=1 ./src                     # full suite (~3s)
 go test -v -count=1 -run TestServer ./...  # strict-decode table only
 go test -bench=BenchmarkInMemorySearch -benchmem -count=3 ./src    # in-memory vector perf
 go test -tags sqlite_vec -bench=BenchmarkSqliteVecSearch -benchmem -count=3 ./...  # sqlite-vec perf

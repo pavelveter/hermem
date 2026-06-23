@@ -76,38 +76,14 @@ Tasks:
 
 ----------------------------------------------------------
 
-[ ] Replace hard merge strategy
+[x] Replace hard merge strategy  ✅ Phase 10
 
-Current:
+    src/contradiction.go — isContradiction(existing, incoming) heuristic:
+    (1) negation asymmetry with shared words, (2) sentiment-opposite pairs
+    via ~45 inflected-form antonym map. No LLM needed. Word overlap >= 25% gate.
+    On contradiction: creates contradicts edge, forces separate node instead of merge.
 
-    cosine >= threshold
-    => merge
-
-Problem:
-
-    "likes Go"
-    and
-    "hates Go"
-
-may merge.
-
-Implement:
-
-    similarity gate
-    contradiction detector
-    confidence comparison
-
-Pseudo:
-
-    high similarity
-        +
-    same polarity
-        =>
-    merge
-
-Otherwise:
-
-    create new node
+    TODO: confidence comparison (keep both when both have high confidence).
 
 ----------------------------------------------------------
 
@@ -280,7 +256,7 @@ Tasks:
 [x] Migration system  ✅ Sprint 4
 
     schema_migrations table tracks applied versions
-    src/migrations/ with 3 embedded SQL files (//go:embed)
+    src/migrations/ with 4 embedded SQL files (//go:embed)
     runMigrations reads embedded SQL, applies in tx, records version
     Replaces old ad-hoc migrateSchema (ALTER TABLE with swallowed errors)
 
@@ -409,9 +385,12 @@ Sprint 4: ✅
 - ✅ Schema versioning
 
 Sprint 5: ✅
-- ✅ Contradiction handling (heuristic-based, no LLM)
-- ✅ Temporal memory retrieval
-- ✅ Episodic memory (sessions, timeline)
+- ✅ Vector index dedup (flatMatrix-only storage, ~50% RAM)
+- ✅ sync.Pool for search buffers (dotPool + intBufPool)
+- ✅ Schema validation compiler (ValidateSchema)
+- ✅ Contradiction graph (/contradictions endpoint, contradicts edges)
+- ✅ Temporal retrieval (/query/temporal, time filter in CTE)
+- ✅ Episodic memory (sessions + conversations, /timeline endpoint)
 
 Sprint 6: ⬜
 - ⬜ Multi-tenant support
