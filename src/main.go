@@ -92,6 +92,8 @@ func main() {
 	}
 	defer db.Close()
 
+	InitMetricsDB(db)
+
 	vi := newVectorIndex(cfg.VectorBackend, db, cfg.VectorDim)
 	metricsWorker = InitMetricsWorker(db)
 	defer metricsWorker.Stop()

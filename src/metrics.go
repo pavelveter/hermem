@@ -1,11 +1,24 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// metricsDB is set by InitMetricsDB once the database handle is available.
+// Used by the entity count gauge to provide live counts on each scrape.
+var metricsDB *sql.DB
+
+// InitMetricsDB wires the database handle into the metrics subsystem.
+// Must be called after InitDB before serving metrics.
+func InitMetricsDB(db *sql.DB) {
+	metricsDB = db
+}
 
 var (
 	metricStores = prometheus.NewCounter(prometheus.CounterOpts{
@@ -72,6 +85,24 @@ var (
 		Name: "hermem_task_tree_total",
 		Help: "Total number of task tree queries.",
 	})
+
+	metricEntityCount = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "hermem_entities_count",
+		Help: "Current number of active (non-archived) entities in the database.",
+	}, func() float64 {
+		if metricsDB == nil {
+			return 0
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var count int64
+		if err := metricsDB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM entities WHERE archived = 0`,
+		).Scan(&count); err != nil {
+			return 0
+		}
+		return float64(count)
+	})
 )
 
 func init() {
@@ -92,6 +123,7 @@ func init() {
 		metricTaskNext,
 		metricTaskCreate,
 		metricTaskTree,
+		metricEntityCount,
 	)
 }
 
