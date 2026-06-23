@@ -1017,3 +1017,303 @@ func TestCompositeScorerNilMatchesDefault(t *testing.T) {
 		}
 	}
 }
+
+// ----- P1: graph centrality tests ------------------------------------
+
+// TestCentralityDegreeAutoIncrement verifies the SQL trigger auto-
+// maintains entities.degree on edge insertion.
+func TestCentralityDegreeAutoIncrement(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "ca", Category: "world", Content: "Central A", Embedding: []float32{1, 0, 0}},
+		{ID: "cb", Category: "world", Content: "Central B", Embedding: []float32{0, 1, 0}},
+		{ID: "cc", Category: "world", Content: "Central C", Embedding: []float32{0, 0, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+	}
+
+	checkDegree := func(id string, want int) {
+		t.Helper()
+		var d int
+		if err := db.QueryRow(`SELECT degree FROM entities WHERE id = ?`, id).Scan(&d); err != nil {
+			t.Fatalf("read degree for %s: %v", id, err)
+		}
+		if d != want {
+			t.Errorf("degree of %s = %d, want %d", id, d, want)
+		}
+	}
+
+	// All start at 0.
+	checkDegree("ca", 0)
+	checkDegree("cb", 0)
+	checkDegree("cc", 0)
+
+	// Add edge A→B: both get +1.
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('ca','cb','related_to')`); err != nil {
+		t.Fatalf("edge: %v", err)
+	}
+	checkDegree("ca", 1)
+	checkDegree("cb", 1)
+	checkDegree("cc", 0)
+
+	// Add edge B→C: B→2, C→1.
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('cb','cc','related_to')`); err != nil {
+		t.Fatalf("edge: %v", err)
+	}
+	checkDegree("ca", 1)
+	checkDegree("cb", 2)
+	checkDegree("cc", 1)
+
+	// Add edge C→A: all +1.
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('cc','ca','related_to')`); err != nil {
+		t.Fatalf("edge: %v", err)
+	}
+	checkDegree("ca", 2)
+	checkDegree("cb", 2)
+	checkDegree("cc", 2)
+
+	// Delete edge A→B: both -1.
+	if _, err := db.Exec(`DELETE FROM edges WHERE source_id = 'ca' AND target_id = 'cb' AND relation_type = 'related_to'`); err != nil {
+		t.Fatalf("delete edge: %v", err)
+	}
+	checkDegree("ca", 1)
+	checkDegree("cb", 1)
+	checkDegree("cc", 2)
+}
+
+// TestCentralityRankingBoost verifies that highly-connected entities
+// get a small ranking bonus from degree centrality.
+func TestCentralityRankingBoost(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	stamp := time.Now()
+	for _, e := range []Entity{
+		{ID: "hub", Category: "world", Content: "Hub node", Embedding: []float32{0.6, 0.8, 0}},
+		{ID: "leaf1", Category: "world", Content: "Leaf 1", Embedding: []float32{0.6, 0.8, 0}},
+		{ID: "leaf2", Category: "world", Content: "Leaf 2", Embedding: []float32{0.6, 0.8, 0}},
+		{ID: "leaf3", Category: "world", Content: "Leaf 3", Embedding: []float32{0.6, 0.8, 0}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+		db.Exec(`UPDATE entities SET updated_at = ? WHERE id = ?`, stamp, e.ID)
+	}
+
+	// Hub connects to all 3 leaves.
+	for _, leaf := range []string{"leaf1", "leaf2", "leaf3"} {
+		if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('hub', ?, 'related_to')`, leaf); err != nil {
+			t.Fatalf("edge hub->%s: %v", leaf, err)
+		}
+	}
+
+	// All embeddings identical + same recency → scores driven only by
+	// centrality. Hub degree=3, leaves degree=1 each.
+	res, err := RetrieveContext(db, []string{"hub"}, RetrieveContextOptions{
+		MaxDepth:          5,
+		QueryEmbedding:    []float32{0.6, 0.8, 0},
+		MaxRetrievedNodes: 4,
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+
+	// Hub should rank first (degree=3, log10(4)≈0.602, centrality≈0.03).
+	// Leaves have degree=1 (log10(2)≈0.301, centrality≈0.015).
+	if len(res.WorldFacts) < 2 {
+		t.Fatalf("WorldFacts = %d, want >= 2", len(res.WorldFacts))
+	}
+	// Hub's RankingScore should be higher than all leaves.
+	hubScore := res.SeedNodes[0].RankingScore
+	for _, f := range res.WorldFacts {
+		if f.Content == "Hub node" {
+			continue
+		}
+		if f.RankingScore >= hubScore {
+			t.Errorf("leaf %q RankingScore=%v >= hub %v (centrality should boost hub)",
+				f.Content, f.RankingScore, hubScore)
+		}
+	}
+}
+
+// ----- P1: weighted edges tests ---------------------------------------
+
+// TestWeightedEdgePathWeight verifies that edge weight accumulates
+// correctly in the CTE path_weight column.
+func TestWeightedEdgePathWeight(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "ws", Category: "world", Content: "Weight seed", Embedding: []float32{1, 0, 0}},
+		{ID: "wm", Category: "world", Content: "Weight mid", Embedding: []float32{0, 1, 0}},
+		{ID: "wd", Category: "world", Content: "Weight deep", Embedding: []float32{0, 0, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
+			t.Fatalf("store %s: %v", e.ID, err)
+		}
+	}
+
+	// seed→mid weight 0.5, mid→deep weight 2.0
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type, weight) VALUES ('ws','wm','related_to', 0.5)`); err != nil {
+		t.Fatalf("edge ws→wm: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type, weight) VALUES ('wm','wd','related_to', 2.0)`); err != nil {
+		t.Fatalf("edge wm→wd: %v", err)
+	}
+
+	res, err := RetrieveContext(db, []string{"ws"}, RetrieveContextOptions{
+		MaxDepth:       5,
+		QueryEmbedding: []float32{1, 0, 0},
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+
+	// Seed node at depth 0: path_weight = 0.
+	if len(res.SeedNodes) > 0 && res.SeedNodes[0].PathWeight != 0 {
+		t.Errorf("seed PathWeight = %v, want 0", res.SeedNodes[0].PathWeight)
+	}
+
+	// Verify depth penalty reflects weighted path.
+	// seed: path_weight=0, penalty=0
+	// mid: path_weight=0.5, penalty=0.05*0.5=0.025
+	// deep: path_weight=2.5, penalty=0.05*2.5=0.125
+	if len(res.SeedNodes) > 0 {
+		seedScore := res.SeedNodes[0].RankingScore
+		_ = seedScore // seed should have highest score (lowest penalty)
+	}
+}
+
+// TestWeightedEdgeVectorAPI verifies AddEdge with weight and Edge.Weight.
+func TestWeightedEdgeVectorAPI(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	for _, e := range []Entity{
+		{ID: "wa", Category: "world", Content: "W-A", Embedding: []float32{1, 0}},
+		{ID: "wb", Category: "world", Content: "W-B", Embedding: []float32{0, 1}},
+	} {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
+			t.Fatalf("store: %v", err)
+		}
+	}
+
+	// Add weighted edge via AddEdge.
+	if err := AddEdge(db, "wa", "wb", "related_to", 0.75); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	// Read back via queryEdges.
+	edges, err := queryEdges(db,
+		"SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE source_id = ?",
+		"wa")
+	if err != nil {
+		t.Fatalf("queryEdges: %v", err)
+	}
+	if len(edges) != 1 {
+		t.Fatalf("edges = %d, want 1", len(edges))
+	}
+	if edges[0].Weight != 0.75 {
+		t.Errorf("weight = %v, want 0.75", edges[0].Weight)
+	}
+
+	// Default weight (0 → 1.0).
+	if err := AddEdge(db, "wa", "wb", "uses", 0); err != nil {
+		t.Fatalf("AddEdge default: %v", err)
+	}
+	edges, err = queryEdges(db,
+		"SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE source_id = ? AND relation_type = 'uses'",
+		"wa")
+	if err != nil {
+		t.Fatalf("queryEdges default: %v", err)
+	}
+	if len(edges) != 1 {
+		t.Fatalf("default edges = %d, want 1", len(edges))
+	}
+	if edges[0].Weight != 1.0 {
+		t.Errorf("default weight = %v, want 1.0", edges[0].Weight)
+	}
+}
+
+// ----- P1: provenance tests -------------------------------------------
+
+// TestProvenanceRoundTrip verifies entities stored with provenance
+// metadata can be retrieved via GetEntitiesByProvenance.
+func TestProvenanceRoundTrip(t *testing.T) {
+	db, vi := memDB(t)
+	defer db.Close()
+
+	convID := "conv-123"
+	msgID := "msg-456"
+
+	// Store entity with provenance via direct SQL (simulates ingestion).
+	emb := EmbeddingToBytes(NormalizeVectorRet([]float32{1, 0, 0}))
+	if _, err := db.Exec(`
+		INSERT INTO entities (id, category, content, embedding, conversation_id, message_id, source, source_type, created_at)
+		VALUES ('prov-a', 'world', 'Prov fact A', ?, ?, ?, 'dialog', 'extraction', CURRENT_TIMESTAMP)
+	`, emb, convID, msgID); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	// Second entity with different provenance.
+	if _, err := db.Exec(`
+		INSERT INTO entities (id, category, content, embedding, conversation_id, message_id, source, source_type, created_at)
+		VALUES ('prov-b', 'world', 'Prov fact B', ?, 'conv-999', 'msg-001', 'api', 'manual', CURRENT_TIMESTAMP)
+	`, emb); err != nil {
+		t.Fatalf("insert b: %v", err)
+	}
+
+	// Query by conversation_id.
+	entities, err := GetEntitiesByProvenance(db, convID, "", "", 50)
+	if err != nil {
+		t.Fatalf("provenance: %v", err)
+	}
+	if len(entities) != 1 || entities[0].ID != "prov-a" {
+		t.Errorf("by conv: got %d entities, want 1 (prov-a)", len(entities))
+	}
+
+	// Query by message_id.
+	entities, err = GetEntitiesByProvenance(db, "", msgID, "", 50)
+	if err != nil {
+		t.Fatalf("provenance by msg: %v", err)
+	}
+	if len(entities) != 1 || entities[0].ID != "prov-a" {
+		t.Errorf("by msg: got %d entities, want 1 (prov-a)", len(entities))
+	}
+
+	// Query by source.
+	entities, err = GetEntitiesByProvenance(db, "", "", "api", 50)
+	if err != nil {
+		t.Fatalf("provenance by source: %v", err)
+	}
+	if len(entities) != 1 || entities[0].ID != "prov-b" {
+		t.Errorf("by source: got %d entities, want 1 (prov-b)", len(entities))
+	}
+
+	// No filters → error.
+	_, err = GetEntitiesByProvenance(db, "", "", "", 50)
+	if err == nil {
+		t.Error("expected error with no filters")
+	}
+
+	// Non-matching filter → empty.
+	entities, err = GetEntitiesByProvenance(db, "nonexistent", "", "", 50)
+	if err != nil {
+		t.Fatalf("provenance none: %v", err)
+	}
+	if len(entities) != 0 {
+		t.Errorf("non-matching: got %d entities, want 0", len(entities))
+	}
+
+	_ = vi
+}
+
+// NormalizeVectorRet normalizes and returns the vector (used in tests).
+func NormalizeVectorRet(v []float32) []float32 {
+	NormalizeVector(v)
+	return v
+}

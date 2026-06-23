@@ -7,9 +7,9 @@
 - [x] Migration integrity validation
 - [x] OpenTelemetry integration
 - [x] Prometheus metrics
-- [ ] Full race-condition audit
+- [x] Full race-condition audit
+- [x] Benchmark suite automation
 - [ ] Load testing
-- [ ] Benchmark suite automation
 - [ ] OpenAPI generation
 - [ ] SDK generation
 
@@ -26,8 +26,8 @@
 
 ## P2 - Nice To Have
 
-- [ ] Task priorities
-- [ ] Critical path analysis
+- [x] Task priorities
+- [x] Critical path analysis
 - [ ] Recovery plan generation
 - [ ] Graph clustering
 - [ ] Community detection

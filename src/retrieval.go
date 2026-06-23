@@ -646,8 +646,9 @@ func getExecutableTasksForGoal(db *sql.DB, schema SchemaConfig, goalID string) (
 			JOIN edges ed ON ed.source_id = dt.id AND ed.relation_type = ?
 			JOIN entities e ON e.id = ed.target_id AND e.category IN (%s) AND e.archived = 0
 		)
-		SELECT dt.id, dt.category, dt.content, dt.status, dt.updated_at
+		SELECT dt.id, dt.category, dt.content, dt.status, dt.updated_at, COALESCE(e.priority, 0)
 		FROM dep_tree dt
+		JOIN entities e ON e.id = dt.id
 		WHERE dt.status = ?
 		AND NOT EXISTS (
 			SELECT 1 FROM edges ed2
@@ -659,7 +660,7 @@ func getExecutableTasksForGoal(db *sql.DB, schema SchemaConfig, goalID string) (
 				AND e3.status != ?
 			)
 		)
-		ORDER BY dt.id
+		ORDER BY COALESCE(e.priority, 0) DESC, dt.id
 	`, catPH, catPH)
 
 	rows, err := db.Query(query, args...)
@@ -676,7 +677,7 @@ func getExecutableTasksGlobal(db *sql.DB, schema SchemaConfig) ([]Entity, error)
 	args := append([]interface{}{}, catArgs...)
 	args = append(args, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking)
 	query := fmt.Sprintf(`
-		SELECT e.id, e.category, e.content, e.status, e.updated_at
+		SELECT e.id, e.category, e.content, e.status, e.updated_at, COALESCE(e.priority, 0)
 		FROM entities e
 		WHERE e.category IN (%s) AND e.status = ? AND e.archived = 0
 		AND NOT EXISTS (
@@ -689,7 +690,7 @@ func getExecutableTasksGlobal(db *sql.DB, schema SchemaConfig) ([]Entity, error)
 				AND e2.status != ?
 			)
 		)
-		ORDER BY e.id
+		ORDER BY COALESCE(e.priority, 0) DESC, e.id
 	`, catPH)
 
 	rows, err := db.Query(query, args...)
@@ -716,8 +717,12 @@ func scanTaskEntities(rows *sql.Rows) ([]Entity, error) {
 	var tasks []Entity
 	for rows.Next() {
 		var e Entity
-		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt); err != nil {
+		var priority sql.NullInt64
+		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt, &priority); err != nil {
 			return nil, fmt.Errorf("scan executable task: %w", err)
+		}
+		if priority.Valid {
+			e.Priority = int(priority.Int64)
 		}
 		tasks = append(tasks, e)
 	}
