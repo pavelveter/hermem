@@ -123,6 +123,11 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		return nil, fmt.Errorf("create schema_migrations: %w", err)
 	}
 
+	if err := ensureMigrationChecksumsTable(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create migration_checksums: %w", err)
+	}
+
 	if err := runMigrations(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("schema migration: %w", err)
@@ -242,6 +247,10 @@ func runMigrations(db *sql.DB) error {
 		}
 
 		slog.Info("migration applied", "migration", name)
+
+		if err := StoreMigrationChecksum(db, name); err != nil {
+			slog.Warn("failed to store migration checksum", "migration", name, "err", err)
+		}
 	}
 
 	return nil
@@ -329,6 +338,143 @@ func MigrationStatus(db *sql.DB) ([]struct {
 		}{name, applied[name], appliedAt[name]})
 	}
 	return out, nil
+}
+
+// RollbackMigration removes the last-applied migration from the tracking
+// table. It does NOT undo the SQL — that requires a separate down migration.
+// Returns the name of the rolled-back migration, or empty string if none.
+func RollbackMigration(db *sql.DB) (string, error) {
+	var name string
+	err := db.QueryRow(
+		"SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1",
+	).Scan(&name)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read last migration: %w", err)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("begin rollback tx: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM schema_migrations WHERE version = ?", name); err != nil {
+		tx.Rollback()
+		return "", fmt.Errorf("rollback %s: %w", name, err)
+	}
+	if _, err := tx.Exec("DELETE FROM migration_checksums WHERE version = ?", name); err != nil {
+		tx.Rollback()
+		return "", fmt.Errorf("rollback checksum %s: %w", name, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit rollback: %w", err)
+	}
+
+	slog.Info("migration rolled back", "event", "migration_rollback", "migration", name)
+	return name, nil
+}
+
+// MigrationChecksum returns a hex-encoded hash of a migration file's
+// SQL content. Used by VerifyMigrationIntegrity to detect drift.
+func MigrationChecksum(name string) (string, error) {
+	sqlBytes, err := migrationFS.ReadFile("migrations/" + name)
+	if err != nil {
+		return "", err
+	}
+	// FNV-1a 64-bit hash for zero-dependency checksum.
+	h := uint64(14695981039346656037)
+	for _, b := range sqlBytes {
+		h ^= uint64(b)
+		h *= 1099511628211
+	}
+	return fmt.Sprintf("%016x", h), nil
+}
+
+// MigrationChecksumMD5 returns a hex-encoded FNV-1a hash of a migration
+// file's SQL content. Used by VerifyMigrationIntegrity to detect drift.
+func MigrationChecksumMD5(name string) (string, error) {
+	return MigrationChecksum(name)
+}
+
+// VerifyMigrationIntegrity reads all applied migrations and compares
+// their stored checksums against the current embedded migration file
+// checksums. Returns a list of mismatches (name, stored checksum,
+// current checksum). An empty result means all migrations are intact.
+func VerifyMigrationIntegrity(db *sql.DB) ([]struct {
+	Name            string
+	StoredChecksum  string
+	CurrentChecksum string
+}, error) {
+	metaExists := false
+	db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='migration_checksums'").Scan(&metaExists)
+
+	stored := make(map[string]string)
+	if metaExists {
+		rows, err := db.Query("SELECT version, checksum FROM migration_checksums")
+		if err != nil {
+			return nil, fmt.Errorf("read migration checksums: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var v, c string
+			if err := rows.Scan(&v, &c); err != nil {
+				return nil, err
+			}
+			stored[v] = c
+		}
+	}
+
+	applied, err := appliedMigrations(db)
+	if err != nil {
+		return nil, err
+	}
+
+	var mismatches []struct {
+		Name            string
+		StoredChecksum  string
+		CurrentChecksum string
+	}
+	for name := range applied {
+		current, err := MigrationChecksumMD5(name)
+		if err != nil {
+			return nil, fmt.Errorf("checksum %s: %w", name, err)
+		}
+		if st, ok := stored[name]; ok && st != current {
+			mismatches = append(mismatches, struct {
+				Name            string
+				StoredChecksum  string
+				CurrentChecksum string
+			}{name, st, current})
+		}
+	}
+	return mismatches, nil
+}
+
+// StoreMigrationChecksum records a checksum for a migration after it's
+// applied. Called by runMigrations after successful application.
+func StoreMigrationChecksum(db *sql.DB, name string) error {
+	cs, err := MigrationChecksumMD5(name)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(
+		`INSERT OR REPLACE INTO migration_checksums (version, checksum) VALUES (?, ?)`,
+		name, cs,
+	)
+	return err
+}
+
+// ensureMigrationChecksumsTable creates the migration_checksums table if
+// it does not exist. Called from InitDB after schema_migrations creation.
+func ensureMigrationChecksumsTable(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS migration_checksums (
+			version  TEXT PRIMARY KEY,
+			checksum TEXT NOT NULL
+		)
+	`)
+	return err
 }
 
 // migrateEntitiesFlexibleSchema rebuilds the entities table to add

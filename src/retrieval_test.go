@@ -931,10 +931,9 @@ func TestCompositeScoreDirect(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := compositeScore(w, c.sim, c.recency, c.depth)
+			got := compositeScore(w, c.sim, c.recency, 0, c.depth)
 			if !float32AlmostEqual(got, c.want) {
-				t.Errorf("compositeScore(%v, %v, %v) = %v, want %v",
-					c.sim, c.recency, c.depth, got, c.want)
+				t.Errorf("got %v, want %v", got, c.want)
 			}
 		})
 	}

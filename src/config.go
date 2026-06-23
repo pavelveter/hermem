@@ -103,10 +103,12 @@ type RetentionPolicy struct {
 // ranker. Populated from the [ranking] config section. Any zero value
 // falls back to the default at point-of-use.
 type RankingWeight struct {
-	VectorWeight         float32
-	RecencyWeight        float32
-	DepthPenalty         float32
-	RecencyHalfLifeHours float32
+	VectorWeight          float32
+	RecencyWeight         float32
+	DepthPenalty          float32
+	RecencyHalfLifeHours  float32
+	TemporalWeight        float32
+	TemporalHalfLifeHours float32
 }
 
 // LoadConfig parses hermem.ini from `path` exactly as given — no
@@ -145,10 +147,12 @@ func LoadConfig(path string) (*Config, error) {
 			DeleteBatchSize: 500,
 		},
 		Ranking: RankingWeight{
-			VectorWeight:         0.7,
-			RecencyWeight:        0.3,
-			DepthPenalty:         0.05,
-			RecencyHalfLifeHours: 720, // 30 days
+			VectorWeight:          0.7,
+			RecencyWeight:         0.3,
+			DepthPenalty:          0.05,
+			RecencyHalfLifeHours:  720,
+			TemporalWeight:        0.1,
+			TemporalHalfLifeHours: 720,
 		},
 		RerankerTimeout: 30 * time.Second,
 		Schema:          defaultSchemaConfig(false),

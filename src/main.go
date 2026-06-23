@@ -641,6 +641,53 @@ func main() {
 			fmt.Printf("\n%d pending migration(s) — run 'hermem migrate' again after InitDB has applied them.\n", pending)
 		}
 
+	case "migration-rollback":
+		// P0: rollback the last applied migration.
+		name, err := RollbackMigration(db)
+		if err != nil {
+			log.Fatalf("rollback: %v", err)
+		}
+		if name == "" {
+			fmt.Println("No migrations to roll back.")
+		} else {
+			fmt.Printf("Rolled back: %s\n", name)
+		}
+
+	case "migration-verify":
+		// P0: verify checksums of all applied migrations.
+		mismatches, err := VerifyMigrationIntegrity(db)
+		if err != nil {
+			log.Fatalf("verify: %v", err)
+		}
+		if len(mismatches) == 0 {
+			fmt.Println("All migration checksums intact.")
+		} else {
+			fmt.Printf("%d mismatch(es):\n", len(mismatches))
+			for _, m := range mismatches {
+				fmt.Printf("  %s: stored=%s current=%s\n", m.Name, m.StoredChecksum, m.CurrentChecksum)
+			}
+			os.Exit(1)
+		}
+
+	case "execution-plan":
+		// P1: show topologically sorted task execution plan for a goal.
+		var req struct {
+			GoalID string `json:"goal_id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.GoalID == "" {
+			log.Fatal("goal_id required")
+		}
+		tasks, err := ExecutionPlan(db, cfg.Schema, req.GoalID)
+		if err != nil {
+			log.Fatalf("execution plan: %v", err)
+		}
+		for _, t := range tasks {
+			fmt.Printf("[%s] %s  [%s]\n", t.ID, t.Content, t.Status)
+		}
+
 	case "schema":
 		// Sprint 4: show current vs stored schema fingerprint.
 		stored, current, err := CheckSchemaFingerprint(db, cfg.Schema)
