@@ -1,103 +1,649 @@
-# TODO: Dynamic Graph Schema & State Machine
+HERMEM ROADMAP (STAFF ENGINEER AUDIT)
 
-## Overview
-Replace hardcoded category/relation allowlists and hardcoded state-machine logic with a fully declarative, configuration-driven harness. Hermem must become a programming-free orchestrator: schema, validation, and FSM transition rules are defined in `hermem.ini` under `[schema]` and interpreted at runtime.
+==========================================================
+PHASE 1 — FIX ARCHITECTURAL DEBT
+Priority: CRITICAL
+ETA: 1-2 days
+==========================================================
 
-## 1. Config parser: declarative schema section
-Files: `src/config.go`, `src/main.go`
+Goal:
+Eliminate global mutable state and prepare codebase for future multi-tenant, server, and library usage.
 
-- Add a `[schema]` block parser in `src/config.go` (or extend existing config loader).
-- Load into maps for O(1) runtime checks:
-  - `allowed_categories`
-  - `allowed_relations`
-  - `stateful_categories`
-  - `valid_states`
-  - `relation_blocking`
-  - `state_unblocking`
-  - `relation_recovery`
-- Fallbacks when `[schema]` is absent:
-  - categories: `world,opinion,experience,observation`
-  - relations: existing allowlists
-  - state machine features disabled (no `status` enforcement, no execution engine)
-- Validate the config at startup (unknown keys = fatal with line number).
+Tasks:
 
-## 2. Database: optional status without breaking old nodes
-Files: `src/db.go`
+[ ] Remove global activeSchema singleton
 
-- `entities.status` is `TEXT DEFAULT NULL` (backward compatible).
-- Non-stateful nodes keep `status = NULL`.
-- On insert: if category ∈ `stateful_categories`, set `status = first(valid_states)` (i.e., `pending`).
-- Migrations must be idempotent (`duplicate column` is benign).
-- Add helpers:
-  - `SetStatus(db, id, status) error`
-  - `GetStatus(db, id) (string, error)`
-  - `GetExecutableNodes(db, goalID string) ([]Entity, error)`
-  - `FindRollbackNode(db, failedID string) (string, error)`
+Current:
 
-## 3. Extractor / validator: config-driven rejections
-Files: `src/extractor.go`, `src/server.go`
+    ActiveSchema()
+    SetActiveSchema()
 
-- Replace hardcoded `allowedCategories` / `allowedRelations` with lookups into the loaded config maps.
-- New rules:
-  - unknown category → `422 Unprocessable Entity`
-  - unknown relation → `422 Unprocessable Entity`
-  - state transitions outside `valid_states` for stateful nodes → `422`
-- `ingest` path must also call `ValidateCategory` / `ValidateRelation` before emitting edges.
+Problem:
 
-## 4. Topological execution engine
-Files: `src/retrieval.go`, `src/server.go`
+    Process-wide mutable state
+    Race potential
+    Impossible per-request schemas
 
-- `GetExecutableNodes(db, goalID)` must use a **dynamic** recursive CTE:
-  - blocking relation name comes from config: `relation_blocking` (default `blocked_by`).
-  - unblocking state comes from config: `state_unblocking` (default `completed`).
-  - stateful categories limit the search space.
-  - prune branches where any blocker is not in unblocking state.
-- `FindRollbackNode(db, failedID)` uses `relation_recovery` from config (default `recovers_via`).
+Implement:
 
-## 5. HTTP + CLI wiring
-Files: `src/server.go`, `src/main.go`, `src/banner.go`, `USAGE.md`, `README.md`, `skills/hermem/SKILL.md`
+    type Runtime struct {
+        Schema SchemaConfig
+    }
 
-- Keep existing routes; add/extend:
-  - `POST /task/status` with strict schema validation.
-  - `POST /task/executable` with optional `goal_id` query.
-  - `POST /task/rollback` with dynamic relation name.
-- CLI commands map 1:1 to HTTP endpoints.
-- Banner/help text updated.
+Pass schema through:
 
-## 6. Tests and docs
-Files: `src/config_test.go`, `src/db_test.go`, `src/retrieval_test.go`, `src/server_test.go`, `USAGE.md`, `README.md`, `skills/hermem/SKILL.md`
+    StoreEntity()
+    ProcessDialog()
+    RetrieveContext()
+    HTTP handlers
 
-- Config tests:
-  - missing `[schema]` → classic defaults loaded.
-  - malformed value → fatal with actionable message.
-  - invalid key → rejected.
-- DB tests:
-  - NULL status on non-stateful nodes; `pending` on stateful nodes.
-  - idempotent migration re-run.
-- Retrieval tests:
-  - dynamic CTE with custom `relation_blocking` and `state_unblocking`.
-  - rollback edge reads `relation_recovery` correctly.
-- Server tests:
-  - 422 on unknown category / relation.
-  - 200 on valid executable query.
-- Smoke (manual):
-  - custom config with `stateful_categories = task,milestone`; `relation_blocking = causes`; `state_unblocking = done`; verify executable list behaves accordingly.
+Expected result:
 
-## Execution order
-1. Config: `[schema]` parsing + fallback defaults (#1)
-2. DB: status column + stateful auto-init (#2)
-3. Extractor: dynamic validation (#3)
-4. Retrieval: config-driven CTE + rollback (#4)
-5. HTTP/CLI + docs + skills (#5)
-6. Tests + smoke (#6)
+    No global schema state.
 
-## Validation
-- `gofmt -w src/*.go`
-- `go vet ./src/...`
-- `go test -count=1 -race -timeout 180s ./src/...`
-- Manual smoke with a custom `hermem.ini` that changes relation/state names.
+----------------------------------------------------------
 
-## Out of scope
-- Distributed locking across multiple Hermem instances.
-- Auto-execution loop (operator/agent code above Hermem).
-- Schema migration tooling beyond the single optional `status` column.
+[ ] Remove global iniRef
+
+Current:
+
+    var iniRef *ini.File
+
+Problem:
+
+    Hidden dependency
+    Multiple config loads overwrite state
+
+Implement:
+
+    type Config struct {
+        ...
+        rawINI *ini.File
+    }
+
+or
+
+    type Loader struct {
+        ini *ini.File
+    }
+
+Expected result:
+
+    Config becomes immutable after load.
+
+==========================================================
+PHASE 2 — INGESTION CONSISTENCY
+Priority: CRITICAL
+ETA: 1 day
+==========================================================
+
+Goal:
+
+Prevent half-written graph states.
+
+Tasks:
+
+[ ] Make ingestion transactional
+
+Current flow:
+
+    create entity
+    create edges
+    update embedding
+    merge
+
+Problem:
+
+    Failure in middle leaves broken graph.
+
+Implement:
+
+    tx.Begin()
+
+    store entity
+    merge entity
+    create edges
+    update vectors
+
+    tx.Commit()
+
+Rollback on any failure.
+
+----------------------------------------------------------
+
+[ ] Enable foreign keys
+
+Current:
+
+    FK OFF
+
+Add:
+
+    PRAGMA foreign_keys = ON
+
+Schema:
+
+    FOREIGN KEY (...) REFERENCES entities(id)
+    ON DELETE CASCADE
+
+Expected result:
+
+    No orphan edges.
+
+----------------------------------------------------------
+
+[ ] Add graph integrity verifier
+
+CLI:
+
+    hermem verify
+
+Checks:
+
+    orphan nodes
+    orphan edges
+    broken references
+    duplicate relations
+
+Output:
+
+    human readable report
+
+==========================================================
+PHASE 3 — MEMORY MODEL V2
+Priority: HIGH
+ETA: 3-4 days
+==========================================================
+
+Goal:
+
+Support contradictory knowledge and memory evolution.
+
+Tasks:
+
+[ ] Extend Entity schema
+
+Add:
+
+    confidence REAL
+    source TEXT
+    source_type TEXT
+    created_at
+    updated_at
+    valid_from
+    valid_to
+
+Example:
+
+    User likes Go
+
+confidence=0.95
+source=user
+
+----------------------------------------------------------
+
+[ ] Replace hard merge strategy
+
+Current:
+
+    cosine >= threshold
+    => merge
+
+Problem:
+
+    "likes Go"
+    and
+    "hates Go"
+
+may merge.
+
+Implement:
+
+    similarity gate
+    contradiction detector
+    confidence comparison
+
+Pseudo:
+
+    high similarity
+        +
+    same polarity
+        =>
+    merge
+
+Otherwise:
+
+    create new node
+
+----------------------------------------------------------
+
+[ ] Add memory provenance
+
+Store:
+
+    extracted_from
+    conversation_id
+    message_id
+
+Goal:
+
+Explain why memory exists.
+
+Future:
+
+    memory explain endpoint
+
+==========================================================
+PHASE 4 — RETRIEVAL V2
+Priority: HIGH
+ETA: 2-3 days
+==========================================================
+
+Goal:
+
+Improve retrieval quality.
+
+Tasks:
+
+[ ] Configurable ranking weights
+
+Add:
+
+    [ranking]
+
+    vector_weight
+    recency_weight
+    depth_penalty
+
+Current constants become config.
+
+----------------------------------------------------------
+
+[ ] Introduce Reranker interface
+
+Interface:
+
+    type Reranker interface {
+        Rank(...)
+    }
+
+Implementations:
+
+    NoopReranker
+    CrossEncoderReranker
+    LLMReranker
+
+Pipeline:
+
+    Search
+      ->
+    Graph expansion
+      ->
+    Reranker
+      ->
+    Prompt context
+
+----------------------------------------------------------
+
+[ ] Retrieval explainability
+
+Endpoint:
+
+    /query/explain
+
+Returns:
+
+    why node selected
+    vector score
+    depth score
+    recency score
+
+==========================================================
+PHASE 5 — VECTOR INDEX IMPROVEMENTS
+Priority: MEDIUM
+ETA: 2 days
+==========================================================
+
+Goal:
+
+Reduce allocations and memory footprint.
+
+Tasks:
+
+[ ] Remove duplicated vector storage
+
+Current:
+
+    flatMatrix
+    entries[i].Vector
+
+Store only:
+
+    flatMatrix
+    metadata
+
+Expected:
+
+    ~50% RAM reduction
+
+----------------------------------------------------------
+
+[ ] sync.Pool for search buffers
+
+Current:
+
+    make([]float32, n)
+
+per request.
+
+Replace:
+
+    sync.Pool
+
+Expected:
+
+    lower GC pressure
+
+----------------------------------------------------------
+
+[ ] Batch ingestion indexing
+
+Current:
+
+    rebuild index frequently
+
+Implement:
+
+    bulk insert mode
+
+Expected:
+
+    faster large imports
+
+==========================================================
+PHASE 6 — OBSERVABILITY
+Priority: HIGH
+ETA: 1 day
+==========================================================
+
+Goal:
+
+Operate Hermem in production.
+
+Tasks:
+
+[ ] Prometheus metrics
+
+Replace:
+
+    expvar
+
+With:
+
+    Prometheus
+
+Metrics:
+
+    ingest_total
+    search_total
+    retrieve_total
+    vector_search_duration
+    graph_walk_duration
+    llm_extract_duration
+
+----------------------------------------------------------
+
+[ ] OpenTelemetry tracing
+
+Trace:
+
+    query
+    search
+    graph walk
+    extraction
+    storage
+
+Compatible with:
+
+    Tempo
+    Jaeger
+    Grafana
+
+----------------------------------------------------------
+
+[ ] Health levels
+
+Endpoints:
+
+    /health/live
+    /health/ready
+
+Ready checks:
+
+    database
+    embedder
+    extractor
+
+==========================================================
+PHASE 7 — SCHEMA ENGINE
+Priority: HIGH
+ETA: 2-4 days
+==========================================================
+
+Goal:
+
+Make schema a first-class feature.
+
+Tasks:
+
+[ ] Schema validation compiler
+
+Startup:
+
+    validate schema
+
+Check:
+
+    duplicate states
+    duplicate relations
+    invalid FSM
+
+Fail fast.
+
+----------------------------------------------------------
+
+[ ] Schema versioning
+
+Add:
+
+    schema_version
+
+Stored in DB.
+
+Startup:
+
+    compare config schema
+    compare DB schema
+
+Detect incompatibilities.
+
+----------------------------------------------------------
+
+[ ] Dynamic schema reload
+
+Signal:
+
+    SIGHUP
+
+Reload:
+
+    hermem.ini
+
+Without restart.
+
+==========================================================
+PHASE 8 — DATABASE EVOLUTION
+Priority: HIGH
+ETA: 2 days
+==========================================================
+
+Goal:
+
+Safe upgrades.
+
+Tasks:
+
+[ ] Migration system
+
+Tables:
+
+    schema_migrations
+
+Implement:
+
+    migration runner
+
+Versioned SQL files.
+
+----------------------------------------------------------
+
+[ ] Upgrade command
+
+CLI:
+
+    hermem migrate
+
+Output:
+
+    migration status
+    pending migrations
+
+==========================================================
+PHASE 9 — ENTERPRISE FEATURES
+Priority: MEDIUM
+ETA: 1 week
+==========================================================
+
+Tasks:
+
+[ ] Multi-tenant namespaces
+
+Tables:
+
+    tenant_id
+
+Isolation:
+
+    search
+    retrieval
+    ingestion
+
+----------------------------------------------------------
+
+[ ] RBAC
+
+Roles:
+
+    admin
+    writer
+    reader
+
+----------------------------------------------------------
+
+[ ] API rate limiting
+
+Per:
+
+    API key
+    IP
+
+==========================================================
+PHASE 10 — LONG TERM DIFFERENTIATORS
+Priority: OPTIONAL
+ETA: 2-4 weeks
+==========================================================
+
+Tasks:
+
+[ ] Temporal memory retrieval
+
+Query:
+
+    what did user believe in March?
+
+----------------------------------------------------------
+
+[ ] Contradiction graph
+
+Relations:
+
+    contradicts
+
+Automatic detection.
+
+----------------------------------------------------------
+
+[ ] Episodic memory
+
+Store:
+
+    sessions
+    conversations
+    timelines
+
+----------------------------------------------------------
+
+[ ] Multi-hop retrieval
+
+Search
+    ->
+Graph expansion
+    ->
+Expansion from discovered nodes
+    ->
+Reranker
+
+----------------------------------------------------------
+
+[ ] Agent state engine
+
+Task graph
+FSM
+Rollback
+Execution planner
+
+Convert Hermem from memory store into agent substrate.
+
+==========================================================
+RECOMMENDED ORDER
+==========================================================
+
+Sprint 1:
+- Remove globals
+- Transactions
+- FK enforcement
+
+Sprint 2:
+- Memory provenance
+- Entity metadata
+- Retrieval explainability
+
+Sprint 3:
+- Reranker
+- Ranking config
+- Prometheus
+
+Sprint 4:
+- Migration system
+- Schema versioning
+
+Sprint 5:
+- Contradiction handling
+- Temporal memory
+
+Sprint 6:
+- Multi-tenant support
+- RBAC
+
+After Sprint 6 Hermem stops being "graph memory for agents"
+and becomes a legitimate memory substrate for agent frameworks.

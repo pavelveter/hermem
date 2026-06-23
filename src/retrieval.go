@@ -510,7 +510,7 @@ func writeBucket(sb *strings.Builder, heading string, facts []RetrievedFact) {
 	sb.WriteString("\n")
 }
 
-// GetExecutableTasks returns pending task nodes whose blocked_by
+// GetExecutableNodes returns pending task nodes whose blocked_by
 // dependencies are all completed and whose own status is 'pending'.
 // When goalID is non-empty, the result is restricted to tasks
 // reachable from that goal via blocked_by edges (the goal's
@@ -522,22 +522,21 @@ func writeBucket(sb *strings.Builder, heading string, facts []RetrievedFact) {
 // task in the dependency tree. The outer filter then keeps only
 // pending tasks that have zero remaining blockers — tasks whose
 // every blocked_by target has status = 'completed'.
-func GetExecutableNodes(db *sql.DB, goalID string) ([]Entity, error) {
-	schema := ActiveSchema()
+func GetExecutableNodes(db *sql.DB, schema SchemaConfig, goalID string) ([]Entity, error) {
 	if !schema.StatefulEnabled || len(schema.StatefulCategories) == 0 || len(schema.ValidStateOrder) == 0 {
 		return []Entity{}, nil
 	}
 	if goalID != "" {
-		return getExecutableTasksForGoal(db, goalID, schema)
+		return getExecutableTasksForGoal(db, schema, goalID)
 	}
 	return getExecutableTasksGlobal(db, schema)
 }
 
-func GetExecutableTasks(db *sql.DB, goalID string) ([]Entity, error) {
-	return GetExecutableNodes(db, goalID)
+func GetExecutableTasks(db *sql.DB, schema SchemaConfig, goalID string) ([]Entity, error) {
+	return GetExecutableNodes(db, schema, goalID)
 }
 
-func getExecutableTasksForGoal(db *sql.DB, goalID string, schema SchemaConfig) ([]Entity, error) {
+func getExecutableTasksForGoal(db *sql.DB, schema SchemaConfig, goalID string) ([]Entity, error) {
 	catPH, catArgs := boolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{goalID}, catArgs...)
 	args = append(args, schema.RelationBlocking)
@@ -640,13 +639,13 @@ func scanTaskEntities(rows *sql.Rows) ([]Entity, error) {
 // FindRollbackTask looks up the recovers_via edge from failedTaskID
 // and returns the target entity ID. Returns empty string and nil error
 // if no recovery arc is wired.
-func FindRollbackNode(db *sql.DB, failedTaskID string) (string, error) {
+func FindRollbackNode(db *sql.DB, schema SchemaConfig, failedTaskID string) (string, error) {
 	var targetID string
 	err := db.QueryRow(
 		`SELECT ed.target_id FROM edges ed
 		WHERE ed.source_id = ? AND ed.relation_type = ?
 		LIMIT 1`,
-		failedTaskID, ActiveSchema().RelationRecovery,
+		failedTaskID, schema.RelationRecovery,
 	).Scan(&targetID)
 	if err == sql.ErrNoRows {
 		return "", nil
@@ -657,6 +656,6 @@ func FindRollbackNode(db *sql.DB, failedTaskID string) (string, error) {
 	return targetID, nil
 }
 
-func FindRollbackTask(db *sql.DB, failedTaskID string) (string, error) {
-	return FindRollbackNode(db, failedTaskID)
+func FindRollbackTask(db *sql.DB, schema SchemaConfig, failedTaskID string) (string, error) {
+	return FindRollbackNode(db, schema, failedTaskID)
 }

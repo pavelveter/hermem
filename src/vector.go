@@ -170,7 +170,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi VectorIndex, embe
 			if err != nil {
 				return fmt.Errorf("failed to embed placeholder entity %q: %w", id, err)
 			}
-			if err := StoreEntityWithEmbedding(db, vi, Entity{
+			if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 				ID:        id,
 				Category:  "world",
 				Content:   id,
@@ -249,7 +249,12 @@ func checkEmbeddingDim(dim int) {
 // for that ID, and the caller can retry. Net effect: index never
 // points to a row the DB doesn't have, and SQLite errors don't leave
 // phantom index entries pointing at non-existent IDs.
-func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, entity Entity) error {
+//
+// Schema parameter: replaces the previous package-level activeSchema
+// global. The status-default rule (stateful category → first
+// valid_state) is read here so callers that store without setting a
+// status get the documented default without touching global state.
+func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, schema SchemaConfig, entity Entity) error {
 	var embeddingBytes []byte
 	hasEmbedding := len(entity.Embedding) > 0
 	if hasEmbedding {
@@ -265,8 +270,8 @@ func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, entity Entity) error {
 	}
 
 	status := entity.Status
-	if status == "" && ActiveSchema().StatefulCategories[entity.Category] && len(ActiveSchema().ValidStateOrder) > 0 {
-		status = ActiveSchema().ValidStateOrder[0]
+	if status == "" && schema.StatefulCategories[entity.Category] && len(schema.ValidStateOrder) > 0 {
+		status = schema.ValidStateOrder[0]
 	}
 	_, err := db.Exec(`
 		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status)

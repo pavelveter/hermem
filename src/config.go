@@ -94,6 +94,14 @@ type RetentionPolicy struct {
 // path without faking os.Executable(). A bare filename like
 // "hermem.ini" here is CWD-relative — that's the footgun this
 // helper exists to surface, not to fix.
+//
+// Sprint 1 change: parser state is no longer leaked to a package-level
+// `iniRef` cell. Every get* helper here is a closure over the local
+// `iniFile` returned by `ini.Load`. After LoadConfig returns, no
+// external reader can mutate the parsed tree, so config becomes
+// effectively immutable once constructed. The csv helpers
+// (parseCSVList, etc.) live at package scope because they have no
+// ini dependency — they're pure string utilities.
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
 		Provider:           "ollama",
@@ -120,8 +128,6 @@ func LoadConfig(path string) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			iniRef = nil
-			SetActiveSchema(cfg.Schema)
 			return cfg, nil
 		}
 		return nil, err
@@ -132,10 +138,18 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse ini: %w", err)
 	}
-	iniRef = iniFile
 
 	// sec looks up a section case-insensitively.
-	// keyIn returns an *ini.Key matched case-insensitively, or nil.
+	sec := func(name string) *ini.Section {
+		name = strings.ToLower(name)
+		for _, s := range iniFile.Sections() {
+			if strings.ToLower(s.Name()) == name {
+				return s
+			}
+		}
+		return nil
+	}
+	// keyIn matches a key case-insensitively in a section.
 	keyIn := func(s *ini.Section, name string) *ini.Key {
 		if s == nil {
 			return nil
@@ -143,15 +157,6 @@ func LoadConfig(path string) (*Config, error) {
 		for _, k := range s.Keys() {
 			if strings.EqualFold(k.Name(), name) {
 				return k
-			}
-		}
-		return nil
-	}
-	sec := func(name string) *ini.Section {
-		name = strings.ToLower(name)
-		for _, s := range iniFile.Sections() {
-			if strings.ToLower(s.Name()) == name {
-				return s
 			}
 		}
 		return nil
@@ -196,6 +201,13 @@ func LoadConfig(path string) (*Config, error) {
 			return defaultVal
 		}
 		return v
+	}
+	getList := func(section, key string) []string {
+		k := keyIn(sec(section), key)
+		if k == nil {
+			return nil
+		}
+		return parseCSVList(k.String())
 	}
 
 	if v, ok := getStr("embedder", "provider"); ok {
@@ -250,8 +262,8 @@ func LoadConfig(path string) (*Config, error) {
 	cfg.EmbedderTimeout = getDuration("embedder", "timeout", cfg.EmbedderTimeout)
 	cfg.ExtractTimeout = getDuration("extraction", "timeout", cfg.ExtractTimeout)
 
-	cfg.ExtraCategories = parseCSVList(getStrRaw("extraction", "extra_categories"))
-	cfg.ExtraRelationTypes = parseCSVList(getStrRaw("extraction", "extra_relation_types"))
+	cfg.ExtraCategories = getList("extraction", "extra_categories")
+	cfg.ExtraRelationTypes = getList("extraction", "extra_relation_types")
 	if schemaSection := sec("schema"); schemaSection != nil {
 		schema, err := parseSchemaSection(schemaSection, path)
 		if err != nil {
@@ -259,7 +271,6 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		cfg.Schema = schema
 	}
-	SetActiveSchema(cfg.Schema)
 
 	return cfg, nil
 }
@@ -401,50 +412,10 @@ func parseCSVList(s string) []string {
 	return out
 }
 
-// getCSVList reads an INI value as a CSV list. Returns nil for missing
-// or empty keys so callers can distinguish "unset" from "explicitly
-// empty".
-func getCSVList(section, key string) []string {
-	return parseCSVList(getStrRaw(section, key))
-}
-
-// getStrRaw retrieves a raw string from the INI file with no
-// transformation. Companion to the existing getStr closure but lives
-// at package scope so the new CSV helpers can call it.
-func getStrRaw(section, key string) string {
-	k := lookupINIKey(section, key)
-	if k == nil {
-		return ""
-	}
-	return k.String()
-}
-
-// lookupINIKey returns the *ini.Key for the given section + key pair
-// using the same case-insensitive match the rest of the parser uses,
-// or nil if not present.
-func lookupINIKey(section, key string) *ini.Key {
-	// The parser captures an iniFile at LoadConfig time; we keep it
-	// accessible via a package-level cell to make this helper work
-	// from anywhere without rebuilding the closure plumbing.
-	if iniRef == nil {
-		return nil
-	}
-	target := iniRef.Section(section)
-	if target == nil {
-		return nil
-	}
-	for _, k := range target.Keys() {
-		if strings.EqualFold(k.Name(), key) {
-			return k
-		}
-	}
-	return nil
-}
-
-// iniRef is set by LoadConfig so helpers like getStrRaw and
-// getCSVList can use it after the function returns. It avoids
-// re-parsing the file for each access.
-var iniRef *ini.File
+// sprint 1 note: getCSVList/getStrRaw helpers deleted — replaced by
+// closure-based getList. parseCSVList (the pure string utility) stays
+// at package scope so any future cell can reference it without
+// re-parsing INI state.
 
 // AllowedCategories returns the merged category allowlist: package-
 // level defaults (world, opinion, experience, observation) plus any

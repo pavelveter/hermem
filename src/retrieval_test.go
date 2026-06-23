@@ -15,7 +15,7 @@ func setupChainDB(t *testing.T, n int) *sql.DB {
 	db, vi := memDB(t)
 	for i := 0; i < n; i++ {
 		emb := []float32{float32(i) + 1, float32(i) + 2, float32(i) + 3}
-		if err := StoreEntityWithEmbedding(db, vi, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 			ID:        fmt.Sprintf("chain-%d", i),
 			Category:  "world",
 			Content:   fmt.Sprintf("Chain fact %d", i),
@@ -50,7 +50,7 @@ func TestRetrieveContextCycleGuard(t *testing.T) {
 		{ID: "A", Category: "world", Content: "node A", Embedding: []float32{1, 0}},
 		{ID: "B", Category: "world", Content: "node B", Embedding: []float32{0, 1}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
@@ -101,7 +101,7 @@ func TestRetrieveContext3CycleGuard(t *testing.T) {
 		{ID: "B", Category: "world", Content: "node B", Embedding: []float32{0, 1, 0}},
 		{ID: "C", Category: "world", Content: "node C", Embedding: []float32{0, 0, 1}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
@@ -170,7 +170,7 @@ func TestGraphWalk3CycleDirectProbe(t *testing.T) {
 		{ID: "B", Category: "world", Content: "node B", Embedding: []float32{0, 1, 0}},
 		{ID: "C", Category: "world", Content: "node C", Embedding: []float32{0, 0, 1}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
@@ -305,7 +305,7 @@ func TestRetrieveContextRankingOrderByScore(t *testing.T) {
 		{"fresh-aligned", "Ranking fresh aligned fact", []float32{1, 0, 0}, freshTime},
 	}
 	for _, r := range rows {
-		if err := StoreEntityWithEmbedding(db, vi, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 			ID: r.id, Category: "world", Content: r.content, Embedding: r.emb,
 		}); err != nil {
 			t.Fatalf("store %s: %v", r.id, err)
@@ -391,7 +391,7 @@ func benchmarkRetrieveContext(b *testing.B, depth int) {
 	const n = 500
 	for i := 0; i < n; i++ {
 		emb := []float32{float32(i % 7), float32(i%11) / 11, float32(i%13) / 13}
-		if err := StoreEntityWithEmbedding(db, vi, Entity{
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 			ID:        fmt.Sprintf("bench-%d", i),
 			Category:  "world",
 			Content:   fmt.Sprintf("fact-%d", i),
@@ -453,14 +453,14 @@ func TestFormatContextMarkdownAllBucketsRender(t *testing.T) {
 func TestGetExecutableTasksChain(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
-	SetActiveSchema(taskSchema())
+	schema := taskSchema()
 
 	for _, e := range []Entity{
 		{ID: "task-a", Category: "task", Content: "Step A", Embedding: []float32{1, 0, 0}},
 		{ID: "task-b", Category: "task", Content: "Step B", Embedding: []float32{0, 1, 0}},
 		{ID: "task-c", Category: "task", Content: "Step C", Embedding: []float32{0, 0, 1}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, schema, e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
@@ -472,7 +472,7 @@ func TestGetExecutableTasksChain(t *testing.T) {
 	}
 
 	// A has no blockers → executable; B blocked by A (pending); C blocked by B (pending).
-	exec, err := GetExecutableTasks(db, "")
+	exec, err := GetExecutableTasks(db, schema, "")
 	if err != nil {
 		t.Fatalf("get executable: %v", err)
 	}
@@ -485,10 +485,10 @@ func TestGetExecutableTasksChain(t *testing.T) {
 	}
 
 	// Complete A → B should become executable.
-	if err := UpdateTaskStatus(db, "task-a", "completed"); err != nil {
+	if err := UpdateTaskStatus(db, schema, "task-a", "completed"); err != nil {
 		t.Fatalf("complete A: %v", err)
 	}
-	exec, err = GetExecutableTasks(db, "")
+	exec, err = GetExecutableTasks(db, schema, "")
 	if err != nil {
 		t.Fatalf("get executable after A done: %v", err)
 	}
@@ -501,10 +501,10 @@ func TestGetExecutableTasksChain(t *testing.T) {
 	}
 
 	// Complete B → C should become executable.
-	if err := UpdateTaskStatus(db, "task-b", "completed"); err != nil {
+	if err := UpdateTaskStatus(db, schema, "task-b", "completed"); err != nil {
 		t.Fatalf("complete B: %v", err)
 	}
-	exec, err = GetExecutableTasks(db, "")
+	exec, err = GetExecutableTasks(db, schema, "")
 	if err != nil {
 		t.Fatalf("get executable after B done: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestGetExecutableTasksChain(t *testing.T) {
 func TestGetExecutableTasksForGoal(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
-	SetActiveSchema(taskSchema())
+	schema := taskSchema()
 
 	// Chain 1: goal1 → blocked by X → blocked by Y
 	// Chain 2: goal2 → blocked by Z
@@ -533,7 +533,7 @@ func TestGetExecutableTasksForGoal(t *testing.T) {
 		{ID: "goal2", Category: "task", Content: "Goal 2", Embedding: []float32{0, 0}},
 		{ID: "task-z", Category: "task", Content: "Step Z", Embedding: []float32{1, 1}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, schema, e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
@@ -547,7 +547,7 @@ func TestGetExecutableTasksForGoal(t *testing.T) {
 
 	// With goal_id='goal1', dep_tree = {goal1, X, Y}.
 	// Y has no blockers → executable. X blocked by Y (pending) → not. goal1 blocked by X (pending) → not.
-	exec, err := GetExecutableTasks(db, "goal1")
+	exec, err := GetExecutableTasks(db, schema, "goal1")
 	if err != nil {
 		t.Fatalf("get executable for goal1: %v", err)
 	}
@@ -561,7 +561,7 @@ func TestGetExecutableTasksForGoal(t *testing.T) {
 
 	// With goal_id='goal2', dep_tree = {goal2, Z}. Z has no blockers → executable.
 	// Verify Y and X from goal1's tree do NOT appear.
-	exec, err = GetExecutableTasks(db, "goal2")
+	exec, err = GetExecutableTasks(db, schema, "goal2")
 	if err != nil {
 		t.Fatalf("get executable for goal2: %v", err)
 	}
@@ -578,19 +578,19 @@ func TestGetExecutableTasksForGoal(t *testing.T) {
 func TestFindRollbackTask(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
-	SetActiveSchema(taskSchema())
+	schema := taskSchema()
 
 	for _, e := range []Entity{
 		{ID: "failed-step", Category: "task", Content: "Failed", Embedding: []float32{1, 0}},
 		{ID: "recovery-step", Category: "task", Content: "Recovery", Embedding: []float32{0, 1}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 	}
 
 	// No edge yet — should return empty.
-	target, err := FindRollbackTask(db, "failed-step")
+	target, err := FindRollbackTask(db, schema, "failed-step")
 	if err != nil {
 		t.Fatalf("find rollback: %v", err)
 	}
@@ -602,7 +602,7 @@ func TestFindRollbackTask(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO edges (source_id, target_id, relation_type) VALUES ('failed-step', 'recovery-step', 'recovers_via')`); err != nil {
 		t.Fatalf("edge: %v", err)
 	}
-	target, err = FindRollbackTask(db, "failed-step")
+	target, err = FindRollbackTask(db, schema, "failed-step")
 	if err != nil {
 		t.Fatalf("find rollback after edge: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestFindRollbackTask(t *testing.T) {
 	}
 
 	// Non-existent task — should return empty.
-	target, err = FindRollbackTask(db, "nonexistent")
+	target, err = FindRollbackTask(db, schema, "nonexistent")
 	if err != nil {
 		t.Fatalf("find rollback nonexistent: %v", err)
 	}
@@ -624,16 +624,16 @@ func TestFindRollbackTask(t *testing.T) {
 func TestUpdateTaskStatus(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
-	SetActiveSchema(taskSchema())
+	schema := taskSchema()
 
-	if err := StoreEntityWithEmbedding(db, vi, Entity{
+	if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 		ID: "t1", Category: "task", Content: "do stuff", Embedding: []float32{1, 0},
 	}); err != nil {
 		t.Fatalf("store: %v", err)
 	}
 
 	// Valid status.
-	if err := UpdateTaskStatus(db, "t1", "running"); err != nil {
+	if err := UpdateTaskStatus(db, schema, "t1", "running"); err != nil {
 		t.Fatalf("update running: %v", err)
 	}
 	st, err := GetTaskStatus(db, "t1")
@@ -645,22 +645,22 @@ func TestUpdateTaskStatus(t *testing.T) {
 	}
 
 	// Invalid status.
-	if err := UpdateTaskStatus(db, "t1", "bogus"); err == nil {
+	if err := UpdateTaskStatus(db, schema, "t1", "bogus"); err == nil {
 		t.Error("expected error for invalid status")
 	}
 
 	// Non-existent task.
-	if err := UpdateTaskStatus(db, "nonexistent", "pending"); err == nil {
+	if err := UpdateTaskStatus(db, schema, "nonexistent", "pending"); err == nil {
 		t.Error("expected error for non-existent task")
 	}
 
 	// Non-task entity.
-	if err := StoreEntityWithEmbedding(db, vi, Entity{
+	if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), Entity{
 		ID: "w1", Category: "world", Content: "a fact", Embedding: []float32{1, 0},
 	}); err != nil {
 		t.Fatalf("store world: %v", err)
 	}
-	if err := UpdateTaskStatus(db, "w1", "completed"); err == nil {
+	if err := UpdateTaskStatus(db, schema, "w1", "completed"); err == nil {
 		t.Error("expected error when updating non-task entity")
 	}
 }
@@ -748,7 +748,7 @@ func TestCompositeScorerDefaultDepthPenalty(t *testing.T) {
 		{ID: "mid2", Category: "world", Content: "Mid 2 fact", Embedding: []float32{0, 1, 0}},
 		{ID: "deep", Category: "world", Content: "Deep relevant fact", Embedding: []float32{0.6, 0.8, 0}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store %s: %v", e.ID, err)
 		}
 		if _, err := db.Exec(`UPDATE entities SET updated_at = ? WHERE id = ?`, stamp, e.ID); err != nil {
@@ -818,7 +818,7 @@ func TestCompositeScorerCustom(t *testing.T) {
 		{ID: "a", Category: "world", Content: "A fact", Embedding: []float32{0, 1, 0}},
 		{ID: "b", Category: "world", Content: "B fact", Embedding: []float32{0, 1, 0}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store: %v", err)
 		}
 	}
@@ -880,7 +880,7 @@ func TestRetrieveContextCompositeScorerReceivesCachedQueryNorm(t *testing.T) {
 		{ID: "a", Category: "world", Content: "A fact", Embedding: []float32{0.6, 0.8, 0}},
 		{ID: "b", Category: "world", Content: "B fact", Embedding: []float32{0.6, 0.8, 0}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store: %v", err)
 		}
 	}
@@ -963,7 +963,7 @@ func TestCompositeScorerNilMatchesDefault(t *testing.T) {
 		{ID: "seed", Category: "world", Content: "Seed fact", Embedding: []float32{0.5, 0.8660254, 0}},
 		{ID: "deep", Category: "world", Content: "Deep relevant fact", Embedding: []float32{0.6, 0.8, 0}},
 	} {
-		if err := StoreEntityWithEmbedding(db, vi, e); err != nil {
+		if err := StoreEntityWithEmbedding(db, vi, defaultSchemaConfig(false), e); err != nil {
 			t.Fatalf("store: %v", err)
 		}
 	}

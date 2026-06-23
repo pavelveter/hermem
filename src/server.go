@@ -121,7 +121,6 @@ type ErrorResponse struct {
 }
 
 func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions, schema SchemaConfig) *Server {
-	SetActiveSchema(schema)
 	validCategories := schema.AllowedCategories
 	if validCategories == nil {
 		validCategories = map[string]bool{}
@@ -133,7 +132,7 @@ func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtra
 	return &Server{
 		db:                 db,
 		vi:                 vi,
-		worker:             NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold),
+		worker:             NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema),
 		embedder:           embedder,
 		retrievalOpts:      retrievalOpts,
 		validCategories:    validCategories,
@@ -215,7 +214,7 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 		Embedding: req.Embedding,
 	}
 
-	if err := StoreEntityWithEmbedding(s.db, s.vi, entity); err != nil {
+	if err := StoreEntityWithEmbedding(s.db, s.vi, s.schema, entity); err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -427,7 +426,7 @@ func (s *Server) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := UpdateTaskStatus(s.db, req.ID, req.Status); err != nil {
+	if err := UpdateTaskStatus(s.db, s.schema, req.ID, req.Status); err != nil {
 		incErr()
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -449,7 +448,7 @@ func (s *Server) HandleTaskExecutable(w http.ResponseWriter, r *http.Request) {
 
 	goalID := r.URL.Query().Get("goal_id")
 
-	tasks, err := GetExecutableTasks(s.db, goalID)
+	tasks, err := GetExecutableTasks(s.db, s.schema, goalID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -477,7 +476,7 @@ func (s *Server) HandleTaskList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := ListTasks(s.db, req.Status, req.GoalID)
+	tasks, err := ListTasks(s.db, s.schema, req.Status, req.GoalID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -510,7 +509,7 @@ func (s *Server) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity, blocked, recovers, err := GetTaskWithRelations(s.db, req.ID)
+	entity, blocked, recovers, err := GetTaskWithRelations(s.db, s.schema, req.ID)
 	if err != nil {
 		incErr()
 		if strings.Contains(err.Error(), "not found") {
@@ -594,7 +593,7 @@ func (s *Server) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rollbackID, err := FindRollbackTask(s.db, req.ID)
+	rollbackID, err := FindRollbackTask(s.db, s.schema, req.ID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -618,7 +617,7 @@ func (s *Server) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := GetTaskTree(s.db, req.GoalID)
+	nodes, err := GetTaskTree(s.db, s.schema, req.GoalID)
 	if err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -664,7 +663,7 @@ func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entity := Entity{ID: req.ID, Category: category, Content: req.Content, Embedding: embedding}
-	if err := StoreEntityWithEmbedding(s.db, s.vi, entity); err != nil {
+	if err := StoreEntityWithEmbedding(s.db, s.vi, s.schema, entity); err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

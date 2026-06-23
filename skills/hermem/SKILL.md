@@ -283,6 +283,24 @@ model = nomic-embed-text
 
 [database]
 path = /Users/pavelveter/.hermes/hermem.db
+
+[schema]
+; Declarative graph schema + FSM harness.
+; If absent, classic defaults are used and stateful features are disabled.
+; Comma-separated entity category allowlist; unknown categories return HTTP 422.
+allowed_categories = world,opinion,experience,observation,task,milestone
+; Comma-separated relation type allowlist; unknown relations return HTTP 422.
+allowed_relations = prefers,uses,mentions,related_to,part_of,causes,contradicts,blocked_by,recovers_via
+; Categories whose nodes get a lifecycle `status` field (auto-init to first valid state).
+stateful_categories = task
+; Ordered valid lifecycle states for stateful nodes; invalid transitions return HTTP 422.
+valid_states = pending,running,completed,failed
+; Relation name used for blocking dependencies.
+relation_blocking = blocked_by
+; Target status that unblocks a dependency.
+state_unblocking = completed
+; Relation name for recovery/rollback edges.
+relation_recovery = recovers_via
 ```
 
 After editing config, restart the Hermes gateway if the memory provider needs to pick up changes.
