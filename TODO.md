@@ -1,87 +1,103 @@
-# TODO: State-on-Graph — Graph-Based Task Execution State
+# TODO: Dynamic Graph Schema & State Machine
 
-## Batch 9 — State Machine on Hermem Graph
+## Overview
+Replace hardcoded category/relation allowlists and hardcoded state-machine logic with a fully declarative, configuration-driven harness. Hermem must become a programming-free orchestrator: schema, validation, and FSM transition rules are defined in `hermem.ini` under `[schema]` and interpreted at runtime.
 
-Theme: turn the graph memory into a crash-resilient task execution state machine.
+## 1. Config parser: declarative schema section
+Files: `src/config.go`, `src/main.go`
 
-### Context
+- Add a `[schema]` block parser in `src/config.go` (or extend existing config loader).
+- Load into maps for O(1) runtime checks:
+  - `allowed_categories`
+  - `allowed_relations`
+  - `stateful_categories`
+  - `valid_states`
+  - `relation_blocking`
+  - `state_unblocking`
+  - `relation_recovery`
+- Fallbacks when `[schema]` is absent:
+  - categories: `world,opinion,experience,observation`
+  - relations: existing allowlists
+  - state machine features disabled (no `status` enforcement, no execution engine)
+- Validate the config at startup (unknown keys = fatal with line number).
 
-Hermem already stores entities + edges with category/relation allowlists. We extend the
-existing `extra_categories` / `extra_relation_types` config path (Batch 7 commit `a814929`)
-and add a `status` text field on `entities` so steps can be tracked without new tables.
+## 2. Database: optional status without breaking old nodes
+Files: `src/db.go`
 
-### #19 State-on-Graph core schema + API — HIGH (lead item)
+- `entities.status` is `TEXT DEFAULT NULL` (backward compatible).
+- Non-stateful nodes keep `status = NULL`.
+- On insert: if category ∈ `stateful_categories`, set `status = first(valid_states)` (i.e., `pending`).
+- Migrations must be idempotent (`duplicate column` is benign).
+- Add helpers:
+  - `SetStatus(db, id, status) error`
+  - `GetStatus(db, id) (string, error)`
+  - `GetExecutableNodes(db, goalID string) ([]Entity, error)`
+  - `FindRollbackNode(db, failedID string) (string, error)`
 
-Files: `src/db.go`, `src/config.go`, `src/main.go`, `src/server.go`, tests.
+## 3. Extractor / validator: config-driven rejections
+Files: `src/extractor.go`, `src/server.go`
 
-Approach:
-1. Add `status` column to `entities` via schema migration in `InitDB`:
-   `ALTER TABLE entities ADD COLUMN status TEXT DEFAULT 'pending'`.
-   Guard the migration so it is idempotent (catch `duplicate column` error).
-2. Add `UpdateTaskStatus(db, id, status)` helper in `src/db.go` (only updates rows where
-   `category = 'task'` to avoid touching memory/opinion nodes).
-3. Confgure `AllowedCategories` and `AllowedRelations` maps in `src/extractor.go` to
-   include `"task"`, `"blocked_by"`, `"recovers_via"`. These should be driven by the same
-   config keys already used for user-defined allowlists so the change is additive, not
-   a hard fork.
-4. Expose HTTP handlers:
-   - `POST /task/status` `{ "id": "...", "status": "pending|running|completed|failed" }`
-     -> 204 on success, 400 if entity not found or wrong category.
-   - `POST /task/executable?goal_id=...` -> JSON list of executable tasks whose
-     `blocked_by` dependencies are all `completed` and whose own status is `pending`.
-5. Wire the new routes and any needed flags into `cmd` layer; keep `--no-decor` and
-   existing auth / logging semantics.
+- Replace hardcoded `allowedCategories` / `allowedRelations` with lookups into the loaded config maps.
+- New rules:
+  - unknown category → `422 Unprocessable Entity`
+  - unknown relation → `422 Unprocessable Entity`
+  - state transitions outside `valid_states` for stateful nodes → `422`
+- `ingest` path must also call `ValidateCategory` / `ValidateRelation` before emitting edges.
 
-### #20 Recursive CTE task walk — HIGH
+## 4. Topological execution engine
+Files: `src/retrieval.go`, `src/server.go`
 
-Files: `src/retrieval.go`, `src/retrieval_test.go`.
+- `GetExecutableNodes(db, goalID)` must use a **dynamic** recursive CTE:
+  - blocking relation name comes from config: `relation_blocking` (default `blocked_by`).
+  - unblocking state comes from config: `state_unblocking` (default `completed`).
+  - stateful categories limit the search space.
+  - prune branches where any blocker is not in unblocking state.
+- `FindRollbackNode(db, failedID)` uses `relation_recovery` from config (default `recovers_via`).
 
-Approach:
-1. `GetExecutableTasks(db, goalID)` — recursive CTE starting from the supplied goal id
-   (or from all pending task nodes when goalID is empty), walking `blocked_by` edges in
-   reverse and pruning any branch that contains a dependency with `status != 'completed'`.
-   Return only leaf-ready tasks: `pending` tasks with zero remaining blockers.
-2. `FindRollbackTask(db, failedTaskID)` — look up `recovers_via` edge; return the target
-   id or empty if no recovery arc is wired.
-3. Tests:
-   - Fixture: seeds tasks A ->blocks B ->blocks C, mark A completed => B executable, C not.
-   - Fixture: mark B completed => C executable.
-   - Fixture: `recovers_via` edge exists => returns target; no edge => empty.
-   - All new tests must run under `go test -race`.
+## 5. HTTP + CLI wiring
+Files: `src/server.go`, `src/main.go`, `src/banner.go`, `USAGE.md`, `README.md`, `skills/hermem/SKILL.md`
 
-### #21 Embedding + API polish — MEDIUM
+- Keep existing routes; add/extend:
+  - `POST /task/status` with strict schema validation.
+  - `POST /task/executable` with optional `goal_id` query.
+  - `POST /task/rollback` with dynamic relation name.
+- CLI commands map 1:1 to HTTP endpoints.
+- Banner/help text updated.
 
-Files: `src/retrieval.go`, `src/server.go`, `src/embedder.go` if needed.
+## 6. Tests and docs
+Files: `src/config_test.go`, `src/db_test.go`, `src/retrieval_test.go`, `src/server_test.go`, `USAGE.md`, `README.md`, `skills/hermem/SKILL.md`
 
-Approach:
-1. Embed task nodes on creation same as any other category; no special-case embedding code.
-2. Add `task` to any prompt-template or category-doc examples in docs so operators know it
-   can be treated like first-class memory.
-3. `POST /store` already supports `AutoLinkEdges`; ensure the new relations are surfaced
-   in the API docs (`USAGE.md` or `README.md` add a small State Machine section).
+- Config tests:
+  - missing `[schema]` → classic defaults loaded.
+  - malformed value → fatal with actionable message.
+  - invalid key → rejected.
+- DB tests:
+  - NULL status on non-stateful nodes; `pending` on stateful nodes.
+  - idempotent migration re-run.
+- Retrieval tests:
+  - dynamic CTE with custom `relation_blocking` and `state_unblocking`.
+  - rollback edge reads `relation_recovery` correctly.
+- Server tests:
+  - 422 on unknown category / relation.
+  - 200 on valid executable query.
+- Smoke (manual):
+  - custom config with `stateful_categories = task,milestone`; `relation_blocking = causes`; `state_unblocking = done`; verify executable list behaves accordingly.
 
-### Execution order
+## Execution order
+1. Config: `[schema]` parsing + fallback defaults (#1)
+2. DB: status column + stateful auto-init (#2)
+3. Extractor: dynamic validation (#3)
+4. Retrieval: config-driven CTE + rollback (#4)
+5. HTTP/CLI + docs + skills (#5)
+6. Tests + smoke (#6)
 
-1. Schema + config allowlist expansion (#19)
-2. CTE walk + rollback lookup (#20)
-3. Embedding / API / docs polish (#21)
-
-### Validation
-
+## Validation
 - `gofmt -w src/*.go`
 - `go vet ./src/...`
 - `go test -count=1 -race -timeout 180s ./src/...`
-- Manual smoke:
-  - `./hermem --no-decor` then
-  - `POST /store` with `category=task`, then
-  - `POST /task/status id=... status=running`, then
-  - `POST /task/executable` -> expect JSON
-- `go test -bench=BenchmarkRetrieveContextStar -benchtime=10x -run='^$' ./src/...`
-  (regression guard for retrieval benches)
+- Manual smoke with a custom `hermem.ini` that changes relation/state names.
 
-### Out of scope
-
-- Locking / distributed coordination across multiple hermem instances — keep single-process
-  SQLite semantics for now.
-- Auto-retry loop — this batch only adds state + executable queries; execution loop is
-  operator / agent code above hermem.
+## Out of scope
+- Distributed locking across multiple Hermem instances.
+- Auto-execution loop (operator/agent code above Hermem).
+- Schema migration tooling beyond the single optional `status` column.

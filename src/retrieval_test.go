@@ -453,6 +453,7 @@ func TestFormatContextMarkdownAllBucketsRender(t *testing.T) {
 func TestGetExecutableTasksChain(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
+	SetActiveSchema(taskSchema())
 
 	for _, e := range []Entity{
 		{ID: "task-a", Category: "task", Content: "Step A", Embedding: []float32{1, 0, 0}},
@@ -521,6 +522,7 @@ func TestGetExecutableTasksChain(t *testing.T) {
 func TestGetExecutableTasksForGoal(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
+	SetActiveSchema(taskSchema())
 
 	// Chain 1: goal1 → blocked by X → blocked by Y
 	// Chain 2: goal2 → blocked by Z
@@ -576,6 +578,7 @@ func TestGetExecutableTasksForGoal(t *testing.T) {
 func TestFindRollbackTask(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
+	SetActiveSchema(taskSchema())
 
 	for _, e := range []Entity{
 		{ID: "failed-step", Category: "task", Content: "Failed", Embedding: []float32{1, 0}},
@@ -621,6 +624,7 @@ func TestFindRollbackTask(t *testing.T) {
 func TestUpdateTaskStatus(t *testing.T) {
 	db, vi := memDB(t)
 	defer db.Close()
+	SetActiveSchema(taskSchema())
 
 	if err := StoreEntityWithEmbedding(db, vi, Entity{
 		ID: "t1", Category: "task", Content: "do stuff", Embedding: []float32{1, 0},

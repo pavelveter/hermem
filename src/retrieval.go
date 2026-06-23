@@ -522,44 +522,57 @@ func writeBucket(sb *strings.Builder, heading string, facts []RetrievedFact) {
 // task in the dependency tree. The outer filter then keeps only
 // pending tasks that have zero remaining blockers — tasks whose
 // every blocked_by target has status = 'completed'.
-func GetExecutableTasks(db *sql.DB, goalID string) ([]Entity, error) {
-	if goalID != "" {
-		return getExecutableTasksForGoal(db, goalID)
+func GetExecutableNodes(db *sql.DB, goalID string) ([]Entity, error) {
+	schema := ActiveSchema()
+	if !schema.StatefulEnabled || len(schema.StatefulCategories) == 0 || len(schema.ValidStateOrder) == 0 {
+		return []Entity{}, nil
 	}
-	return getExecutableTasksGlobal(db)
+	if goalID != "" {
+		return getExecutableTasksForGoal(db, goalID, schema)
+	}
+	return getExecutableTasksGlobal(db, schema)
 }
 
-func getExecutableTasksForGoal(db *sql.DB, goalID string) ([]Entity, error) {
-	query := `
+func GetExecutableTasks(db *sql.DB, goalID string) ([]Entity, error) {
+	return GetExecutableNodes(db, goalID)
+}
+
+func getExecutableTasksForGoal(db *sql.DB, goalID string, schema SchemaConfig) ([]Entity, error) {
+	catPH, catArgs := boolMapInClause(schema.StatefulCategories)
+	args := append([]interface{}{goalID}, catArgs...)
+	args = append(args, schema.RelationBlocking)
+	args = append(args, catArgs...)
+	args = append(args, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking)
+	query := fmt.Sprintf(`
 		WITH RECURSIVE dep_tree AS (
 			SELECT e.id, e.category, e.content, e.status, e.updated_at
 			FROM entities e
-			WHERE e.id = ? AND e.category = 'task' AND e.archived = 0
+			WHERE e.id = ? AND e.category IN (%s) AND e.archived = 0
 
 			UNION ALL
 
 			SELECT e.id, e.category, e.content, e.status, e.updated_at
 			FROM dep_tree dt
-			JOIN edges ed ON ed.source_id = dt.id AND ed.relation_type = 'blocked_by'
-			JOIN entities e ON e.id = ed.target_id AND e.category = 'task' AND e.archived = 0
+			JOIN edges ed ON ed.source_id = dt.id AND ed.relation_type = ?
+			JOIN entities e ON e.id = ed.target_id AND e.category IN (%s) AND e.archived = 0
 		)
 		SELECT dt.id, dt.category, dt.content, dt.status, dt.updated_at
 		FROM dep_tree dt
-		WHERE dt.status = 'pending'
+		WHERE dt.status = ?
 		AND NOT EXISTS (
 			SELECT 1 FROM edges ed2
 			WHERE ed2.source_id = dt.id
-			AND ed2.relation_type = 'blocked_by'
+			AND ed2.relation_type = ?
 			AND EXISTS (
 				SELECT 1 FROM entities e3
 				WHERE e3.id = ed2.target_id
-				AND e3.status != 'completed'
+				AND e3.status != ?
 			)
 		)
 		ORDER BY dt.id
-	`
+	`, catPH, catPH)
 
-	rows, err := db.Query(query, goalID)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get executable tasks for goal %s: %w", goalID, err)
 	}
@@ -568,31 +581,45 @@ func getExecutableTasksForGoal(db *sql.DB, goalID string) ([]Entity, error) {
 	return scanTaskEntities(rows)
 }
 
-func getExecutableTasksGlobal(db *sql.DB) ([]Entity, error) {
-	query := `
+func getExecutableTasksGlobal(db *sql.DB, schema SchemaConfig) ([]Entity, error) {
+	catPH, catArgs := boolMapInClause(schema.StatefulCategories)
+	args := append([]interface{}{}, catArgs...)
+	args = append(args, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking)
+	query := fmt.Sprintf(`
 		SELECT e.id, e.category, e.content, e.status, e.updated_at
 		FROM entities e
-		WHERE e.category = 'task' AND e.status = 'pending' AND e.archived = 0
+		WHERE e.category IN (%s) AND e.status = ? AND e.archived = 0
 		AND NOT EXISTS (
 			SELECT 1 FROM edges ed
 			WHERE ed.source_id = e.id
-			AND ed.relation_type = 'blocked_by'
+			AND ed.relation_type = ?
 			AND EXISTS (
 				SELECT 1 FROM entities e2
 				WHERE e2.id = ed.target_id
-				AND e2.status != 'completed'
+				AND e2.status != ?
 			)
 		)
 		ORDER BY e.id
-	`
+	`, catPH)
 
-	rows, err := db.Query(query)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get executable tasks: %w", err)
 	}
 	defer rows.Close()
 
 	return scanTaskEntities(rows)
+}
+
+func boolMapInClause(values map[string]bool) (string, []interface{}) {
+	keys := sortedKeys(values)
+	ph := make([]string, len(keys))
+	args := make([]interface{}, len(keys))
+	for i, key := range keys {
+		ph[i] = "?"
+		args[i] = key
+	}
+	return strings.Join(ph, ","), args
 }
 
 func scanTaskEntities(rows *sql.Rows) ([]Entity, error) {
@@ -613,13 +640,13 @@ func scanTaskEntities(rows *sql.Rows) ([]Entity, error) {
 // FindRollbackTask looks up the recovers_via edge from failedTaskID
 // and returns the target entity ID. Returns empty string and nil error
 // if no recovery arc is wired.
-func FindRollbackTask(db *sql.DB, failedTaskID string) (string, error) {
+func FindRollbackNode(db *sql.DB, failedTaskID string) (string, error) {
 	var targetID string
 	err := db.QueryRow(
 		`SELECT ed.target_id FROM edges ed
-		WHERE ed.source_id = ? AND ed.relation_type = 'recovers_via'
+		WHERE ed.source_id = ? AND ed.relation_type = ?
 		LIMIT 1`,
-		failedTaskID,
+		failedTaskID, ActiveSchema().RelationRecovery,
 	).Scan(&targetID)
 	if err == sql.ErrNoRows {
 		return "", nil
@@ -628,4 +655,8 @@ func FindRollbackTask(db *sql.DB, failedTaskID string) (string, error) {
 		return "", fmt.Errorf("find rollback task: %w", err)
 	}
 	return targetID, nil
+}
+
+func FindRollbackTask(db *sql.DB, failedTaskID string) (string, error) {
+	return FindRollbackNode(db, failedTaskID)
 }

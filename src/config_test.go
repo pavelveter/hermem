@@ -599,9 +599,70 @@ func TestConfigAllowedCategoriesMergesDefaultsAndExtras(t *testing.T) {
 	if got["nonexistent"] {
 		t.Error("nonexistent present in AllowedCategories")
 	}
-	// Total size: 5 defaults + 2 extras = 7.
-	if len(got) != 7 {
-		t.Errorf("AllowedCategories size = %d, want 7 (5 defaults + 2 extras)", len(got))
+	// Total size: 4 classic defaults + 2 extras = 6.
+	if len(got) != 6 {
+		t.Errorf("AllowedCategories size = %d, want 6 (4 defaults + 2 extras)", len(got))
+	}
+}
+
+func TestLoadConfigSchemaDefaultsWhenMissing(t *testing.T) {
+	cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.ini"))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Schema.StatefulEnabled {
+		t.Fatal("schema stateful engine enabled without [schema]")
+	}
+	if cfg.Schema.AllowedCategories["task"] {
+		t.Fatal("task category should not be a classic fallback category")
+	}
+	for _, want := range []string{"world", "opinion", "experience", "observation"} {
+		if !cfg.Schema.AllowedCategories[want] {
+			t.Fatalf("missing default category %q", want)
+		}
+	}
+}
+
+func TestLoadConfigParsesSchemaSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[schema]
+allowed_categories = task,milestone,world
+allowed_relations = causes,heals,related_to
+stateful_categories = task,milestone
+valid_states = todo,doing,done
+relation_blocking = causes
+state_unblocking = done
+relation_recovery = heals
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.Schema.StatefulEnabled || !cfg.Schema.StatefulCategories["milestone"] {
+		t.Fatalf("schema stateful categories not loaded: %+v", cfg.Schema)
+	}
+	if cfg.Schema.RelationBlocking != "causes" || cfg.Schema.StateUnblocking != "done" || cfg.Schema.RelationRecovery != "heals" {
+		t.Fatalf("schema FSM names not loaded: %+v", cfg.Schema)
+	}
+}
+
+func TestLoadConfigRejectsUnknownSchemaKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hermem.ini")
+	contents := `[schema]
+allowed_categories = task
+allowed_relations = causes
+bogus = value
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("expected unknown schema key error")
 	}
 }
 

@@ -25,7 +25,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 		&stubExtractor{resp: &ExtractionResult{Entities: nil}},
 		0.99,
 		RetrieveContextOptions{MaxDepth: 2, DepthCeiling: 5, MaxRetrievedNodes: 100},
-		validRelationTypes,
+		taskSchema(),
 	)
 	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -305,8 +305,8 @@ func TestServerTaskStatus(t *testing.T) {
 	// Invalid status.
 	resp = doPost(t, srv.URL, "/task/status", `{"id":"ts1","status":"bogus"}`)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("invalid status: status = %d, want 400", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("invalid status: status = %d, want 422", resp.StatusCode)
 	}
 
 	// Non-existent task.

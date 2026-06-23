@@ -13,10 +13,20 @@ import (
 // `db, vi := memDB(t)` without redeclaration.
 func memDB(t testing.TB) (*sql.DB, VectorIndex) {
 	t.Helper()
+	SetActiveSchema(defaultSchemaConfig(false))
 	db, err := InitDB(":memory:", 768)
 	if err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	vi := newVectorIndex("in-memory", db, 768)
 	return db, vi
+}
+
+func taskSchema() SchemaConfig {
+	s := defaultSchemaConfig(true)
+	s.AllowedCategories["task"] = true
+	s.StatefulCategories = map[string]bool{"task": true}
+	s.ValidStateOrder = []string{"pending", "running", "completed", "failed"}
+	s.ValidStates = boolMap(s.ValidStateOrder)
+	return s
 }

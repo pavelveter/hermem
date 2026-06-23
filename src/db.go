@@ -29,6 +29,17 @@ type Edge struct {
 	RelationType string `json:"relation_type"`
 }
 
+var activeSchema = defaultSchemaConfig(false)
+
+func SetActiveSchema(schema SchemaConfig) {
+	if schema.AllowedCategories == nil {
+		schema = defaultSchemaConfig(false)
+	}
+	activeSchema = schema
+}
+
+func ActiveSchema() SchemaConfig { return activeSchema }
+
 func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	v := url.Values{}
 	v.Set("_journal_mode", "WAL")
@@ -73,10 +84,11 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS entities (
 			id TEXT PRIMARY KEY,
-			category TEXT NOT NULL CHECK(category IN ('world', 'experience', 'opinion', 'observation', 'task')),
+			category TEXT NOT NULL,
 			content TEXT NOT NULL,
 			embedding BLOB,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			status TEXT DEFAULT NULL
 		)
 	`); err != nil {
 		db.Close()
@@ -137,7 +149,7 @@ func migrateSchema(db *sql.DB) error {
 	}{
 		{"last_accessed_at", `ALTER TABLE entities ADD COLUMN last_accessed_at DATETIME`},
 		{"archived", `ALTER TABLE entities ADD COLUMN archived INTEGER DEFAULT 0`},
-		{"status", `ALTER TABLE entities ADD COLUMN status TEXT DEFAULT 'pending'`},
+		{"status", `ALTER TABLE entities ADD COLUMN status TEXT DEFAULT NULL`},
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m.sql); err != nil {
@@ -150,23 +162,19 @@ func migrateSchema(db *sql.DB) error {
 	if _, err := db.Exec("UPDATE entities SET last_accessed_at = updated_at WHERE last_accessed_at IS NULL"); err != nil {
 		return fmt.Errorf("backfill last_accessed_at: %w", err)
 	}
-	if err := migrateCategoryCheck(db); err != nil {
+	if err := migrateEntitiesFlexibleSchema(db); err != nil {
 		return err
 	}
 	return nil
 }
 
-// migrateCategoryCheck recreates the entities table if the category
-// CHECK constraint doesn't include 'task'. SQLite doesn't support
-// ALTER TABLE to modify CHECK constraints, so we recreate the table
-// with the updated schema and copy all data in a transaction.
-func migrateCategoryCheck(db *sql.DB) error {
+func migrateEntitiesFlexibleSchema(db *sql.DB) error {
 	var createSQL string
 	err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='entities'").Scan(&createSQL)
 	if err != nil {
 		return nil
 	}
-	if strings.Contains(createSQL, "'task'") {
+	if !strings.Contains(strings.ToUpper(createSQL), "CHECK(CATEGORY IN") && strings.Contains(createSQL, "status TEXT DEFAULT NULL") {
 		return nil
 	}
 
@@ -179,13 +187,13 @@ func migrateCategoryCheck(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		CREATE TABLE entities_new (
 			id TEXT PRIMARY KEY,
-			category TEXT NOT NULL CHECK(category IN ('world', 'experience', 'opinion', 'observation', 'task')),
+			category TEXT NOT NULL,
 			content TEXT NOT NULL,
 			embedding BLOB,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			archived INTEGER DEFAULT 0,
-			status TEXT DEFAULT 'pending'
+			status TEXT DEFAULT NULL
 		)
 	`); err != nil {
 		return fmt.Errorf("create entities_new: %w", err)
@@ -260,21 +268,22 @@ func checkMeta(db *sql.DB, dim int) error {
 	return nil
 }
 
-// UpdateTaskStatus sets the status of a task entity. Only updates rows
-// where category = 'task' to avoid touching memory/opinion nodes.
-// Returns an error if the entity is not found or is not a task.
-func UpdateTaskStatus(db *sql.DB, id, status string) error {
-	validStatuses := map[string]bool{
-		"pending":   true,
-		"running":   true,
-		"completed": true,
-		"failed":    true,
+func SetStatus(db *sql.DB, id, status string) error {
+	schema := ActiveSchema()
+	var category string
+	if err := db.QueryRow(`SELECT category FROM entities WHERE id = ?`, id).Scan(&category); err == sql.ErrNoRows {
+		return fmt.Errorf("stateful entity not found: %s", id)
+	} else if err != nil {
+		return fmt.Errorf("get entity category: %w", err)
 	}
-	if !validStatuses[status] {
-		return fmt.Errorf("invalid status: %s (must be pending, running, completed, or failed)", status)
+	if !schema.StatefulCategories[category] {
+		return fmt.Errorf("entity is not stateful: %s", id)
+	}
+	if !schema.ValidStates[status] {
+		return fmt.Errorf("invalid status: %s", status)
 	}
 	res, err := db.Exec(
-		`UPDATE entities SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND category = 'task'`,
+		`UPDATE entities SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		status, id,
 	)
 	if err != nil {
@@ -285,17 +294,15 @@ func UpdateTaskStatus(db *sql.DB, id, status string) error {
 		return fmt.Errorf("rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("task not found or not a task entity: %s", id)
+		return fmt.Errorf("stateful entity not found: %s", id)
 	}
 	return nil
 }
 
-// GetTaskStatus returns the current status of a task entity, or empty
-// string if the entity doesn't exist or isn't a task.
-func GetTaskStatus(db *sql.DB, id string) (string, error) {
-	var status string
+func GetStatus(db *sql.DB, id string) (string, error) {
+	var status sql.NullString
 	err := db.QueryRow(
-		`SELECT status FROM entities WHERE id = ? AND category = 'task'`,
+		`SELECT status FROM entities WHERE id = ?`,
 		id,
 	).Scan(&status)
 	if err == sql.ErrNoRows {
@@ -304,8 +311,14 @@ func GetTaskStatus(db *sql.DB, id string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get task status: %w", err)
 	}
-	return status, nil
+	if !status.Valid {
+		return "", nil
+	}
+	return status.String, nil
 }
+
+func UpdateTaskStatus(db *sql.DB, id, status string) error { return SetStatus(db, id, status) }
+func GetTaskStatus(db *sql.DB, id string) (string, error)  { return GetStatus(db, id) }
 
 // queryEdges runs a query and scans all rows into an Edge slice.
 func queryEdges(db *sql.DB, query string, args ...interface{}) ([]Edge, error) {
@@ -343,14 +356,22 @@ func DeleteEdge(db *sql.DB, src, dst, rel string) error {
 func ListTasks(db *sql.DB, status, goalID string) ([]Entity, error) {
 	var wheres []string
 	var args []interface{}
-	wheres = append(wheres, "e.category = 'task' AND e.archived = 0")
+	catPH, catArgs := boolMapInClause(ActiveSchema().StatefulCategories)
+	if catPH == "" {
+		return []Entity{}, nil
+	}
+	wheres = append(wheres, "e.category IN ("+catPH+") AND e.archived = 0")
+	args = append(args, catArgs...)
 	if status != "" {
 		wheres = append(wheres, "e.status = ?")
 		args = append(args, status)
 	}
 	if goalID != "" {
-		wheres = append(wheres, "e.id IN (WITH RECURSIVE subtree AS (SELECT id FROM entities WHERE id = ? AND category = 'task' AND archived = 0 UNION ALL SELECT e.id FROM subtree s JOIN edges ed ON ed.target_id = s.id AND ed.relation_type = 'blocked_by' JOIN entities e ON e.id = ed.source_id AND e.category = 'task' AND e.archived = 0) SELECT id FROM subtree)")
+		wheres = append(wheres, "e.id IN (WITH RECURSIVE subtree AS (SELECT id FROM entities WHERE id = ? AND category IN ("+catPH+") AND archived = 0 UNION ALL SELECT e.id FROM subtree s JOIN edges ed ON ed.target_id = s.id AND ed.relation_type = ? JOIN entities e ON e.id = ed.source_id AND e.category IN ("+catPH+") AND e.archived = 0) SELECT id FROM subtree)")
 		args = append(args, goalID)
+		args = append(args, catArgs...)
+		args = append(args, ActiveSchema().RelationBlocking)
+		args = append(args, catArgs...)
 	}
 	query := "SELECT e.id, e.category, e.content, e.status, e.updated_at FROM entities e WHERE " + strings.Join(wheres, " AND ") + " ORDER BY e.id"
 	rows, err := db.Query(query, args...)
@@ -365,18 +386,20 @@ func ListTasks(db *sql.DB, status, goalID string) ([]Entity, error) {
 // and recovers_via outgoing edges.
 func GetTaskWithRelations(db *sql.DB, id string) (Entity, []Edge, []Edge, error) {
 	var e Entity
-	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category = 'task'", id).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
+	catPH, catArgs := boolMapInClause(ActiveSchema().StatefulCategories)
+	args := append([]interface{}{id}, catArgs...)
+	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return Entity{}, nil, nil, fmt.Errorf("task not found: %s", id)
 	}
 	if err != nil {
 		return Entity{}, nil, nil, fmt.Errorf("get task: %w", err)
 	}
-	blocked, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = 'blocked_by'", id)
+	blocked, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = ?", id, ActiveSchema().RelationBlocking)
 	if err != nil {
 		return Entity{}, nil, nil, err
 	}
-	recovers, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = 'recovers_via'", id)
+	recovers, err := queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE source_id = ? AND relation_type = ?", id, ActiveSchema().RelationRecovery)
 	if err != nil {
 		return Entity{}, nil, nil, err
 	}
@@ -386,7 +409,9 @@ func GetTaskWithRelations(db *sql.DB, id string) (Entity, []Edge, []Edge, error)
 // GetTaskByID returns a task entity by ID.
 func GetTaskByID(db *sql.DB, id string) (Entity, error) {
 	var e Entity
-	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category = 'task'", id).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
+	catPH, catArgs := boolMapInClause(ActiveSchema().StatefulCategories)
+	args := append([]interface{}{id}, catArgs...)
+	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return Entity{}, fmt.Errorf("task not found: %s", id)
 	}
@@ -402,7 +427,9 @@ func GetTasksByIDs(db *sql.DB, ids []string) (map[string]Entity, error) {
 		return map[string]Entity{}, nil
 	}
 	phs, args := inClauseArgs(ids)
-	query := "SELECT id, category, content, status, updated_at FROM entities WHERE id IN (" + phs + ") AND category = 'task'"
+	catPH, catArgs := boolMapInClause(ActiveSchema().StatefulCategories)
+	args = append(args, catArgs...)
+	query := "SELECT id, category, content, status, updated_at FROM entities WHERE id IN (" + phs + ") AND category IN (" + catPH + ")"
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get tasks by ids: %w", err)
@@ -424,12 +451,12 @@ func GetTasksByIDs(db *sql.DB, ids []string) (map[string]Entity, error) {
 
 // GetBlockedBy returns edges of type 'blocked_by' where target_id = id.
 func GetBlockedBy(db *sql.DB, id string) ([]Edge, error) {
-	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = 'blocked_by'", id)
+	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = ?", id, ActiveSchema().RelationBlocking)
 }
 
 // GetRecoversVia returns edges of type 'recovers_via' where target_id = id.
 func GetRecoversVia(db *sql.DB, id string) ([]Edge, error) {
-	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = 'recovers_via'", id)
+	return queryEdges(db, "SELECT source_id, target_id, relation_type FROM edges WHERE target_id = ? AND relation_type = ?", id, ActiveSchema().RelationRecovery)
 }
 
 // TreeNode represents a node in the task tree.
@@ -472,15 +499,20 @@ func GetTaskTree(db *sql.DB, rootID string) ([]*TreeNode, error) {
 
 // GetRootTasks returns tasks that have no blocked_by edges (roots of the DAG).
 func GetRootTasks(db *sql.DB) ([]Entity, error) {
+	catPH, catArgs := boolMapInClause(ActiveSchema().StatefulCategories)
+	if catPH == "" {
+		return []Entity{}, nil
+	}
 	query := `
 		SELECT e.id, e.category, e.content, e.status, e.updated_at
 		FROM entities e
-		WHERE e.category = 'task' AND e.archived = 0
+		WHERE e.category IN (` + catPH + `) AND e.archived = 0
 		AND e.id NOT IN (
-			SELECT source_id FROM edges WHERE target_id = e.id AND relation_type = 'blocked_by'
+			SELECT source_id FROM edges WHERE target_id = e.id AND relation_type = ?
 		)
 	`
-	rows, err := db.Query(query)
+	args := append(catArgs, ActiveSchema().RelationBlocking)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get root tasks: %w", err)
 	}
@@ -504,9 +536,9 @@ func buildNode(db *sql.DB, id string, visited map[string]bool) (*TreeNode, error
 	}
 
 	node := &TreeNode{
-		ID:       e.ID,
-		Content:  e.Content,
-		Status:   e.Status,
+		ID:      e.ID,
+		Content: e.Content,
+		Status:  e.Status,
 	}
 
 	blocked, err := GetBlockedBy(db, id)
@@ -541,8 +573,9 @@ func buildNode(db *sql.DB, id string, visited map[string]bool) (*TreeNode, error
 
 // RenderTaskTree returns a human-readable tree representation.
 // Example: "[id] content (status)"
-//          "├─ [cid] content"
-//          "└─ [cid] content"
+//
+//	"├─ [cid] content"
+//	"└─ [cid] content"
 func RenderTaskTree(nodes []*TreeNode, prefix string) string {
 	var sb strings.Builder
 	for i, node := range nodes {

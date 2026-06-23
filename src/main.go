@@ -117,6 +117,9 @@ func main() {
 		if req.ID == "" || req.Category == "" || req.Content == "" {
 			log.Fatal("id, category, content required")
 		}
+		if err := cfg.ValidateCategory(req.Category); err != nil {
+			log.Fatalf("invalid request: %v", err)
+		}
 		entity := Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}
 		if len(entity.Embedding) == 0 {
 			embedding, err := embedder.Embed(ctx, entity.Content)
@@ -194,9 +197,8 @@ func main() {
 		// Build the merged relations map at request time so the CLI
 		// handler picks up any operator-configured extras via Config,
 		// matching the runtime filter the ingester applies.
-		validRels := cfg.AllowedRelationTypes()
-		if !validRels[req.RelationType] {
-			log.Fatalf("invalid relation_type: %s", req.RelationType)
+		if err := cfg.ValidateRelation(req.RelationType); err != nil {
+			log.Fatalf("invalid request: %v", err)
 		}
 		if req.AutoCreate {
 			if err := AddEdgeWithAutoCreate(ctx, db, vi, embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {
@@ -329,11 +331,10 @@ func main() {
 		}
 		rel := req.RelationType
 		if rel == "" {
-			rel = "blocked_by"
+			rel = cfg.Schema.RelationBlocking
 		}
-		validRels := cfg.AllowedRelationTypes()
-		if !validRels[rel] {
-			log.Fatalf("invalid relation_type: %s", rel)
+		if err := cfg.ValidateRelation(rel); err != nil {
+			log.Fatalf("invalid request: %v", err)
 		}
 		if req.Add {
 			if err := AddEdge(db, req.SourceID, req.TargetID, rel); err != nil {
@@ -382,7 +383,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to embed: %v", err)
 		}
-		entity := Entity{ID: req.ID, Category: "task", Content: req.Content, Embedding: embedding}
+		category := firstStatefulCategory(cfg.Schema)
+		if category == "" {
+			log.Fatal("no stateful category configured")
+		}
+		entity := Entity{ID: req.ID, Category: category, Content: req.Content, Embedding: embedding}
 		if err := StoreEntityWithEmbedding(db, vi, entity); err != nil {
 			log.Fatalf("Failed to store: %v", err)
 		}
@@ -423,7 +428,7 @@ func main() {
 		srv := NewServer(db, vi, embedder, extractor, cfg.DedupThreshold, RetrieveContextOptions{
 			DepthCeiling:      cfg.MaxDepthCeiling,
 			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
-		}, cfg.AllowedRelationTypes())
+		}, cfg.Schema)
 
 		gcCtx, gcCancel := context.WithCancel(ctx)
 		gcDone := make(chan struct{})
