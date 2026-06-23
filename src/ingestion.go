@@ -144,6 +144,9 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 }
 
 func (w *IngestionWorker) createEntity(entity ExtractedEntity, embedding []float32) error {
+	if !ActiveSchema().AllowedCategories[entity.Category] {
+		return fmt.Errorf("unknown category: %s", entity.Category)
+	}
 	dbEntity := Entity{
 		ID:        entity.ID,
 		Category:  entity.Category,
@@ -200,6 +203,9 @@ func (w *IngestionWorker) createEdges(entityID string, relations []Relation) err
 		args := make([]interface{}, 0, len(chunk)*3)
 		phs := make([]string, len(chunk))
 		for i, rel := range chunk {
+			if !ActiveSchema().AllowedRelations[rel.RelationType] {
+				return fmt.Errorf("unknown relation_type: %s", rel.RelationType)
+			}
 			args = append(args, entityID, rel.TargetID, rel.RelationType)
 			phs[i] = "(?, ?, ?)"
 		}

@@ -264,10 +264,14 @@ func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, entity Entity) error {
 		}
 	}
 
+	status := entity.Status
+	if status == "" && ActiveSchema().StatefulCategories[entity.Category] && len(ActiveSchema().ValidStateOrder) > 0 {
+		status = ActiveSchema().ValidStateOrder[0]
+	}
 	_, err := db.Exec(`
-		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, entity.ID, entity.Category, entity.Content, embeddingBytes)
+		INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+	`, entity.ID, entity.Category, entity.Content, embeddingBytes, nullString(status))
 	if err != nil {
 		if hasEmbedding {
 			if rmErr := vi.Remove(context.Background(), []string{entity.ID}); rmErr != nil {
@@ -281,6 +285,13 @@ func StoreEntityWithEmbedding(db *sql.DB, vi VectorIndex, entity Entity) error {
 		return err
 	}
 	return nil
+}
+
+func nullString(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 // inClauseArgs builds N "?" placeholders and an args slice for SQL

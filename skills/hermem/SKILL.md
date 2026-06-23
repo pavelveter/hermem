@@ -39,6 +39,8 @@ Hermem reads `hermem.ini` from the binary's **own directory** via `os.Executable
 
 ## Memory Categories
 
+Categories are **config-driven** via `[schema]` in `hermem.ini`. Classic defaults:
+
 | Category | What to store |
 |----------|---------------|
 | `world` | Facts, definitions, objective knowledge |
@@ -90,18 +92,23 @@ This returns markdown-formatted context grouped by category (WORLD, OPINION, EXP
 
 After each conversation turn, the `sync_turn` function automatically sends dialog to Hermem for entity extraction. No manual action needed if the memory provider plugin is active.
 
-## State Machine on Graph (Batch 9)
+## State Machine on Graph (Declarative Schema)
 
-Hermem supports graph-based task execution state.
+Hermem supports config-driven graph-based execution state.
+Categories, relation types, valid states, and FSM relation names
+are defined in `[schema]` in `hermem.ini`. The classic defaults
+map to `task` with `blocked_by`/`recovers_via`/`pending|running|completed|failed`.
 
-### New relation types
+### Default relation types
 
 - `blocked_by` — B is blocked until A completes
 - `recovers_via` — B offers a recovery/rollback path when A fails
 
 ### Schema
 
-`entities.status` is `TEXT DEFAULT 'pending'`, backfilled. The `category` CHECK now accepts `task`. Status is validated: `pending`, `running`, `completed`, `failed`.
+`entities.status` is `TEXT DEFAULT NULL` (backward compatible).
+Stateful categories auto-init to the first `valid_states` value.
+Status is validated against `valid_states` from config.
 
 ### Task API
 

@@ -14,15 +14,15 @@ A lightweight, zero-dependency graph memory system for LLM agents. Stores facts 
 User Query ──> [Embedder] ──> [Vector Search] ──> Top-K Seeds ──> [CTE Graph Walk] ──> Markdown Context
 ```
 
-The system stores knowledge as entities (nodes) connected by typed edges. Each entity belongs to one of four memory categories:
+The system stores knowledge as entities (nodes) connected by typed edges. Each entity belongs to a category defined in `[schema]`:
 
-| Category | Purpose |
-|----------|---------|
+| Category (default) | Purpose |
+|--------------------|---------|
 | `world` | Facts, definitions, objective knowledge |
 | `opinion` | User preferences, beliefs, subjective views |
 | `experience` | Past events, interactions, what happened |
 | `observation` | Patterns noticed, anomalies, derived insights |
-| `task` | Actionable work items, steps, to-dos with `pending|running|completed|failed` |
+| `task` (example) | Actionable work items, steps, to-dos with status tracking |
 
 ## Features
 
@@ -38,7 +38,8 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Metrics** — `/metrics` endpoint via `expvar`
 - **Graceful shutdown** — drains in-flight requests on SIGINT/SIGTERM
 - **Strict JSON validation** — unknown fields rejected with structured errors
-- **State-on-Graph (Batch 9)** — `task` entities with `status`, `blocked_by` / `recovers_via` relations, CTE-based executable-task walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
+- **State-on-Graph (Batch 9)** — stateful entities with `status`, configurable dependency relations, CTE-based executable-node walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
+- **Declarative schema** — categories, relation types, FSM rules defined in `hermem.ini` `[schema]`; no recompilation needed
 - **Docker** — multi-stage build, non-root user
 
 ## Quick Start

@@ -13,17 +13,14 @@ import (
 )
 
 type Server struct {
-	db            *sql.DB
-	vi            VectorIndex
-	worker        *IngestionWorker
-	embedder      Embedder
-	retrievalOpts RetrieveContextOptions
-	// validRelationTypes is the merged relation-type allowlist
-	// (defaults + Config.ExtraRelationTypes), shared with the
-	// extractor so HTTP-request validation matches the runtime
-	// filter the ingester applies. nil maps count as "no entries
-	// allowed" — production callers always pass a non-nil map.
+	db                 *sql.DB
+	vi                 VectorIndex
+	worker             *IngestionWorker
+	embedder           Embedder
+	retrievalOpts      RetrieveContextOptions
+	validCategories    map[string]bool
 	validRelationTypes map[string]bool
+	schema             SchemaConfig
 }
 
 type StoreRequest struct {
@@ -123,7 +120,13 @@ type ErrorResponse struct {
 	Field string `json:"field,omitempty"`
 }
 
-func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions, validRelationTypes map[string]bool) *Server {
+func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtractor, dedupThreshold float32, retrievalOpts RetrieveContextOptions, schema SchemaConfig) *Server {
+	SetActiveSchema(schema)
+	validCategories := schema.AllowedCategories
+	if validCategories == nil {
+		validCategories = map[string]bool{}
+	}
+	validRelationTypes := schema.AllowedRelations
 	if validRelationTypes == nil {
 		validRelationTypes = map[string]bool{}
 	}
@@ -133,7 +136,9 @@ func NewServer(db *sql.DB, vi VectorIndex, embedder Embedder, extractor LLMExtra
 		worker:             NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold),
 		embedder:           embedder,
 		retrievalOpts:      retrievalOpts,
+		validCategories:    validCategories,
 		validRelationTypes: validRelationTypes,
+		schema:             schema,
 	}
 }
 
@@ -196,6 +201,10 @@ func (s *Server) HandleStore(w http.ResponseWriter, r *http.Request) {
 
 	if req.ID == "" || req.Category == "" || req.Content == "" {
 		writeError(w, http.StatusBadRequest, "id, category, content required")
+		return
+	}
+	if !s.validCategories[req.Category] {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown category: %s", req.Category))
 		return
 	}
 
@@ -376,7 +385,7 @@ func (s *Server) HandleEdge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.validRelationTypes[req.RelationType] {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid relation_type: %s", req.RelationType))
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown relation_type: %s", req.RelationType))
 		return
 	}
 
@@ -424,7 +433,7 @@ func (s *Server) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
@@ -536,14 +545,14 @@ func (s *Server) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
 
 	rel := req.RelationType
 	if rel == "" {
-		rel = "blocked_by"
+		rel = s.schema.RelationBlocking
 	}
 	validRels := s.validRelationTypes
 	if validRels == nil {
 		validRels = map[string]bool{}
 	}
 	if !validRels[rel] {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid relation_type: %s", rel))
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown relation_type: %s", rel))
 		return
 	}
 
@@ -649,7 +658,12 @@ func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entity := Entity{ID: req.ID, Category: "task", Content: req.Content, Embedding: embedding}
+	category := firstStatefulCategory(s.schema)
+	if category == "" {
+		writeError(w, http.StatusUnprocessableEntity, "no stateful category configured")
+		return
+	}
+	entity := Entity{ID: req.ID, Category: category, Content: req.Content, Embedding: embedding}
 	if err := StoreEntityWithEmbedding(s.db, s.vi, entity); err != nil {
 		incErr()
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -673,6 +687,14 @@ func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 
 	incTaskCreate()
 	writeJSON(w, http.StatusOK, TaskCreateResponse{ID: req.ID, Status: "ok"})
+}
+
+func firstStatefulCategory(schema SchemaConfig) string {
+	keys := sortedKeys(schema.StatefulCategories)
+	if len(keys) == 0 {
+		return ""
+	}
+	return keys[0]
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

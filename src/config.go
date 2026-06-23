@@ -66,6 +66,19 @@ type Config struct {
 	// world facts are permanent; observation nodes past ObservationTTL
 	// are flagged archived and excluded from graph walks.
 	Retention RetentionPolicy
+	Schema    SchemaConfig
+}
+
+type SchemaConfig struct {
+	AllowedCategories  map[string]bool
+	AllowedRelations   map[string]bool
+	StatefulCategories map[string]bool
+	ValidStates        map[string]bool
+	ValidStateOrder    []string
+	RelationBlocking   string
+	StateUnblocking    string
+	RelationRecovery   string
+	StatefulEnabled    bool
 }
 
 type RetentionPolicy struct {
@@ -101,11 +114,14 @@ func LoadConfig(path string) (*Config, error) {
 			RunInterval:     1 * time.Hour,
 			DeleteBatchSize: 500,
 		},
+		Schema: defaultSchemaConfig(false),
 	}
 
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			iniRef = nil
+			SetActiveSchema(cfg.Schema)
 			return cfg, nil
 		}
 		return nil, err
@@ -236,8 +252,128 @@ func LoadConfig(path string) (*Config, error) {
 
 	cfg.ExtraCategories = parseCSVList(getStrRaw("extraction", "extra_categories"))
 	cfg.ExtraRelationTypes = parseCSVList(getStrRaw("extraction", "extra_relation_types"))
+	if schemaSection := sec("schema"); schemaSection != nil {
+		schema, err := parseSchemaSection(schemaSection, path)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Schema = schema
+	}
+	SetActiveSchema(cfg.Schema)
 
 	return cfg, nil
+}
+
+func defaultSchemaConfig(stateful bool) SchemaConfig {
+	cats := map[string]bool{
+		"world":       true,
+		"opinion":     true,
+		"experience":  true,
+		"observation": true,
+	}
+	rels := map[string]bool{}
+	for k := range validRelationTypes {
+		rels[k] = true
+	}
+	return SchemaConfig{
+		AllowedCategories:  cats,
+		AllowedRelations:   rels,
+		StatefulCategories: map[string]bool{},
+		ValidStates:        map[string]bool{},
+		ValidStateOrder:    nil,
+		RelationBlocking:   "blocked_by",
+		StateUnblocking:    "completed",
+		RelationRecovery:   "recovers_via",
+		StatefulEnabled:    stateful,
+	}
+}
+
+func parseSchemaSection(section *ini.Section, path string) (SchemaConfig, error) {
+	allowedKeys := map[string]bool{
+		"allowed_categories":  true,
+		"allowed_relations":   true,
+		"stateful_categories": true,
+		"valid_states":        true,
+		"relation_blocking":   true,
+		"state_unblocking":    true,
+		"relation_recovery":   true,
+	}
+	for _, k := range section.Keys() {
+		name := strings.ToLower(k.Name())
+		if name == "name" {
+			continue
+		}
+		if !allowedKeys[name] {
+			return SchemaConfig{}, fmt.Errorf("%s:%d: unknown [schema] key %q", path, findConfigLine(path, k.Name()), k.Name())
+		}
+	}
+	schema := defaultSchemaConfig(true)
+	if v := parseCSVList(section.Key("allowed_categories").String()); len(v) > 0 {
+		schema.AllowedCategories = boolMap(v)
+	} else {
+		return SchemaConfig{}, fmt.Errorf("%s:%d: [schema].allowed_categories must not be empty", path, findConfigLine(path, "allowed_categories"))
+	}
+	if v := parseCSVList(section.Key("allowed_relations").String()); len(v) > 0 {
+		schema.AllowedRelations = boolMap(v)
+	} else {
+		return SchemaConfig{}, fmt.Errorf("%s:%d: [schema].allowed_relations must not be empty", path, findConfigLine(path, "allowed_relations"))
+	}
+	stateful := parseCSVList(section.Key("stateful_categories").String())
+	schema.StatefulCategories = boolMap(stateful)
+	states := parseCSVList(section.Key("valid_states").String())
+	schema.ValidStateOrder = states
+	schema.ValidStates = boolMap(states)
+	if len(stateful) > 0 && len(states) == 0 {
+		return SchemaConfig{}, fmt.Errorf("%s:%d: [schema].valid_states required when stateful_categories is set", path, findConfigLine(path, "valid_states"))
+	}
+	for category := range schema.StatefulCategories {
+		if !schema.AllowedCategories[category] {
+			return SchemaConfig{}, fmt.Errorf("%s:%d: stateful category %q is not in allowed_categories", path, findConfigLine(path, "stateful_categories"), category)
+		}
+	}
+	if v := strings.TrimSpace(section.Key("relation_blocking").String()); v != "" {
+		schema.RelationBlocking = v
+	}
+	if v := strings.TrimSpace(section.Key("state_unblocking").String()); v != "" {
+		schema.StateUnblocking = v
+	}
+	if v := strings.TrimSpace(section.Key("relation_recovery").String()); v != "" {
+		schema.RelationRecovery = v
+	}
+	for _, rel := range []string{schema.RelationBlocking, schema.RelationRecovery} {
+		if rel != "" && !schema.AllowedRelations[rel] {
+			return SchemaConfig{}, fmt.Errorf("%s:%d: schema relation %q is not in allowed_relations", path, findConfigLine(path, rel), rel)
+		}
+	}
+	if schema.StateUnblocking != "" && len(schema.ValidStates) > 0 && !schema.ValidStates[schema.StateUnblocking] {
+		return SchemaConfig{}, fmt.Errorf("%s:%d: state_unblocking %q is not in valid_states", path, findConfigLine(path, "state_unblocking"), schema.StateUnblocking)
+	}
+	return schema, nil
+}
+
+func boolMap(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, value := range values {
+		if value != "" {
+			out[value] = true
+		}
+	}
+	return out
+}
+
+func findConfigLine(path, key string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	needle := strings.ToLower(key)
+	for i, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(line), needle) {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // parseCSVList splits a comma-separated list of values and trims
@@ -319,8 +455,12 @@ var iniRef *ini.File
 // The returned map is fresh (allocated here); callers can keep their
 // own reference without worrying about concurrent mutation.
 func (c *Config) AllowedCategories() map[string]bool {
-	out := make(map[string]bool, len(validCategories)+len(c.ExtraCategories))
-	for k := range validCategories {
+	schema := c.Schema
+	if schema.AllowedCategories == nil {
+		schema = defaultSchemaConfig(false)
+	}
+	out := make(map[string]bool, len(schema.AllowedCategories)+len(c.ExtraCategories))
+	for k := range schema.AllowedCategories {
 		out[k] = true
 	}
 	for _, k := range c.ExtraCategories {
@@ -337,8 +477,12 @@ func (c *Config) AllowedCategories() map[string]bool {
 // contradicts. Extras from [extraction].extra_relation_types append
 // to the set without overriding.
 func (c *Config) AllowedRelationTypes() map[string]bool {
-	out := make(map[string]bool, len(validRelationTypes)+len(c.ExtraRelationTypes))
-	for k := range validRelationTypes {
+	schema := c.Schema
+	if schema.AllowedRelations == nil {
+		schema = defaultSchemaConfig(false)
+	}
+	out := make(map[string]bool, len(schema.AllowedRelations)+len(c.ExtraRelationTypes))
+	for k := range schema.AllowedRelations {
 		out[k] = true
 	}
 	for _, k := range c.ExtraRelationTypes {
@@ -348,6 +492,30 @@ func (c *Config) AllowedRelationTypes() map[string]bool {
 		out[k] = true
 	}
 	return out
+}
+
+func (c *Config) ValidateCategory(category string) error {
+	if !c.AllowedCategories()[category] {
+		return fmt.Errorf("unknown category: %s", category)
+	}
+	return nil
+}
+
+func (c *Config) ValidateRelation(relation string) error {
+	if !c.AllowedRelationTypes()[relation] {
+		return fmt.Errorf("unknown relation_type: %s", relation)
+	}
+	return nil
+}
+
+func (c *Config) ValidateState(category, status string) error {
+	if !c.Schema.StatefulCategories[category] {
+		return nil
+	}
+	if !c.Schema.ValidStates[status] {
+		return fmt.Errorf("invalid status %q for category %q", status, category)
+	}
+	return nil
 }
 
 func (c *Config) NewEmbedder() Embedder {

@@ -110,6 +110,19 @@ batch_size      = 500             # max nodes archived per cycle (0 = no limit)
 
 [server]
 api_key =                        # X-API-Key auth (empty = disabled)
+
+[schema]                         # optional — state machine on graph
+; When absent, classic categories (world, opinion, experience, observation)
+; and classic relations (prefers, uses, mentions, related_to, part_of,
+; causes, contradicts, blocked_by, recovers_via) are used as defaults.
+; FSM query endpoints (task-*) return empty results.
+allowed_categories  = task,milestone,world
+allowed_relations   = blocked_by,recovers_via,causes,heals,related_to,mentions
+stateful_categories = task,milestone
+valid_states        = pending,running,completed,failed
+relation_blocking   = blocked_by    # relation name for dependency edges
+state_unblocking    = completed     # state that unblocks dependents
+relation_recovery   = recovers_via  # relation name for recovery edges
 ```
 
 ### Lookup order
@@ -189,12 +202,18 @@ The CLI uses the **same strict JSON contract as the HTTP server**
 (`DisallowUnknownFields` etc.), so a payload that works against
 `curl` will work against `echo '…' | hermem …` and vice versa.
 
+Validation is **declarative**: categories and relation types are
+enforced via the `[schema]` section. Unknown values return
+`422 Unprocessable Entity`. When `[schema]` is absent, classic
+defaults apply and the state machine is disabled.
+
 ### `store`
 
 Upsert an entity. The embedder is consulted automatically if
 `embedding` is omitted from the payload. After storing, edges are
 automatically created to up to 3 existing entities with cosine
 similarity > 0.85 (relation type `related_to`).
+Unknown category → `422 Unprocessable Entity`.
 
 ```bash
 echo '{
@@ -406,8 +425,9 @@ curl -X POST http://localhost:8420/query \
 
 ### `/task/status`
 
-Update execution state for a `task` entity. Valid statuses are
-`pending`, `running`, `completed`, `failed`.
+Update execution state for a stateful entity. Valid statuses,
+stateful categories, and blocking/recovery relation names are
+defined in `[schema]`. Unknown statuses → `422`.
 
 ```bash
 curl -X POST http://localhost:8420/task/status \
@@ -416,7 +436,7 @@ curl -X POST http://localhost:8420/task/status \
 # → 204 No Content
 ```
 
-Non-task entities or unknown statuses return `400`.
+Non-stateful entities or unknown statuses return `422`.
 
 ### `/task/executable`
 
