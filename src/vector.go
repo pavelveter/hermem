@@ -103,8 +103,12 @@ func SearchByVector(db *sql.DB, vi VectorIndex, queryEmbedding []float32, topK i
 	for rows.Next() {
 		var entity Entity
 		var embeddingBytes []byte
-		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt, &entity.LastAccessedAt); err != nil {
+		var lastAccessed sql.NullTime
+		if err := rows.Scan(&entity.ID, &entity.Category, &entity.Content, &embeddingBytes, &entity.UpdatedAt, &lastAccessed); err != nil {
 			return nil, fmt.Errorf("failed to scan entity: %w", err)
+		}
+		if lastAccessed.Valid {
+			entity.LastAccessedAt = &lastAccessed.Time
 		}
 		sim := float32(0)
 		if len(embeddingBytes) > 0 {

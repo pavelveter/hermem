@@ -62,6 +62,36 @@ type TaskExecutableResponse struct {
 	Tasks []Entity `json:"tasks"`
 }
 
+type TaskListRequest struct {
+	Status string `json:"status"`
+	GoalID string `json:"goal_id"`
+}
+
+type TaskShowRequest struct {
+	ID string `json:"id"`
+}
+
+type TaskShowResponse struct {
+	Entity      Entity `json:"entity"`
+	BlockedBy   []Edge `json:"blocked_by"`
+	RecoversVia []Edge `json:"recovers_via"`
+}
+
+type TaskDepRequest struct {
+	SourceID     string `json:"source_id"`
+	TargetID     string `json:"target_id"`
+	RelationType string `json:"relation_type"`
+	Add          bool   `json:"add"`
+}
+
+type TaskRollbackRequest struct {
+	ID string `json:"id"`
+}
+
+type TaskRollbackResponse struct {
+	RollbackTaskID string `json:"rollback_task_id"`
+}
+
 // ErrorResponse carries a human message plus an optional (code, field)
 // pair so clients can route the rejection without parsing prose. Both
 // optional fields are omitempty so non-strict errors (method-not-allowed,
@@ -403,6 +433,147 @@ func (s *Server) HandleTaskExecutable(w http.ResponseWriter, r *http.Request) {
 
 	incTaskExecutable()
 	writeJSON(w, http.StatusOK, TaskExecutableResponse{Tasks: tasks})
+}
+
+func (s *Server) HandleTaskList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req TaskListRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	tasks, err := ListTasks(s.db, req.Status, req.GoalID)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if tasks == nil {
+		tasks = []Entity{}
+	}
+
+	incTaskList()
+	writeJSON(w, http.StatusOK, TaskExecutableResponse{Tasks: tasks})
+}
+
+func (s *Server) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req TaskShowRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "id required")
+		return
+	}
+
+	entity, blocked, recovers, err := GetTaskWithRelations(s.db, req.ID)
+	if err != nil {
+		incErr()
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	incTaskShow()
+	writeJSON(w, http.StatusOK, TaskShowResponse{Entity: entity, BlockedBy: blocked, RecoversVia: recovers})
+}
+
+func (s *Server) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req TaskDepRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	if req.SourceID == "" || req.TargetID == "" {
+		writeError(w, http.StatusBadRequest, "source_id, target_id required")
+		return
+	}
+
+	rel := req.RelationType
+	if rel == "" {
+		rel = "blocked_by"
+	}
+	validRels := s.validRelationTypes
+	if validRels == nil {
+		validRels = map[string]bool{}
+	}
+	if !validRels[rel] {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid relation_type: %s", rel))
+		return
+	}
+
+	var err error
+	if req.Add {
+		err = AddEdge(s.db, req.SourceID, req.TargetID, rel)
+	} else {
+		err = DeleteEdge(s.db, req.SourceID, req.TargetID, rel)
+	}
+	if err != nil {
+		incErr()
+		if strings.Contains(err.Error(), "no such") || strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "UNIQUE constraint") {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	incTaskDep()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req TaskRollbackRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "id required")
+		return
+	}
+
+	rollbackID, err := FindRollbackTask(s.db, req.ID)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	incTaskRollback()
+	writeJSON(w, http.StatusOK, TaskRollbackResponse{RollbackTaskID: rollbackID})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
