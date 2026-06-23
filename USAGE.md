@@ -198,6 +198,34 @@ one-shot read-process-print.
 | `task-create` | `{content, context_ids?, id?}` | `{"id":"…","status":"ok"}` |
 | `task-rollback` | `{id}` | `{"rollback_task_id":"…"}` |
 | `verify` | `{dim?}` | `{"status":"ok"}` (or report) |
+| `migrate` | (none — reads DB) | Migration status table |
+| `schema` | (none — reads DB + config) | Stored vs current schema fingerprint |
+
+### `migrate`
+
+Shows versioned migration status. Each embedded SQL migration is listed
+with `[OK]` or `[--]` status and applied-at timestamp. Migrations are
+applied automatically by `InitDB` at startup; this command is for
+operator visibility into the schema_migrations table.
+
+```bash
+./hermem migrate
+# [OK] 001_initial_schema.sql  (2026-06-23T10:00:00)
+# [OK] 002_entity_metadata.sql (2026-06-23T10:00:00)
+# [OK] 003_provenance.sql      (2026-06-23T10:00:00)
+```
+
+### `schema`
+
+Prints the current schema fingerprint (hash of categories, relations,
+stateful config, and state machine settings) and the stored fingerprint
+from the database's `meta` table. Warns if they differ.
+
+```bash
+./hermem schema
+# Current schema fingerprint:  a1b2c3d4e5f6g7h8
+# Stored schema fingerprint:   a1b2c3d4e5f6g7h8
+```
 
 The CLI uses the **same strict JSON contract as the HTTP server**
 (`DisallowUnknownFields` etc.), so a payload that works against
@@ -968,8 +996,9 @@ silently produce wrong cosine scores.
 ## 13. Common pitfalls
 
 - **Stale ini.** Edited `hermem.ini` but didn't restart the server.
-  Re-reads happen once at startup; `SIGHUP` reload is not yet
-  wired.
+  Send `SIGHUP` to the server process (`kill -HUP <pid>`) to
+  reload `hermem.ini` without restart. Schema, categories, and
+  relations update atomically across all in-flight handlers.
 - **`store` saying "id required" when you have an id.** Almost
   always a shell-escaping bug in single-quoted JSON. Pipe through a
   file (`./hermem store < req.json`) or use `jq -c … | hermem…`.

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Sprint 4: Versioned migration system** — `schema_migrations` table tracks applied versions. `runMigrations` reads embedded SQL files from `src/migrations/` (001_initial_schema, 002_entity_metadata, 003_provenance), applies unapplied files in ordered transactions. `hermem migrate` CLI shows status. Replaces the old ad-hoc `migrateSchema`.
+- **Sprint 4: Schema fingerprinting** — `HashSchema(schema)` produces deterministic SHA-256 fingerprint via JSON + sorted map keys. `CheckSchemaFingerprint` compares stored vs current on startup. `hermem schema` CLI. `SchemaConfig.Fingerprint()` method.
+- **Sprint 4: Dynamic config reload via SIGHUP** — `serve` mode reloads `hermem.ini` on SIGHUP without restart. Server uses `atomic.Pointer[ServerState]` for lock-free schema reads. `Server.ReloadState` atomically swaps state across all handlers.
 - **Sprint 1 refactor** — Structural overhaul: globals removed, explicit schema threading, transactional ingestion, FK enforcement, graph integrity CLI.
   - Dropped global `activeSchema` (`SetActiveSchema`/`ActiveSchema`). All functions now take explicit `schema SchemaConfig` parameter.
   - Dropped global `iniRef`. INI parser state now scoped to `LoadConfig` via local closures.
@@ -37,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--help` / `-h` CLI flag short-circuits before any DB work and prints a block-glyph HERMEM banner followed by the command reference (stdout, exit 0). The no-args path now also prints the banner (stderr, exit 1). Banner is plain text everywhere — no ANSI escapes leak into piped output or test captures.
 
 ### Changed
+- `IngestionWorker` schema is now directly swappable (maps are immutable after construction).
+- `Server` schema/validCategories/validRelationTypes consolidated into `atomic.Pointer[ServerState]` for SIGHUP-safe reload.
 - All `.go` files moved to `src/` — build path is now `./src`.
 - INI parser replaced with `gopkg.in/ini.v1` (production-grade, handles quoting, multiline, comments).
 - `NewOllamaEmbedder`, `NewOpenAIEmbedder`, `NewOllamaLLMExtractor`, `NewOpenAILLMExtractor` signatures accept `timeout.Duration`.

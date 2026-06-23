@@ -40,6 +40,8 @@ Commands:
   task-tree        Print task tree (blocked_by parents) as human-readable text
   task-rollback    Find rollback task for failed task (JSON on stdin)
   verify           Run graph integrity checks
+  migrate          Show/apply versioned database migrations
+  schema           Show current vs stored schema fingerprint
   serve            Run HTTP server`
 
 // printUsage writes the HERMEM banner followed by the command
