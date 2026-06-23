@@ -55,6 +55,10 @@ func setupTestServer(t *testing.T) *httptest.Server {
 			srv.HandleTaskShow(w, r)
 		case "/task/dep":
 			srv.HandleTaskDep(w, r)
+		case "/task/tree":
+			srv.HandleTaskTree(w, r)
+		case "/task/create":
+			srv.HandleTaskCreate(w, r)
 		case "/task/rollback":
 			srv.HandleTaskRollback(w, r)
 		default:
@@ -670,6 +674,90 @@ func TestServerTaskRollback(t *testing.T) {
 func TestServerTaskRollbackMethodNotAllowed(t *testing.T) {
 	srv := setupTestServer(t)
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/rollback", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ----- /task/create ------------------------------------------------------
+
+func TestServerTaskCreate(t *testing.T) {
+	srv := setupTestServer(t)
+	doPost(t, srv.URL, "/store", `{"id":"ctx1","category":"task","content":"ctx"}`).Body.Close()
+
+	resp := doPost(t, srv.URL, "/task/create", `{"content":"new task","context_ids":["ctx1"]}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create: status = %d", resp.StatusCode)
+	}
+	var result TaskCreateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.Status != "ok" {
+		t.Errorf("status = %q, want ok", result.Status)
+	}
+	if result.ID == "" {
+		t.Error("expected non-empty id")
+	}
+
+	resp = doPost(t, srv.URL, "/task/create", `{"content":""}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("empty content: status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestServerTaskCreateMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/create", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestServerTaskTree(t *testing.T) {
+	srv := setupTestServer(t)
+	doPost(t, srv.URL, "/store", `{"id":"g","category":"task","content":"goal"}`).Body.Close()
+	doPost(t, srv.URL, "/store", `{"id":"a","category":"task","content":"blocker"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"a","target_id":"g","relation_type":"blocked_by"}`).Body.Close()
+
+	resp := doPost(t, srv.URL, "/task/tree", `{"goal_id":"g"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("tree: status = %d", resp.StatusCode)
+	}
+	var result TaskTreeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.Tree == "" {
+		t.Error("expected non-empty tree")
+	}
+	if !strings.Contains(result.Tree, "[g]") || !strings.Contains(result.Tree, "[a]") {
+		t.Errorf("unexpected tree: %q", result.Tree)
+	}
+}
+
+func TestServerTaskTreeMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/task/tree", nil)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}

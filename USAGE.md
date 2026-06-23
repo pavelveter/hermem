@@ -548,6 +548,7 @@ If no rollback task is linked, `rollback_task_id` is empty string.
 | Task dependency     | `… \| ./hermem task-dep`                               | `curl -X POST …/task/dep`                              |
 | Create task         | `… \| ./hermem task-create`                            | `curl -X POST …/task/create`                           |
 | Rollback task       | `… \| ./hermem task-rollback`                          | `curl -X POST …/task/rollback`                         |
+| Task tree           | `… \| ./hermem task-tree`                              | `curl -X POST …/task/tree`                             |
 | Health              | n/a (CLI is one-shot)                                  | `curl …/health`                                       |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
 | Errors              | Exit non-zero + `log.Fatalf` to stderr                 | `HTTP 400` + structured `ErrorResponse` body          |
@@ -645,6 +646,12 @@ CLI: pass `goal_id` in the JSON body (omit or leave empty for global view).
 | `id`            | string  | no       | Stable task ID; auto-generated when omitted.    |
 | `content`       | string  | yes      | Task description / payload.                     |
 | `context_ids`   | string[]| no       | Existing task IDs to link via `related_to`.     |
+
+### `TaskTreeRequest` (`/task/tree`, CLI `task-tree`)
+
+| Field   | Type   | Required | Notes                                           |
+|---------|--------|----------|-------------------------------------------------|
+| `goal_id` | string | no       | Root task ID; omit to render all root tasks.    |
 
 ### `TaskRollbackRequest` (`/task/rollback`, CLI `task-rollback`)
 

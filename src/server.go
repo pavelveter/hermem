@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Server struct {
@@ -90,6 +91,25 @@ type TaskRollbackRequest struct {
 
 type TaskRollbackResponse struct {
 	RollbackTaskID string `json:"rollback_task_id"`
+}
+
+type TaskTreeRequest struct {
+	GoalID string `json:"goal_id"`
+}
+
+type TaskTreeResponse struct {
+	Tree string `json:"tree"`
+}
+
+type TaskCreateRequest struct {
+	ID         string   `json:"id"`
+	Content    string   `json:"content"`
+	ContextIDs []string `json:"context_ids,omitempty"`
+}
+
+type TaskCreateResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 // ErrorResponse carries a human message plus an optional (code, field)
@@ -574,6 +594,85 @@ func (s *Server) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
 
 	incTaskRollback()
 	writeJSON(w, http.StatusOK, TaskRollbackResponse{RollbackTaskID: rollbackID})
+}
+
+func (s *Server) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req TaskTreeRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	nodes, err := GetTaskTree(s.db, req.GoalID)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	incTaskTree()
+	writeJSON(w, http.StatusOK, TaskTreeResponse{Tree: RenderTaskTree(nodes, "")})
+}
+
+func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req TaskCreateRequest
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+
+	if req.Content == "" {
+		writeError(w, http.StatusBadRequest, "content required")
+		return
+	}
+
+	if req.ID == "" {
+		req.ID = fmt.Sprintf("task-%d", time.Now().UnixNano())
+	}
+
+	embedding, err := s.embedder.Embed(r.Context(), req.Content)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	entity := Entity{ID: req.ID, Category: "task", Content: req.Content, Embedding: embedding}
+	if err := StoreEntityWithEmbedding(s.db, s.vi, entity); err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	for _, cid := range req.ContextIDs {
+		if cid == "" {
+			continue
+		}
+		if err := AddEdge(s.db, req.ID, cid, "related_to"); err != nil {
+			slog.Error("failed to add context edge", "err", err, "from", req.ID, "to", cid)
+		}
+	}
+
+	if err := AutoLinkEdges(r.Context(), s.db, s.vi, s.embedder, req.ID, embedding); err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	incTaskCreate()
+	writeJSON(w, http.StatusOK, TaskCreateResponse{ID: req.ID, Status: "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

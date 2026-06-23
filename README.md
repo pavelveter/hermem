@@ -365,6 +365,7 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/task/show` | POST | Show task + blocked_by / recovers_via relations |
 | `/task/dep` | POST | Manage task dependencies |
 | `/task/create` | POST | Create task with auto-linked context edges |
+| `/task/tree` | POST | Print task tree (blocked_by parents) |
 | `/task/rollback` | POST | Find rollback task for a failed task |
 | `/metrics` | GET | expvar counters (stores / searches / retrieves / queries / errors / task ops) |
 | `/edge` | POST | Add a typed edge between two entities (or auto-create missing ones) |

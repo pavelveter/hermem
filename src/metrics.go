@@ -20,6 +20,8 @@ var (
 	metricTaskDep        = expvar.NewInt("hermem_task_dep_total")
 	metricTaskRollback   = expvar.NewInt("hermem_task_rollback_total")
 	metricTaskNext       = expvar.NewInt("hermem_task_next_total")
+	metricTaskCreate     = expvar.NewInt("hermem_task_create_total")
+	metricTaskTree       = expvar.NewInt("hermem_task_tree_total")
 )
 
 func incStore()          { metricStores.Add(1) }
@@ -36,6 +38,8 @@ func incTaskShow()       { metricTaskShow.Add(1) }
 func incTaskDep()        { metricTaskDep.Add(1) }
 func incTaskRollback()   { metricTaskRollback.Add(1) }
 func incTaskNext()       { metricTaskNext.Add(1) }
+func incTaskCreate()     { metricTaskCreate.Add(1) }
+func incTaskTree()       { metricTaskTree.Add(1) }
 
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

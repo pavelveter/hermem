@@ -241,7 +241,7 @@ curl -X POST http://localhost:8420/ingest \
 ## Pitfalls
 
 - Hermem server must be running before using the tools
-- Default URL is `http://localhost:8420` — set `HERMEM_URL` env var if different
+- Default server URL is `http://localhost:8420`; the plugin reads this from its own `hermem.url` config (see YAML frontmatter), not from a shell env var
 - Entities with similar content (>88% cosine similarity) are merged automatically
 - Graph walk depth defaults to 2 hops — increase via `max_depth` parameter
 - `store` auto-links the new entity to up to 3 existing entities with cosine similarity > 0.85 using relation type `related_to`. Explicit graph edges still use `edge` with `source_id`, `target_id`, and `relation_type`. `ingest` remains the path that extracts entities and relations from dialog text.
@@ -266,7 +266,7 @@ hermes memory
 
 ### hermem.ini
 
-The Go binary loads `hermem.ini` from the current working directory by default. When run via Hermes, prefer setting an explicit database path so it does not depend on session cwd:
+The Go binary resolves `hermem.ini` from its own directory via `os.Executable()` (see Binary-directory resolution above), so the path is independent of session cwd. The example below uses an explicit absolute database path so the operator is never surprised by a Linux-vs-macOS homedir mismatch:
 
 ```ini
 [embedder]
