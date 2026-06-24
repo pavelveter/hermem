@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -40,15 +41,16 @@ type Edge struct {
 
 // SchemaConfig defines the allowed categories, relations, and state machine.
 type SchemaConfig struct {
-	AllowedCategories  map[string]bool
-	AllowedRelations   map[string]bool
-	StatefulCategories map[string]bool
-	ValidStates        map[string]bool
-	ValidStateOrder    []string
-	RelationBlocking   string
-	StateUnblocking    string
-	RelationRecovery   string
-	StatefulEnabled    bool
+	AllowedCategories   map[string]bool
+	AllowedRelations    map[string]bool
+	StatefulCategories  map[string]bool
+	ValidStates         map[string]bool
+	ValidStateOrder     []string
+	RelationBlocking    string
+	RelationContradicts string
+	StateUnblocking     string
+	RelationRecovery    string
+	StatefulEnabled     bool
 }
 
 // DefaultSchemaConfig returns a SchemaConfig with built-in defaults.
@@ -62,16 +64,25 @@ func DefaultSchemaConfig(stateful bool) SchemaConfig {
 		"blocked_by": true, "recovers_via": true,
 	}
 	return SchemaConfig{
-		AllowedCategories:  cats,
-		AllowedRelations:   rels,
-		StatefulCategories: map[string]bool{},
-		ValidStates:        map[string]bool{},
-		ValidStateOrder:    nil,
-		RelationBlocking:   "blocked_by",
-		StateUnblocking:    "completed",
-		RelationRecovery:   "recovers_via",
-		StatefulEnabled:    stateful,
+		AllowedCategories:   cats,
+		AllowedRelations:    rels,
+		StatefulCategories:  map[string]bool{},
+		ValidStates:         map[string]bool{},
+		ValidStateOrder:     nil,
+		RelationBlocking:    "blocked_by",
+		RelationContradicts: "contradicts",
+		StateUnblocking:     "completed",
+		RelationRecovery:    "recovers_via",
+		StatefulEnabled:     stateful,
 	}
+}
+
+// NewTaskID returns a unique task ID using a nanosecond timestamp.
+// Process-local uniqueness; suitable for in-memory dedup of concurrent task creates.
+// Two callers in the same nanosecond would collide — acceptable for human-rate
+// task creation, not for high-throughput batch workloads.
+func NewTaskID() string {
+	return fmt.Sprintf("task-%d", time.Now().UnixNano())
 }
 
 // RetentionPolicy controls automatic archival of stale nodes.

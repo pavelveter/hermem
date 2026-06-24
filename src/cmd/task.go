@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -104,7 +103,7 @@ func cliTaskCreate(env Env) {
 		log.Fatal("content required")
 	}
 	if req.ID == "" {
-		req.ID = fmt.Sprintf("task-%d", time.Now().UnixNano())
+		req.ID = core.NewTaskID()
 	}
 	emb, err := env.Embedder.Embed(env.Ctx, req.Content)
 	if err != nil {
