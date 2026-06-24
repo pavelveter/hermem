@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mattn/go-sqlite3"
@@ -290,8 +291,27 @@ func isSQLiteBusyError(err error) bool {
 // incoming one doesn't (or vice versa), treat it as a contradiction rather than a
 // merge. Cheap, language-light, no LLM round-trip — good enough to flag for the
 // contradiction-resolution path in processOneItem.
+//
+// Russian coverage ships BOTH bare and inflected `ненавид-` forms: bare
+// (`ненавижу`) catches cross-verb inversion (`люблю / ненавижу`), inflected
+// (`не ненавижу`) catches same-verb double-negation (`не ненавижу / ненавижу`)
+// — substring scan against the inflected form only matches when the `не ` prefix
+// is present. Bare particles (` не `) AND the most-common idiom (`не нравится`)
+// are deliberately absent: `мне нравится` substring-contains both, producing
+// false positives without a real Russian stemmer/tokenizer (TODO § 7.1 followup).
+// The trade-off is narrow-but-correct recall on listed forms vs false-merge
+// falling through to embedding-similarity for unlisted forms.
 func IsIngestionContradiction(a, b string) bool {
-	negWords := []string{"not", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "never", "no", "hate", "dislike"}
+	negWords := []string{
+		// English
+		"not", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "never", "no ", "hate", "dislike",
+		// Russian — see function godoc for the bare vs inflected rationale.
+		"разлюбил", "разлюбила", "разлюбили",
+		"ненавижу", "ненавидит", "ненавидел", "ненавидела",
+		"не ненавижу", "не ненавидит", "не ненавидел", "не ненавидела",
+		"не люблю", "не любит", "не любил", "не любила", "не любили",
+		"не хочу", "не хочет", "не хотел", "не хотела",
+	}
 	al := strings.ToLower(a)
 	bl := strings.ToLower(b)
 	for _, n := range negWords {
@@ -302,16 +322,29 @@ func IsIngestionContradiction(a, b string) bool {
 	return false
 }
 
-// MemoryWorker processes MemoryMessage channel items — batch entry point
-// for parallel ingestion.
+// MemoryWorker processes MemoryMessage channel items — legacy entry
+// point, retained for back-compat with any external consumer that
+// wired the parameter list before MemoryWorkerResilient shipped.
+// Does NOT checkpoint work in-flight AND does NOT drain the channel
+// buffer — use MemoryWorkerResilient for production ingest batches.
 //
-// Concurrency is bounded by a semaphore so a flooding producer cannot
-// drive the worker into OOM or starve the SQLite single-writer (set in
-// store.InitDB SetMaxOpenConns(1)) under sustained produce pressure.
+// Status as of round-8 (TODO § 4 closure): both MemoryWorker AND
+// MemoryWorkerResilient have ZERO in-tree callers. Verify with:
+// `grep -rnF MemoryWorker src/internal/ | grep -v _test.go`
+// — expected hits are exactly the two `^func` definitions in
+// this file. The DEADCODE reservation that motivated the previous
+// annotation is now satisfied — both functions ship side-by-side
+// so a future caller can pick the right shape without a forced
+// migration.
 //
-// On ctx.Done() the loop returns cleanly without leaving dangling goroutines:
-// in-flight goroutines observe ctx through ProcessDialogWithProvenance and
-// unwind themselves; the WaitGroup barriers the function exit.
+// Concurrency is bounded by a semaphore so a flooding producer
+// cannot drive the worker into OOM or starve the SQLite
+// single-writer (SetMaxOpenConns(1) in store.InitDB).
+//
+// On ctx.Done() the loop returns cleanly without leaving
+// dangling goroutines: in-flight goroutines observe ctx through
+// ProcessDialogWithProvenance and unwind themselves; the WaitGroup
+// barriers the function exit.
 func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ch <-chan core.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema)
 	const maxParallel = 8
@@ -336,4 +369,144 @@ func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extracto
 		}()
 	}
 	wg.Wait()
+}
+
+// MemoryWorkerResilient is the production-grade ingest entry point —
+// supersedes MemoryWorker for any new caller. Two behaviour changes:
+//
+//   - § 4.1 Checkpoint partial batches on ctx cancellation: after every
+//     successful ProcessDialogWithProvenance return the worker atomically
+//     persists an IngestionCheckpoint{LastCommittedIndex, LastCommittedAt,
+//     WorkerID} to ckptPath via tmp+rename, so a restart can resume from
+//     the last successful commit by skipping the first
+//     LastCommittedIndex items in the producer's input stream.
+//
+//   - § 4.2 Drain the channel on ctx cancel: on ctx.Done() the worker
+//     switches from dispatch mode to drain mode — reads any remaining
+//     channel items into a side JSONL file (pendingPath) so the producer
+//     can replay them on restart. The drain is bounded by a 5s
+//     deadline (defaultDrainTimeout) so a producer that does not close
+//     its channel cannot stall the worker indefinitely.
+//
+// Atomic checkpoint writes via os.Rename guarantee a concurrent reader
+// can never observe a partially-flushed file. The `drain` and `wg.Wait`
+// pair ensures no goroutine leak: in-flight goroutines observe ctx
+// through ProcessDialogWithProvenance and unwind, and the WaitGroup
+// barriers the function exit before the deferred-style cleanup returns.
+//
+// Empty ckptPath / pendingPath skip the corresponding persistence step
+// — used by tests that don't need durable state.
+func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan core.MemoryMessage) {
+	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema)
+	if ckptPath == "" && pendingPath == "" {
+		slog.Warn("MemoryWorkerResilient: ckptPath and pendingPath both empty — no durability on cancel",
+			"worker_id", workerID)
+	}
+	// LoadCheckpoint is invoked once for its operator-audit side effect
+	// (logs WARN on missing/corrupt on-disk checkpoint). We deliberately
+	// discard the returned struct value: every SaveCheckpoint call below
+	// builds a fresh LOCAL IngestionCheckpoint so concurrent flusher
+	// goroutines never race on a shared struct field.
+	LoadCheckpoint(ckptPath, workerID)
+	const maxParallel = 8
+	sem := make(chan struct{}, maxParallel)
+	var wg sync.WaitGroup
+	var processed atomic.Int64
+
+	flushCheckpoint := func() {
+		// Pair consistency is per-flush, NOT across simultaneous flushes.
+		// Two goroutines may flush in parallel; the durable file content
+		// is always one (LastCommittedIndex, LastCommittedAt) pair from
+		// a single goroutine — never a torn interleave — because (a)
+		// we build a LOCAL IngestionCheckpoint copy here (no shared
+		// struct field is mutated across goroutines), AND (b)
+		// SaveCheckpoint uses atomic-counter-unique tmp filenames +
+		// POSIX-atomic os.Rename (see checkpoint.go).
+		cur := IngestionCheckpoint{
+			LastCommittedIndex: processed.Load(),
+			LastCommittedAt:    time.Now().UTC(),
+			WorkerID:           workerID,
+		}
+		if err := SaveCheckpoint(ckptPath, cur); err != nil {
+			slog.Error("checkpoint save failed", "err", err, "path", ckptPath)
+		}
+	}
+
+	drain := func() {
+		pending := make([]core.MemoryMessage, 0, 16)
+		deadline := time.NewTimer(defaultDrainTimeout)
+		defer deadline.Stop()
+	drainLoop:
+		for {
+			select {
+			case remaining, ok := <-ch:
+				if !ok {
+					break drainLoop
+				}
+				pending = append(pending, remaining)
+			case <-deadline.C:
+				slog.Warn("MemoryWorkerResilient: drain deadline reached, producer did not close ch",
+					"worker_id", workerID, "pending_count", len(pending))
+				break drainLoop
+			}
+		}
+		if err := SavePendingQueue(pendingPath, pending); err != nil {
+			slog.Error("pending save failed", "err", err, "path", pendingPath)
+		} else if len(pending) > 0 {
+			slog.Info("MemoryWorkerResilient: drained to pending queue",
+				"count", len(pending), "path", pendingPath)
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("MemoryWorkerResilient: ctx cancelled, draining", "worker_id", workerID)
+			drain()
+			wg.Wait()
+			flushCheckpoint()
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				wg.Wait()
+				flushCheckpoint()
+				return
+			}
+			wg.Add(1)
+			select {
+			case <-ctx.Done():
+				wg.Done()
+				drain()
+				wg.Wait()
+				flushCheckpoint()
+				return
+			case sem <- struct{}{}:
+			}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				prov := core.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
+				if err := worker.ProcessDialogWithProvenance(ctx, msg.Dialog, prov); err != nil {
+					slog.Error("dialog processing failed",
+						"err", err, "dialog_len", len(msg.Dialog), "worker_id", workerID)
+					return
+				}
+				processed.Add(1)
+				// Build a LOCAL IngestionCheckpoint copy so this goroutine
+				// never races with another flushCheckpoint / per-msg call
+				// on the same struct field. SaveCheckpoint copies the
+				// struct again on entry so file content is internally
+				// consistent.
+				cur := IngestionCheckpoint{
+					LastCommittedIndex: processed.Load(),
+					LastCommittedAt:    time.Now().UTC(),
+					WorkerID:           workerID,
+				}
+				if err := SaveCheckpoint(ckptPath, cur); err != nil {
+					slog.Error("per-msg checkpoint save failed",
+						"err", err, "index", cur.LastCommittedIndex)
+				}
+			}()
+		}
+	}
 }

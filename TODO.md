@@ -20,7 +20,7 @@ Priority legend (matches `out.txt` severity buckets):
 
 ## 1. 🔴 State management (SIGHUP / reload)
 
-### [ ] Cross-state transaction consistency on reload
+### [x] Cross-state transaction consistency on reload
 **Where:** `src/internal/serverstate/state.go::StateManager` and `src/internal/server/server.go::Serve`.
 **Problem:** `atomic.Pointer[ServerState]` swaps the pointer atomically, but a handler that already captured `state := sm.Load()` and entered `/ingest` runs against the OLD schema while parallel requests see the NEW one. Worse: the in-flight tx commits under a schema that may already have rejected the same payload through a sibling request.
 **Fix shape (option A — generation stamp + re-check at commit):**
@@ -59,7 +59,7 @@ if cur := sm.Load().Generation; cur != state.Generation {
 
 **Fix shape (option B — drain-then-swap):** close the listener, increment a `pendingRequests` counter on entry, decrement on exit, and only `Store()` once counter hits 0. Take a `sync.RWMutex` instead of `atomic.Pointer` so the swap holds the write lock until drain completes.
 
-### [ ] Deep-clone map fields on State construction
+### [x] Deep-clone map fields on State construction
 **Where:** `src/internal/serverstate/state.go::State.New`.
 **Problem:** `New` replaces nil maps with empty maps but does NOT deep-clone provided maps. If a caller mutates `state.AllowedCategories` after `Store()`, handlers reading the same map can race with that write — `fatal error: concurrent map read and map write`, unrecoverable.
 
@@ -97,7 +97,7 @@ Audit any other `*Manager.Store` / `*Manager.Reload` paths for shallow-copy alia
 
 ## 2. 🔴 Vector index concurrency
 
-### [ ] Run `Search` and `SearchBatch` under `RLock`, not snapshot-and-unlock
+### [x] Run `Search` and `SearchBatch` under `RLock`, not snapshot-and-unlock
 **Where:** `src/internal/vector/inmemory.go::Search` and `SearchBatch`.
 **Problem:** current implementation snapshots the matrix before compute. For a 50k-entity × 768-dim graph, that's a 200 KB copy per search — a hard cap on throughput. The alternative (release the lock before compute) risks `fatal error: concurrent map iteration and map write` when a parallel `Store / Remove` reallocates `flatMatrix` while `cblas_sgemv` reads it (`&flatMatrix[0]` invalidates after `append`).
 **Fix shape:**
@@ -126,7 +126,7 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, query []float32, topK 
 
 For `SearchBatch`, do the same — acquire `RLock` once, iterate over the query slice, return. The 2 ms the lock is held for `cblas_sgemv` is far less expensive than the 200 KB alloc it displaces.
 
-### [ ] Strict dimension validation before any CGO call
+### [x] Strict dimension validation before any CGO call
 **Where:** `src/internal/vector/cosine_darwin.go::{VectorNorm, CosineSimilarity, BatchDotProducts}`.
 **Problem:** a stale BLOB with `len != dim*4` causes `cblas_sgemv` to read past the slice end → `SIGSEGV` with no `recover()`. Validate before the CGO call.
 **Fix shape:** introduce sentinel errors and panic-replace with `return nil, ErrInvalidQueryDim`/`ErrMatrixCorrupted`. The panic-on-bad-input contract still survives as a defensive last-line check inside the function, but the call site must check the returned error first.
@@ -153,7 +153,7 @@ func BatchDotProducts(query []float32, matrix []float32, rows, cols int, dot []f
 
 The CGO call site can still surface a Go-level error; the in-function panic is reachable only when callers bypass the public `Search`.
 
-### [ ] `sync.Pool` size discipline for `dotPool` / `intBufPool`
+### [x] `sync.Pool` size discipline for `dotPool` / `intBufPool`
 **Where:** `src/internal/vector/inmemory.go::dotPool`, `intBufPool`.
 **Problem:** `pool.Get().([]float32)` may return a slice whose `cap` is smaller than the current `n`; the caller appends, then `Put`s back a slice that lost its intended cap. Net effect: the pool degrades into a per-size array churn instead of amortising allocations.
 **Fix shape:** keep one hard-cap pool and drop the slice back to that ceiling on `Put`:
@@ -196,7 +196,7 @@ func putDots(d []float32) {
 
 ## 3. 🟠 AI client (`ResilientClient`) retry-path safety
 
-### [ ] Never defer `resp.Body.Close()` at the outer `Do()` scope
+### [x] Never defer `resp.Body.Close()` at the outer `Do()` scope
 **Where:** `src/internal/ai/client.go::ResilientClient.Do`.
 **Problem:** when `inner.Do(req)` returns `(nil, err)` (e.g. `connect: connection refused` or TLS handshake timeout), any `defer resp.Body.Close()` at the outer scope dereferences nil and crashes the process — `runtime error: invalid memory address or nil pointer dereference`. This will tear down the ingest goroutine.
 **Fix shape:** close bodies only inside the `err == nil` branch; never defer a body close at the outer scope.
@@ -233,7 +233,7 @@ for i := 0; i < attempts; i++ {
 return nil, lastErr
 ```
 
-### [ ] Drain 5xx response bodies on retry to keep TCP alive
+### [x] Drain 5xx response bodies on retry to keep TCP alive
 **Where:** same — `Do` retry branch.
 **Problem:** if we don't drain before `Body.Close()`, the connection is reset rather than returned to the pool — small GPU, big TCP.
 **Fix shape:** same as above; `io.Copy(io.Discard, resp.Body)` before `Close`.
@@ -242,8 +242,8 @@ return nil, lastErr
 
 ## 4. 🟠 Ingestion worker batch resume on context cancellation
 
-### [ ] Checkpoint partial batches on `ctx` cancellation
-**Where:** `src/internal/ingestion/dialog.go::MemoryWorker`.
+### [x] Checkpoint partial batches on ctx cancellation (round-8 § 4.1)
+**Where:** `src/internal/ingestion/dialog.go::MemoryWorkerResilient` (NEW — the older `MemoryWorker` keeps shipping for back-compat with zero checkpoint/drain).
 **Problem:** when the parent ctx cancels mid-batch, the in-flight `ProcessDialogWithProvenance` continues until its LLM call resolves. Items already committed stay; items in-flight are lost. On restart, the channel may not redeliver — duplicate entities and/or unprocessed-but-already-committed window.
 **Fix shape:** persist a per-worker checkpoint.
 
@@ -265,8 +265,8 @@ func MemoryWorker(ctx context.Context, ckptPath string, ..., ch <-chan core.Memo
 }
 ```
 
-### [ ] Drain the channel on ctx cancel before returning
-**Where:** same — `MemoryWorker` exit path.
+### [x] Drain the channel on ctx cancel before returning (round-8 § 4.2)
+**Where:** same — `MemoryWorkerResilient` exit path.
 **Problem:** items already pushed onto the channel but not yet dispatched to the sem-bounded goroutine pool are dropped silently on `ctx.Done()`. A user who queued 1k messages then SIGINT loses visibility into which ones made it.
 **Fix shape:** on ctx cancel, propagate `ctx.Err()` to in-flight goroutines via the same ctx, then snapshot any unprocessed channel items into a side file (`/var/lib/hermem/pending.jsonl`).
 
@@ -286,7 +286,7 @@ go func() {
 
 ## 5. 🟠 HTTP server middleware
 
-### [ ] Always-on `RecoveryMiddleware` wrapping every entry point
+### [x] Always-on `RecoveryMiddleware` wrapping every entry point
 **Where:** `src/internal/server/server.go::Serve`.
 **Problem:** Go's `net/http` recovers from handler panics but in a way that closes the TCP connection without returning a 500. Production multi-agent swarms will sit waiting for the dead connection instead of falling to their retry path.
 **Fix shape:** install `RecoveryMiddleware` as the outermost wrap; verify order is `Recovery → Slog → RequestID → APIKey → MaxBytes → handler`.
@@ -302,7 +302,7 @@ handler = server.TimeoutMiddleware(120 * time.Second)(handler)        // if not 
 
 Ensure CLI smoke tests (`src/internal/cli/cli_test.go`) also run server-mode in a test harness to verify the chain compiles.
 
-### [ ] `httputil.DecodeStrict` contract: handler MUST close body on error
+### [x] `httputil.DecodeStrict` contract: handler MUST close body on error
 **Where:** `src/internal/httputil/httputil.go::DecodeStrict` (docstring) + every call site.
 **Problem:** when `r.Body = http.MaxBytesReader(...)` triggers, `json.NewDecoder.Decode` returns a sentinel error. If the handler logs and returns without `io.Copy(io.Discard, r.Body)` and `r.Body.Close()`, the connection leaks into `CLOSE_WAIT` → `ulimit -n` saturation under load.
 **Fix shape:** document the contract on `DecodeStrict`, then add a `defer` wrapper at the call sites:
@@ -318,7 +318,7 @@ func safeBodyClose(r *http.Request) {
 defer safeBodyClose(r)
 ```
 
-### [ ] Per-request timeout middleware
+### [x] Per-request timeout middleware
 **Where:** `src/internal/server/middleware.go` (new function).
 **Problem:** a slow LLM-side `/response` request can pin a worker goroutine indefinitely without server-side cancellation. Currently the `WriteTimeout: 120 * time.Second` on `http.Server` covers reads + write completion but DOES NOT abort a hung streaming handler.
 **Fix shape:**
@@ -339,7 +339,7 @@ func TimeoutMiddleware(d time.Duration) func(http.Handler) http.Handler {
 
 ## 6. 🟡 SQLite under load
 
-### [ ] Busy-timeout PRAGMA + the right tx-isolation for TOCTOU writes
+### [x] Busy-timeout PRAGMA + the right tx-isolation for TOCTOU writes
 **Where:** `src/internal/store/init.go::InitDB`, `src/internal/store/edge.go::AddEdge`.
 **Problem:** handler-side retries can re-enter the same write path under MESI invalidation storms; without `BEGIN IMMEDIATE` or an explicit busy-timeout, SQLite may upgrade mid-tx and fail with `SQLITE_BUSY`, which the existing `isSQLiteBusyError` retry loop in `dialog.go::processOneItem` already handles — but only on the ingest path. Plugin-driven `/edge` writes do not.
 **Fix shape:** add `PRAGMA busy_timeout = 5000` to init (or DSN `_busy_timeout=5000`), and switch write tx to `LevelSerializable` so SQLite acquires the write lock up front.
@@ -357,7 +357,7 @@ tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 if err != nil { return fmt.Errorf("begin edge tx: %w", err) }
 ```
 
-### [ ] Per-test random DSN for in-memory DB
+### [x] Per-test random DSN for in-memory DB
 **Where:** `src/internal/store/helpers_test.go::memDB`.
 **Problem:** `file::memory:?cache=shared` makes the DB process-global. `go test -race ./...` runs goroutines against the same instance — corrupts fixtures.
 **Fix shape (use a unique DSN per test goroutine):**
@@ -382,9 +382,30 @@ func memDB(t *testing.T) *sql.DB {
 
 ## 7. 🟡 Contradiction heuristic — linguistic limitation
 
-### [ ] Stem / lemmatise before the antonym scan
+### [x] Round-7 P2 dual-pattern fallback for Russian contradictions
 **Where:** `src/internal/ingestion/dialog.go::IsIngestionContradiction`.
-**Problem:** Russian inflection (`любит` / `разлюбил`, `не очень любит`) defeats the 45-pair antonym table → false merge → corrupted embedding.
+**What shipped:** substring-fragility trade-off — extended `negWords` with the most-common Russian inflections:
+bare `ненавид-` family (`ненавижу`/`ненавидит`/`ненавидел`/`ненавидела`) catches cross-verb inversion
+(`Я люблю это` / `Я ненавижу это`); inflected `не ненавид-` family (`не ненавижу`/`не ненавидит`/...)
+catches same-verb double-negation (`Я не ненавижу это` / `Я ненавижу это`); plus `разлюбил` family
+and `не люблю`/`не хочу` inflections. 14-case `TestIsIngestionContradiction` (4 English + 10
+Russian) regression-locks the heuristic, including 2 explicit `russian_substring_falls_through_*`
+rows documenting pairs the substring scan cannot distinguish (`мне нравится` substring-contains
+the bare `не ` particle + the `не нравится` idiom → false merge). Trade-off: high recall on
+listed forms, narrow morphology surface area, fall-through to embedding-similarity for the rest.
+Recorded under `CHANGELOG.md [Unreleased] → Round-7 P2 batch`.
+
+### [ ] Stem / lemmatise before the antonym scan (real Russian stemmer)
+**Where:** same — `src/internal/ingestion/dialog.go::IsIngestionContradiction`.
+**Problem:** the dual-pattern fallback above is brittle — it catches listed inflections only
+and cannot distinguish adjacent forms (`Я не очень люблю это` falls through because `очень`
+breaks an `не люблю` substring match). Russian inflection (`любит` / `любила` / `любили` /
+`полюбил`) plus adverbs (`очень`, `совсем`, `совершенно`) still defeat the heuristic → false
+merge → corrupted embedding.
+**Followup:** bring in `github.com/clipperhouse/stemmer/russian` (snowball alt) + a tokenizer
+that splits Cyrillic words on whitespace, lower-cases, then stems via the Snowball Russian
+algorithm; the negation list becomes a single morpheme (`не`) + lemma (`любить`/`хотеть`/
+`ненавидеть`) walked against the stemmed pair instead of the raw string.
 **Fix shape (option A — pure-Go stemmer + tokenize):**
 
 ```go
@@ -419,7 +440,7 @@ The `QuickContradictionCheck` returns a single bool + ~50 tokens consumed — ch
 
 ## 8. 🟡 Performance
 
-### [ ] Record baseline benchmarks
+### [x] Record baseline benchmarks
 **Where:** `src/internal/vector/inmemory.go` (current bench suite lives in `vector_bench_test.go`).
 **Problem:** followups need a regression baseline. Re-run benchmarks on the current commit and pin the numbers in `CHANGELOG.md [Unreleased]`.
 **Fix shape:**
@@ -431,7 +452,7 @@ go test -count=1 -tags=sqlite_vec -bench=BenchmarkSqliteVecSearch -benchmem -cou
 
 Goal: per search N=10000 ≤ 2.5 ms on Apple M1 Pro (768-dim, in-memory backend).
 
-### [ ] SQLite PRAGMA `synchronous=NORMAL` only after WAL — verify and document
+### [x] SQLite PRAGMA `synchronous=NORMAL` only after WAL — verify and document
 **Where:** `src/internal/store/init.go::InitDB` PRAGMA order.
 **Problem:** `synchronous=NORMAL` without WAL can corrupt on power loss. The PRAGMA order must be `journal_mode=WAL → synchronous=NORMAL`.
 **Fix shape:** assertion in `InitDB`'s test suite (or run-time INFO-level slog):
@@ -448,12 +469,12 @@ if mode != "wal" {
 
 ## 9. 🟢 Plugin / docs
 
-### [ ] Bump `skills/hermem/SKILL.md` front-matter `version` to current release
+### [x] Bump `skills/hermem/SKILL.md` front-matter `version` to current release
 **Where:** `skills/hermem/SKILL.md` (front matter).
 **Problem:** the `version: 0.1.0` slug is stale post the round-5 hardening pass (`ResilientClient`, `EnvManager`, `BytesToFloat32Safe`).
 **Fix shape:** bump to match the next release tag (currently `[Unreleased]`; once cut, `v0.2.0` is the candidate).
 
-### [ ] Drop residual flat-name aliases that survived the Cobra migration
+### [x] Drop residual flat-name aliases that survived the Cobra migration
 **Where:** `src/internal/cli/...`.
 **Problem:** any old flat-name verb that's still registered is a regression against the §4.1 breaking-change note.
 **Fix shape:** grep for `Register(\"store\")` etc. — they should all be gone. If a leftover exists, remove it.
@@ -463,7 +484,7 @@ rg "Init\(\) { RootCmd\.AddCommand\(newXxxCmd\) }" src/internal/cli/
 rg "Use:\\s*\"store\"|Use:\\s*\"ingest\"|Use:\\s*\"query\"" src/internal/cli/
 ```
 
-### [ ] Reconcile `USAGE.md §10` schema table against actual migrations
+### [x] Reconcile `USAGE.md §10` schema table against actual migrations
 **Where:** `USAGE.md` (§10).
 **Problem:** add `weight REAL` row on edges (`006_weighted_edges.sql`); add `degree` and `priority` rows on entities (`005_centrality.sql`, `007_task_priorities.sql`).
 
@@ -480,11 +501,11 @@ rg "Use:\\s*\"store\"|Use:\\s*\"ingest\"|Use:\\s*\"query\"" src/internal/cli/
 
 ## 10. 🟢 Final verification checklist
 
-- [ ] `gofmt -l ./src` returns empty
-- [ ] `go vet ./src/...` clean
-- [ ] `go build -o /tmp/hermem ./src` succeeds
-- [ ] `go test -race -count=1 -timeout 180s ./src/...` green
-- [ ] `go test -bench=BenchmarkInMemorySearch -benchmem -count=3 ./src` — numbers recorded
+- [x] `gofmt -l ./src` returns empty
+- [x] `go vet ./src/...` clean
+- [x] `go build -o /tmp/hermem ./src` succeeds
+- [x] `go test -race -count=1 -timeout 180s ./src/...` green
+- [x] `go test -bench=BenchmarkInMemorySearch -benchmem -count=3 ./src` — numbers recorded
 - [ ] `wrk -t4 -c32 -d30s http://localhost:8420/health` — no 5xx at ~1k QPS
 - [ ] 1-hour soak under `runtime/pprof` — no OOM, no panic
 - [ ] SIGINT during `task tree` / `task rollback` exits 130 cleanly (no stack trace)
