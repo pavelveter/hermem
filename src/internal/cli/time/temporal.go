@@ -50,14 +50,14 @@ func newTemporalCmd(env *cli.Env) *cobra.Command {
 				Reranker:          env.Reranker,
 			}
 			if req.TimeFrom != "" {
-				if t, err := stdtime.Parse(stdtime.RFC3339, req.TimeFrom); err == nil {
-					opts.TimeFrom = t
-				}
+		if t, err := stdtime.Parse(stdtime.RFC3339, req.TimeFrom); err == nil {
+				opts.TimeFrom = t.UTC()
+			}
 			}
 			if req.TimeTo != "" {
-				if t, err := stdtime.Parse(stdtime.RFC3339, req.TimeTo); err == nil {
-					opts.TimeTo = t
-				}
+		if t, err := stdtime.Parse(stdtime.RFC3339, req.TimeTo); err == nil {
+				opts.TimeTo = t.UTC()
+			}
 			}
 			result, err := retrieval.RetrieveContext(env.DB, seedIDs, opts)
 			if err != nil {

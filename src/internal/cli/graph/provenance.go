@@ -9,8 +9,9 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-// newProvenanceCmd — pre-cobra parsed flags from os.Args[2:]. Now real
-// cobra flags with --help strings.
+// newProvenanceCmd queries entities by provenance. GetEntitiesByProvenance
+// handles nil SQL columns via sql.NullString guard, so e.ConversationID /
+// e.MessageID / e.Source are always safe to print.
 func newProvenanceCmd(env *cli.Env) *cobra.Command {
 	var (
 		convID string

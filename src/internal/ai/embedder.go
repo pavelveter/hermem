@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -42,20 +43,37 @@ type ollamaEmbedResp struct {
 
 func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	body, _ := json.Marshal(ollamaEmbedReq{Model: e.Model, Prompt: text})
-	resp, err := e.client.Post(strings.TrimRight(e.BaseURL, "/")+"/api/embeddings", "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("ollama embed: %w", err)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err := e.client.Post(strings.TrimRight(e.BaseURL, "/")+"/api/embeddings", "application/json", bytes.NewReader(body))
+		if err != nil {
+			lastErr = fmt.Errorf("ollama embed: %w", err)
+			time.Sleep(time.Duration(attempt+1)*time.Second + time.Duration(rand.Intn(500))*time.Millisecond)
+			continue
+		}
+		if resp.StatusCode == 503 || resp.StatusCode == 429 {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("ollama embed: %d: %s", resp.StatusCode, string(b))
+			time.Sleep(time.Duration(attempt+1)*time.Second + time.Duration(rand.Intn(500))*time.Millisecond)
+			continue
+		}
+		if resp.StatusCode != 200 {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("ollama embed: %d: %s", resp.StatusCode, string(b))
+		}
+		var r ollamaEmbedResp
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("ollama embed decode: %w", err)
+			time.Sleep(time.Duration(attempt+1)*time.Second + time.Duration(rand.Intn(500))*time.Millisecond)
+			continue
+		}
+		resp.Body.Close()
+		return r.Embedding, nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("ollama embed: %d: %s", resp.StatusCode, string(b))
-	}
-	var r ollamaEmbedResp
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return nil, fmt.Errorf("ollama embed decode: %w", err)
-	}
-	return r.Embedding, nil
+	return nil, fmt.Errorf("ollama embed: retries exhausted: %w", lastErr)
 }
 
 // OpenAIEmbedder implements core.Embedder against the OpenAI /v1/embeddings endpoint.
@@ -92,12 +110,15 @@ type openaiEmbedResp struct {
 
 func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	body, _ := json.Marshal(openaiEmbedReq{Input: text, Model: e.Model})
-	req, _ := http.NewRequest("POST", strings.TrimRight(e.BaseURL, "/")+"/embeddings", bytes.NewReader(body))
+	req, err := newRequestWithRetry("POST", strings.TrimRight(e.BaseURL, "/")+"/embeddings", body)
+	if err != nil {
+		return nil, fmt.Errorf("openai embed: create request: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	if e.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+e.APIKey)
 	}
-	resp, err := e.client.Do(req)
+	resp, err := retryDo(e.client, req, 3)
 	if err != nil {
 		return nil, fmt.Errorf("openai embed: %w", err)
 	}

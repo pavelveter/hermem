@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sync"
 )
 
 // QuantizedVector is an INT8 min-max quantized vector with reconstruction bounds.
@@ -11,6 +12,10 @@ type QuantizedVector struct {
 	Min   float32 `json:"min"`
 	Max   float32 `json:"max"`
 	Codes []int8  `json:"codes"`
+}
+
+var quantCodePool = sync.Pool{
+	New: func() interface{} { return make([]int8, 0, 256) },
 }
 
 // QuantizeVector quantizes a float32 vector to int8 using the min-max scheme.
@@ -33,11 +38,13 @@ func QuantizeVector(v []float32) QuantizedVector {
 	if max == min {
 		scale = 1
 	}
-	codes := make([]int8, len(v))
+	codes := quantCodePool.Get().([]int8)[:len(v):len(v)]
 	for i, x := range v {
 		codes[i] = int8((x - min) * scale)
 	}
-	return QuantizedVector{Min: min, Max: max, Codes: codes}
+	q := QuantizedVector{Min: min, Max: max, Codes: codes}
+	quantCodePool.Put(codes)
+	return q
 }
 
 // DequantizeVector inverts QuantizeVector back to float32 — approximate due to int8 precision loss.

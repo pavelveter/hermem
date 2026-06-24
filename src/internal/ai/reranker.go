@@ -112,5 +112,41 @@ func (r *OpenAIReranker) Rerank(_ context.Context, query string, facts []core.Re
 		return facts, nil
 	}
 	defer resp.Body.Close()
-	return facts, nil // simplified: keep original order on any error
+	var cr struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		return facts, nil
+	}
+	if len(cr.Choices) == 0 || cr.Choices[0].Message.Content == "" {
+		return facts, nil
+	}
+	text := strings.TrimSpace(cr.Choices[0].Message.Content)
+	if text == "" {
+		return facts, nil
+	}
+	parts := strings.Split(text, ",")
+	seen := make(map[int]bool)
+	reranked := make([]core.RetrievedFact, 0, len(facts))
+	for _, p := range parts {
+		var idx int
+		if _, err := fmt.Sscanf(strings.TrimSpace(p), "%d", &idx); err != nil {
+			continue
+		}
+		i := idx - 1
+		if i >= 0 && i < len(facts) && !seen[i] {
+			seen[i] = true
+			reranked = append(reranked, facts[i])
+		}
+	}
+	for i := range facts {
+		if !seen[i] {
+			reranked = append(reranked, facts[i])
+		}
+	}
+	return reranked, nil
 }
