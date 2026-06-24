@@ -9,7 +9,7 @@
 - [x] Prometheus metrics
 - [x] Full race-condition audit
 - [x] Benchmark suite automation
-- [ ] Load testing
+- [x] Load testing
 - [ ] OpenAPI generation
 - [ ] SDK generation
 
@@ -28,9 +28,9 @@
 
 - [x] Task priorities
 - [x] Critical path analysis
-- [ ] Recovery plan generation
-- [ ] Graph clustering
+- [x] Recovery plan generation
+- [x] Graph clustering
 - [ ] Community detection
 - [ ] Background re-embedding
-- [ ] Embedding cache
+- [x] Embedding cache
 - [ ] Vector quantization

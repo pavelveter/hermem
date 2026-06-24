@@ -1103,6 +1103,125 @@ func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source strin
 	return out, rows.Err()
 }
 
+// GenerateRecoveryPlan walks the recovers_via chain from failedTaskID
+// and returns an ordered list of rollback tasks. The first element is
+// the immediate recovery task; each subsequent element is its own
+// recovery (if configured). Returns empty slice if no recovery is wired.
+func GenerateRecoveryPlan(db *sql.DB, schema SchemaConfig, failedTaskID string) ([]Entity, error) {
+	var plan []Entity
+	visited := make(map[string]bool)
+	current := failedTaskID
+	for current != "" && !visited[current] {
+		visited[current] = true
+		rollbackID, err := FindRollbackTask(db, schema, current)
+		if err != nil {
+			return nil, fmt.Errorf("recovery plan: step from %s: %w", current, err)
+		}
+		if rollbackID == "" {
+			break
+		}
+		e, err := GetTaskByID(db, schema, rollbackID)
+		if err != nil {
+			return nil, fmt.Errorf("recovery plan: get task %s: %w", rollbackID, err)
+		}
+		plan = append(plan, e)
+		current = rollbackID
+	}
+	return plan, nil
+}
+
+// ConnectedComponent is a group of entity IDs that are mutually
+// reachable via edges of any relation type.
+type ConnectedComponent struct {
+	IDs       []string `json:"ids"`
+	Size      int      `json:"size"`
+	AvgDegree float64  `json:"avg_degree"`
+}
+
+// FindConnectedComponents finds all connected components in the graph
+// (undirected, all relation types). Returns components sorted by size
+// descending. BFS-based, O(V+E).
+func FindConnectedComponents(db *sql.DB, minSize int) ([]ConnectedComponent, error) {
+	// Fetch all non-archived entity IDs and their edges.
+	rows, err := db.Query(`
+		SELECT e.id FROM entities e WHERE e.archived = 0
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("find components: read entities: %w", err)
+	}
+	defer rows.Close()
+
+	adj := make(map[string][]string)
+	var allIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("find components: scan entity: %w", err)
+		}
+		allIDs = append(allIDs, id)
+		adj[id] = nil
+	}
+
+	// Fetch all edges (both directions).
+	edgeRows, err := db.Query(`
+		SELECT source_id, target_id FROM edges
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("find components: read edges: %w", err)
+	}
+	defer edgeRows.Close()
+
+	for edgeRows.Next() {
+		var src, dst string
+		if err := edgeRows.Scan(&src, &dst); err != nil {
+			return nil, fmt.Errorf("find components: scan edge: %w", err)
+		}
+		adj[src] = append(adj[src], dst)
+		adj[dst] = append(adj[dst], src)
+	}
+
+	// BFS to find components.
+	visited := make(map[string]bool)
+	var components []ConnectedComponent
+	for _, id := range allIDs {
+		if visited[id] {
+			continue
+		}
+		// BFS from this node.
+		queue := []string{id}
+		visited[id] = true
+		comp := []string{}
+		totalDegree := 0
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
+			comp = append(comp, cur)
+			totalDegree += len(adj[cur])
+			for _, nb := range adj[cur] {
+				if !visited[nb] {
+					visited[nb] = true
+					queue = append(queue, nb)
+				}
+			}
+		}
+		if len(comp) >= minSize {
+			avgDeg := float64(totalDegree) / float64(len(comp))
+			components = append(components, ConnectedComponent{
+				IDs:       comp,
+				Size:      len(comp),
+				AvgDegree: avgDeg,
+			})
+		}
+	}
+
+	// Sort by size descending.
+	sort.Slice(components, func(i, j int) bool {
+		return components[i].Size > components[j].Size
+	})
+
+	return components, nil
+}
+
 // RenderTaskTree returns a human-readable tree representation.
 // Example: "[id] content (status)"
 //
