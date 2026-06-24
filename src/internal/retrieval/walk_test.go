@@ -1,10 +1,13 @@
 package retrieval
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 // --- empty / fast-path ---
@@ -234,16 +237,139 @@ func TestRetrieveContext_CyclicGraphDoesNotInfiniteLoop(t *testing.T) {
 
 // --- MultiHopRetrieveContext ---
 
-func TestMultiHopRetrieveContext_DelegatesToRetrieveContext(t *testing.T) {
+// stubEmbedder returns predefined vectors keyed by content; identical for
+// repeated inputs (deterministic for tests).
+type stubEmbedder struct{ vecs map[string][]float32 }
+
+func (s *stubEmbedder) Embed(_ context.Context, c string) ([]float32, error) {
+	v, ok := s.vecs[c]
+	if !ok {
+		return nil, errors.New("stubEmbedder: no vec for content " + c)
+	}
+	out := make([]float32, len(v))
+	copy(out, v)
+	return out, nil
+}
+
+// MultiHopCount=1 → strict passthrough. vi/embedder may be nil.
+func TestMultiHopRetrieveContext_PassthroughOnCountOne(t *testing.T) {
 	db := openTestDB(t)
 	seedEntityWithEmbedding(t, db, "a", "world", "alpha", []float32{1, 0, 0})
 
-	res, err := MultiHopRetrieveContext(db, nil, nil, []string{"a"}, core.RetrieveContextOptions{MaxDepth: 0})
+	res, err := MultiHopRetrieveContext(db, nil, nil, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth:      0,
+		MultiHopCount: 1,
+	})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if len(res.SeedNodes) != 1 {
-		t.Fatalf("want 1 seed node, got %v", seedNodeIDs(res))
+	if len(res.SeedNodes) != 1 || res.SeedNodes[0].Entity.ID != "a" {
+		t.Fatalf("want seed a, got %v", seedNodeIDs(res))
+	}
+}
+
+// Multi-hop crosses a topological gap via vector similarity.
+//
+// Graph 1:  a → b        ("alpha", "beta")
+// Graph 2:  c → d        ("gamma", "delta")       (no edges between graphs)
+//
+// Stub vectors: "alpha" and "delta" both = {1,0,0} (strong semantic match).
+// Single-hop from "a" reaches only "beta". Multi-hop should additionally
+// pull "delta" into the seed set, then the final walk reaches "d" via "delta".
+func TestMultiHopRetrieveContext_DiscoversDisconnectedSubgraph(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha", []float32{1, 0, 0})
+	seedEntityWithEmbedding(t, db, "b", "world", "beta", []float32{0, 1, 0})
+	seedEdge(t, db, "a", "b", "uses")
+
+	seedEntityWithEmbedding(t, db, "c", "world", "gamma", []float32{0, 0, 1})
+	seedEntityWithEmbedding(t, db, "d", "world", "delta", []float32{1, 0, 0})
+	seedEdge(t, db, "c", "d", "uses")
+
+	emb := &stubEmbedder{vecs: map[string][]float32{
+		"alpha": {1, 0, 0},
+		"beta":  {0, 1, 0},
+		"gamma": {0, 0, 1},
+		"delta": {1, 0, 0},
+	}}
+	vi := vector.NewInMemoryVectorIndex(db)
+
+	res, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth:       1,
+		MultiHopCount:  2,
+		QueryEmbedding: []float32{1, 0, 0}, // matches alpha + delta
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	facts := factContents(res.WorldFacts)
+	if !contains(facts, "beta") {
+		t.Fatalf("hop 1 graph walk should reach 'beta': got %v", facts)
+	}
+	if !contains(facts, "delta") {
+		t.Fatalf("multi-hop vector jump should reach 'delta' (only via vector search, no graph path): got %v", facts)
+	}
+	if !contains(facts, "gamma") {
+		t.Fatalf("once 'd' is in seeds, the final RetrieveContext walk must reach 'c' via the c-d edge: got %v", facts)
+	}
+	if !contains(facts, "alpha") {
+		t.Fatalf("seed 'alpha' should be in seed nodes (then result facts): got %v", facts)
+	}
+}
+
+// Empty seedIDs short-circuits to an empty result without requiring
+// vi/embedder or a DB handle (matches RetrieveContext's empty-seeds
+// fast path). DB is nil on purpose — the short-circuit returns before
+// any DB read.
+func TestMultiHopRetrieveContext_EmptySeedsReturnsEmptyResult(t *testing.T) {
+	res, err := MultiHopRetrieveContext(nil, nil, nil, nil, core.RetrieveContextOptions{})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res == nil {
+		t.Fatal("want non-nil empty result")
+	}
+	if len(res.SeedNodes) != 0 {
+		t.Fatalf("want empty SeedNodes, got %v", seedNodeIDs(res))
+	}
+}
+
+// MultiHopCount≥2 with nil vi or nil embedder must error — silent fallback
+// would leave callers thinking vector expansion happened when it didn't.
+func TestMultiHopRetrieveContext_RequiresIndexAndEmbedderWhenCountGTE2(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha", []float32{1, 0, 0})
+
+	if _, err := MultiHopRetrieveContext(db, nil, &stubEmbedder{}, []string{"a"}, core.RetrieveContextOptions{MultiHopCount: 2}); err == nil {
+		t.Fatal("expected error on nil vi when MultiHopCount=2")
+	}
+	if _, err := MultiHopRetrieveContext(db, vector.NewInMemoryVectorIndex(db), nil, []string{"a"}, core.RetrieveContextOptions{MultiHopCount: 2}); err == nil {
+		t.Fatal("expected error on nil embedder when MultiHopCount=2")
+	}
+}
+
+// Single-hop from "a" must NOT reach across the topological gap, even
+// though semantically similar entities exist in disconnected graph 2.
+// This pins down the difference between multi-hop and single-hop.
+func TestSingleHopRetrieveDoesNotCrossTopologicalGap(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha", []float32{1, 0, 0})
+	seedEntityWithEmbedding(t, db, "b", "world", "beta", []float32{0, 1, 0})
+	seedEdge(t, db, "a", "b", "uses")
+	seedEntityWithEmbedding(t, db, "c", "world", "gamma", []float32{0, 0, 1})
+	seedEntityWithEmbedding(t, db, "d", "world", "delta", []float32{1, 0, 0})
+	seedEdge(t, db, "c", "d", "uses")
+
+	res, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth:       2,
+		QueryEmbedding: []float32{1, 0, 0},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	facts := factContents(res.WorldFacts)
+	if contains(facts, "delta") {
+		t.Fatalf("single-hop MUST NOT reach across disconnect to 'delta': got %v", facts)
 	}
 }
 
