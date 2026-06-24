@@ -82,9 +82,20 @@ func (c *EmbeddingCache) evict() {
 	if c.tail == nil {
 		return
 	}
-	delete(c.entries, c.tail.key)
-	if c.tail.prev != nil {
-		c.tail.prev.next = nil
+	oldTail := c.tail
+	delete(c.entries, oldTail.key)
+	if oldTail.prev != nil {
+		oldTail.prev.next = nil
+	} else {
+		// Single-entry cache: detaching the only entry must also
+		// release the head pointer; otherwise we'd keep a live
+		// reference to oldTail via c.head.
+		c.head = nil
 	}
-	c.tail = c.tail.prev
+	c.tail = oldTail.prev
+	// Drop dangling refs on the evicted entry so the GC can reclaim it
+	// and a future caller who still holds a pointer can't walk back into
+	// the live list.
+	oldTail.prev = nil
+	oldTail.next = nil
 }

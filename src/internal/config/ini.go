@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -200,6 +201,15 @@ func (c *Config) Validate() error {
 	}
 	if c.URL == "" {
 		return fmt.Errorf("embedder.url must not be empty")
+	}
+	if u, err := url.Parse(c.URL); err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("embedder.url must be absolute (scheme+host), got %q", c.URL)
+	}
+	if c.EmbedderTimeout <= 0 {
+		return fmt.Errorf("embedder.timeout must be > 0, got %v", c.EmbedderTimeout)
+	}
+	if c.ExtractTimeout <= 0 {
+		return fmt.Errorf("extraction.timeout must be > 0, got %v", c.ExtractTimeout)
 	}
 	if err := ValidateSchema(c.Schema); err != nil {
 		return fmt.Errorf("schema: %w", err)

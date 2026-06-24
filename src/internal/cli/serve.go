@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/util/safego"
 )
 
 // newServeCmd boots the HTTP server. Replaces the old flat `hermem serve`.
@@ -62,7 +64,11 @@ func runServe(env *clienv.Env, port string) error {
 	// is needed between this goroutine and HTTP handler goroutines.
 	sighup := make(chan os.Signal, 1)
 	signal.Notify(sighup, syscall.SIGHUP)
-	go func() {
+	// Wrap the SIGHUP loop in safego.Go so a panic during config reload
+	// (e.g. a buggy validator) cannot crash the daemon mid-loop. The
+	// goroutine's lifetime is the parent env.Ctx; signal.Receive stops
+	// when ctx is cancelled, so the inner for-range drains on shutdown.
+	safego.Go(env.Ctx, "sighup-reload", func(_ context.Context) {
 		for range sighup {
 			newCfg, err := config.LoadConfigFromBinaryDir()
 			if err != nil {
@@ -77,7 +83,7 @@ func runServe(env *clienv.Env, port string) error {
 			_ = store.StoreSchemaFingerprint(env.DB, newCfg.Schema)
 			slog.Info("SIGHUP applied")
 		}
-	}()
+	})
 
 	return srv.Serve(server.ServeConfig{
 		DB:        env.DB,

@@ -21,6 +21,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -170,4 +171,20 @@ func (e *Env) Close() {
 	if e.DB != nil {
 		_ = e.DB.Close()
 	}
+}
+
+// WriteStdout is a package-level EPIPE-tolerant wrapper over os.Stdout.Write.
+//
+// Cobra's cmd.OutOrStdout() already swallows EPIPE on its own writer, but
+// raw os.Stdout writes (and any future stdout caller) need this guard so a
+// piped downstream like `hermem ... | head -n 1` doesn't propagate a
+// SIGPIPE — that would surface as an ugly stack trace in the consumer's
+// terminal. We return nil on EPIPE: the downstream closed, so our work is
+// finished; exit 0 is the natural outcome.
+func WriteStdout(p []byte) error {
+	_, err := os.Stdout.Write(p)
+	if errors.Is(err, syscall.EPIPE) {
+		return nil
+	}
+	return err
 }

@@ -434,7 +434,7 @@ func (idx *InMemoryVectorIndex) Search(ctx context.Context, q []float32, k int) 
 }
 ```
 
-### ☐ 6.2 [P2] «Зомби-векторы» при фоновом reembed
+### ☑ 6.2 [P2] «Зомби-векторы» при фоновом reembed
 **Проблема:** Фоновый reembed-воркер записывает новые векторы в SQLite, но `InMemoryVectorIndex` в живом сервере **не знает** об изменениях → поиск выдаёт старые float'ы, пока сервер не рестартанёт.
 **Где:** `src/internal/algo/reembed.go` + `VectorIndex` интерфейс.
 
@@ -554,7 +554,7 @@ func WalkGraphSafe(ctx context.Context, db *sql.DB, seeds []string, maxDepth int
 }
 ```
 
-### ☐ 7.2 [P2] `WalkGraphFromSeeds` без лимита глубины → SQLite stack overflow / OOM
+### ☑ 7.2 [P2] `WalkGraphFromSeeds` без лимита глубины → SQLite stack overflow / OOM
 **Проблема:** Depth из конфига без потолка может прилететь как 10⁶ → SQLite жрёт RAM.
 **Где:** `src/internal/retrieval/walk.go`.
 
@@ -566,7 +566,7 @@ if maxDepth > WalkDepthCeiling {
 // А внутри самого CTE: WHERE 0 < 0 + ? (тот же maxDepth)
 ```
 
-### ☐ 7.3 [P2] Louvain рандомизирован → плавающие communities
+### ☑ 7.3 [P2] Louvain рандомизирован → плавающие communities
 **Проблема:** `for nodeID := range g.Nodes` — Go рандомизирует map iteration → алгоритм сходится к разным кластерам при каждом запуске на тех же данных. GraphRAG non-deterministic.
 **Где:** `src/internal/algo/community.go`.
 
@@ -589,7 +589,7 @@ func (g *Graph) OptimizeModularityDeterministic() {
 
 ## 8. 🟡 Retrieval: scoring / contradictions / response
 
-### ☐ 8.1 [P2] `BuildLLMContext` thrashing-конкатенация строк
+### ☑ 8.1 [P2] `BuildLLMContext` thrashing-конкатенация строк
 **Проблема:** `s += f.Content + "\n"` в цикле → на 100k фактов это аллокация аллокации, GC-давление убивает latency.
 **Где:** `src/internal/retrieval/response.go`.
 
@@ -636,7 +636,7 @@ func SortFactsByScoreSafe(facts []Fact) {
 }
 ```
 
-### ☐ 8.3 [P2] `ContradictionCheck` — O(N²) LLM-вызовов
+### ☑ 8.3 [P2] `ContradictionCheck` — O(N²) LLM-вызовов
 **Проблема:** Для каждой пары фактов — отдельный LLM-вызов. На 100 фактах это 4950 запросов = $$$+ latency.
 **Где:** `src/internal/retrieval/contradictions.go`.
 
@@ -769,7 +769,7 @@ func (a *Agent) RunStep(ctx context.Context) (err error) {
 }
 ```
 
-### ☐ 10.3 [P2] CLI `os.Stdout` без EPIPE-handling
+### ☑ 10.3 [P2] CLI `os.Stdout` без EPIPE-handling
 **Проблема:** `hermem memory query | head -n 1` → head закрывает pipe → `SIGPIPE` → ugly trace в консоль, exit != 0.
 **Где:** `src/cmd/...`, `src/internal/cli/cli.go`.
 
@@ -783,7 +783,7 @@ func SafeWriteStdout(p []byte) error {
 }
 ```
 
-### ☐ 10.4 [P2] Cobra commands не используют `cmd.Context()`
+### ☑ 10.4 [P2] Cobra commands не используют `cmd.Context()`
 **Проблема:** Handlers стартуют с `context.Background()` вместо `cmd.Context()` → Ctrl+C / `--timeout` не отменяют текущий запрос.
 **Где:** все Cobra `RunE` в `src/cmd`.
 
@@ -798,7 +798,7 @@ RunE: func(cmd *cobra.Command, args []string) error {
 },
 ```
 
-### ☐ 10.5 [P2] Stdin pipe-detection (защита от зависания в non-TTY)
+### ☑ 10.5 [P2] Stdin pipe-detection (защита от зависания в non-TTY)
 **Проблема:** `os.Stdin.Read(...)` без проверки pipe → если stdin — канал от CI без данных, агент виснет навечно.
 **Где:** `src/cmd/*` интерактивные команды.
 
@@ -833,7 +833,7 @@ func (m *EnvManager) Reload(ctx context.Context, path string) error {
 }
 ```
 
-### ☐ 11.2 [P2] `Config.Validate()` отсутствует
+### ☑ 11.2 [P2] `Config.Validate()` отсутствует
 **Проблема:** `VectorDim = 0`, отрицательные таймауты, непарсибельный URL → runtime-паники глубоко в графе.
 **Где:** `src/config.go`.
 
@@ -851,7 +851,7 @@ func (c *Config) Validate() error {
 }
 ```
 
-### ☐ 11.3 [P2] `regexp.MustCompile` на user-input → паника при старте
+### ☑ 11.3 [P2] `regexp.MustCompile` на user-input → паника при старте
 **Проблема:** Если конфиг хранит pattern и компилится через `MustCompile`, невалидный regex паникует на старте сервиса вместо возврата ошибки.
 **Где:** любой конфиг-pattern парсер.
 
@@ -866,7 +866,7 @@ if err != nil {
 
 ## 12. 🟡 Контекстная конфигурация CLI
 
-### ☐ 12.1 [P3] Глобальный singleton `CurrentEnv` → races в тестах
+### ☑ 12.1 [P3] Глобальный singleton `CurrentEnv` → races в тестах
 **Проблема:** `var CurrentEnv *Env` — параллельные тесты мутируют один и тот же объект.
 **Где:** `src/internal/cli/env/env.go`.
 
@@ -948,7 +948,7 @@ func (g *DependencyGraph) SortTasksSafe() ([]string, error) {
 
 ## 14. 🟡 Unbounded concurrency / goroutine hygiene
 
-### ☐ 14.1 [P2] `SafeGo` обёртка для фоновых горутин
+### ☑ 14.1 [P2] `SafeGo` обёртка для фоновых горутин
 **Проблема:** Любая паника в горутине убивает процесс (recover() в main горутине не ловит).
 **Где:** `src/internal/util/safego/safego.go` (новый пакет).
 
@@ -976,7 +976,7 @@ func Go(ctx context.Context, name string, fn func(context.Context) error) {
 }
 ```
 
-### ☐ 14.2 [P2] Bounded concurrency для ingestion worker
+### ☑ 14.2 [P2] Bounded concurrency для ingestion worker
 **Проблема:** `go processChunk(chunk)` на каждый chunk → без лимита → OOM.
 **Где:** `src/internal/ingestion/worker.go`.
 
@@ -1031,11 +1031,11 @@ func (h *HeavyEmbedder) Embed(w http.ResponseWriter, r *http.Request) {
 
 ## 16. 🟡 Misc / cross-cutting
 
-### ☐ 16.1 [P3] int64 ID vs float-based math metric
+### ☑ 16.1 [P3] int64 ID vs float-based math metric
 **Проблема:** Скоринг-метрики иногда хранятся как float в одной таблице, а IDs — int64. При JOIN возможны потери точности или неоднозначность тип-кастов.
 **Где:** места с `SELECT id, score` — проследить, что score всегда float64 + id всегда int64.
 
-### ☐ 16.2 [P3] LRU cache «zombi-head pointer»
+### ☑ 16.2 [P3] LRU cache «zombi-head pointer»
 **Проблема:** После eviction указатель на head остаётся живым → двойной free или use-after-free в Go-обёртках.
 **Где:** `src/internal/cache/cache.go`.
 
