@@ -12,11 +12,13 @@ import (
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/ai"
+	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
+	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -64,8 +66,10 @@ func newTestFixture(t *testing.T) *testFixture {
 	taskSvc := tasksvc.New(db, vi, embed, metrics, refs)
 	memDom := memdomain.New(db, vi, embed, nil) // nil extractor — ingest-only path verifies error envelope
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
+	cndDom := contradictdomain.NewService(db)
+	cndSvc := cnd.New(cndDom, metrics)
 	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, adminSvc)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -508,8 +512,9 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	metrics := metricspkg.New()
 	retDom := retdomain.NewService(db, vi, embed)
 	memDom := memdomain.New(db, vi, embed, nil)
+	cndDom := contradictdomain.NewService(db)
 	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(db, vi, embed, metrics, refs),
-		mem.New(memDom, metrics, refs, 0.88), NewAdminService(db, vi, embed, metrics, refs))
+		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), NewAdminService(db, vi, embed, metrics, refs))
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
