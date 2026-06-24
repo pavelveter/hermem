@@ -9,9 +9,9 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,6 +27,11 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
+// Build-time variables injected via -ldflags:
+//
+//	-X main.version=$(VERSION)
+//	-X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+//	-X main.gitCommit=$(git rev-parse --short HEAD)
 var (
 	version   = "dev"
 	buildDate = "unknown"
@@ -39,37 +44,22 @@ func printUsage(w io.Writer) {
 Usage: hermem <command> [args]
 
 Commands:
-  store        Store an entity (JSON stdin)
-  search       Vector search (JSON stdin)
-  query        Full retrieval query (JSON stdin)
-  edge         Create edge (JSON stdin)
-  ingest       Ingest dialog (JSON stdin)
-  task-status  Update task status (JSON stdin)
-  task-executable / task-next  List executable tasks
-  task-list    List tasks (JSON stdin)
-  task-show    Show task details (JSON stdin)
-  task-dep     Add/remove dependency (JSON stdin)
-  task-tree    Show task tree (JSON stdin)
-  task-create  Create task (JSON stdin)
-  task-rollback Find rollback task (JSON stdin)
-  temporal     Temporal retrieval (JSON stdin)
-  timeline     Timeline of recent entities
+  store, search, query, edge, ingest, explain       Knowledge CRUD (JSON stdin)
+  task-status, task-list, task-show, task-dep,      Task management (JSON stdin)
+  task-tree, task-create, task-rollback,
+  task-executable (alias: task-next)
+  temporal       Temporal retrieval (JSON stdin)
+  timeline       List recent entities
   contradictions List contradictions [entity-id]
-  explain      Explainable retrieval (JSON stdin)
-  agent-loop   Agent execution loop (JSON stdin)
-  verify       Graph integrity checker
-  migrate      Show migration status
-  migration-rollback  Rollback last migration
-  migration-verify    Verify migration checksums
-  execution-plan  Execution plan for a goal (JSON stdin)
-  recovery-plan   Recovery plan (JSON stdin)
-  connected-components  Find connected components
-  provenance    Query by provenance
-  communities   Community detection
-  re-embed      Re-embed all entities
-  quantize      Quantize an embedding (JSON stdin)
-  schema        Show schema fingerprint
-  serve [port]  Start HTTP server (default :8420)
+  agent-loop     Agent execution loop (JSON stdin)
+  verify         Graph integrity checker
+  migrate, migration-rollback, migration-verify
+  execution-plan, recovery-plan, connected-components, communities
+  provenance     Query by provenance
+  re-embed       Re-embed all entities
+  quantize       Quantize an embedding locally (JSON stdin)
+  schema         Show schema fingerprint
+  serve [port]   Start HTTP server (default :8420)
 `)
 }
 
@@ -112,73 +102,75 @@ func main() {
 	ctx := context.Background()
 
 	switch cmd {
-	case "store":
-		handleStore(ctx, cfg, db, vi, embedder)
-	case "search":
-		handleSearch(ctx, db, vi, embedder)
-	case "query":
-		handleQuery(ctx, cfg, db, vi, embedder, reranker)
-	case "edge":
-		handleEdge(ctx, cfg, db, vi, embedder)
-	case "ingest":
-		handleIngest(ctx, cfg, db, vi, embedder, extractor)
-	case "task-status":
-		handleTaskStatus(cfg, db)
-	case "task-executable", "task-next":
-		handleTaskExecutable(cfg, db)
-	case "task-list":
-		handleTaskList(cfg, db)
-	case "task-show":
-		handleTaskShow(cfg, db)
-	case "task-dep":
-		handleTaskDep(cfg, db)
-	case "task-tree":
-		handleTaskTree(cfg, db)
-	case "task-create":
-		handleTaskCreate(ctx, cfg, db, vi, embedder)
-	case "task-rollback":
-		handleTaskRollback(cfg, db)
-	case "temporal":
-		handleTemporal(ctx, cfg, db, vi, embedder, reranker)
-	case "timeline":
-		handleTimeline(ctx, db)
-	case "contradictions":
-		handleContradictions(db)
-	case "explain":
-		handleExplain(ctx, cfg, db, vi, embedder, reranker)
-	case "agent-loop":
-		handleAgentLoop(ctx, cfg, db)
-	case "verify":
-		handleVerify(db, cfg)
-	case "migrate":
-		handleMigrate(db)
-	case "migration-rollback":
-		handleMigrationRollback(db)
-	case "migration-verify":
-		handleMigrationVerify(db)
-	case "execution-plan":
-		handleExecutionPlan(cfg, db)
-	case "recovery-plan":
-		handleRecoveryPlan(cfg, db)
-	case "connected-components":
-		handleConnectedComponents(db)
-	case "provenance":
-		handleProvenance(db)
-	case "communities":
-		handleCommunities(db)
-	case "re-embed":
-		handleReEmbed(ctx, cfg, db, vi, embedder)
-	case "quantize":
-		handleQuantize()
-	case "schema":
-		handleSchema(db, cfg)
 	case "serve":
-		handleServe(cfg, db, vi, embedder, extractor, reranker)
+		cliServe(cfg, db, vi, embedder, extractor, reranker)
+	case "store":
+		cliStore(ctx, cfg, db, vi, embedder)
+	case "search":
+		cliSearch(ctx, db, vi, embedder)
+	case "query":
+		cliQuery(ctx, cfg, db, vi, embedder, reranker)
+	case "edge":
+		cliEdge(ctx, cfg, db, vi, embedder)
+	case "ingest":
+		cliIngest(ctx, cfg, db, vi, embedder, extractor)
+	case "temporal":
+		cliTemporal(ctx, cfg, db, vi, embedder, reranker)
+	case "explain":
+		cliExplain(ctx, cfg, db, vi, embedder, reranker)
+	case "task-status":
+		cliTaskStatus(cfg, db)
+	case "task-list":
+		cliTaskList(cfg, db)
+	case "task-show":
+		cliTaskShow(cfg, db)
+	case "task-dep":
+		cliTaskDep(cfg, db)
+	case "task-tree":
+		cliTaskTree(cfg, db)
+	case "task-create":
+		cliTaskCreate(ctx, cfg, db, vi, embedder)
+	case "task-rollback":
+		cliTaskRollback(cfg, db)
+	case "task-executable", "task-next":
+		cliTaskExecutable(cfg, db)
+	case "timeline":
+		cliTimeline(ctx, db)
+	case "contradictions":
+		cliContradictions(db)
+	case "agent-loop":
+		cliAgentLoop(ctx, cfg, db)
+	case "verify":
+		cliVerify(db, cfg)
+	case "migrate":
+		cliMigrate(db)
+	case "migration-rollback":
+		cliMigrationRollback(db)
+	case "migration-verify":
+		cliMigrationVerify(db)
+	case "execution-plan":
+		cliExecutionPlan(cfg, db)
+	case "recovery-plan":
+		cliRecoveryPlan(cfg, db)
+	case "connected-components":
+		cliConnectedComponents(db)
+	case "provenance":
+		cliProvenance(db)
+	case "communities":
+		cliCommunities(db)
+	case "re-embed":
+		cliReEmbed(ctx, cfg, db, vi, embedder)
+	case "quantize":
+		cliQuantize()
+	case "schema":
+		cliSchema(db, cfg)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		os.Exit(1)
 	}
 }
+
+// --- stdin JSON helpers ---
 
 func readStdin() string {
 	stat, _ := os.Stdin.Stat()
@@ -195,9 +187,9 @@ func decodeStdin(v interface{}) {
 	}
 }
 
-// --- CLI command handlers ---
+// --- CLI command implementations (delegating to packages) ---
 
-func handleStore(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
+func cliStore(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
 	var req core.StoreRequest
 	decodeStdin(&req)
 	if req.ID == "" || req.Category == "" || req.Content == "" {
@@ -207,20 +199,19 @@ func handleStore(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.Ve
 		log.Fatalf("invalid: %v", err)
 	}
 	if len(req.Embedding) == 0 {
-		var err error
-		req.Embedding, err = embedder.Embed(ctx, req.Content)
+		emb, err := embedder.Embed(ctx, req.Content)
 		if err != nil {
 			log.Fatalf("embed: %v", err)
 		}
+		req.Embedding = emb
 	}
 	if err := store.StoreEntityWithEmbedding(db, vi, cfg.Schema, core.Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}); err != nil {
 		log.Fatalf("store: %v", err)
 	}
-	vector.AutoLinkEdges(ctx, db, vi, embedder, req.ID, req.Embedding)
 	fmt.Println(`{"status":"ok"}`)
 }
 
-func handleSearch(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
+func cliSearch(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
 	var req core.SearchRequest
 	decodeStdin(&req)
 	if req.Query == "" {
@@ -237,10 +228,10 @@ func handleSearch(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder
 	if err != nil {
 		log.Fatalf("search: %v", err)
 	}
-	json.NewEncoder(os.Stdout).Encode(results)
+	_ = json.NewEncoder(os.Stdout).Encode(results)
 }
 
-func handleQuery(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, reranker core.Reranker) {
+func cliQuery(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, reranker core.Reranker) {
 	var req core.SearchRequest
 	decodeStdin(&req)
 	if req.Query == "" {
@@ -251,7 +242,7 @@ func handleQuery(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.Ve
 	}
 	emb, _ := embedder.Embed(ctx, req.Query)
 	results, _ := vector.SearchByVector(db, vi, emb, req.TopK)
-	var seedIDs []string
+	seedIDs := make([]string, 0, len(results))
 	for _, r := range results {
 		seedIDs = append(seedIDs, r.Entity.ID)
 	}
@@ -260,10 +251,10 @@ func handleQuery(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.Ve
 	if err != nil {
 		log.Fatalf("retrieve: %v", err)
 	}
-	json.NewEncoder(os.Stdout).Encode(map[string]string{"context": retrieval.FormatContextMarkdown(ctxResult)})
+	_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"context": retrieval.FormatContextMarkdown(ctxResult)})
 }
 
-func handleEdge(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
+func cliEdge(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
 	var req core.EdgeRequest
 	decodeStdin(&req)
 	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
@@ -272,15 +263,19 @@ func handleEdge(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.Vec
 	if err := cfg.ValidateRelation(req.RelationType); err != nil {
 		log.Fatalf("invalid: %v", err)
 	}
+	var edgeErr error
 	if req.AutoCreate {
-		vector.AddEdgeWithAutoCreate(ctx, db, vi, embedder, req.SourceID, req.TargetID, req.RelationType)
+		edgeErr = vector.AddEdgeWithAutoCreate(ctx, db, vi, embedder, req.SourceID, req.TargetID, req.RelationType)
 	} else {
-		store.AddEdge(db, req.SourceID, req.TargetID, req.RelationType, req.Weight)
+		edgeErr = store.AddEdge(db, req.SourceID, req.TargetID, req.RelationType, req.Weight)
+	}
+	if edgeErr != nil {
+		log.Fatalf("edge: %v", edgeErr)
 	}
 	fmt.Println(`{"status":"ok"}`)
 }
 
-func handleIngest(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, extractor core.LLMExtractor) {
+func cliIngest(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, extractor core.LLMExtractor) {
 	var req core.IngestRequest
 	decodeStdin(&req)
 	if req.Dialog == "" {
@@ -293,7 +288,7 @@ func handleIngest(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.V
 	fmt.Println(`{"status":"ok"}`)
 }
 
-func handleTaskStatus(cfg *config.Config, db *sql.DB) {
+func cliTaskStatus(cfg *config.Config, db *sql.DB) {
 	var req core.TaskStatusRequest
 	decodeStdin(&req)
 	if req.ID == "" || req.Status == "" {
@@ -305,7 +300,7 @@ func handleTaskStatus(cfg *config.Config, db *sql.DB) {
 	fmt.Println(`{"status":"ok"}`)
 }
 
-func handleTaskExecutable(cfg *config.Config, db *sql.DB) {
+func cliTaskExecutable(cfg *config.Config, db *sql.DB) {
 	data := readStdin()
 	if data == "" {
 		data = "{}"
@@ -313,7 +308,7 @@ func handleTaskExecutable(cfg *config.Config, db *sql.DB) {
 	var req struct {
 		GoalID string `json:"goal_id"`
 	}
-	server.DecodeStrict(bytes.NewReader([]byte(data)), &req)
+	_, _, _, _ = server.DecodeStrict(bytes.NewReader([]byte(data)), &req)
 	tasks, err := retrieval.GetExecutableTasks(db, cfg.Schema, req.GoalID)
 	if err != nil {
 		log.Fatalf("executable: %v", err)
@@ -321,10 +316,10 @@ func handleTaskExecutable(cfg *config.Config, db *sql.DB) {
 	if tasks == nil {
 		tasks = []core.Entity{}
 	}
-	json.NewEncoder(os.Stdout).Encode(core.TaskExecutableResponse{Tasks: tasks})
+	_ = json.NewEncoder(os.Stdout).Encode(core.TaskExecutableResponse{Tasks: tasks})
 }
 
-func handleTaskList(cfg *config.Config, db *sql.DB) {
+func cliTaskList(cfg *config.Config, db *sql.DB) {
 	var req core.TaskListRequest
 	decodeStdin(&req)
 	tasks, err := store.ListTasks(db, cfg.Schema, req.Status, req.GoalID)
@@ -334,10 +329,10 @@ func handleTaskList(cfg *config.Config, db *sql.DB) {
 	if tasks == nil {
 		tasks = []core.Entity{}
 	}
-	json.NewEncoder(os.Stdout).Encode(core.TaskExecutableResponse{Tasks: tasks})
+	_ = json.NewEncoder(os.Stdout).Encode(core.TaskExecutableResponse{Tasks: tasks})
 }
 
-func handleTaskShow(cfg *config.Config, db *sql.DB) {
+func cliTaskShow(cfg *config.Config, db *sql.DB) {
 	var req core.TaskShowRequest
 	decodeStdin(&req)
 	if req.ID == "" {
@@ -347,10 +342,10 @@ func handleTaskShow(cfg *config.Config, db *sql.DB) {
 	if err != nil {
 		log.Fatalf("show: %v", err)
 	}
-	json.NewEncoder(os.Stdout).Encode(core.TaskShowResponse{Entity: entity, BlockedBy: blocked, RecoversVia: recovers})
+	_ = json.NewEncoder(os.Stdout).Encode(core.TaskShowResponse{Entity: entity, BlockedBy: blocked, RecoversVia: recovers})
 }
 
-func handleTaskDep(cfg *config.Config, db *sql.DB) {
+func cliTaskDep(cfg *config.Config, db *sql.DB) {
 	var req core.TaskDepRequest
 	decodeStdin(&req)
 	if req.SourceID == "" || req.TargetID == "" {
@@ -364,14 +359,14 @@ func handleTaskDep(cfg *config.Config, db *sql.DB) {
 		log.Fatalf("invalid: %v", err)
 	}
 	if req.Add {
-		store.AddEdge(db, req.SourceID, req.TargetID, rel, 1.0)
+		_ = store.AddEdge(db, req.SourceID, req.TargetID, rel, 1.0)
 	} else {
-		store.DeleteEdge(db, req.SourceID, req.TargetID, rel)
+		_ = store.DeleteEdge(db, req.SourceID, req.TargetID, rel)
 	}
 	fmt.Println(`{"status":"ok"}`)
 }
 
-func handleTaskTree(cfg *config.Config, db *sql.DB) {
+func cliTaskTree(cfg *config.Config, db *sql.DB) {
 	var req core.TaskTreeRequest
 	decodeStdin(&req)
 	nodes, err := store.GetTaskTree(db, cfg.Schema, req.GoalID)
@@ -381,7 +376,7 @@ func handleTaskTree(cfg *config.Config, db *sql.DB) {
 	fmt.Print(store.RenderTaskTree(nodes, ""))
 }
 
-func handleTaskCreate(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
+func cliTaskCreate(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
 	var req core.TaskCreateRequest
 	decodeStdin(&req)
 	if req.Content == "" {
@@ -405,7 +400,7 @@ func handleTaskCreate(ctx context.Context, cfg *config.Config, db *sql.DB, vi co
 	fmt.Println(`{"status":"ok"}`)
 }
 
-func handleTaskRollback(cfg *config.Config, db *sql.DB) {
+func cliTaskRollback(cfg *config.Config, db *sql.DB) {
 	var req core.TaskRollbackRequest
 	decodeStdin(&req)
 	if req.ID == "" {
@@ -415,10 +410,10 @@ func handleTaskRollback(cfg *config.Config, db *sql.DB) {
 	if err != nil {
 		log.Fatalf("rollback: %v", err)
 	}
-	json.NewEncoder(os.Stdout).Encode(core.TaskRollbackResponse{RollbackTaskID: rollbackID})
+	_ = json.NewEncoder(os.Stdout).Encode(core.TaskRollbackResponse{RollbackTaskID: rollbackID})
 }
 
-func handleTemporal(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, reranker core.Reranker) {
+func cliTemporal(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, reranker core.Reranker) {
 	var req struct {
 		Query    string `json:"query"`
 		TimeFrom string `json:"time_from"`
@@ -434,7 +429,7 @@ func handleTemporal(ctx context.Context, cfg *config.Config, db *sql.DB, vi core
 	}
 	emb, _ := embedder.Embed(ctx, req.Query)
 	results, _ := vector.SearchByVector(db, vi, emb, req.TopK)
-	var seedIDs []string
+	seedIDs := make([]string, 0, len(results))
 	for _, r := range results {
 		seedIDs = append(seedIDs, r.Entity.ID)
 	}
@@ -453,22 +448,21 @@ func handleTemporal(ctx context.Context, cfg *config.Config, db *sql.DB, vi core
 	if err != nil {
 		log.Fatalf("temporal: %v", err)
 	}
-	json.NewEncoder(os.Stdout).Encode(result)
+	_ = json.NewEncoder(os.Stdout).Encode(result)
 }
 
-func handleTimeline(ctx context.Context, db *sql.DB) {
-	limit := 50
-	rows, _ := db.QueryContext(ctx, `SELECT id, category, content, created_at FROM entities WHERE archived = 0 AND created_at IS NOT NULL ORDER BY created_at DESC LIMIT ?`, limit)
+func cliTimeline(ctx context.Context, db *sql.DB) {
+	rows, _ := db.QueryContext(ctx, `SELECT id, category, content, created_at FROM entities WHERE archived = 0 AND created_at IS NOT NULL ORDER BY created_at DESC LIMIT 50`)
 	defer rows.Close()
 	for rows.Next() {
 		var id, cat, content string
 		var ts sql.NullTime
-		rows.Scan(&id, &cat, &content, &ts)
+		_ = rows.Scan(&id, &cat, &content, &ts)
 		fmt.Printf("[%s] %s  %s  [%s]\n", ts.Time.Format(time.RFC3339), id, content, cat)
 	}
 }
 
-func handleContradictions(db *sql.DB) {
+func cliContradictions(db *sql.DB) {
 	id := ""
 	if len(os.Args) > 2 {
 		id = os.Args[2]
@@ -482,7 +476,7 @@ func handleContradictions(db *sql.DB) {
 	}
 }
 
-func handleExplain(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, reranker core.Reranker) {
+func cliExplain(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, reranker core.Reranker) {
 	var req core.SearchRequest
 	decodeStdin(&req)
 	if req.Query == "" {
@@ -490,7 +484,7 @@ func handleExplain(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.
 	}
 	emb, _ := embedder.Embed(ctx, req.Query)
 	results, _ := vector.SearchByVector(db, vi, emb, 3)
-	var seedIDs []string
+	seedIDs := make([]string, 0, len(results))
 	for _, r := range results {
 		seedIDs = append(seedIDs, r.Entity.ID)
 	}
@@ -499,10 +493,10 @@ func handleExplain(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.
 	if err != nil {
 		log.Fatalf("explain: %v", err)
 	}
-	json.NewEncoder(os.Stdout).Encode(result)
+	_ = json.NewEncoder(os.Stdout).Encode(result)
 }
 
-func handleAgentLoop(ctx context.Context, cfg *config.Config, db *sql.DB) {
+func cliAgentLoop(ctx context.Context, cfg *config.Config, db *sql.DB) {
 	var req struct {
 		GoalID string `json:"goal_id"`
 	}
@@ -511,7 +505,7 @@ func handleAgentLoop(ctx context.Context, cfg *config.Config, db *sql.DB) {
 		log.Fatal("goal_id required")
 	}
 	slog.Info("agent loop started", "goal_id", req.GoalID)
-	err := algo.AgentLoop(ctx, db, cfg.Schema, req.GoalID, func(ctx context.Context, task core.Entity) error {
+	err := algo.AgentLoop(ctx, db, cfg.Schema, req.GoalID, func(_ context.Context, task core.Entity) error {
 		fmt.Printf("[%s] %s  [%s]\n", task.ID, task.Content, task.Category)
 		return nil
 	})
@@ -520,7 +514,7 @@ func handleAgentLoop(ctx context.Context, cfg *config.Config, db *sql.DB) {
 	}
 }
 
-func handleVerify(db *sql.DB, cfg *config.Config) {
+func cliVerify(db *sql.DB, cfg *config.Config) {
 	report, err := algo.VerifyGraph(db, cfg.Schema, cfg.VectorDim)
 	if err != nil {
 		log.Fatalf("verify: %v", err)
@@ -531,7 +525,7 @@ func handleVerify(db *sql.DB, cfg *config.Config) {
 	}
 }
 
-func handleMigrate(db *sql.DB) {
+func cliMigrate(db *sql.DB) {
 	status, err := store.MigrationStatus(db)
 	if err != nil {
 		log.Fatalf("migrate status: %v", err)
@@ -551,7 +545,7 @@ func handleMigrate(db *sql.DB) {
 	}
 }
 
-func handleMigrationRollback(db *sql.DB) {
+func cliMigrationRollback(db *sql.DB) {
 	name, err := store.RollbackMigration(db)
 	if err != nil {
 		log.Fatalf("rollback: %v", err)
@@ -563,7 +557,7 @@ func handleMigrationRollback(db *sql.DB) {
 	}
 }
 
-func handleMigrationVerify(db *sql.DB) {
+func cliMigrationVerify(db *sql.DB) {
 	mismatches, err := store.VerifyMigrationIntegrity(db)
 	if err != nil {
 		log.Fatalf("verify: %v", err)
@@ -576,7 +570,7 @@ func handleMigrationVerify(db *sql.DB) {
 	}
 }
 
-func handleExecutionPlan(cfg *config.Config, db *sql.DB) {
+func cliExecutionPlan(cfg *config.Config, db *sql.DB) {
 	var req struct {
 		GoalID string `json:"goal_id"`
 	}
@@ -593,7 +587,7 @@ func handleExecutionPlan(cfg *config.Config, db *sql.DB) {
 	}
 }
 
-func handleRecoveryPlan(cfg *config.Config, db *sql.DB) {
+func cliRecoveryPlan(cfg *config.Config, db *sql.DB) {
 	var req struct {
 		ID string `json:"id"`
 	}
@@ -610,9 +604,8 @@ func handleRecoveryPlan(cfg *config.Config, db *sql.DB) {
 	}
 }
 
-func handleConnectedComponents(db *sql.DB) {
-	minSize := 2
-	components, err := store.FindConnectedComponents(db, minSize)
+func cliConnectedComponents(db *sql.DB) {
+	components, err := store.FindConnectedComponents(db, 2)
 	if err != nil {
 		log.Fatalf("components: %v", err)
 	}
@@ -621,7 +614,7 @@ func handleConnectedComponents(db *sql.DB) {
 	}
 }
 
-func handleProvenance(db *sql.DB) {
+func cliProvenance(db *sql.DB) {
 	args := os.Args[2:]
 	var convID, msgID, source string
 	limit := 50
@@ -637,7 +630,7 @@ func handleProvenance(db *sql.DB) {
 			source = args[i+1]
 			i++
 		case "--limit":
-			fmt.Sscanf(args[i+1], "%d", &limit)
+			limit, _ = strconv.Atoi(args[i+1])
 			i++
 		}
 	}
@@ -650,7 +643,7 @@ func handleProvenance(db *sql.DB) {
 	}
 }
 
-func handleCommunities(db *sql.DB) {
+func cliCommunities(db *sql.DB) {
 	comms, globalQ, err := store.DetectCommunities(db, 50)
 	if err != nil {
 		log.Fatalf("communities: %v", err)
@@ -661,13 +654,13 @@ func handleCommunities(db *sql.DB) {
 	}
 }
 
-func handleReEmbed(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
+func cliReEmbed(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder) {
 	batchSize := 50
 	model := ""
 	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--batch-size" {
-			fmt.Sscanf(args[i+1], "%d", &batchSize)
+			batchSize, _ = strconv.Atoi(args[i+1])
 			i++
 		}
 		if args[i] == "--model" {
@@ -679,10 +672,11 @@ func handleReEmbed(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.
 	if err != nil {
 		log.Fatalf("re-embed: %v", err)
 	}
-	fmt.Printf("Re-embed: %d/%d entities (failed=%d, batches=%d, elapsed=%s)\n", result.ReEmbedded, result.TotalEntities, result.Failed, result.Batches, result.Elapsed)
+	fmt.Printf("Re-embed: %d/%d entities (failed=%d, batches=%d, elapsed=%s)\n",
+		result.ReEmbedded, result.TotalEntities, result.Failed, result.Batches, result.Elapsed)
 }
 
-func handleQuantize() {
+func cliQuantize() {
 	var req struct {
 		Embedding []float32 `json:"embedding"`
 	}
@@ -694,7 +688,7 @@ func handleQuantize() {
 	deq := vector.DequantizeVector(qv)
 	fmt.Printf("Original: %d elements (%d bytes)\n", len(req.Embedding), len(req.Embedding)*4)
 	fmt.Printf("Quantized: %d bytes (%.1fx)\n", 8+len(qv.Codes), float64(len(req.Embedding)*4)/float64(8+len(qv.Codes)))
-	maxErr := float32(0)
+	var maxErr float32
 	for i := range req.Embedding {
 		e := req.Embedding[i] - deq[i]
 		if e < 0 {
@@ -707,7 +701,7 @@ func handleQuantize() {
 	fmt.Printf("Max error: %.6f\n", maxErr)
 }
 
-func handleSchema(db *sql.DB, cfg *config.Config) {
+func cliSchema(db *sql.DB, cfg *config.Config) {
 	stored, current, err := store.CheckSchemaFingerprint(db, cfg.Schema)
 	if err != nil {
 		log.Fatalf("schema: %v", err)
@@ -718,72 +712,27 @@ func handleSchema(db *sql.DB, cfg *config.Config) {
 	}
 }
 
-func handleServe(cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, extractor core.LLMExtractor, reranker core.Reranker) {
+// cliServe delegates the long HTTP server lifecycle to server.StartStandalone
+// and only adds SIGHUP-driven config reload + version banner here.
+func cliServe(cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, extractor core.LLMExtractor, reranker core.Reranker) {
 	port := "8420"
 	if len(os.Args) > 2 {
 		port = os.Args[2]
 	}
+	slog.Info("hermem starting", "port", port, "version", version, "build_date", buildDate, "git_commit", gitCommit)
 
-	srv := server.NewServer(db, vi, embedder, extractor, cfg.DedupThreshold, core.RetrieveContextOptions{
-		DepthCeiling: cfg.MaxDepthCeiling, MaxRetrievedNodes: cfg.MaxRetrievedNodes, RankingWeight: cfg.Ranking, Reranker: reranker,
-	}, cfg.Schema)
+	srv := server.NewServer(db, vi, embedder, extractor, cfg.DedupThreshold,
+		core.RetrieveContextOptions{
+			DepthCeiling: cfg.MaxDepthCeiling, MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+			RankingWeight: cfg.Ranking, Reranker: reranker,
+		},
+		cfg.Schema)
 
-	gcCtx, gcCancel := context.WithCancel(context.Background())
-	gcDone := make(chan struct{})
-	go func() { algo.GarbageCollector(gcCtx, db, vi, cfg.Retention); close(gcDone) }()
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", srv.HandleHealth)
-	mux.HandleFunc("/health/live", srv.HandleHealthLive)
-	mux.HandleFunc("/health/ready", srv.HandleHealthReady)
-	mux.HandleFunc("/metrics", metrics.MetricsHandler)
-	mux.HandleFunc("/store", srv.HandleStore)
-	mux.HandleFunc("/search", srv.HandleSearch)
-	mux.HandleFunc("/retrieve", srv.HandleRetrieve)
-	mux.HandleFunc("/ingest", srv.HandleIngest)
-	mux.HandleFunc("/query", srv.HandleQuery)
-	mux.HandleFunc("/edge", srv.HandleEdge)
-	mux.HandleFunc("/task/status", srv.HandleTaskStatus)
-	mux.HandleFunc("/task/executable", srv.HandleTaskExecutable)
-	mux.HandleFunc("/task/next", srv.HandleTaskExecutable)
-	mux.HandleFunc("/task/list", srv.HandleTaskList)
-	mux.HandleFunc("/task/show", srv.HandleTaskShow)
-	mux.HandleFunc("/task/dep", srv.HandleTaskDep)
-	mux.HandleFunc("/task/tree", srv.HandleTaskTree)
-	mux.HandleFunc("/task/create", srv.HandleTaskCreate)
-	mux.HandleFunc("/task/rollback", srv.HandleTaskRollback)
-	mux.HandleFunc("/query/explain", srv.HandleQueryExplain)
-	mux.HandleFunc("/contradictions", srv.HandleContradictions)
-	mux.HandleFunc("/timeline", srv.HandleTimeline)
-	mux.HandleFunc("/provenance", srv.HandleProvenance)
-	mux.HandleFunc("/recovery-plan", srv.HandleRecoveryPlan)
-	mux.HandleFunc("/connected-components", srv.HandleConnectedComponents)
-	mux.HandleFunc("/communities", srv.HandleCommunities)
-	mux.HandleFunc("/admin/re-embed", srv.HandleReEmbed)
-
-	apiKey := cfg.APIKey
-	var handler http.Handler = mux
-	handler = slogMiddleware(handler)
-	handler = requestIDMiddleware(authMiddleware(apiKey)(handler))
-	handler = recoveryMiddleware(handler)
-
-	srvHTTP := &http.Server{Addr: ":" + port, Handler: handler, ReadTimeout: 5 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 120 * time.Second}
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
+	// SIGHUP reload loop — separate from server lifecycle so we can re-validate config without restarting.
+	sighup := make(chan os.Signal, 1)
+	signal.Notify(sighup, syscall.SIGHUP)
 	go func() {
-		slog.Info("server ready", "port", port)
-		if err := srvHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server: %v", err)
-		}
-	}()
-
-	go func() {
-		sighup := make(chan os.Signal, 1)
-		signal.Notify(sighup, syscall.SIGHUP)
 		for range sighup {
-			slog.Info("SIGHUP reloading config")
 			newCfg, err := config.LoadConfigFromBinaryDir()
 			if err != nil {
 				slog.Error("SIGHUP: load config", "err", err)
@@ -794,61 +743,26 @@ func handleServe(cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder c
 				continue
 			}
 			srv.ReloadState(newCfg.Schema, newCfg.Ranking, newCfg.NewReranker())
-			store.StoreSchemaFingerprint(db, newCfg.Schema)
+			_ = store.StoreSchemaFingerprint(db, newCfg.Schema)
+			slog.Info("SIGHUP applied")
 		}
 	}()
 
-	<-quit
-	slog.Info("shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	srvHTTP.Shutdown(shutdownCtx)
-	cancel()
-	gcCancel()
-	<-gcDone
-	slog.Info("server stopped")
-}
-
-// --- Middleware ---
-
-func recoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				slog.Error("panic", "err", rec)
-				http.Error(w, "internal error", 500)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-func requestIDMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqID := r.Header.Get("X-Request-ID")
-		if reqID == "" {
-			reqID = fmt.Sprintf("%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-ID", reqID)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func authMiddleware(apiKey string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if apiKey != "" && r.Header.Get("X-API-Key") != apiKey {
-				http.Error(w, `{"error":"unauthorized"}`, 401)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
+	if err := server.StartStandalone(server.StartStandaloneConfig{
+		DB:                db,
+		VI:                vi,
+		Embedder:          embedder,
+		Extractor:         extractor,
+		Reranker:          reranker,
+		Schema:            cfg.Schema,
+		Ranking:           cfg.Ranking,
+		DedupThreshold:    cfg.DedupThreshold,
+		DepthCeiling:      cfg.MaxDepthCeiling,
+		MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+		Retention:         cfg.Retention,
+		APIKey:            cfg.APIKey,
+		Port:              port,
+	}); err != nil {
+		log.Fatalf("server: %v", err)
 	}
-}
-
-func slogMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		slog.Debug("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
-	})
 }
