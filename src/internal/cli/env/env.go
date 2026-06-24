@@ -260,101 +260,44 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 	prev := m.Get()
 	newEnv := &Env{
 		Cfg:        cfg,
-		Build:      copyBuild(prev),
-		Ctx:        prevCtx(prev),
-		DB:         prevDB(prev),
-		VI:         prevVI(prev),
-		Embedder:   prevEmbedder(prev),
-		Extractor:  prevExtractor(prev),
-		Reranker:   prevReranker(prev),
-		Worker:     prevWorker(prev),
-		KeepDBOpen: prevKeepDBOpen(prev),
-		initDone:   prevInitDone(prev),
-		initErr:    prevInitErr(prev),
-		closeDone:  prevCloseDone(prev),
+		Build:      safeGet(prev, func(e *Env) BuildInfo { return e.Build }),
+		Ctx:        safeGet(prev, func(e *Env) context.Context { return e.Ctx }),
+		DB:         safeGet(prev, func(e *Env) *sql.DB { return e.DB }),
+		VI:         safeGet(prev, func(e *Env) core.VectorIndex { return e.VI }),
+		Embedder:   safeGet(prev, func(e *Env) core.Embedder { return e.Embedder }),
+		Extractor:  safeGet(prev, func(e *Env) core.LLMExtractor { return e.Extractor }),
+		Reranker:   safeGet(prev, func(e *Env) core.Reranker { return e.Reranker }),
+		Worker:     safeGet(prev, func(e *Env) *metrics.AsyncMetricsWorker { return e.Worker }),
+		KeepDBOpen: safeGet(prev, func(e *Env) bool { return e.KeepDBOpen }),
+		initDone:   safeGet(prev, func(e *Env) bool { return e.initDone }),
+		initErr:    safeGet(prev, func(e *Env) error { return e.initErr }),
+		closeDone:  safeGet(prev, func(e *Env) bool { return e.closeDone }),
 	}
 	m.current.Store(newEnv)
 	return newEnv, nil
 }
 
-// Internal accessors that swallow nil prev so Reload can keep state
-// fields populated without a crash if the manager starts empty. All
-// these are local to env_test.go's interaction model: callers that
-// want to mutate an open handle (e.g. reinitialise the DB on schema
-// drift) should call Set() instead of Reload.
-func copyBuild(prev *Env) BuildInfo {
+// safeGet returns the zero value of T when prev is nil, otherwise it
+// returns extractor(prev). Replaces the dozen near-identical per-field
+// accessors (copyBuild, prevCtx, prevDB, prevEmbedder, …) previously
+// hand-written below — the boilerplate was identical (nil-check + one
+// field read) and adding a new state field required another ~5-line
+// function of mechanical duplication.
+//
+// Used by EnvManager.Reload to copy state from the prior *Env onto the
+// newly-built one without dereferencing a nil receiver when the manager
+// starts empty (see NewEnvManager(nil)). Callers that want to mutate an
+// open handle (e.g. reinitialise the DB on schema drift) should call
+// Set() instead of Reload.
+//
+// The helper is intentionally unexported: the pattern is local to
+// EnvManager.Reload, no other package needs it, and lowercase keeps the
+// most common use (zero-value-on-nil task) inside this file. Name is
+// lowercase "s" so it doesn't collide with any future public Get helper.
+func safeGet[T any](prev *Env, extractor func(*Env) T) T {
+	var zero T
 	if prev == nil {
-		return BuildInfo{}
+		return zero
 	}
-	return prev.Build
-}
-func prevCtx(prev *Env) context.Context {
-	if prev == nil {
-		return nil
-	}
-	return prev.Ctx
-}
-func prevDB(prev *Env) *sql.DB {
-	if prev == nil {
-		return nil
-	}
-	return prev.DB
-}
-func prevVI(prev *Env) core.VectorIndex {
-	if prev == nil {
-		return nil
-	}
-	return prev.VI
-}
-func prevEmbedder(prev *Env) core.Embedder {
-	if prev == nil {
-		return nil
-	}
-	return prev.Embedder
-}
-func prevExtractor(prev *Env) core.LLMExtractor {
-	if prev == nil {
-		return nil
-	}
-	return prev.Extractor
-}
-func prevReranker(prev *Env) core.Reranker {
-	if prev == nil {
-		return nil
-	}
-	return prev.Reranker
-}
-func prevWorker(prev *Env) *metrics.AsyncMetricsWorker {
-	if prev == nil {
-		return nil
-	}
-	return prev.Worker
-}
-func prevInitDone(prev *Env) bool {
-	if prev == nil {
-		return false
-	}
-	return prev.initDone
-}
-func prevInitErr(prev *Env) error {
-	if prev == nil {
-		return nil
-	}
-	return prev.initErr
-}
-func prevCloseDone(prev *Env) bool {
-	if prev == nil {
-		return false
-	}
-	return prev.closeDone
-}
-
-// prevKeepDBOpen mirrors the KeepDBOpen setting through EnvManager.Reload so
-// tests in flight at the moment of a reload do not silently start
-// auto-closing their DB.
-func prevKeepDBOpen(prev *Env) bool {
-	if prev == nil {
-		return false
-	}
-	return prev.KeepDBOpen
+	return extractor(prev)
 }
