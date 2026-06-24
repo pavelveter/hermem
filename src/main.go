@@ -17,6 +17,16 @@ import (
 	"time"
 )
 
+// Build-time variables injected via -ldflags:
+//
+//	-X main.version=$(VERSION) -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+//	-X main.gitCommit=$(git rev-parse --short HEAD)
+var (
+	version   = "dev"
+	buildDate = "unknown"
+	gitCommit = "unknown"
+)
+
 func GenerateResponse(ctx context.Context, db *sql.DB, vi VectorIndex, embedder Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
 	queryEmbedding, err := embedder.Embed(ctx, userQuery)
 	if err != nil {

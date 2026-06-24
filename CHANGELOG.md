@@ -49,6 +49,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Episodic memory** (Phase 10) — `sessions` + `conversations` tables via `004_episodic_sessions.sql` migration; `idx_entities_created_at` index. `/timeline[?limit=N]` endpoint + `timeline [limit]` CLI.
 - **Contradiction graph** (Phase 10) — `ContradictionPair` type (snake_case JSON); `GetContradictions(db, entityID)` bidirectional filter. `/contradictions[?id=X]` endpoint + `contradictions [entity_id]` CLI.
 
+### P1 — Graph analytics & provenance (June 2026)
+
+- **Graph centrality scoring** — `degree INTEGER DEFAULT 0` column on entities, auto-maintained via SQL triggers on edges INSERT/DELETE. `RankingWeight.CentralityWeight` (default 0.05, INI-parsed as `centrality_weight`). `log10(1+degree)` normalisation in `defaultCompositeScorer`. `Degree` field on `Entity`, selected in graph walk CTE.
+- **Weighted edges** — `weight REAL DEFAULT 1.0` column on edges (migration `006_weighted_edges.sql`). `Weight` field on `Edge` struct, `EdgeRequest`, and `AddEdge` signature (4th param). CTE `path_weight` accumulator: `COALESCE(ed.weight, 1.0)` per hop. `compositeScore` uses `pathWeight` instead of integer `depth` for penalty. `GraphNode.PathWeight` field.
+- **Provenance APIs** — `GetEntitiesByProvenance(db, convID, msgID, source, limit)` returns entities by memory origin (conversation, message, source with LIMIT). `HandleProvenance` GET handler at `/provenance?conversation_id=X&message_id=Y&source=Z&limit=N`. `provenance` CLI command with `--conversation`, `--message`, `--source`, `--limit` flags.
+- **Execution plan CLI** — `execution-plan` CLI command shows priority-sorted topological task plan for a goal via `ExecutionPlan(db, schema, goalID)`.
+
+### P2 — Task management & graph algorithms (June 2026)
+
+- **Task priorities** — `priority INTEGER DEFAULT 0` column on entities (migration `007_task_priorities.sql`). `Entity.Priority` field. `ExecutionPlan` orders by `priority DESC`. `getExecutableTasksForGoal`/`Global` order by `COALESCE(priority, 0) DESC`. `ListTasks`/`GetRootTasks` SELECT priority. `scanTaskEntities` scans priority via `sql.NullInt64`.
+- **Critical path analysis** — `CriticalPath(db, schema, goalID)` CTE walks longest weighted path from leaf to goal, reconstructs path via `blocked_by` edges. Returns ordered path slice + total path weight.
+- **Recovery plan generation** — `GenerateRecoveryPlan(db, schema, failedTaskID)` walks `recovers_via` chain, returns ordered recovery task sequence with cycle detection. `HandleRecoveryPlan` at `GET /recovery-plan?id=X`. `recovery-plan` CLI command.
+- **Graph clustering (connected components)** — `FindConnectedComponents(db, minSize)` BFS-based, all edges/relation types. `ConnectedComponent` type with `IDs`, `Size`, `AvgDegree`. Results sorted by size descending via `sort.Slice`. `HandleConnectedComponents` at `GET /connected-components?min_size=N`. `connected-components [min_size]` CLI.
+- **Community detection (Louvain)** — `DetectCommunities(db, maxIterations)` one-pass modularity optimisation. Builds symmetric adjacency from edges, iterates node moves by ΔQ, returns `[]Community` with per-community modularity + global Q. `HandleCommunities` at `GET /communities?min_size=N&max_iterations=N`. `communities` CLI with `--min-size`/`--max-iterations` flags.
+- **Background re-embedding** — `NeedsReEmbed(db, configuredDim)` detects dimension drift from `meta.embedding_dim`. `ReEmbedAll(ctx, db, vi, embedder, configuredDim, batchSize, model)` batch re-embeds all entities with content, updates DB BLOBs + vector index per batch, verifies returned embedding dimension. Progress logging per batch + context cancellation support. Updates `meta.embedding_dim` on completion. `HandleReEmbed` at `POST /admin/re-embed` with `{dim, batch_size?, model?}`. `re-embed` CLI with `--batch-size`/`--model` flags.
+- **Embedding cache (LRU)** — `EmbeddingCache` map + doubly-linked list with `Get`/`Put`/`Invalidate`/`Size`. Wired into `InMemoryVectorIndex` (`storeLocked` calls `cache.Put`, `Remove` calls `cache.Invalidate`). Single `sync.Mutex` for simplicity (Get mutates LRU order).
+- **Vector quantization** — `QuantizeVector`/`DequantizeVector` scalar int8 compression (8+d bytes vs 4d bytes). `QuantizedEmbeddingToBytes`/`BytesToQuantizedEmbedding` BLOB serialisation. `QuantizeBatch`/`DequantizeBatch` batch helpers. `quantize` CLI for testing roundtrip + compression ratio.
+
 ### Changed
 - `IngestionWorker` schema is now directly swappable (maps are immutable after construction).
 - `Server` schema/validCategories/validRelationTypes consolidated into `atomic.Pointer[ServerState]` for SIGHUP-safe reload.

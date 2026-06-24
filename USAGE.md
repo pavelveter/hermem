@@ -108,6 +108,9 @@ vector_weight         = 0.7       # vector similarity weight (0 = disabled)
 recency_weight        = 0.3       # recency decay weight
 ; recency_half_life_hours = 720   # half-life for exp decay (default 720h ≈ 30d)
 ; depth_penalty         = 0.05    # linear penalty per hop depth
+; temporal_weight       = 0.1     # temporal relevance weight
+; temporal_half_life_hours = 720  # half-life for temporal decay
+; centrality_weight     = 0.05    # graph centrality boost for hub nodes
 
 [reranker]                         # Sprint 5 — optional post-retrieval reranker
 ; Follows the same provider convention as [embedder] / [extraction].
@@ -219,6 +222,13 @@ one-shot read-process-print.
 | `temporal` | `{query, time_from?, time_to?, top_k?}` | `RetrievalResult` (time-filtered) |
 | `timeline` | (none — arg: limit) | Recent entities by created_at |
 | `contradictions` | (none — arg: entity_id?) | Contradiction pairs |
+| `execution-plan` | `{goal_id}` | Priority-sorted task execution plan |
+| `provenance` | (none — args: --conversation, --message, --source, --limit) | Entities by memory origin |
+| `recovery-plan` | `{id}` | Ordered recovery task chain |
+| `connected-components` | (none — arg: min_size) | Graph connected components |
+| `communities` | (none — args: --min-size, --max-iterations) | Louvain community detection |
+| `re-embed` | (none — args: --batch-size, --model) | Batch re-embed all entities |
+| `quantize` | `{embedding}` | Test vector quantization |
 
 ### `migrate`
 
@@ -395,6 +405,11 @@ paths). Pipe stderr to your log aggregator.
 | GET | `/contradictions` | — (opt `?id=X`) | `[{"source_id","source_content","target_id","target_content"}]` |
 | POST | `/query/temporal` | `{query, time_from?, time_to?, top_k?}` | `RetrievalResult` (time-filtered) |
 | GET | `/timeline` | — (opt `?limit=N`) | `[{"id","category","content","created_at",...}]` |
+| GET | `/provenance` | query params: `conversation_id`, `message_id`, `source`, `limit` | `[Entity, ...]` (provenance fields populated) |
+| GET | `/recovery-plan` | query param: `?id=X` | `[Entity, ...]` (ordered recovery chain) |
+| GET | `/connected-components` | query param: `?min_size=N` | `[{"ids","size","avg_degree"}, ...]` |
+| GET | `/communities` | query params: `?min_size=N&max_iterations=N` | `{"communities","global_modularity","total_communities"}` |
+| POST | `/admin/re-embed` | `{dim, batch_size?, model?}` | `ReEmbedResult` (total, re_embedded, failed, elapsed, ...) |
 
 Every POST endpoint goes through a strict JSON decoder; fields not in
 the request schema are rejected with `400`. See §9 for the error
@@ -651,6 +666,53 @@ curl -s http://localhost:8420/timeline?limit=10
 #     "source":"dialog","conversation_id":"conv-1","message_id":"msg-3"}, ...]
 ```
 
+### `/provenance`
+
+Query entities by memory origin.
+
+```bash
+curl -s "http://localhost:8420/provenance?conversation_id=conv-1&limit=10"
+# → [{"id":"entity-1","category":"world","content":"...","conversation_id":"conv-1",...}]
+```
+
+### `/recovery-plan`
+
+Walk `recovers_via` chain from a failed task.
+
+```bash
+curl -s "http://localhost:8420/recovery-plan?id=step-1"
+# → [{"id":"step-recover-1","category":"task","content":"Rollback","status":"pending"}, ...]
+```
+
+### `/connected-components`
+
+Find connected components in the graph.
+
+```bash
+curl -s "http://localhost:8420/connected-components?min_size=3"
+# → [{"ids":["a","b","c"],"size":3,"avg_degree":2.5}, ...]
+```
+
+### `/communities`
+
+Louvain community detection with modularity scoring.
+
+```bash
+curl -s "http://localhost:8420/communities?min_size=3&max_iterations=100"
+# → {"communities":[{"id":"community-...","members":[...],"size":5,"modularity":0.123}],"global_modularity":0.452,"total_communities":12}
+```
+
+### `/admin/re-embed`
+
+Trigger background re-embedding of all entities.
+
+```bash
+curl -s -X POST http://localhost:8420/admin/re-embed \
+  -H "Content-Type: application/json" \
+  -d '{"dim":768,"batch_size":100}'
+# → {"total_entities":1500,"re_embedded":1500,"failed":0,"elapsed":"45.2s",...}
+```
+
 ### `/contradictions`
 
 Lists all `contradicts` edges in the graph. Optional `?id=X` filters to
@@ -792,6 +854,14 @@ CLI: pass `goal_id` in the JSON body (omit or leave empty for global view).
 | Field   | Type   | Required | Notes                                           |
 |---------|--------|----------|-------------------------------------------------|
 | `goal_id` | string | no       | Root task ID; omit to render all root tasks.    |
+
+### `ReEmbedRequest` (`/admin/re-embed`)
+
+| Field       | Type   | Required | Notes                                          |
+|-------------|--------|----------|------------------------------------------------|
+| `dim`       | int    | yes      | Target embedding dimension.                    |
+| `batch_size`| int    | no       | Default 50. Entities per DB transaction.       |
+| `model`     | string | no       | New model name for meta table.                 |
 
 ### `TaskRollbackRequest` (`/task/rollback`, CLI `task-rollback`)
 
@@ -1126,6 +1196,12 @@ silently produce wrong cosine scores.
 | Graph walk, ranking, formatting | `src/retrieval.go`                |
 | Background worker, dedup, edges | `src/ingestion.go`                |
 | Contradiction detection        | `src/contradiction.go`            |
+| Community detection (Louvain)  | `src/community.go`                |
+| Background re-embedding        | `src/reembed.go`                  |
+| Vector quantization            | `src/quantize.go`                 |
+| Embedding cache (LRU)          | `src/cache.go`                    |
+| Agent state engine             | `src/agent_loop.go`               |
+| Multi-hop retrieval            | `src/multi_hop.go`                |
 | Ollama / OpenAI HTTP            | `src/embedder.go`, `src/extractor.go` |
 | HTTP handlers, strict decoder   | `src/server.go`                   |
 | CLI entry-point                 | `src/main.go`                     |
