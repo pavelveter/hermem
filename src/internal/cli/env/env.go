@@ -21,6 +21,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/pavelveter/hermem/src/internal/config"
@@ -187,4 +188,151 @@ func WriteStdout(p []byte) error {
 		return nil
 	}
 	return err
+}
+
+// EnvManager holds the current *Env behind an atomic.Pointer so a hot
+// reload (SIGHUP, config file change, admin "reload" RPC) cannot expose
+// a half-mutated snapshot to concurrent readers.
+//
+// Use this instead of a package-global `var CurrentEnv *Env` — the global
+// version is the bug 11.1 calls out: a reader can fetch a pointer that
+// has been partially overwritten by a writer, producing impossible-to-debug
+// shape mismatches. atomic.Pointer.Load() returns a consistent snapshot.
+//
+// Construction:
+//
+//	em := NewEnvManager(env)
+//	em.Get()         // readers
+//	em.Set(newEnv)   // writers (admin only)
+//	em.Reload(cfg)   // writers that go through the validator
+type EnvManager struct {
+	current atomic.Pointer[Env]
+}
+
+// NewEnvManager constructs an EnvManager that hands out `initial` until
+// the first Reload/Set call. Safe to call with a nil `initial` — Get()
+// returns nil in that case, callers should treat nil as "not ready".
+func NewEnvManager(initial *Env) *EnvManager {
+	m := &EnvManager{}
+	if initial != nil {
+		m.current.Store(initial)
+	}
+	return m
+}
+
+// Get returns the latest snapshot of *Env. Readers may call this from
+// any goroutine; concurrent Store/Reload calls are atomic from the
+// reader's point of view.
+func (m *EnvManager) Get() *Env {
+	return m.current.Load()
+}
+
+// Set unconditionally stores env. Admin-only path — bypasses cfg.Validate.
+// Production hot-reload should call Reload, which validates first.
+func (m *EnvManager) Set(env *Env) {
+	m.current.Store(env)
+}
+
+// Reload validates cfg, then atomically swaps a freshly-built *Env in
+// place. Returns error without mutating Env when validation fails so a
+// bad config cannot half-reload the server.
+//
+// On swap, all open handles (DB, VI, Embedder, Extractor, Reranker,
+// Worker) and the init/close bookkeeping from the prior *Env are
+// carried forward — only `Cfg` is replaced. Dropping those fields
+// would zero them, and any downstream caller that did
+// `em.Get().DB` would dereference nil and crash the daemon.
+func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("env reload: validate: %w", err)
+	}
+	prev := m.Get()
+	newEnv := &Env{
+		Cfg:       cfg,
+		Build:     copyBuild(prev),
+		Ctx:       prevCtx(prev),
+		DB:        prevDB(prev),
+		VI:        prevVI(prev),
+		Embedder:  prevEmbedder(prev),
+		Extractor: prevExtractor(prev),
+		Reranker:  prevReranker(prev),
+		Worker:    prevWorker(prev),
+		initDone:  prevInitDone(prev),
+		initErr:   prevInitErr(prev),
+		closeDone: prevCloseDone(prev),
+	}
+	m.current.Store(newEnv)
+	return newEnv, nil
+}
+
+// Internal accessors that swallow nil prev so Reload can keep state
+// fields populated without a crash if the manager starts empty. All
+// these are local to env_test.go's interaction model: callers that
+// want to mutate an open handle (e.g. reinitialise the DB on schema
+// drift) should call Set() instead of Reload.
+func copyBuild(prev *Env) BuildInfo {
+	if prev == nil {
+		return BuildInfo{}
+	}
+	return prev.Build
+}
+func prevCtx(prev *Env) context.Context {
+	if prev == nil {
+		return nil
+	}
+	return prev.Ctx
+}
+func prevDB(prev *Env) *sql.DB {
+	if prev == nil {
+		return nil
+	}
+	return prev.DB
+}
+func prevVI(prev *Env) core.VectorIndex {
+	if prev == nil {
+		return nil
+	}
+	return prev.VI
+}
+func prevEmbedder(prev *Env) core.Embedder {
+	if prev == nil {
+		return nil
+	}
+	return prev.Embedder
+}
+func prevExtractor(prev *Env) core.LLMExtractor {
+	if prev == nil {
+		return nil
+	}
+	return prev.Extractor
+}
+func prevReranker(prev *Env) core.Reranker {
+	if prev == nil {
+		return nil
+	}
+	return prev.Reranker
+}
+func prevWorker(prev *Env) *metrics.AsyncMetricsWorker {
+	if prev == nil {
+		return nil
+	}
+	return prev.Worker
+}
+func prevInitDone(prev *Env) bool {
+	if prev == nil {
+		return false
+	}
+	return prev.initDone
+}
+func prevInitErr(prev *Env) error {
+	if prev == nil {
+		return nil
+	}
+	return prev.initErr
+}
+func prevCloseDone(prev *Env) bool {
+	if prev == nil {
+		return false
+	}
+	return prev.closeDone
 }
