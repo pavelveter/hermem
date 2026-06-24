@@ -3,11 +3,13 @@ package ingestion
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/mattn/go-sqlite3"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -69,7 +71,43 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 }
 
 // processOneItem handles dedup, contradiction resolution and atomic write for a single extracted entity.
+//
+// Wraps processOneItemOnce with a retry loop that absorbs transient
+// SQLITE_BUSY ("database is locked") errors from db.BeginTx / tx.Commit
+// under writer-side contention from the GC + parallel ingestion.
+//
+// Non-busy errors are returned immediately — retrying them would amplify
+// the bug rather than fix it.
 func (w *IngestionWorker) processOneItem(ctx context.Context, prov core.Provenance, it struct {
+	entity    core.ExtractedEntity
+	embedding []float32
+}, similarIDs []string, selfID string) error {
+	const maxAttempts = 5
+	backoff := 50 * time.Millisecond
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := w.processOneItemOnce(ctx, prov, it, similarIDs, selfID)
+		if err == nil {
+			return nil
+		}
+		if !isSQLiteBusyError(err) {
+			return err
+		}
+		if attempt == maxAttempts {
+			return fmt.Errorf("processOneItem: exhausted retries on busy: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	return nil // unreachable; loop returns above
+}
+
+// processOneItemOnce is the unwrapped tx body. Do not call directly;
+// always call processOneItem which retries on busy.
+func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Provenance, it struct {
 	entity    core.ExtractedEntity
 	embedding []float32
 }, similarIDs []string, selfID string) error {
@@ -224,6 +262,26 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 		return &entity, nil
 	}
 	return nil, nil
+}
+
+// isSQLiteBusyError reports whether err is the transient SQLite writer-
+// contention signal (SQLITE_BUSY / "database is locked"). Only these
+// errors are retried in processOneItem; everything else (logic errors,
+// constraint violations, schema mismatches) is returned immediately so
+// retries don't mask real bugs.
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, sqlite3.ErrBusy) || errors.Is(err, sqlite3.ErrLocked) {
+		return true
+	}
+	msg := err.Error()
+	// Substring matches are kept narrow on purpose: a broader "busy"
+	// match could collide with user-data embedded in error messages
+	// (e.g. facts or entity names) and trigger spurious retries.
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "SQLITE_BUSY")
 }
 
 // IsIngestionContradiction guards dedup by negation heuristic: if an almost-identical

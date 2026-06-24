@@ -92,5 +92,6 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		agent.NewCmd(env),
 		db.NewCmd(env),
 	)
+	root.SetContext(env.Ctx)
 	return root
 }
