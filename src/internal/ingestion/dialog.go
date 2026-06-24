@@ -162,7 +162,7 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 			ExtractedFrom:  prov.ExtractedFrom,
 			Source:         "dialog",
 			SourceType:     "extraction",
-			UpdatedAt:      time.Now(),
+			UpdatedAt:      time.Now().UTC(),
 		}
 		w.vi.Remove(ctx, []string{it.entity.ID})
 	}
