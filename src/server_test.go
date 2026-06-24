@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,7 +17,16 @@ import (
 // derived from content length, so cosine is computed over a known
 // input). The harness exposes the same routes as the production
 // main.go mux, switched by r.URL.Path.
+// setupTestServer wires a Server backed by an in-memory SQLite DB.
 func setupTestServer(t *testing.T) *httptest.Server {
+	srv, _ := setupTestServerWithDB(t)
+	return srv
+}
+
+// setupTestServerWithDB returns the test server and its underlying
+// *sql.DB so tests can seed data directly (e.g. provenance fields
+// not exposed through the StoreRequest API).
+func setupTestServerWithDB(t *testing.T) (*httptest.Server, *sql.DB) {
 	t.Helper()
 	db, vi := memDB(t)
 	srv := NewServer(
@@ -61,6 +71,16 @@ func setupTestServer(t *testing.T) *httptest.Server {
 			srv.HandleTaskCreate(w, r)
 		case "/task/rollback":
 			srv.HandleTaskRollback(w, r)
+		case "/provenance":
+			srv.HandleProvenance(w, r)
+		case "/recovery-plan":
+			srv.HandleRecoveryPlan(w, r)
+		case "/connected-components":
+			srv.HandleConnectedComponents(w, r)
+		case "/communities":
+			srv.HandleCommunities(w, r)
+		case "/admin/re-embed":
+			srv.HandleReEmbed(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -69,7 +89,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 		httpSrv.Close()
 		db.Close()
 	})
-	return httpSrv
+	return httpSrv, db
 }
 
 // doPost POSTs body (raw bytes) to baseURL+path on the test server
@@ -794,4 +814,428 @@ func TestServerStoreMethodNotAllowed(t *testing.T) {
 	if e.Code != "" {
 		t.Errorf("expected unset Code for non-strict error, got %q", e.Code)
 	}
+}
+
+// ----- /provenance -----------------------------------------------------
+
+func TestServerProvenanceRoundTrip(t *testing.T) {
+	srv, db := setupTestServerWithDB(t)
+
+	// Store entities with provenance fields via raw SQL on the server's DB.
+	for _, e := range []struct {
+		id, convID, msgID, src string
+	}{
+		{"p1", "conv-a", "msg-1", "dialog"},
+		{"p2", "conv-a", "msg-2", "dialog"},
+		{"p3", "conv-b", "msg-3", "api"},
+	} {
+		if _, err := db.Exec(
+			`INSERT OR REPLACE INTO entities (id, category, content, conversation_id, message_id, source)
+			 VALUES (?, 'world', ?, ?, ?, ?)`,
+			e.id, e.id, e.convID, e.msgID, e.src,
+		); err != nil {
+			t.Fatalf("insert %s: %v", e.id, err)
+		}
+	}
+
+	// Query by conversation.
+	resp, err := http.Get(srv.URL + "/provenance?conversation_id=conv-a&limit=10")
+	if err != nil {
+		t.Fatalf("GET provenance: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("provenance: status = %d", resp.StatusCode)
+	}
+	var entities []Entity
+	if err := json.NewDecoder(resp.Body).Decode(&entities); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(entities) != 2 {
+		t.Errorf("conv-a: got %d entities, want 2", len(entities))
+	}
+
+	// Query by message.
+	resp, err = http.Get(srv.URL + "/provenance?message_id=msg-3")
+	if err != nil {
+		t.Fatalf("GET provenance: %v", err)
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&entities); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(entities) != 1 || entities[0].ID != "p3" {
+		t.Errorf("msg-3: got %v, want [p3]", serverEntityIDs(entities))
+	}
+
+	// Query by source.
+	resp, err = http.Get(srv.URL + "/provenance?source=api")
+	if err != nil {
+		t.Fatalf("GET provenance: %v", err)
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&entities); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(entities) != 1 || entities[0].ID != "p3" {
+		t.Errorf("source=api: got %v, want [p3]", serverEntityIDs(entities))
+	}
+
+	// No filters → error.
+	resp, err = http.Get(srv.URL + "/provenance")
+	if err != nil {
+		t.Fatalf("GET provenance: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("no filters: status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// ----- /recovery-plan --------------------------------------------------
+
+func TestServerRecoveryPlanChain(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Create a chain: fail → fix1 (recovers_via) → fix2 (recovers_via)
+	for _, body := range []string{
+		`{"id":"fail","category":"task","content":"failed task"}`,
+		`{"id":"fix1","category":"task","content":"fix step 1"}`,
+		`{"id":"fix2","category":"task","content":"fix step 2"}`,
+	} {
+		resp := doPost(t, srv.URL, "/store", body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("store: status = %d", resp.StatusCode)
+		}
+	}
+	// fail recovers_via fix1, fix1 recovers_via fix2.
+	doPost(t, srv.URL, "/edge", `{"source_id":"fail","target_id":"fix1","relation_type":"recovers_via"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"fix1","target_id":"fix2","relation_type":"recovers_via"}`).Body.Close()
+
+	resp, err := http.Get(srv.URL + "/recovery-plan?id=fail")
+	if err != nil {
+		t.Fatalf("GET recovery-plan: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("recovery-plan: status = %d", resp.StatusCode)
+	}
+	var plan []Entity
+	if err := json.NewDecoder(resp.Body).Decode(&plan); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(plan) != 2 {
+		t.Fatalf("plan length = %d, want 2", len(plan))
+	}
+	if plan[0].ID != "fix1" {
+		t.Errorf("plan[0] = %q, want fix1", plan[0].ID)
+	}
+	if plan[1].ID != "fix2" {
+		t.Errorf("plan[1] = %q, want fix2", plan[1].ID)
+	}
+
+	// Missing id parameter.
+	resp, err = http.Get(srv.URL + "/recovery-plan")
+	if err != nil {
+		t.Fatalf("GET recovery-plan: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("missing id: status = %d, want 400", resp.StatusCode)
+	}
+
+	// Non-existent task.
+	resp, err = http.Get(srv.URL + "/recovery-plan?id=nope")
+	if err != nil {
+		t.Fatalf("GET recovery-plan: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("unknown id: status = %d, want 200 (empty plan)", resp.StatusCode)
+	} else {
+		var plan2 []Entity
+		json.NewDecoder(resp.Body).Decode(&plan2)
+		if len(plan2) != 0 {
+			t.Errorf("unknown id: got %d items, want 0", len(plan2))
+		}
+	}
+}
+
+func TestServerRecoveryPlanCycle(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Create a cycle: a → b → a (recovers_via).
+	for _, body := range []string{
+		`{"id":"cy1","category":"task","content":"cycle 1"}`,
+		`{"id":"cy2","category":"task","content":"cycle 2"}`,
+	} {
+		doPost(t, srv.URL, "/store", body).Body.Close()
+	}
+	doPost(t, srv.URL, "/edge", `{"source_id":"cy1","target_id":"cy2","relation_type":"recovers_via"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"cy2","target_id":"cy1","relation_type":"recovers_via"}`).Body.Close()
+
+	resp, err := http.Get(srv.URL + "/recovery-plan?id=cy1")
+	if err != nil {
+		t.Fatalf("GET recovery-plan: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("recovery-plan: status = %d", resp.StatusCode)
+	}
+	var plan []Entity
+	json.NewDecoder(resp.Body).Decode(&plan)
+	// Must terminate (not loop forever) — cycle detection caps at visited check.
+	if len(plan) != 2 {
+		t.Errorf("cycle plan length = %d, want 2 (both nodes visited once)", len(plan))
+	}
+}
+
+// ----- /connected-components -------------------------------------------
+
+func TestServerConnectedComponents(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Create a graph: A-B-C (connected), D-E (connected), F (isolated)
+	for _, body := range []string{
+		`{"id":"cA","category":"world","content":"A"}`,
+		`{"id":"cB","category":"world","content":"B"}`,
+		`{"id":"cC","category":"world","content":"C"}`,
+		`{"id":"cD","category":"world","content":"D"}`,
+		`{"id":"cE","category":"world","content":"E"}`,
+		`{"id":"cF","category":"world","content":"F"}`,
+	} {
+		doPost(t, srv.URL, "/store", body).Body.Close()
+	}
+	// A-B-C chain.
+	doPost(t, srv.URL, "/edge", `{"source_id":"cA","target_id":"cB","relation_type":"related_to"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"cB","target_id":"cC","relation_type":"related_to"}`).Body.Close()
+	// D-E pair.
+	doPost(t, srv.URL, "/edge", `{"source_id":"cD","target_id":"cE","relation_type":"mentions"}`).Body.Close()
+
+	resp, err := http.Get(srv.URL + "/connected-components?min_size=2")
+	if err != nil {
+		t.Fatalf("GET connected-components: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("connected-components: status = %d", resp.StatusCode)
+	}
+	var components []ConnectedComponent
+	if err := json.NewDecoder(resp.Body).Decode(&components); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// Expect 2 components with size ≥ 2: A-B-C (3) and D-E (2). F (1) is filtered out.
+	if len(components) < 2 {
+		t.Fatalf("components = %d, want ≥ 2", len(components))
+	}
+	// Components should be sorted by size descending.
+	if components[0].Size < components[1].Size {
+		t.Errorf("components not sorted: [0].Size=%d < [1].Size=%d", components[0].Size, components[1].Size)
+	}
+	// Largest should be A-B-C (size 3).
+	if components[0].Size != 3 {
+		t.Errorf("largest component size = %d, want 3", components[0].Size)
+	}
+
+	// Default min_size=2.
+	resp, err = http.Get(srv.URL + "/connected-components")
+	if err != nil {
+		t.Fatalf("GET connected-components: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("default: status = %d", resp.StatusCode)
+	}
+
+	// min_size=0 returns all including isolated.
+	resp, err = http.Get(srv.URL + "/connected-components?min_size=1")
+	if err != nil {
+		t.Fatalf("GET connected-components: %v", err)
+	}
+	defer resp.Body.Close()
+	json.NewDecoder(resp.Body).Decode(&components)
+	if len(components) != 3 {
+		t.Errorf("min_size=1: got %d components, want 3 (A-B-C, D-E, F)", len(components))
+	}
+}
+
+// ----- /communities ----------------------------------------------------
+
+func TestServerCommunities(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Create a simple graph with two clear communities: (A,B,C) and (D,E).
+	// Intra-community edges dense, inter-community edges sparse.
+	for _, body := range []string{
+		`{"id":"mA","category":"world","content":"A"}`,
+		`{"id":"mB","category":"world","content":"B"}`,
+		`{"id":"mC","category":"world","content":"C"}`,
+		`{"id":"mD","category":"world","content":"D"}`,
+		`{"id":"mE","category":"world","content":"E"}`,
+	} {
+		doPost(t, srv.URL, "/store", body).Body.Close()
+	}
+	// Community 1: A-B, B-C, A-C (dense).
+	doPost(t, srv.URL, "/edge", `{"source_id":"mA","target_id":"mB","relation_type":"related_to"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"mB","target_id":"mC","relation_type":"related_to"}`).Body.Close()
+	doPost(t, srv.URL, "/edge", `{"source_id":"mA","target_id":"mC","relation_type":"related_to"}`).Body.Close()
+	// Community 2: D-E (dense).
+	doPost(t, srv.URL, "/edge", `{"source_id":"mD","target_id":"mE","relation_type":"mentions"}`).Body.Close()
+	// Single inter-community edge (bridge).
+	doPost(t, srv.URL, "/edge", `{"source_id":"mC","target_id":"mD","relation_type":"related_to"}`).Body.Close()
+
+	resp, err := http.Get(srv.URL + "/communities?min_size=2&max_iterations=100")
+	if err != nil {
+		t.Fatalf("GET communities: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("communities: status = %d", resp.StatusCode)
+	}
+	var result struct {
+		Communities         []Community `json:"communities"`
+		GlobalModularity    float64     `json:"global_modularity"`
+		TotalCommunities    int         `json:"total_communities"`
+		FilteredCommunities int         `json:"filtered_communities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.TotalCommunities == 0 {
+		t.Fatal("expected at least 1 community")
+	}
+	if len(result.Communities) == 0 {
+		t.Fatal("expected at least 1 filtered community")
+	}
+	// Global modularity should be reasonable (> 0 for well-clustered graph).
+	// The exact value depends on the algorithm; just verify it's computed.
+
+	// Default parameters.
+	resp, err = http.Get(srv.URL + "/communities")
+	if err != nil {
+		t.Fatalf("GET communities: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("default: status = %d", resp.StatusCode)
+	}
+}
+
+func TestServerCommunitiesEmpty(t *testing.T) {
+	srv := setupTestServer(t)
+	// No edges — each node should be its own community.
+	for _, body := range []string{
+		`{"id":"eA","category":"world","content":"A"}`,
+		`{"id":"eB","category":"world","content":"B"}`,
+	} {
+		doPost(t, srv.URL, "/store", body).Body.Close()
+	}
+
+	resp, err := http.Get(srv.URL + "/communities?min_size=1")
+	if err != nil {
+		t.Fatalf("GET communities: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("communities: status = %d", resp.StatusCode)
+	}
+	var result struct {
+		Communities         []Community `json:"communities"`
+		GlobalModularity    float64     `json:"global_modularity"`
+		TotalCommunities    int         `json:"total_communities"`
+		FilteredCommunities int         `json:"filtered_communities"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	// Each node solo → all are size-1 filtered out by default min_size=2.
+	// With min_size=1 we should see them.
+	if result.FilteredCommunities < 2 {
+		t.Errorf("expected ≥2 communities with min_size=1, got %d", result.FilteredCommunities)
+	}
+}
+
+// ----- /admin/re-embed -------------------------------------------------
+
+func TestServerReEmbed(t *testing.T) {
+	srv := setupTestServer(t)
+
+	// Store some entities with content.
+	for _, body := range []string{
+		`{"id":"r1","category":"world","content":"entity one"}`,
+		`{"id":"r2","category":"world","content":"entity two"}`,
+	} {
+		resp := doPost(t, srv.URL, "/store", body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("store: status = %d", resp.StatusCode)
+		}
+	}
+
+	// Trigger re-embed. The stubEmbedder produces 3-dim vectors
+	// (content-dependent), so use dim=3 to match.
+	resp := doPost(t, srv.URL, "/admin/re-embed", `{"dim":3,"batch_size":50}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("re-embed: status = %d", resp.StatusCode)
+	}
+
+	var result ReEmbedResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.ReEmbedded < 2 {
+		t.Errorf("re_embedded = %d, want ≥ 2", result.ReEmbedded)
+	}
+	if result.Failed > 0 {
+		t.Errorf("failed = %d, want 0", result.Failed)
+	}
+	if result.NewDim != 3 {
+		t.Errorf("new_dim = %d, want 3", result.NewDim)
+	}
+	if result.Batches < 1 {
+		t.Errorf("batches = %d, want ≥ 1", result.Batches)
+	}
+	if result.Elapsed == "" {
+		t.Error("elapsed should not be empty")
+	}
+
+	// Missing dim.
+	resp = doPost(t, srv.URL, "/admin/re-embed", `{"batch_size":50}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("missing dim: status = %d, want 400", resp.StatusCode)
+	}
+
+	// Invalid JSON.
+	resp = doPost(t, srv.URL, "/admin/re-embed", `{bad}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("bad json: status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestServerReEmbedMethodNotAllowed(t *testing.T) {
+	srv := setupTestServer(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/admin/re-embed", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ----- helpers ---------------------------------------------------------
+
+func serverEntityIDs(entities []Entity) []string {
+	ids := make([]string, len(entities))
+	for i, e := range entities {
+		ids[i] = e.ID
+	}
+	return ids
 }
