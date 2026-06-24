@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -42,6 +43,7 @@ import (
 // usage instead of "db: migrations: ..." when migrations are broken.
 type Env struct {
 	Ctx       context.Context
+	Cancel    context.CancelFunc
 	Cfg       *config.Config
 	DB        *sql.DB
 	VI        core.VectorIndex
@@ -253,15 +255,37 @@ func (m *EnvManager) Set(env *Env) {
 // carried forward — only `Cfg` is replaced. Dropping those fields
 // would zero them, and any downstream caller that did
 // `em.Get().DB` would dereference nil and crash the daemon.
+//
+// Generation-isolated context: newEnv gets a FRESH context.WithCancel
+// rooted at context.Background(), not inherited from prev. If prev
+// were recycled, the old generation's Cancel() would tear down the
+// freshly-built Env (zombie-ctx bug class). The freshly-issued
+// Cancel is stashed on newEnv and on the prior *Env's grace-period
+// expiry — see gracefulDrain below — so drain can fire it after
+// 5 seconds of in-flight handler slack.
+//
+// Two-phase commit: cfg.Validate runs BEFORE any state mutation, so
+// a bad cfg cannot leave the live process pointing at a half-built
+// Env. Open handles are carried forward in this method; the factory
+// that would REBUILD them (e.g. on schema drift) lives in MutateSet
+// below.
 func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("env reload: validate: %w", err)
 	}
 	prev := m.Get()
+
+	// Per-generation independent context. Caller of env.Ctx (CLI commands,
+	// query goroutines) captures the value at call-time, so a Cancel
+	// firing 5s after drain triggers cleanup only on the OLD generation's
+	// in-flight work — never on the freshly-published Env.
+	newCtx, newCancel := context.WithCancel(context.Background())
+
 	newEnv := &Env{
 		Cfg:        cfg,
 		Build:      safeGet(prev, func(e *Env) BuildInfo { return e.Build }),
-		Ctx:        safeGet(prev, func(e *Env) context.Context { return e.Ctx }),
+		Ctx:        newCtx,
+		Cancel:     newCancel,
 		DB:         safeGet(prev, func(e *Env) *sql.DB { return e.DB }),
 		VI:         safeGet(prev, func(e *Env) core.VectorIndex { return e.VI }),
 		Embedder:   safeGet(prev, func(e *Env) core.Embedder { return e.Embedder }),
@@ -274,7 +298,95 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 		closeDone:  safeGet(prev, func(e *Env) bool { return e.closeDone }),
 	}
 	m.current.Store(newEnv)
+
+	// Schedule graceful drain of the prior generation. We wait 5s so
+	// HTTP handlers, LLM inflight calls, and SQLite transactions that
+	// snapshotted the old *Env before the atomic swap can finish
+	// against their captured resources. After the wait, we Cancel the
+	// old ctx (signals any goroutines that took it) and Close the old
+	// DB only if the new generation did NOT carry it forward.
+	if prev != nil {
+		go m.gracefulDrain(prev, newEnv)
+	}
 	return newEnv, nil
+}
+
+// gracefulDrain waits gracePeriod, then cancels the prev *Env's context
+// and closes its DB IF the new generation did not reuse it.
+//
+// Why 5s: HTTP request timeout is 120s, but in-flight work that already
+// snapshotted the old *Env typically completes in seconds. 5s is enough
+// slack for a single cmd-line invocation cycle to land; if a heavily-
+// raced reload fires faster than that (chained SIGHUP stress), only the
+// LAST drain actually closes anything — older drains see prev.DB
+// already replaced and short-circuit.
+//
+// Why per-goroutine: Reload must return immediately so the SIGHUP handler
+// doesn't block. The drain is fire-and-forget; the new *Env is already
+// live at this point and HTTP traffic is being served from the swapped
+// context.Context.
+func (m *EnvManager) gracefulDrain(prev *Env, next *Env) {
+	const gracePeriod = 5 * time.Second
+	time.Sleep(gracePeriod)
+
+	if prev.Cancel != nil {
+		prev.Cancel()
+	}
+	if prev.DB != nil && prev.DB != next.DB && !prev.KeepDBOpen {
+		_ = prev.DB.Close()
+	}
+}
+
+// MutateSet is the safe-by-construction variant of Set for callers that
+// want to mutate a live handle in place (e.g. swap an extractor model,
+// reload the vector index on schema drift without exiting the process).
+//
+// The closure receives a CLONE of the current *Env so it cannot leave
+// the live state half-mutated on init failure (e.g. sqlite-vec malloc
+// fails on a 50k-vector rebuild). Only on closure success is the clone
+// swapped in via the same atomic.Pointer used by Reload / Set, so
+// concurrent readers either see the prior *Env or the fully-built new
+// one — never an in-between state.
+//
+// Returns the mutator's error verbatim wrapped with a rollback note
+// (the live *Env is unaffected).
+func (m *EnvManager) MutateSet(mutator func(current *Env) error) error {
+	if mutator == nil {
+		return errors.New("env: MutateSet: nil mutator")
+	}
+	current := m.Get()
+	if current == nil {
+		return errors.New("env: MutateSet: manager empty (NewEnvManager(nil) without Reload)")
+	}
+
+	// Deep-enough clone: handle-shaped fields are pointers/funcs/atoms,
+	// shallow copy is safe because we either keep the same pointer
+	// (handle reuse) or REPLACE it wholesale in the closure. Maps would
+	// need deep copies; the Env struct currently holds no maps.
+	cloned := &Env{
+		Cfg:        current.Cfg,
+		Build:      current.Build,
+		Ctx:        current.Ctx,
+		Cancel:     current.Cancel,
+		DB:         current.DB,
+		VI:         current.VI,
+		Embedder:   current.Embedder,
+		Extractor:  current.Extractor,
+		Reranker:   current.Reranker,
+		Worker:     current.Worker,
+		KeepDBOpen: current.KeepDBOpen,
+		initDone:   current.initDone,
+		initErr:    current.initErr,
+		closeDone:  current.closeDone,
+	}
+
+	if err := mutator(cloned); err != nil {
+		// Caller's mutator failed BEFORE the swap — live state intact.
+		return fmt.Errorf("env: MutateSet: rollback (live state unchanged): %w", err)
+	}
+
+	m.current.Store(cloned)
+	return nil
 }
 
 // safeGet returns the zero value of T when prev is nil, otherwise it

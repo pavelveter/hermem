@@ -2,11 +2,16 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
+	"github.com/pavelveter/hermem/src/internal/config"
 )
 
 // TestRecoveryMiddleware_PanicConvertsTo500 — a handler that panics must
@@ -153,5 +158,149 @@ func TestMaxBytesMiddleware_AllowsShortBody(t *testing.T) {
 	h.ServeHTTP(rr, r)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rr.Code)
+	}
+}
+
+// TestRuntimeMiddleware_BindsSnapshotAndGetRuntimeReturnsIt — inner
+// handler must observe the SAME *Env snapshot captured at request
+// entry, even if the EnvManager's value is swapped mid-request. Locks
+// the contract from out.txt § 4.1: handlers read the generation they
+// entered with, never retroactively update on concurrent Reload.
+func TestRuntimeMiddleware_BindsSnapshotAndGetRuntimeReturnsIt(t *testing.T) {
+	original := &clienv.Env{
+		Ctx:   context.Background(),
+		Cfg:   &config.Config{},
+		Build: clienv.BuildInfo{Version: "1.0.0"},
+	}
+	mgr := clienv.NewEnvManager(original)
+
+	var seen *clienv.Env
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = GetRuntime(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+	h := RuntimeMiddleware(mgr, silentLogger)(inner)
+
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/x", nil)
+	h.ServeHTTP(rr, r)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d (body=%q)", rr.Code, rr.Body.String())
+	}
+	if seen == nil {
+		t.Fatal("GetRuntime returned nil; middleware did not bind *Env to ctx")
+	}
+	if seen != original {
+		t.Fatalf("snapshot pointer: want original, got different (identity matters per out.txt § 4.1)")
+	}
+	if seen.Build.Version != "1.0.0" {
+		t.Fatalf("Build.Version: want 1.0.0, got %q (pass-by-pointer must reach handler)", seen.Build.Version)
+	}
+}
+
+// TestRuntimeMiddleware_MidRequestReloadDoesNotRetroactivelySwap —
+// assertion: a Reload fired between the middleware snapshot and the
+// inner handler observing it does NOT retroactively change the
+// snapshot bound to r.Context(). The handler sees the *Env it
+// entered with.
+//
+// We use mgr.Set (not Reload) here deliberately: Set bypasses
+// cfg.Validate, so the test isolates snapshot semantics from
+// config-validation behaviour (covered separately by cli/env tests).
+func TestRuntimeMiddleware_MidRequestReloadDoesNotRetroactivelySwap(t *testing.T) {
+	gen1 := &clienv.Env{Ctx: context.Background(), Cfg: &config.Config{}, Build: clienv.BuildInfo{Version: "1"}}
+	gen2 := &clienv.Env{Ctx: context.Background(), Cfg: &config.Config{}, Build: clienv.BuildInfo{Version: "2"}}
+	mgr := clienv.NewEnvManager(gen1)
+
+	var seenBuild string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate: a SIGHUP-arrived Reload has swapped the manager's value
+		// BEFORE the inner handler reads ctx. We inline the swap (instead
+		// of spawning a goroutine) for deterministic test ordering.
+		mgr.Set(gen2)
+		seen := GetRuntime(r.Context())
+		if seen == nil {
+			t.Fatal("GetRuntime nil after middleware")
+		}
+		// Identity check — locks the § 4.1 contract that the snapshot
+		// bound at request entry is the SAME pointer the handler reads.
+		if seen != gen1 {
+			t.Fatalf("identity: want gen1 (entry-time snapshot), got different pointer — stale-rot regression")
+		}
+		seenBuild = seen.Build.Version
+		w.WriteHeader(http.StatusOK)
+	})
+	h := RuntimeMiddleware(mgr, silentLogger)(inner)
+
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/x", nil)
+	h.ServeHTTP(rr, r)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rr.Code)
+	}
+	if seenBuild != "1" {
+		t.Fatalf("snapshot generation: want gen1 (was bound at entry), got %q", seenBuild)
+	}
+	if mgr.Get() != gen2 {
+		t.Fatal("mgr.Get() after Set: want gen2 to confirm Set actually happened")
+	}
+}
+
+// TestRuntimeMiddleware_NilManagerPanics — panic at wrap-time, fail-fast
+// on misconfigured boot.
+func TestRuntimeMiddleware_NilManagerPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("nil EnvManager did not panic — fail-fast contract regressed")
+		}
+	}()
+	_ = RuntimeMiddleware(nil, silentLogger)(http.NotFoundHandler())
+}
+
+// silentLogger is reused across the RuntimeMiddleware / GetRuntime
+// tests. io.Discard + silent handler keeps test output clean even
+// when assertions intentionally exercise error paths.
+var silentLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+// TestRuntimeMiddleware_NilSnapshotReturns500 — manager was empty (no
+// NewEnvManager initial value, no Reload yet). Reject the request
+// rather than dereferencing nil inside the inner handler.
+func TestRuntimeMiddleware_NilSnapshotReturns500(t *testing.T) {
+	mgr := clienv.NewEnvManager(nil)
+	called := false
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+	})
+	h := RuntimeMiddleware(mgr, silentLogger)(inner)
+
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/x", nil)
+	h.ServeHTTP(rr, r)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status: want 500, got %d (empty manager must reject)", rr.Code)
+	}
+	if called {
+		t.Fatal("inner handler called despite empty manager; middleware gate failed")
+	}
+}
+
+// TestGetRuntime_ReturnsNilOnUnwrappedCtx — GetRuntime returns nil when
+// the request context did not pass through RuntimeMiddleware (e.g. an
+// internal test handler built without the full chain). Without this
+// test the unwrapped-path would be uncovered — every other test wraps
+// the request through SOME middleware and so does not exercise the
+// nil-extractor branch.
+func TestGetRuntime_ReturnsNilOnUnwrappedCtx(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("GetRuntime must not panic on unwrapped ctx, got %v", r)
+		}
+	}()
+	r := httptest.NewRequest("GET", "/x", nil)
+	if got := GetRuntime(r.Context()); got != nil {
+		t.Fatalf("want nil for un-middleware'd ctx, got %v", got)
 	}
 }

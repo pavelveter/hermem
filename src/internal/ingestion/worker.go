@@ -9,7 +9,6 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
-	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 // IngestionWorker handles the extraction→embed→store pipeline.
@@ -31,8 +30,14 @@ func NewIngestionWorker(db *sql.DB, vi core.VectorIndex, extractor core.LLMExtra
 func (w *IngestionWorker) ReloadSchema(schema core.SchemaConfig) { w.schema = schema }
 
 // createEntityInTx inserts a freshly extracted entity with embedding and provenance.
+//
+// Precondition: `embedding` is already unit-length-normalized by the
+// caller (ProcessDialogWithProvenance runs vector.NormalizeVector for
+// every item before per-item tx dispatch). The DB BLOB and the
+// post-commit vi.Store write the SAME vec slice, so both sides must
+// observe the normalized form — otherwise the DB-stored vec and the
+// vec index drift apart on cosine similarity at the next SearchBatch.
 func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, entity core.ExtractedEntity, embedding []float32, prov core.Provenance) error {
-	vector.NormalizeVector(embedding)
 	dbEntity := core.Entity{
 		ID:             entity.ID,
 		Category:       entity.Category,
@@ -59,6 +64,11 @@ func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, enti
 }
 
 // mergeEntityInTx updates an existing entity with merged content + new embedding.
+//
+// Precondition: `e.Embedding` is already unit-length-normalized by the
+// caller (processOneItemOnce runs vector.NormalizeVector after the
+// merge-prep Embed call). Same rationale as createEntityInTx — keep
+// DB BLOB and post-commit vi.Store on the same vec form.
 func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e core.Entity) error {
 	embBytes := store.EmbeddingToBytes(e.Embedding)
 	status := e.Status
