@@ -62,21 +62,73 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 
 ## CLI Commands
 
+Cobra-grouped grammar (`git` / `kubectl` style). Every command reads its
+payload from stdin; `hermem <group> --help` shows only that group's
+commands. Top-level commands: `serve`, `health`, `metrics`, `version`.
+
+> **Breaking change (commit `8f0bf71`):** the previously-flat 26-command
+> surface is gone. There are no back-compat aliases. Any script that
+> ran `hermem store`, `hermem task-status`, `hermem migration-rollback`,
+> etc. must be rewritten to the grouped form below.
+
+```bash
+# Top-level
+hermem serve [--port 8420]              HTTP server (SIGHUP reloads hermem.ini)
+hermem health                           DB ping (mirrors /health/ready, exit 1 on fail)
+hermem metrics                          Prometheus exposition
+hermem version                          ldflags build metadata
+
+# Memory CRUD + retrieval
+hermem memory store        < req.json   Upsert entity (id/category/content + opt embedding)
+hermem memory search       < req.json   Top-K cosine neighbours (default top_k=5)
+hermem memory retrieve     < req.json   Graph walk from explicit seed_ids
+hermem memory query        < req.json   embed → search → walk → markdown context
+hermem memory response     < req.json   Full pipeline + LLM-generated response
+hermem memory edge         < req.json   Add typed edge (body.auto_create=true creates endpoints)
+hermem memory ingest       < req.json   LLM-extract + dedup-merge entities from dialog
+hermem memory explain      < req.json   Retrieval with score breakdown per fact
+hermem memory re-embed     [--batch-size N] [--model M]   Batch re-embed all entities
+hermem memory quantize     < req.json   Scalar int8 roundtrip + compression stats
+
+# Task lifecycle
+hermem task status         < req.json   Update task status (pending/running/completed/failed)
+hermem task list           < req.json   Filter by status / goal_id
+hermem task show           < req.json   task + blocked_by + recovers_via relations
+hermem task dep            < req.json   add/remove a dependency edge
+hermem task tree           < req.json   ASCII tree under a goal_id
+hermem task create         < req.json   Auto-embed + assign first stateful category
+hermem task rollback       < req.json   Find recovers_via companion task
+hermem task next           [{}]         Executable tasks (alias: task executable)
+hermem task executable     [{}]         Same as `task next`
+
+# Graph analytics
+hermem graph plan          < req.json   Topologically-sorted plan under goal_id
+hermem graph recovery-plan < req.json   recovers_via chain walk from failed task
+hermem graph components                  Connected components (size ≥ 2)
+hermem graph communities                 Louvain community detection + global modularity
+hermem graph verify                      Integrity check (exit 1 on problems)
+hermem graph contradictions [entity-id]  Optional positional ID filter
+hermem graph provenance [--conversation X] [--message M] [--source S] [--limit N]
+
+# Temporal
+hermem time temporal        < req.json  Time-windowed retrieval (time_from/time_to RFC3339)
+hermem time timeline                    Recent 50 entities by created_at DESC
+
+# Agent flows
+hermem agent loop           < req.json  algo.AgentLoop on a goal_id (yields each task)
+
+# Database ops
+hermem db migrate                       Migration status (applied / pending)
+hermem db rollback                      Roll back most-recent applied migration
+hermem db verify                        Checksum integrity check (exit 1 on mismatch)
+hermem db schema                        Stored vs current schema fingerprint
 ```
-hermem migrate            # Show versioned migration status
-hermem schema             # Show current vs stored schema fingerprint
-hermem serve              # Start HTTP server (SIGHUP to reload config)
-hermem contradictions     # List contradicts edges (optional: [entity_id])
-hermem temporal           # Query with time range (JSON stdin with time_from/time_to)
-hermem timeline [limit]   # Show recent entities ordered by created_at
-hermem provenance         # Query entities by conversation/message/source
-hermem execution-plan     # Topologically sorted task plan (JSON stdin: goal_id)
-hermem recovery-plan      # Walk recovers_via chain from failed task (JSON stdin: id)
-hermem connected-components [min_size]  # Find graph connected components
-hermem communities        # Louvain community detection (--min-size=N --max-iterations=N)
-hermem re-embed           # Batch re-embed all entities after model/dim change (--batch-size=N)
-hermem quantize           # Test vector quantization (JSON stdin: embedding)
-```
+
+All `memory`/`task`/`graph`/`time`/`agent` commands that read structured
+input require JSON on **stdin** (`echo '{...}' | hermem <group> <cmd>` or
+`hermem <group> <cmd> < req.json`). Cobra flags (`--port`, `--batch-size`,
+`--conversation`, `--limit`, etc.) use Go-style `--name value` syntax
+and are documented under each command via `hermem <group> <cmd> --help`.
 
 ## Quick Start
 
@@ -139,8 +191,8 @@ sudo cp hermem.ini /usr/local/bin/hermem.ini
 # Run CLI (works regardless of cwd)
 echo '{"query":"What is Go?"}' | hermem query
 
-# Or run as server
-hermem serve 8420
+# Or run as server (port is a real cobra flag, not a positional arg)
+hermem serve --port 8420
 ```
 
 ## Dependencies
@@ -411,7 +463,7 @@ hermem/
 Run Hermem as an HTTP service for integration with Hermes Agent or other systems:
 
 ```bash
-./hermem serve 8420
+./hermem serve --port 8420
 ```
 
 ### Endpoints
@@ -555,7 +607,7 @@ hermes memory
 The plugin works in CLI mode by default (no server needed). For server mode:
 
 ```bash
-~/.hermes/bin/hermem serve 8420
+~/.hermes/bin/hermem serve --port 8420
 export HERMEM_URL=http://localhost:8420
 ```
 

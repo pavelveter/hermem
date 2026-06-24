@@ -18,6 +18,68 @@ required_environment_variables: []
 
 Lightweight graph memory via the Hermem CLI binary. No server is required for normal use.
 
+## CLI surface (Cobra grouped grammar)
+
+> **Breaking change (commit `8f0bf71`)** — the previously-flat 26-name
+> surface is gone. There are **no back-compat aliases**; commands
+> missing here should be invoked using the grouped grammar below.
+
+```bash
+# Top-level
+hermem serve [--port 8420]               HTTP server (SIGHUP reloads hermem.ini)
+hermem health                            DB ping (mirrors /health/ready, exit 1 on fail)
+hermem metrics                           Prometheus exposition
+hermem version                           ldflags build metadata
+
+# `hermem memory …` — knowledge CRUD + retrieval
+hermem memory store         < req.json   Upsert entity
+hermem memory search        < req.json   Top-K cosine neighbours
+hermem memory retrieve      < req.json   Graph walk from explicit seed_ids
+hermem memory query         < req.json   embed → search → walk → markdown
+hermem memory response      < req.json   Full pipeline + LLM response
+hermem memory edge          < req.json   Add typed edge (opt body.auto_create)
+hermem memory ingest        < req.json   LLM-extract + dedup-merge
+hermem memory explain       < req.json   Retrieval with score breakdown
+hermem memory re-embed      [--batch-size N] [--model M]   Batch re-embed all
+hermem memory quantize      < req.json   Scalar int8 roundtrip + stats
+
+# `hermem task …` — task lifecycle (`next` aliases `executable`)
+hermem task status          < req.json   Update task status
+hermem task list            < req.json   Filter by status / goal_id
+hermem task show            < req.json   task + blocked_by + recovers_via
+hermem task dep             < req.json   Add/remove a dependency edge
+hermem task tree            < req.json   ASCII tree under goal_id
+hermem task create          < req.json   Auto-embed + stateful category
+hermem task rollback        < req.json   Find recovers_via companion
+hermem task next / executable [{}]       Executable tasks
+
+# `hermem graph …` — graph analytics
+hermem graph plan           < req.json   Topo-sorted plan
+hermem graph recovery-plan  < req.json   recovers_via chain
+hermem graph components                   Connected components
+hermem graph communities                  Louvain + global modularity
+hermem graph verify                       Integrity check (exit 1)
+hermem graph contradictions [entity-id]   Optional positional ID filter
+hermem graph provenance [--conversation …] [--message …] [--source …] [--limit N]
+
+# `hermem time …`
+hermem time temporal        < req.json   Time-windowed retrieval
+hermem time timeline                     Recent 50 entities
+
+# `hermem agent …`
+hermem agent loop           < req.json   algo.AgentLoop on a goal_id
+
+# `hermem db …`
+hermem db migrate                       Migration status
+hermem db rollback                      Roll back most-recent
+hermem db verify                        Checksum integrity check
+hermem db schema                        Stored vs current schema fingerprint
+```
+
+`hermem <group> --help` prints only that group's commands. Every command
+that reads structured input consumes JSON on stdin (or empty `{}` for
+`task next` / `task executable`).
+
 ## When to Use
 
 - User asks to remember something for future sessions
@@ -55,17 +117,22 @@ Always verify retrieval before considering a memory write complete:
 1. store or ingest
 2. re-run the same query with natural subject language
 3. treat empty `{"context":""}` as “not yet retrievable,” not as success
-4. Task status lifecycle: completed/failed/etc should be reflected via `~/.hermes/bin/hermem task-status` against task entities (`category=task`). Verify status changes with `task-list`.
+4. Task status lifecycle: completed/failed/etc should be reflected via `~/.hermes/bin/hermem task status` against task entities (`category=task`). Verify status changes with `task list`.
 
 ### 1. Store a fact
 
-Use `hermem_store` tool:
+Use `hermem_store` tool. Under the hood this shells out to
+`hermem memory store`:
 
 ```
 hermem_store(content="User prefers dark mode in all editors", category="opinion")
 hermem_store(content="Project uses Go 1.22 with Chi router", category="world")
 hermem_store(content="Deployed v2.1 to production on 2026-01-15", category="experience")
 ```
+
+The HTTP server (`POST /store`) and the shell CLI (`echo '…' |
+~/.hermes/bin/hermem memory store`) accept the same JSON payload and
+serve identical results.
 
 ### 2. Search memory
 
@@ -112,33 +179,39 @@ Status is validated against `valid_states` from config.
 
 ### Task API
 
-CLI:
+CLI (Cobra grouped grammar — `hermem task <sub>` instead of the
+previous flat `hermem task-<sub>`):
 
 ```bash
 # update status
-echo '{"id":"step-1","status":"running"}' | ~/.hermes/bin/hermem task-status
+echo '{"id":"step-1","status":"running"}' | ~/.hermes/bin/hermem task status
 
 # list executable (global)
-echo '{}' | ~/.hermes/bin/hermem task-executable
+echo '{}' | ~/.hermes/bin/hermem task next
 
-# alias
-echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task-next
+# alias (same handler dispatched under a friendlier name)
+echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task executable
 
 # filter by status / goal
-echo '{"status":"pending"}' | ~/.hermes/bin/hermem task-list
-echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task-list
+echo '{"status":"pending"}' | ~/.hermes/bin/hermem task list
+echo '{"goal_id":"goal-1"}'  | ~/.hermes/bin/hermem task list
 
 # show task + relations
-echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-show
+echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task show
 
 # manage dependency
-echo '{"source_id":"step-1","target_id":"step-0","add":true}' | ~/.hermes/bin/hermem task-dep
+echo '{"source_id":"step-1","target_id":"step-0","add":true}' \
+  | ~/.hermes/bin/hermem task dep
 
 # create task with auto-linked context
-echo '{"content":"New task","context_ids":["step-0"]}' | ~/.hermes/bin/hermem task-create
+echo '{"content":"New task","context_ids":["step-0"]}' \
+  | ~/.hermes/bin/hermem task create
 
 # find rollback task
-echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-rollback
+echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task rollback
+
+# ASCII tree under a goal
+echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task tree
 ```
 
 HTTP:
@@ -251,11 +324,12 @@ curl -X POST http://localhost:8420/ingest \
 - Default server URL is `http://localhost:8420`; the plugin reads this from its own `hermem.url` config (see YAML frontmatter), not from a shell env var
 - Entities with similar content (>88% cosine similarity) are merged automatically
 - Graph walk depth defaults to 2 hops — increase via `max_depth` parameter
-- `store` auto-links the new entity to up to 3 existing entities with cosine similarity > 0.85 using relation type `related_to`. Explicit graph edges still use `edge` with `source_id`, `target_id`, and `relation_type`. `ingest` remains the path that extracts entities and relations from dialog text.
-- `store` and `ingest` are NOT interchangeable. `ingest` is the only path that produces both entities and graph edges from dialog text, because it runs the LLM extractor to discover relationships. Do not run `store` and then manually `INSERT INTO edges` in SQLite — that skips validation, entity resolution, and the dedup layer, and it creates dirty state the CLI does not know about.
-- If `ingest` fails because the LLM extractor times out, raise `[extraction] timeout` in `hermem.ini` (Go duration, default `5m` / `300s`), then re-run `ingest`. Never cure Ollama latency by hand-inserting into `edges`.
-- CLI `store` does not guarantee an embedding was generated. Always verify retrieval with `hermem_query`/`hermem_search` after storing facts.
-- If `query` returns `{"context":""}`, inspect the active binary path, database path, and query wording before retrying.
+- `hermem memory store` auto-links the new entity to up to 3 existing entities with cosine similarity > 0.85 using relation type `related_to`. Explicit graph edges still use `hermem memory edge` with `source_id`, `target_id`, and `relation_type`. `hermem memory ingest` remains the path that extracts entities and relations from dialog text.
+- `hermem memory store` and `hermem memory ingest` are NOT interchangeable. `ingest` is the only path that produces both entities and graph edges from dialog text, because it runs the LLM extractor to discover relationships. Do not run `store` and then manually `INSERT INTO edges` in SQLite — that skips validation, entity resolution, and the dedup layer, and it creates dirty state the CLI does not know about.
+- If `hermem memory ingest` fails because the LLM extractor times out, raise `[extraction] timeout` in `hermem.ini` (Go duration, default `5m` / `300s`), then re-run `ingest`. Never cure Ollama latency by hand-inserting into `edges`.
+- CLI `hermem memory store` does not guarantee an embedding was generated. Always verify retrieval with `hermem memory query` / `hermem memory search` after storing facts.
+- If `hermem memory query` returns `{"context":""}`, inspect the active binary path, database path, and query wording before retrying.
+- **CLI grammar is grouped:** `hermem task status` (not `hermem task-status`), `hermem memory ingest` (not `hermem ingest`), `hermem db rollback` (not `hermem migration-rollback`), `hermem graph provenance` (not `hermem provenance`). The flat names are no longer registered; cobra's `--help` is authoritative.
 
 ## Configuration
 
@@ -323,11 +397,11 @@ hermem_query(query="Какой текстовый редактор я люблю
 # Should return markdown with the stored fact
 ```
 
-## Batch 9 Smoke Test
+## Smoke Test
 
 ```bash
 cd /Users/pavelveter/Projects/labs/hermem
-gofmt -w src/*.go
+gofmt -w src/
 go vet ./src/...
 go test -count=1 -race -timeout 180s ./src/...
 ```
@@ -335,7 +409,7 @@ go test -count=1 -race -timeout 180s ./src/...
 Manual endpoint smoke:
 
 ```bash
-~/.hermes/bin/hermem serve 8420 &
+~/.hermes/bin/hermem serve --port 8420 &
 curl -X POST http://localhost:8420/store \
   -H 'Content-Type: application/json' \
   -d '{"id":"goal-1","category":"task","content":"Ship release"}'
@@ -352,10 +426,12 @@ curl -X POST "http://localhost:8420/task/executable?goal_id=goal-1" \
   -H 'Content-Type: application/json' \
   -d '{}'
 
-# CLI smoke
-echo '{"id":"goal-1","status":"running"}' | ~/.hermes/bin/hermem task-status
-echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task-executable
-echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-show
-echo '{"status":"pending"}' | ~/.hermes/bin/hermem task-list
-echo '{"id":"step-1"}' | ~/.hermes/bin/hermem task-rollback
+# CLI smoke (cobra grouped grammar)
+echo '{"id":"goal-1","status":"running"}' | ~/.hermes/bin/hermem task status
+echo '{"goal_id":"goal-1"}' | ~/.hermes/bin/hermem task next
+echo '{"id":"step-1"}'      | ~/.hermes/bin/hermem task show
+echo '{"status":"pending"}' | ~/.hermes/bin/hermem task list
+echo '{"id":"step-1"}'      | ~/.hermes/bin/hermem task rollback
+~/.hermes/bin/hermem graph verify
+~/.hermes/bin/hermem db schema
 ```
