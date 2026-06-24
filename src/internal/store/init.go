@@ -151,18 +151,28 @@ func SortedKeys(m map[string]bool) []string {
 // MemDB opens an in-memory database for testing.
 func MemDB() (*sql.DB, error) { return InitDB(":memory:", 3) }
 
+// WARNING: shared in-memory DBs cannot use PRAGMA journal_mode=WAL.
+// SQLite silently reverts the mode to "memory" because there is no
+// underlying file to host WAL frames. Tests calling verifyPragmaOrder
+// on a fixture from this helper will see mode "memory", not "wal".
+// Use a file-backed DSN via t.TempDir() instead when asserting WAL.
+//
+// InitDB's pragmas (`_journal_mode=WAL&_busy_timeout=5000&_sync=NORMAL&_fk=true`)
+// are AUTHORITATIVE: SQLite's URI parser uses last-write-wins for any
+// duplicate query key — no error is surfaced, and any caller-supplied
+// value is silently overridden. So we do NOT add ANY sqlite3 DSN pragma
+// here; doing so could let a stale value of e.g. `_fk` or `cache` slip
+// through if a future driver changes precedence.
+//
 // MemDBRandom opens an in-memory database with a per-call random DSN so
 // concurrent tests don't share the global `:memory:` cache. Each call
 // gets a fresh `file:memdb-<hex>?mode=memory&cache=shared` DSN — the
 // random suffix prevents two goroutines opening the SAME shared cache
 // from racing on schema_migrations / entities table creation. InitDB
-// itself appends `_journal_mode=WAL&_busy_timeout=5000&_sync=NORMAL&_fk=true`
-// to the query string, so we do NOT add ANY sqlite3 DSN pragma here
-// (a duplicate `_busy_timeout` parameter would be concatenated by the
-// driver into a malformed value like `5000?_busy_timeout=5000`).
-// `_busy_timeout=5000` keeps concurrent Commits from eating SQLITE_BUSY
-// under `-race`. Drop this on every test that opens its own DB;
-// production code stays on MemDB() (or InitDB(realpath, ...)).
+// itself appends `&_journal_mode=WAL&_busy_timeout=5000&_sync=NORMAL&_fk=true`
+// to the query string. `_busy_timeout=5000` keeps concurrent Commits
+// from eating SQLITE_BUSY under `-race`. Drop this on every test that
+// opens its own DB; production code stays on MemDB() (or InitDB(realpath, ...)).
 func MemDBRandom() (*sql.DB, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {

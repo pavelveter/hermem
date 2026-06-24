@@ -9,6 +9,11 @@ import (
 // openTestDB returns an in-memory SQLite database with the full hermem schema.
 // Uses MemDBRandom so concurrent tests under -race don't share the global
 // `:memory:` cache and corrupt each other's fixtures.
+//
+// NB: SQLite reverts PRAGMA journal_mode=WAL on shared in-memory databases
+// (see MemDBRandom's WARNING). Tests that need to assert WAL via
+// verifyPragmaOrder must NOT use this helper — open a t.TempDir-backed
+// DB directly, e.g. InitDB(filepath.Join(t.TempDir(), "name.db"), <yourDim=3>).
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := MemDBRandom()

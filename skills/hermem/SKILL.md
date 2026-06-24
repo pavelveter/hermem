@@ -1,7 +1,7 @@
 ---
 name: hermem
 description: Lightweight graph memory for Hermes — store facts, search by vector similarity, retrieve connected context
-version: 0.1.0
+version: 0.2.0
 metadata:
   hermes:
     tags: [memory, graph, vector-search, sqlite, task-state]
