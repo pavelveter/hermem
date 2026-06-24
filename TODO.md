@@ -30,7 +30,7 @@
 - [x] Critical path analysis
 - [x] Recovery plan generation
 - [x] Graph clustering
-- [ ] Community detection
-- [ ] Background re-embedding
+- [x] Community detection
+- [x] Background re-embedding
 - [x] Embedding cache
-- [ ] Vector quantization
+- [x] Vector quantization

@@ -1037,6 +1037,81 @@ func (s *Server) HandleConnectedComponents(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, components)
 }
 
+// HandleCommunities runs Louvain community detection and returns
+// communities sorted by size. Accepts optional ?min_size=N (default 2)
+// and ?max_iterations=N (default 50).
+// GET /communities?min_size=2&max_iterations=50
+func (s *Server) HandleCommunities(w http.ResponseWriter, r *http.Request) {
+	minSize := 2
+	if ms := r.URL.Query().Get("min_size"); ms != "" {
+		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
+			minSize = n
+		}
+	}
+	maxIter := 50
+	if mi := r.URL.Query().Get("max_iterations"); mi != "" {
+		if n, err := strconv.Atoi(mi); err == nil && n > 0 && n <= 200 {
+			maxIter = n
+		}
+	}
+	all, globalQ, err := DetectCommunities(s.db, maxIter)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var filtered []Community
+	for _, c := range all {
+		if c.Size >= minSize {
+			filtered = append(filtered, c)
+		}
+	}
+	if filtered == nil {
+		filtered = []Community{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"communities":          filtered,
+		"global_modularity":    globalQ,
+		"total_communities":    len(all),
+		"filtered_communities": len(filtered),
+	})
+}
+
+// HandleReEmbed triggers a background re-embedding of all entities.
+// POST /admin/re-embed  body: {"batch_size": 50, "dim": 768, "model": ""}
+// `dim` is the target embedding dimension (required).
+func (s *Server) HandleReEmbed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		BatchSize int    `json:"batch_size"`
+		Dim       int    `json:"dim"`
+		Model     string `json:"model"`
+	}
+	if code, field, msg, ok := decodeStrict(r.Body, &req); !ok {
+		writeErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+	if req.BatchSize <= 0 {
+		req.BatchSize = 50
+	}
+	if req.Dim <= 0 {
+		writeError(w, http.StatusBadRequest, "dim required")
+		return
+	}
+
+	result, err := ReEmbedAll(r.Context(), s.db, s.vi, s.embedder, req.Dim, req.BatchSize, req.Model)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // HandleContradictions returns contradicts edges. Accepts optional
 // ?id=X query param to filter by entity (checks both sides).
 // GET /contradictions[?id=entity-x]
