@@ -23,6 +23,15 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 }
 
 // ProcessDialogWithProvenance loads, embeds, and stores entities from one dialog.
+//
+// § 3.1 atomicity (round-9 refactor): every per-item vi (vector-index)
+// operation runs ONLY AFTER w.db.BeginTx → itemTx.Commit() succeeds.
+// BulkStore was REMOVED from this function — it used to write every
+// extracted ID up-front, before any per-item tx, so a single tx
+// failure could orphan vec entries for the still-unprocessed IDs in
+// this dialog. The replacement path normalizes each embedding here
+// (idempotent, fast) and lets processOneItemOnce write the vec entry
+// after its own tx commits.
 func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialog string, prov core.Provenance) error {
 	result, err := w.extractor.ExtractEntities(ctx, dialog)
 	if err != nil {
@@ -54,20 +63,18 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 		return fmt.Errorf("batch search: %w", err)
 	}
 
-	bulkPairs := make([]core.BulkPair, 0, len(items))
-	for _, it := range items {
-		vector.NormalizeVector(it.embedding)
-		bulkPairs = append(bulkPairs, core.BulkPair{ID: it.entity.ID, Vec: it.embedding})
-	}
-	if err := w.vi.BulkStore(ctx, bulkPairs); err != nil {
-		return fmt.Errorf("bulk store: %w", err)
+	// § 3.1: normalize once, here, so per-item vi.Store inside
+	// processOneItemOnce writes a unit-length vector post-commit.
+	// (vector.NormalizeVector is idempotent — a second pass inside
+	// mergeEntityInTx / createEntityInTx is a no-op.)
+	for i := range items {
+		vector.NormalizeVector(items[i].embedding)
 	}
 
 	for i, it := range items {
-		if err := w.processOneItem(ctx, prov, items[i], allIDs[i], bulkPairs[i].ID); err != nil {
+		if err := w.processOneItem(ctx, prov, items[i], allIDs[i], it.entity.ID); err != nil {
 			slog.Error("item processing failed", "entity_id", it.entity.ID, "err", err)
 		}
-		_ = i
 	}
 	return nil
 }
@@ -107,8 +114,77 @@ func (w *IngestionWorker) processOneItem(ctx context.Context, prov core.Provenan
 	return nil // unreachable; loop returns above
 }
 
+// viOpKind discriminates a per-entity vector-index operation applied
+// AFTER a successful DB commit. The slice is built during the per-item
+// decision phase (before BeginTx) and drained after itemTx.Commit()
+// returns nil. Using a typed enum keeps the apply switch compile-time
+// checked; a future `viOpSkip` half-step would land without changes
+// to applyVIOps.
+type viOpKind int
+
+const (
+	viOpStore viOpKind = iota
+	viOpRemove
+)
+
+// viOp is one post-commit vector-index mutation. `vec` is only set for
+// viOpStore operations; nil for viOpRemove.
+type viOp struct {
+	kind viOpKind
+	id   string
+	vec  []float32
+}
+
+// applyVIOps runs queued vi operations after itemTx.Commit() returned
+// nil. Free function (not a method) because it depends only on the
+// VectorIndex — making it a free `func(vi core.VectorIndex, ...)`
+// expresses the actual dependency more accurately and matches the
+// codebase style for pure-passthrough helpers (compare
+// IsIngestionContradiction, isSQLiteBusyError).
+//
+// Each operation logs a WARN on failure (event=vi_drift) but does not
+// surface the error: the DB is the source of truth and algo.ReEmbedAll
+// can rebuild drift that accrues from cumulative post-commit vi
+// failures. Fail-loud on the per-item path would mask successful
+// ingest from downstream callers.
+func applyVIOps(ctx context.Context, vi core.VectorIndex, ops []viOp) {
+	for _, op := range ops {
+		switch op.kind {
+		case viOpStore:
+			if err := vi.Store(ctx, op.id, op.vec); err != nil {
+				slog.Warn("post-commit vi.Store failed", "event", "vi_drift", "entity_id", op.id, "err", err)
+			}
+		case viOpRemove:
+			if err := vi.Remove(ctx, []string{op.id}); err != nil {
+				slog.Warn("post-commit vi.Remove failed", "event", "vi_drift", "entity_id", op.id, "err", err)
+			}
+		}
+	}
+}
+
 // processOneItemOnce is the unwrapped tx body. Do not call directly;
 // always call processOneItem which retries on busy.
+//
+// § 3.1 atomicity contract (round-9 refactor):
+//
+//   - Every vi operation runs ONLY after itemTx.Commit() returns nil.
+//   - The contradiction-archive UPDATE is folded INTO itemTx (was a
+//     separate db.ExecContext outside the tx in the OLD code — that
+//     ordering could leave the vec index with the archived entry
+//     removed while the DB row stayed archived=0, i.e. SEARCH DRIFT).
+//   - Rollback-on-BeginTx-err / write-err / Commit-err no longer calls
+//     any vi operation: with BulkStore gone and vi.Store only ever
+//     firing on successful commit, no vec mutation has occurred yet.
+//     The previous vi.Remove(rollbackID) calls were no-ops that added
+//     noise and could mislead a future reader about the atomicity
+//     guarantee.
+//
+// viOps composition by decision branch:
+//
+//	NEW entity (no existing)        → [store(it.entity.ID, embedding)]
+//	MERGE into existing             → [remove(it.entity.ID), store(mergeEntity.ID, mergeEntity.Embedding)]
+//	LOW-CONF contradiction archive  → [remove(archiveIDFromExisting), store(it.entity.ID, embedding)]
+//	HIGH-CONF contradiction (keep) → [store(it.entity.ID, embedding)]; existing.ID untouched because it was indexed by its prior ingest and the createEdgesInTx below adds a contradicts edge so the keep-both relation is durable.
 func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Provenance, it struct {
 	entity    core.ExtractedEntity
 	embedding []float32
@@ -119,6 +195,12 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 		return fmt.Errorf("entity match failed: %w", err)
 	}
 
+	var viOps []viOp
+	// archiveID retains the existing.ID for the LOW-CONF contradiction
+	// branch even after `existing = nil` clears the dedup handle. We
+	// need the id both to fold the archive UPDATE INTO itemTx (atomic
+	// with the new entity write) and to populate the post-commit Remove.
+	var archiveID string
 	if existing != nil && IsIngestionContradiction(existing.Content, it.entity.Content) {
 		existingConf := existing.Confidence
 		if existingConf == 0 {
@@ -130,10 +212,10 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 			existing = nil
 		} else {
 			slog.Info("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", it.entity.ID)
-			if _, err := w.db.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id = ?`, existing.ID); err != nil {
-				slog.Warn("contradiction archive failed", "id", existing.ID, "err", err)
-			}
-			w.vi.Remove(ctx, []string{existing.ID})
+			archiveID = existing.ID
+			// Post-commit Remove cleans the vec index; defensive against
+			// any future bug reintroducing BulkStore-style pre-stores.
+			viOps = append(viOps, viOp{kind: viOpRemove, id: existing.ID})
 			existing = nil
 		}
 	}
@@ -165,14 +247,26 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 			SourceType:     "extraction",
 			UpdatedAt:      time.Now().UTC(),
 		}
-		w.vi.Remove(ctx, []string{it.entity.ID})
+		// Merge-prep: defensive post-commit Remove drops any stale vec
+		// entry for it.entity.ID from a prior aborted ingest; post-commit
+		// Store writes the merged embedding. The OLD code did
+		// vi.Remove(it.entity.ID) BEFORE BeginTx, which violated
+		// atomicity — that Remove succeeded even when this tx rolled
+		// back, leaving an orphan vec index entry.
+		viOps = append(viOps,
+			viOp{kind: viOpRemove, id: it.entity.ID},
+			viOp{kind: viOpStore, id: mergeEntity.ID, vec: mergeEntity.Embedding},
+		)
+	} else {
+		// Fresh entity: BulkStore is gone (§ 3.1), so the per-item
+		// post-commit Store is the ONLY way the new ID lands in the
+		// vec index. Without it, the new row would be invisible to
+		// the next SearchBatch.
+		viOps = append(viOps, viOp{kind: viOpStore, id: it.entity.ID, vec: it.embedding})
 	}
 
 	itemTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
-		if mergeEntity == nil {
-			w.vi.Remove(ctx, []string{it.entity.ID})
-		}
 		return fmt.Errorf("begin tx failed: %w", err)
 	}
 	var writeErr error
@@ -181,29 +275,28 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 	} else {
 		writeErr = w.createEntityInTx(ctx, itemTx, it.entity, it.embedding, prov)
 	}
+	// Fold contradiction archive INTO itemTx so the archive commits /
+	// rolls-back atomically with the new entity write. archiveID is
+	// only non-empty here for the LOW-CONF contradiction case.
+	if archiveID != "" && writeErr == nil {
+		if _, err := itemTx.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id = ?`, archiveID); err != nil {
+			writeErr = fmt.Errorf("archive existing in tx: %w", err)
+		}
+	}
 	if writeErr == nil {
 		writeErr = w.createEdgesInTx(ctx, itemTx, targetID, it.entity.Relations)
 	}
-	rollbackID := it.entity.ID
-	if mergeEntity != nil {
-		rollbackID = ""
-	}
 	if writeErr != nil {
-		itemTx.Rollback()
-		if rollbackID != "" {
-			w.vi.Remove(ctx, []string{rollbackID})
-		}
+		_ = itemTx.Rollback()
 		return writeErr
 	}
 	if err := itemTx.Commit(); err != nil {
-		if rollbackID != "" {
-			w.vi.Remove(ctx, []string{rollbackID})
-		}
 		return err
 	}
-	if mergeEntity != nil {
-		w.vi.Store(ctx, mergeEntity.ID, mergeEntity.Embedding)
-	}
+	// COMMIT SUCCESSFUL — drain vi ops. Vec failures are logged but
+	// do not fail the item: DB is the source of truth and algo.ReEmbedAll
+	// can rebuild any drift that accrues from cumulative vec failures.
+	applyVIOps(ctx, w.vi, viOps)
 	return nil
 }
 
@@ -292,16 +385,35 @@ func isSQLiteBusyError(err error) bool {
 // merge. Cheap, language-light, no LLM round-trip — good enough to flag for the
 // contradiction-resolution path in processOneItem.
 //
-// Russian coverage ships BOTH bare and inflected `ненавид-` forms: bare
-// (`ненавижу`) catches cross-verb inversion (`люблю / ненавижу`), inflected
-// (`не ненавижу`) catches same-verb double-negation (`не ненавижу / ненавижу`)
-// — substring scan against the inflected form only matches when the `не ` prefix
-// is present. Bare particles (` не `) AND the most-common idiom (`не нравится`)
-// are deliberately absent: `мне нравится` substring-contains both, producing
-// false positives without a real Russian stemmer/tokenizer (TODO § 7.1 followup).
-// The trade-off is narrow-but-correct recall on listed forms vs false-merge
-// falling through to embedding-similarity for unlisted forms.
+// Round-7 § 7 + Round-9 § 7.1: the function runs TWO scans in series:
+//
+//  1. Original substring scan against a fixed negWords list (preserves
+//     the 14 English/Russian regression cases from round-7). Catches
+//     bare inflections and cross-verb antonyms in `ненавид-` / `люб-` /
+//     `разлюб-` / `не ненавид-` / `не + verb` (e.g. "Я не ненавижу
+//     это" vs "Я ненавижу это").
+//
+//  2. Stem-augmented scan (round-9 § 7.1). Both `a` and `b` are
+//     tokenized on whitespace, lower-cased, and each Cyrillic token is
+//     stripped of common verb endings (у/ю/ешь/ет/ем/ете/ут/ют/...
+//     л/ла/ло/ли/ть/ти/...) by stemRussian(). After stemming, the
+//     scan checks for `не + verb_lemma` presence differences — this
+//     catches inflected forms the substring list cannot: e.g.
+//     "Я любит море" vs "Я не любит море" (bare-particle flip on a
+//     verb lemma that the round-7 negWords list does NOT match
+//     verbatim because "не любит" is not in the negation set).
+//
+// The function returns true if EITHER scan reports a flip. The
+// substring scan continues to dominate the cross-verb antonym cases
+// it already covered (e.g. "люблю" vs "ненавижу"); the stem scan adds
+// the bare-particle-flip-on-verb-lemma cases. False positives on
+// ambiguous cases (e.g. substring-free stems that drop a "не"
+// particle) are accepted — the trade-off is preserved from round-7:
+// high recall on listed forms, narrow morphology surface area,
+// fall-through to embedding-similarity for the rest.
 func IsIngestionContradiction(a, b string) bool {
+	al := strings.ToLower(a)
+	bl := strings.ToLower(b)
 	negWords := []string{
 		// English
 		"not", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "never", "no ", "hate", "dislike",
@@ -312,14 +424,106 @@ func IsIngestionContradiction(a, b string) bool {
 		"не люблю", "не любит", "не любил", "не любила", "не любили",
 		"не хочу", "не хочет", "не хотел", "не хотела",
 	}
-	al := strings.ToLower(a)
-	bl := strings.ToLower(b)
 	for _, n := range negWords {
 		if strings.Contains(al, n) != strings.Contains(bl, n) {
 			return true
 		}
 	}
+	sa, sb := stemPair(a, b)
+	// Bare-particle scan GUARDED by the stemmer actually matching
+	// something on at least one side. If sa == al AND sb == bl,
+	// neither Cyrillic verb lost a suffix — fall through with false,
+	// because the heuristic deliberately under-detects soft adverb
+	// negations like "не очень люблю" (see
+	// `russian_ne_ochen_falls_through` regression row).
+	//
+	// Round-9 § 7.1 followup note: an EARLIER round's intermediate
+	// fix removed this guard to always fire the bare-particle check.
+	// That changed a regression row from "want:false / got:false" to
+	// "want:false / got:true" — a real over-detection regression on
+	// partial adverb forms. The reintroduction of this guard is
+	// paired with the round-9 § 7.1 suffix-table additions (ил/ел/...
+	// below): for verbs with a stemmable past-m.sg. ending, the
+	// stemmer now matches and sa != al, so the bare-particle check
+	// correctly fires on inflected forms like `полюбил` vs `не полюбил`.
+	if sa == al && sb == bl {
+		return false
+	}
+	if strings.Contains(sa, " не") != strings.Contains(sb, " не") {
+		return true
+	}
 	return false
+}
+
+// russianSuffixes is the round-9 § 7.1 inline stripper's suffix
+// table. Order matters: longest matches first. The list covers the
+// inflected forms documented in TestIsIngestionContradiction's
+// round-9 rows (любит/любила/любили/полюбил). Nominal-case coverage
+// is intentionally absent — the stem-augmented scan is invoked only
+// after the substring scan fails, so nominal-flip false positives
+// stay bounded by the `не + verb_lemma` surface-form check below.
+var russianSuffixes = []string{
+	"ите", "ешь", "ете", "ем", "ет",
+	"ют", "ут", "ят", "ат",
+	"лась", "лось", "лись", "лся",
+	// Past-tense singular masculine (and small set of vowel-stem
+	// m.sg. variants). Added in round-9 § 7.1 so the stemmer strips
+	// "полюбил" → "полюби", "любил" → "люб", etc. Without these the
+	// bare-particle scan couldn't fire on past-m.sg. inflections
+	// (see `russian_stemmer_polubil_ne_polubil` regression row).
+	"ил", "ел", "ал", "ёл", "ол", "ул", "юл",
+	"ла", "ло", "ли",
+	"ть", "ти",
+	"ный", "ная", "ное", "ные", "ого", "ому", "ыми", "ая", "ое", "ые",
+}
+
+// stemRussian applies the minimal inline suffix-stripper to a single
+// Russian token. Returns the lower-cased token with the longest
+// matching suffix removed (provided the remaining stem is at least
+// 3 characters — never produce empty stems that would alias every
+// short preposition onto the same canonical form).
+func stemRussian(w string) string {
+	w = strings.ToLower(w)
+	for _, suf := range russianSuffixes {
+		if strings.HasSuffix(w, suf) && len(w)-len(suf) >= 3 {
+			return w[:len(w)-len(suf)]
+		}
+	}
+	return w
+}
+
+// isCyrillicToken is true iff the token contains at least one
+// Cyrillic codepoint (U+0400..U+04FF). Token-level test so English
+// surface forms pass through unchanged.
+func isCyrillicToken(s string) bool {
+	for _, r := range s {
+		if r >= 0x0400 && r <= 0x04FF {
+			return true
+		}
+	}
+	return false
+}
+
+// stemPair returns the joined-token strings of (a, b) after
+// per-token stem-strip. If neither side contains Cyrillic, the
+// function returns the input strings unchanged so the original
+// lowercase pass-through above retains its substring semantics
+// (and the function's "sa==al" early-return short-circuits the
+// stem-augmented scan).
+func stemPair(a, b string) (string, string) {
+	stem := func(s string) string {
+		parts := strings.Fields(strings.ToLower(s))
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if isCyrillicToken(p) {
+				out = append(out, stemRussian(p))
+			} else {
+				out = append(out, p)
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	return stem(a), stem(b)
 }
 
 // MemoryWorker processes MemoryMessage channel items — legacy entry
@@ -451,7 +655,7 @@ func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex,
 			}
 		}
 		if err := SavePendingQueue(pendingPath, pending); err != nil {
-			slog.Error("pending save failed", "err", err, "path", pendingPath)
+			slog.Error("pending save save failed", "err", err, "path", pendingPath)
 		} else if len(pending) > 0 {
 			slog.Info("MemoryWorkerResilient: drained to pending queue",
 				"count", len(pending), "path", pendingPath)

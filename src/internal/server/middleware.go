@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 )
 
 // TimeoutMiddleware caps each request handler run at d. Inner of
@@ -113,4 +115,67 @@ func SlogMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 		slog.Debug("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
 	})
+}
+
+// envKey is the unexported context key under which RuntimeMiddleware
+// stores the *clienv.Env snapshot captured at request entry. Using a
+// private struct type guarantees no collision with other packages'
+// context keys (Go's idiom for typed context keys: each package defines
+// its own private type so context.Value can't be spoofed from outside).
+type envKey struct{}
+
+// RuntimeMiddleware binds an atomic *clienv.Env snapshot from mgr into
+// r.Context() so handlers read the SAME generation they entered with,
+// even when a Reload fires mid-request.
+//
+// Why bind at the middleware layer: the obvious alternative
+// (`current := mgr.Get()` inside each handler) races with a concurrent
+// Reload — a 50ms handler can span a SIGHUP boundary and read state from
+// the new generation on its second poll, producing impossible-to-debug
+// shape mismatches (DB schema vs VI schema). The middleware snapshot
+// captures the pointer ONCE at handler entry; concurrent Reloads swap
+// the manager's value but DO NOT retroactively change this request's
+// snapshot stored in the request context.
+//
+// Use GetRuntime(r.Context()) inside any handler that wants the
+// generation-aware Env. Handlers that already read raw *sql.DB / VI
+// handles captured at server startup still work — this middleware is
+// additive, doesn't replace the existing constructor-wired services.
+//
+// Edge case — manager empty: returns 500 once and logs; an admin can
+// recover by SIGHUP / restart (the underlying issue is that Reload
+// never fired). This matches the out.txt contract: an empty manager is
+// a misconfiguration, not a transient one.
+func RuntimeMiddleware(mgr *clienv.EnvManager, logger *slog.Logger) func(http.Handler) http.Handler {
+	if mgr == nil {
+		panic("server: RuntimeMiddleware called with nil EnvManager (config wiring bug)")
+	}
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			snapshot := mgr.Get()
+			if snapshot == nil {
+				logger.Error("runtime middleware: EnvManager empty — request rejected",
+					"method", r.Method, "path", r.URL.Path)
+				http.Error(w, "Internal Server Error: Runtime Not Initialized", http.StatusInternalServerError)
+				return
+			}
+			ctx := context.WithValue(r.Context(), envKey{}, snapshot)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// GetRuntime extracts the *clienv.Env snapshot that RuntimeMiddleware
+// bound into the request context. Returns nil if the request did not
+// pass through RuntimeMiddleware (e.g. an internal test handler). Callers
+// should branch on the nil return rather than panic so a missing key
+// surfaces as a 500 in user-facing paths.
+func GetRuntime(ctx context.Context) *clienv.Env {
+	if e, ok := ctx.Value(envKey{}).(*clienv.Env); ok {
+		return e
+	}
+	return nil
 }
