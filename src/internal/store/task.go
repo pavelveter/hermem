@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -157,44 +158,104 @@ func GetTaskTree(db *sql.DB, schema core.SchemaConfig, rootID string) ([]*core.T
 	return out, nil
 }
 
-// BuildNode recursively builds a tree node.
+// BuildNode iteratively walks the task subtree rooted at id using a work-
+// stack (DFS pre-order) and returns a *core.TreeNode.
+//
+// Stays compatible with the recursive signature so callers don't change,
+// but actually walks the tree iteratively so deeply-nested dependency
+// graphs no longer risk Go runtime-stack overflow. The cycle sentinel
+// "(cycle)" is emitted on revisited nodes — same observability as the
+// recursive version.
+//
+// kidIDs are sorted by source_id so child order is stable across runs;
+// Go map iteration over edges is randomized and the prior recursive
+// version inherited that variance.
 func BuildNode(db *sql.DB, schema core.SchemaConfig, id string, visited map[string]bool) (*core.TreeNode, error) {
 	if visited == nil {
 		visited = make(map[string]bool)
 	}
+	// Pre-flight cycle check: a caller that pre-marks `id` in visited
+	// (e.g. a previous iteration's BuildNode) expects the recursive
+	// sentinel shape — *TreeNode{ID: id, Content: "(cycle)", Status: "cycle"}.
+	// Doing the check BEFORE the GetTaskByID call preserves that contract
+	// for tests like TestBuildNode_CycleAvoidedWithMarker.
 	if visited[id] {
 		return &core.TreeNode{ID: id, Content: "(cycle)", Status: "cycle"}, nil
 	}
+
+	type frame struct {
+		tree  *core.TreeNode
+		kids  []string // blocked_by child source IDs (sorted)
+		kidIx int      // next kid to process
+	}
+
+	rootEntity, err := GetTaskByID(db, schema, id)
+	if err != nil {
+		return nil, err
+	}
 	visited[id] = true
-	e, err := GetTaskByID(db, schema, id)
+
+	rootBlocked, err := GetBlockedBy(db, schema, id)
 	if err != nil {
 		return nil, err
 	}
-	node := &core.TreeNode{ID: e.ID, Content: e.Content, Status: e.Status}
-	blocked, err := GetBlockedBy(db, schema, id)
-	if err != nil {
-		return nil, err
+	root := &core.TreeNode{ID: rootEntity.ID, Content: rootEntity.Content, Status: rootEntity.Status}
+	stack := []frame{
+		{tree: root, kids: blockedEdgesToSourceIDs(rootBlocked), kidIx: 0},
 	}
-	var childIDs []string
-	for _, edge := range blocked {
-		childIDs = append(childIDs, edge.SourceID)
-	}
-	tasks, err := GetTasksByIDs(db, schema, childIDs)
-	if err != nil {
-		return nil, err
-	}
-	for _, cid := range childIDs {
-		child, err := BuildNode(db, schema, cid, visited)
+
+	for len(stack) > 0 {
+		// Peek at the top — only pop when current frame's kids are drained.
+		// This mirrors DFS pre-order: assemble the parent first, then
+		// descend into each child so the rendered tree reads top-down.
+		top := &stack[len(stack)-1]
+		if top.kidIx >= len(top.kids) {
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		cid := top.kids[top.kidIx]
+		top.kidIx++
+
+		if visited[cid] {
+			// Cycle sentinel — exact same shape the recursive version
+			// used so existing tooling (rendering, CLI output) still
+			// recognises it.
+			top.tree.Children = append(top.tree.Children, &core.TreeNode{
+				ID: cid, Content: "(cycle)", Status: "cycle",
+			})
+			continue
+		}
+		visited[cid] = true
+
+		e, err := GetTaskByID(db, schema, cid)
 		if err != nil {
 			return nil, err
 		}
-		if task, ok := tasks[cid]; ok {
-			child.Content = task.Content
-			child.Status = task.Status
+		childNode := &core.TreeNode{ID: e.ID, Content: e.Content, Status: e.Status}
+		top.tree.Children = append(top.tree.Children, childNode)
+
+		childBlocked, err := GetBlockedBy(db, schema, cid)
+		if err != nil {
+			return nil, err
 		}
-		node.Children = append(node.Children, child)
+		stack = append(stack, frame{
+			tree:  childNode,
+			kids:  blockedEdgesToSourceIDs(childBlocked),
+			kidIx: 0,
+		})
 	}
-	return node, nil
+	return root, nil
+}
+
+// blockedEdgesToSourceIDs returns the source_id of each edge in
+// deterministic (sorted) order so BuildNode's iteration is reproducible.
+func blockedEdgesToSourceIDs(edges []core.Edge) []string {
+	out := make([]string, 0, len(edges))
+	for _, e := range edges {
+		out = append(out, e.SourceID)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ScanTaskEntities scans rows into an Entity slice.

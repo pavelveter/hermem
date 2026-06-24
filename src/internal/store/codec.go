@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 )
@@ -40,9 +41,36 @@ func DecodeVector(data []byte, expectedDim int) ([]float32, error) {
 	if len(data) != expectedDim*4 {
 		return nil, fmt.Errorf("vector dimension drift: blob %d bytes, want %d", len(data), expectedDim*4)
 	}
-	emb := make([]float32, expectedDim)
-	for i := range emb {
-		emb[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[i*4 : i*4+4]))
+	return BytesToFloat32Safe(data)
+}
+
+// ErrFloatNaNOrInf is the sentinel wrapped by BytesToFloat32Safe's
+// rejection path. Callers that want to branch on the kind of failure
+// (e.g. "skip this row but accept the next" vs "abort whole load")
+// should errors.Is(err, ErrFloatNaNOrInf) rather than substring-match
+// the error string.
+var ErrFloatNaNOrInf = errors.New("vector byte offset is NaN/Inf")
+
+// BytesToFloat32Safe decodes a vector byte blob to float32 while
+// rejecting NaN/Inf payloads mid-stream. A corrupted blob whose
+// Float32 bits encode NaN/Inf would otherwise survive into flatMatrix
+// and taint downstream BatchDotProducts (NaN * 0 = NaN → poisoned scores).
+//
+// Returns errors.Is(err, ErrFloatNaNOrInf) wrapped with the byte
+// offset of the offending element so the caller can decide whether to
+// skip, regenerate, or refuse the whole entity.
+func BytesToFloat32Safe(data []byte) ([]float32, error) {
+	if len(data)%4 != 0 {
+		return nil, fmt.Errorf("vector blob length %d not multiple of 4", len(data))
 	}
-	return emb, nil
+	out := make([]float32, len(data)/4)
+	for i := range out {
+		bits := binary.LittleEndian.Uint32(data[i*4 : i*4+4])
+		f := math.Float32frombits(bits)
+		if math.IsNaN(float64(f)) || math.IsInf(float64(f), 0) {
+			return nil, fmt.Errorf("%w offset=%d", ErrFloatNaNOrInf, i*4)
+		}
+		out[i] = f
+	}
+	return out, nil
 }
