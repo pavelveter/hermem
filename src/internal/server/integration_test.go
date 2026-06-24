@@ -16,6 +16,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
+	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -58,7 +59,8 @@ func newTestFixture(t *testing.T) *testFixture {
 	refs := serverstate.NewRef(state)
 
 	metrics := metricspkg.New()
-	retSvc := ret.New(db, vi, embed, metrics, refs)
+	retDom := retdomain.NewService(db, vi, embed)
+	retSvc := ret.New(retDom, metrics, refs)
 	taskSvc := tasksvc.New(db, vi, embed, metrics, refs)
 	memDom := memdomain.New(db, vi, embed, nil) // nil extractor — ingest-only path verifies error envelope
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
@@ -504,8 +506,9 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	refs := serverstate.NewRef(serverstate.New(core.DefaultSchemaConfig(false), 0, 100,
 		core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
 	metrics := metricspkg.New()
+	retDom := retdomain.NewService(db, vi, embed)
 	memDom := memdomain.New(db, vi, embed, nil)
-	srv := NewServer(refs, ret.New(db, vi, embed, metrics, refs), tasksvc.New(db, vi, embed, metrics, refs),
+	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(db, vi, embed, metrics, refs),
 		mem.New(memDom, metrics, refs, 0.88), NewAdminService(db, vi, embed, metrics, refs))
 
 	var handler http.Handler = srv.Mux()

@@ -40,7 +40,7 @@ import (
 // by the server/memory shell as a Service reference).
 type Server struct {
 	Refs      *serverstate.Ref
-	Retrieval *ret.Service
+	Retrieval *ret.HTTPService
 	Task      *tasksvc.Service
 	Memory    *mem.HTTPService
 	Admin     *AdminService
@@ -49,7 +49,7 @@ type Server struct {
 
 // NewServer wires the 4 services into a single mux. No HTTP server is started
 // — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
-func NewServer(refs *serverstate.Ref, retrieval *ret.Service, task *tasksvc.Service, memory *mem.HTTPService, admin *AdminService) *Server {
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.Service, memory *mem.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:      refs,
 		Retrieval: retrieval,

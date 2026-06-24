@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/vector"
+	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
 func newSearchCmd(env *cli.Env) *cobra.Command {
@@ -26,14 +26,10 @@ func newSearchCmd(env *cli.Env) *cobra.Command {
 			if req.Query == "" {
 				return fmt.Errorf("query required")
 			}
-			if req.TopK <= 0 {
-				req.TopK = 5
-			}
-			emb, err := env.Embedder.Embed(env.Ctx, req.Query)
-			if err != nil {
-				return fmt.Errorf("embed: %w", err)
-			}
-			results, err := vector.SearchByVector(env.DB, env.VI, emb, req.TopK)
+			// Construct per-call (three pointer assignments; cheap) so
+			// CLI never holds a stale Service pointer between commands.
+			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+			results, err := svc.Search(env.Ctx, req.Query, req.TopK)
 			if err != nil {
 				return fmt.Errorf("search: %w", err)
 			}

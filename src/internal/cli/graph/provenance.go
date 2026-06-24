@@ -6,12 +6,12 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/store"
+	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
-// newProvenanceCmd queries entities by provenance. GetEntitiesByProvenance
-// handles nil SQL columns via sql.NullString guard, so e.ConversationID /
-// e.MessageID / e.Source are always safe to print.
+// newProvenanceCmd queries entities by provenance triple. The
+// domain Service.Provenance wraps store.GetEntitiesByProvenance and
+// defaults limit via retrieval.DefaultProvenanceLimit when <= 0.
 func newProvenanceCmd(env *cli.Env) *cobra.Command {
 	var (
 		convID string
@@ -24,10 +24,8 @@ func newProvenanceCmd(env *cli.Env) *cobra.Command {
 		Short: "Query entities by provenance (conversation / message / source)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if limit <= 0 {
-				limit = 50
-			}
-			entities, err := store.GetEntitiesByProvenance(env.DB, convID, msgID, source, limit)
+			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+			entities, err := svc.Provenance(env.Ctx, convID, msgID, source, limit)
 			if err != nil {
 				return fmt.Errorf("provenance: %w", err)
 			}

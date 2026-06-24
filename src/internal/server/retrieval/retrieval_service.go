@@ -1,46 +1,53 @@
-// Package retrieval hosts the read-only HTTP service: search, retrieve, query,
-// response, query_explain, provenance, contradictions.
+// Package retrieval hosts the read-only HTTP transport for the retrieval
+// subsystem. Domain logic lives in src/internal/retrieval (Service);
+// this package owns transport-only concerns: JSON encoding, method
+// checks, request-body limits, schema-conflict guards where applicable,
+// metric increments, and the route registry including /contradictions
+// which is conceptually PHASE 2.3 territory but stays here until the
+// ContradictionService extraction lands.
 //
-// All handlers in this service read RankingWeight/Reranker/DepthCeiling from
-// the atomic *serverstate.Ref on every request — never from any shared mutable
-// struct field — so a SIGHUP-driven state swap is safe to run concurrently
-// with in-flight handlers.
+// Following the same pattern as PHASE 2.1's MemoryService extraction:
+// HTTPService is a thin shell — parse → validate → call RetSvc.* →
+// write envelope. The domain service has no knowledge of HTTP,
+// httputil, serverstate.Ref, or metrics.
 package retrieval
 
 import (
-	"database/sql"
-	"fmt"
 	"net/http"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
-	pkgretrieval "github.com/pavelveter/hermem/src/internal/retrieval"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
-	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// Service handles read-only endpoints: search, retrieve, query, response,
-// query_explain, provenance, contradictions.
-type Service struct {
-	DB       *sql.DB
-	VI       core.VectorIndex
-	Embedder core.Embedder
-	Metrics  *metrics.Metrics
-	Refs     *serverstate.Ref
+// HTTPService is the transport shell for the read-side domain.
+//
+// Holds the domain Service (RetSvc), the metrics counters (Metrics),
+// and the serverstate.Ref for state-conflict reads (state.Load() at
+// request time to seed RetrieveContextOptions per the SIGHUP path).
+type HTTPService struct {
+	RetSvc  *retrieval.Service
+	Metrics *metrics.Metrics
+	Refs    *serverstate.Ref
 }
 
-// New constructs a Service. m is the metrics holder threaded from
-// Env.Metrics — handler counters (IncSearch, IncErr, etc.) reach
-// s.Metrics.* under the closure-captured pointer, no package-level
-// atomic.Int64 globals are touched.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, m *metrics.Metrics, refs *serverstate.Ref) *Service {
-	return &Service{DB: db, VI: vi, Embedder: embedder, Metrics: m, Refs: refs}
+// New constructs an HTTPService. RetSvc is non-nil in production —
+// wired by cli/serve.go via retrieval.NewService(env.DB, env.VI,
+// env.Embedder). Tests pass a freshly-constructed domain Service to
+// avoid sharing state across parallel test bodies.
+func New(retSvc *retrieval.Service, m *metrics.Metrics, refs *serverstate.Ref) *HTTPService {
+	return &HTTPService{RetSvc: retSvc, Metrics: m, Refs: refs}
 }
 
 // Routes returns the URL → handler mapping for this service.
-func (s *Service) Routes() map[string]http.HandlerFunc {
+//
+// /contradictions is intentionally retained here pending PHASE 2.3;
+// when ContradictionService lands, the route moves to that package's
+// transport shell and gets removed from this Routes() registry.
+func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"/search":         s.HandleSearch,
 		"/retrieve":       s.HandleRetrieve,
@@ -52,10 +59,11 @@ func (s *Service) Routes() map[string]http.HandlerFunc {
 	}
 }
 
-// optsFromState builds a per-request RetrieveContextOptions seeded from the
-// atomic *serverstate.State. Callers add per-request fields (QueryText,
-// QueryEmbedding, Ctx, MaxDepth, Explain) after this returns.
-func (s *Service) optsFromState() core.RetrieveContextOptions {
+// optsFromState builds a per-request RetrieveContextOptions seeded from
+// the atomic *serverstate.State. Callers add per-request fields
+// (QueryText, QueryEmbedding, Ctx, MaxDepth, Explain) after this
+// returns.
+func (s *HTTPService) optsFromState() core.RetrieveContextOptions {
 	state := s.Refs.Load()
 	return core.RetrieveContextOptions{
 		DepthCeiling:      state.DepthCeiling,
@@ -65,7 +73,9 @@ func (s *Service) optsFromState() core.RetrieveContextOptions {
 	}
 }
 
-func (s *Service) HandleSearch(w http.ResponseWriter, r *http.Request) {
+// HandleSearch — POST /search. Embed the query, return top-K
+// nearest neighbours.
+func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -80,16 +90,7 @@ func (s *Service) HandleSearch(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "query required")
 		return
 	}
-	if req.TopK <= 0 {
-		req.TopK = 5
-	}
-	embedding, err := s.Embedder.Embed(r.Context(), req.Query)
-	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("embed failed: %v", err))
-		return
-	}
-	results, err := vector.SearchByVector(s.DB, s.VI, embedding, req.TopK)
+	results, err := s.RetSvc.Search(r.Context(), req.Query, req.TopK)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
@@ -99,7 +100,9 @@ func (s *Service) HandleSearch(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, results)
 }
 
-func (s *Service) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
+// HandleRetrieve — POST /retrieve. Graph-walk from explicit seed IDs
+// (no embedding step — caller already chose the seeds).
+func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -111,16 +114,19 @@ func (s *Service) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.SeedIDs) == 0 {
+		// Defense-in-depth duplicate of domain validation. Pre-PHASE-2.2
+		// HTTP shell checked this inline so /retrieve clients see 400 on
+		// empty seeds without ever crossing into the domain.
 		httputil.WriteError(w, http.StatusBadRequest, "seed_ids required")
 		return
 	}
 	if req.MaxDepth <= 0 {
-		req.MaxDepth = 2
+		req.MaxDepth = retrieval.DefaultRetrieveMaxDepth
 	}
 	opts := s.optsFromState()
 	opts.MaxDepth = req.MaxDepth
 	opts.Ctx = r.Context()
-	result, err := pkgretrieval.RetrieveContext(s.DB, req.SeedIDs, opts)
+	result, err := s.RetSvc.Retrieve(r.Context(), req.SeedIDs, opts)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
@@ -130,7 +136,9 @@ func (s *Service) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, result)
 }
 
-func (s *Service) HandleQuery(w http.ResponseWriter, r *http.Request) {
+// HandleQuery — POST /query. Embed → vector search → graph walk →
+// Markdown context blob.
+func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -145,35 +153,21 @@ func (s *Service) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "query required")
 		return
 	}
-	if req.TopK <= 0 {
-		req.TopK = 3
-	}
-	embedding, err := s.Embedder.Embed(r.Context(), req.Query)
-	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	results, _ := vector.SearchByVector(s.DB, s.VI, embedding, req.TopK)
-	seedIDs := make([]string, 0, len(results))
-	for _, res := range results {
-		seedIDs = append(seedIDs, res.Entity.ID)
-	}
 	opts := s.optsFromState()
-	opts.QueryEmbedding = embedding
 	opts.QueryText = req.Query
-	opts.Ctx = r.Context()
-	ctxResult, err := pkgretrieval.RetrieveContext(s.DB, seedIDs, opts)
+	markdown, err := s.RetSvc.Query(r.Context(), req.Query, req.TopK, opts)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.Metrics.IncQuery()
-	httputil.WriteJSON(w, http.StatusOK, map[string]string{"context": pkgretrieval.FormatContextMarkdown(ctxResult)})
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"context": markdown})
 }
 
-func (s *Service) HandleResponse(w http.ResponseWriter, r *http.Request) {
+// HandleResponse — POST /response. Generate a natural-language answer
+// from the retrieved graph context.
+func (s *HTTPService) HandleResponse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -195,7 +189,7 @@ func (s *Service) HandleResponse(w http.ResponseWriter, r *http.Request) {
 	if req.MaxDepth > 0 {
 		opts.MaxDepth = req.MaxDepth
 	}
-	out, err := pkgretrieval.GenerateResponse(r.Context(), s.DB, s.VI, s.Embedder, opts, req.Query)
+	out, err := s.RetSvc.Response(r.Context(), req.Query, opts)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, "response generation failed: "+err.Error())
@@ -204,7 +198,10 @@ func (s *Service) HandleResponse(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"response": out})
 }
 
-func (s *Service) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
+// HandleQueryExplain — POST /query/explain. Same pipeline as /query
+// but with Explain=true so the returned RetrievalResult carries the
+// per-hop ranking reasoning.
+func (s *HTTPService) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -215,21 +212,9 @@ func (s *Service) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
 		return
 	}
-	if req.TopK <= 0 {
-		req.TopK = 3
-	}
-	emb, _ := s.Embedder.Embed(r.Context(), req.Query)
-	results, _ := vector.SearchByVector(s.DB, s.VI, emb, req.TopK)
-	seedIDs := make([]string, 0, len(results))
-	for _, res := range results {
-		seedIDs = append(seedIDs, res.Entity.ID)
-	}
 	opts := s.optsFromState()
-	opts.QueryEmbedding = emb
 	opts.QueryText = req.Query
-	opts.Ctx = r.Context()
-	opts.Explain = true
-	result, err := pkgretrieval.RetrieveContext(s.DB, seedIDs, opts)
+	result, err := s.RetSvc.Explain(r.Context(), req.Query, req.TopK, opts)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
@@ -239,10 +224,16 @@ func (s *Service) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, result)
 }
 
-func (s *Service) HandleProvenance(w http.ResponseWriter, r *http.Request) {
-	entities, err := store.GetEntitiesByProvenance(s.DB,
-		r.URL.Query().Get("conversation_id"), r.URL.Query().Get("message_id"),
-		r.URL.Query().Get("source"), httputil.ParseIntParam(r, "limit", 50))
+// HandleProvenance — GET /provenance[?conversation=X&message=Y&source=Z&limit=N].
+// 400 is intentional for empty-triple + missing filters (matches
+// pre-PHASE-2.2 contract — slightly counterintuitive but preserves
+// clients).
+func (s *HTTPService) HandleProvenance(w http.ResponseWriter, r *http.Request) {
+	convID := r.URL.Query().Get("conversation_id")
+	msgID := r.URL.Query().Get("message_id")
+	source := r.URL.Query().Get("source")
+	limit := httputil.ParseIntParam(r, "limit", 50)
+	entities, err := s.RetSvc.Provenance(r.Context(), convID, msgID, source, limit)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusBadRequest, err.Error())
@@ -251,8 +242,15 @@ func (s *Service) HandleProvenance(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, entities)
 }
 
-func (s *Service) HandleContradictions(w http.ResponseWriter, r *http.Request) {
-	pairs, err := store.GetContradictions(s.DB, r.URL.Query().Get("id"))
+// HandleContradions is reserved for PHASE 2.3 — the route lives in this
+// shell's Routes() registry until the ContradictionService extraction
+// lands, at which point it moves to that package's transport shell.
+// s.RetSvc.DB() reaches through to the underlying *sql.DB via a
+// temporary accessor (marked for removal in PHASE 2.3) so the
+// /contradictions endpoint keeps working without a domain Service
+// method.
+func (s *HTTPService) HandleContradictions(w http.ResponseWriter, r *http.Request) {
+	pairs, err := store.GetContradictions(s.RetSvc.DB(), r.URL.Query().Get("id"))
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
