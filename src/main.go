@@ -788,6 +788,113 @@ func main() {
 			fmt.Println("No entities found for given provenance filters.")
 		}
 
+	case "communities":
+		// P2: community detection — Louvain modularity optimisation.
+		maxIter := 50
+		minSize := 2
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--max-iterations":
+				if i+1 < len(args) {
+					fmt.Sscanf(args[i+1], "%d", &maxIter)
+					i++
+				}
+			case "--min-size":
+				if i+1 < len(args) {
+					fmt.Sscanf(args[i+1], "%d", &minSize)
+					i++
+				}
+			}
+		}
+		communities, globalQ, err := DetectCommunities(db, maxIter)
+		if err != nil {
+			log.Fatalf("community detection: %v", err)
+		}
+		fmt.Printf("Global modularity: %.6f\n", globalQ)
+		shown := 0
+		for _, c := range communities {
+			if c.Size < minSize {
+				continue
+			}
+			fmt.Printf("\n[%s] size=%d modularity=%.6f\n", c.ID, c.Size, c.Modularity)
+			for _, m := range c.Members {
+				fmt.Printf("  - %s\n", m)
+			}
+			shown++
+		}
+		if shown == 0 {
+			fmt.Println("No communities found above the minimum size threshold.")
+		}
+
+	case "re-embed":
+		// P2: background re-embedding — update all entity embeddings
+		// after model/dim change.
+		batchSize := 50
+		model := ""
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--batch-size":
+				if i+1 < len(args) {
+					fmt.Sscanf(args[i+1], "%d", &batchSize)
+					i++
+				}
+			case "--model":
+				if i+1 < len(args) {
+					model = args[i+1]
+					i++
+				}
+			}
+		}
+		needs, oldDim, err := NeedsReEmbed(db, cfg.VectorDim)
+		if err != nil {
+			log.Fatalf("re-embed check: %v", err)
+		}
+		if needs {
+			fmt.Printf("Dimension drift detected: DB has dim=%d, config has dim=%d\n", oldDim, cfg.VectorDim)
+			fmt.Println("Starting re-embedding...")
+		} else {
+			fmt.Printf("No dimension drift (dim=%d). Re-embedding anyway...\n", cfg.VectorDim)
+		}
+		result, err := ReEmbedAll(ctx, db, vi, embedder, cfg.VectorDim, batchSize, model)
+		if err != nil {
+			log.Fatalf("re-embed: %v", err)
+		}
+		fmt.Printf("Re-embed complete: %d/%d entities (failed=%d, batches=%d, elapsed=%s)\n",
+			result.ReEmbedded, result.TotalEntities, result.Failed, result.Batches, result.Elapsed)
+
+	case "quantize":
+		// P2: vector quantization — compress/decompress an embedding.
+		var req struct {
+			Embedding []float32 `json:"embedding"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if len(req.Embedding) == 0 {
+			log.Fatal("embedding required")
+		}
+		qv := QuantizeVector(req.Embedding)
+		deq := DequantizeVector(qv)
+		rawBytes := len(req.Embedding) * 4
+		qBytes := 8 + len(qv.Codes)
+		fmt.Printf("Original: %d elements (%d bytes)\n", len(req.Embedding), rawBytes)
+		fmt.Printf("Quantized: %d bytes (%.1fx compression)\n", qBytes, float64(rawBytes)/float64(qBytes))
+		fmt.Printf("Min=%.4f Max=%.4f\n", qv.Min, qv.Max)
+		// Compute max reconstruction error.
+		maxErr := float32(0)
+		for i := range req.Embedding {
+			e := req.Embedding[i] - deq[i]
+			if e < 0 {
+				e = -e
+			}
+			if e > maxErr {
+				maxErr = e
+			}
+		}
+		fmt.Printf("Max reconstruction error: %.6f\n", maxErr)
+
 	case "schema":
 		// Sprint 4: show current vs stored schema fingerprint.
 		stored, current, err := CheckSchemaFingerprint(db, cfg.Schema)
@@ -861,6 +968,8 @@ func main() {
 		mux.HandleFunc("/provenance", srv.HandleProvenance)
 		mux.HandleFunc("/recovery-plan", srv.HandleRecoveryPlan)
 		mux.HandleFunc("/connected-components", srv.HandleConnectedComponents)
+		mux.HandleFunc("/communities", srv.HandleCommunities)
+		mux.HandleFunc("/admin/re-embed", srv.HandleReEmbed)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 
