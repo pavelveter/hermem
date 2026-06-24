@@ -86,7 +86,7 @@ func (w *IngestionWorker) processOneItem(ctx context.Context, prov core.Provenan
 		}
 		if existingConf >= 0.7 {
 			slog.Info("contradiction detected, keeping both", "existing_id", existing.ID, "incoming_id", it.entity.ID)
-			it.entity.Relations = append(it.entity.Relations, core.Relation{TargetID: existing.ID, RelationType: "contradicts"})
+			it.entity.Relations = append(it.entity.Relations, core.Relation{TargetID: existing.ID, RelationType: w.schema.RelationContradicts})
 			existing = nil
 		} else {
 			slog.Info("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", it.entity.ID)

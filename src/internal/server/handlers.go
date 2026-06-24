@@ -458,7 +458,7 @@ func (s *Server) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.ID == "" {
-		req.ID = fmt.Sprintf("task-%d", time.Now().UnixNano())
+		req.ID = core.NewTaskID()
 	}
 	emb, err := s.Embedder.Embed(r.Context(), req.Content)
 	if err != nil {
