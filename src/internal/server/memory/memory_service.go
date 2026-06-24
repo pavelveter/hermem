@@ -1,47 +1,46 @@
-// Package memory hosts the write-side HTTP service: store, ingest, edge, timeline.
+// Package memory hosts the write-side HTTP transport for the memory
+// subsystem. Domain logic lives in src/internal/memory (Service); this
+// package owns transport-only concerns: JSON encoding, method checks,
+// request-body limits, schema-conflict cross-state guard, and metrics
+// increments.
 //
-// MemoryService owns the IngestionWorker — the Server shell has no business
-// knowing what ingestion does. OnStateChange is called by Server.ReloadState
-// whenever a SIGHUP swaps the atomic State; the worker gets the new schema so
-// it can validate input dialogs against it.
+// The HTTP shell is intentionally thin: every Handle* method is parse →
+// validate → delegate-to-domain → write-envelope. The domain Service
+// has no knowledge of http.ResponseWriter or serverstate.Ref.
 package memory
 
 import (
-	"database/sql"
-	"fmt"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
-	"github.com/pavelveter/hermem/src/internal/ingestion"
+	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
-	"github.com/pavelveter/hermem/src/internal/store"
-	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// Service handles write-side endpoints.
-type Service struct {
-	DB       *sql.DB
-	VI       core.VectorIndex
-	Embedder core.Embedder
-	Worker   *ingestion.IngestionWorker
-	Metrics  *metrics.Metrics
-	Refs     *serverstate.Ref
+// HTTPService is the transport shell for the write-side domain. Holds
+// the domain Service (Mem), the metrics counters (Metrics), the
+// serverstate.Ref for schema-conflict checks (Refs), and the
+// dedupThreshold forwarded to Mem.Ingest for the LLM extraction
+// pipeline. Embedder lives inside Mem — no transport-level duplication.
+type HTTPService struct {
+	Mem            *memdomain.Service
+	Metrics        *metrics.Metrics
+	Refs           *serverstate.Ref
+	DedupThreshold float32
 }
 
-// New constructs a Service. m is non-nil in production — set via
-// cmd-line startup in main.go via Env.Metrics; tests that bypass
-// main.go (server/integration_test.go, cli/cli_integration_test.go)
-// pass metrics.New() directly so concurrent test bodies don't
-// cross-pollinate each other's request counters.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, worker *ingestion.IngestionWorker, m *metrics.Metrics, refs *serverstate.Ref) *Service {
-	return &Service{DB: db, VI: vi, Embedder: embedder, Worker: worker, Metrics: m, Refs: refs}
+// New constructs an HTTPService.
+func New(mem *memdomain.Service, m *metrics.Metrics, refs *serverstate.Ref, dedupThreshold float32) *HTTPService {
+	return &HTTPService{Mem: mem, Metrics: m, Refs: refs, DedupThreshold: dedupThreshold}
 }
 
-// Routes returns the URL → handler mapping for this service.
-func (s *Service) Routes() map[string]http.HandlerFunc {
+// Routes returns the URL → handler mapping. Wired up by Server in
+// src/internal/server/server.go via the per-service Routes() protocol.
+func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"/store":    s.HandleStore,
 		"/ingest":   s.HandleIngest,
@@ -50,25 +49,11 @@ func (s *Service) Routes() map[string]http.HandlerFunc {
 	}
 }
 
-// OnStateChange propagates the new schema to the ingestion worker.
-// Called by Server.ReloadState after the atomic Ref swap.
-func (s *Service) OnStateChange(state *serverstate.State) {
-	s.Worker.ReloadSchema(state.Schema)
-}
-
-// rejectSchemaConflict writes the canonical 409 Schema-Conflict envelope
-// and returns true if a SIGHUP swapped the global config since the
-// handler captured state.Generation at request start. The caller pattern
-// is:
-//
-//	if s.rejectSchemaConflict(w, state.Generation) { return }
-//
-// Centralising the JSON code string + metrics increment + status ensures
-// HandleStore + HandleEdge (and any future handler that adopts the same
-// guard) cannot drift on the envelope. Bumps IncSchemaConflict (not
-// IncErr) so a SIGHUP-burst of rejected writes doesn't pollute the
-// operator's error-rate dashboard — schema-concurrency 409s are healthy.
-func (s *Service) rejectSchemaConflict(w http.ResponseWriter, gen uint64) bool {
+// rejectSchemaConflict writes the canonical 409 envelope and returns
+// true if the schema generation observed at handler entry differs from
+// the live Refs (SIGHUP swapped mid-request). Same contract and
+// IncSchemaConflict-vs-IncErr separation as the pre-PHASE-2.1 handler.
+func (s *HTTPService) rejectSchemaConflict(w http.ResponseWriter, gen uint64) bool {
 	if !s.Refs.IsStale(gen) {
 		return false
 	}
@@ -79,7 +64,23 @@ func (s *Service) rejectSchemaConflict(w http.ResponseWriter, gen uint64) bool {
 	return true
 }
 
-func (s *Service) HandleStore(w http.ResponseWriter, r *http.Request) {
+// isSchemaErr reports whether err is a memdomain.ErrInvalidSchema so
+// the handler maps the domain's semantic validation failure to 422 —
+// matching the pre-PHASE-2.1 envelope exactly so existing clients and
+// tests don't see a status drift.
+func isSchemaErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ise *memdomain.ErrInvalidSchema
+	return errors.As(err, &ise)
+}
+
+// HandleStore — POST /store. Persists one entity with a caller-supplied
+// embedding, then fires the HTTP-only AutoLinkEdges side effect via
+// memdomain.Service.StoreAndLink (/store only — CLI /store preserves
+// its historical non-linking behaviour).
+func (s *HTTPService) HandleStore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -90,31 +91,41 @@ func (s *Service) HandleStore(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
 		return
 	}
+	// Pre-PHASE-2.1 the missing-field check happened inline at the
+	// HTTP layer — kept here verbatim so existing /store clients
+	// continue to see 400 for malformed bodies. The domain Mem.Store
+	// also enforces the same fields as defense-in-depth.
 	if req.ID == "" || req.Category == "" || req.Content == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "id, category, content required")
 		return
 	}
 	state := s.Refs.Load()
 	if !state.ValidCategories[req.Category] {
-		httputil.WriteError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown category: %s", req.Category))
+		httputil.WriteError(w, http.StatusUnprocessableEntity, "unknown category: "+req.Category)
 		return
 	}
-	// Cross-state tx guard: see Service.rejectSchemaConflict.
 	if s.rejectSchemaConflict(w, state.Generation) {
 		return
 	}
-	entity := core.Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}
-	if err := store.StoreEntityWithEmbedding(s.DB, s.VI, state.Schema, entity); err != nil {
+	if err := s.Mem.StoreAndLink(r.Context(), req, state.Schema); err != nil {
 		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		status := http.StatusInternalServerError
+		if isSchemaErr(err) {
+			status = http.StatusUnprocessableEntity
+		}
+		httputil.WriteError(w, status, err.Error())
 		return
 	}
-	vector.AutoLinkEdges(r.Context(), s.DB, s.VI, s.Embedder, req.ID, entity.Embedding)
 	s.Metrics.IncStore()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Service) HandleIngest(w http.ResponseWriter, r *http.Request) {
+// HandleIngest — POST /ingest. Drains a dialog through the LLM
+// extractor and ingests all extracted entities + relations. The
+// IngestionWorker is constructed inside Mem.Ingest per call — Service
+// carries no long-lived worker, so SIGHUP races with mid-call schema
+// mutation simply cannot occur.
+func (s *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -125,11 +136,16 @@ func (s *Service) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
 		return
 	}
+	// Pre-PHASE-2.1 the missing-field check happened inline at the
+	// HTTP layer — kept here verbatim so existing /ingest clients
+	// continue to see 400 for empty dialogs. The domain Mem.Ingest
+	// also enforces the same field as defense-in-depth.
 	if req.Dialog == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "dialog required")
 		return
 	}
-	if err := s.Worker.ProcessDialog(r.Context(), req.Dialog); err != nil {
+	state := s.Refs.Load()
+	if err := s.Mem.Ingest(r.Context(), req.Dialog, s.DedupThreshold, state.Schema); err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -138,7 +154,9 @@ func (s *Service) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Service) HandleEdge(w http.ResponseWriter, r *http.Request) {
+// HandleEdge — POST /edge. Persists a single relation edge, optionally
+// auto-creating missing endpoint entities (AutoCreate=true).
+func (s *HTTPService) HandleEdge(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -149,87 +167,82 @@ func (s *Service) HandleEdge(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
 		return
 	}
+	// Pre-PHASE-2.1 the missing-field check happened inline at the
+	// HTTP layer — kept here verbatim so existing /edge clients
+	// continue to see 400 for malformed bodies. The domain Mem.AddEdge
+	// also enforces the same fields as defense-in-depth.
 	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "source_id, target_id, relation_type required")
 		return
 	}
 	state := s.Refs.Load()
 	if !state.ValidRelationTypes[req.RelationType] {
-		httputil.WriteError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown relation_type: %s", req.RelationType))
+		httputil.WriteError(w, http.StatusUnprocessableEntity, "unknown relation_type: "+req.RelationType)
 		return
 	}
-	// Cross-state tx guard: see Service.rejectSchemaConflict.
 	if s.rejectSchemaConflict(w, state.Generation) {
 		return
 	}
-	var err error
-	if req.AutoCreate {
-		err = vector.AddEdgeWithAutoCreate(r.Context(), s.DB, s.VI, s.Embedder, req.SourceID, req.TargetID, req.RelationType)
-	} else {
-		err = store.AddEdge(s.DB, req.SourceID, req.TargetID, req.RelationType, req.Weight)
-	}
-	if err != nil {
+	if err := s.Mem.AddEdge(r.Context(), req, state.Schema); err != nil {
 		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		status := http.StatusInternalServerError
+		if isSchemaErr(err) {
+			status = http.StatusUnprocessableEntity
+		}
+		httputil.WriteError(w, status, err.Error())
 		return
 	}
 	s.Metrics.IncEdge()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// HandleTimeline returns recently created entities (raw SQL — not agent-derived).
-type TimelineEntry struct {
-	ID, Category, Content                         string
-	CreatedAt                                     *time.Time
-	Source, SourceType, ConversationID, MessageID string
-}
-
-func (s *Service) HandleTimeline(w http.ResponseWriter, r *http.Request) {
+// HandleTimeline — GET /timeline[?limit=N]. Returns the N most-recently
+// created entities (raw SQL — not agent-derived).
+func (s *HTTPService) HandleTimeline(w http.ResponseWriter, r *http.Request) {
 	limit := httputil.ParseIntParam(r, "limit", 50)
-	rows, err := s.DB.QueryContext(r.Context(),
-		`SELECT id, category, content, created_at, source, source_type, conversation_id, message_id FROM entities WHERE archived = 0 AND created_at IS NOT NULL ORDER BY created_at DESC LIMIT ?`,
-		limit)
+	entries, err := s.Mem.Timeline(r.Context(), limit)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
-	var entries []TimelineEntry
-	for rows.Next() {
-		var e TimelineEntry
-		var createdAt sql.NullTime
-		var source, sourceType, convID, msgID sql.NullString
-		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &createdAt, &source, &sourceType, &convID, &msgID); err != nil {
-			s.Metrics.IncErr()
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if createdAt.Valid {
-			t := createdAt.Time
-			e.CreatedAt = &t
-		}
-		if source.Valid {
-			e.Source = source.String
-		}
-		if sourceType.Valid {
-			e.SourceType = sourceType.String
-		}
-		if convID.Valid {
-			e.ConversationID = convID.String
-		}
-		if msgID.Valid {
-			e.MessageID = msgID.String
-		}
-		entries = append(entries, e)
+	s.Metrics.IncQuery()
+	// Wire-shape mirror of memdomain.TimelineEntry. JSON tags live here
+	// (transport concern) and not in the domain struct — same shape
+	// returned by the pre-PHASE-2.1 timeline handler.
+	out := make([]timelineJSON, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, timelineJSON{
+			ID:             e.ID,
+			Category:       e.Category,
+			Content:        e.Content,
+			CreatedAt:      e.CreatedAt,
+			Source:         e.Source,
+			SourceType:     e.SourceType,
+			ConversationID: e.ConversationID,
+			MessageID:      e.MessageID,
+		})
 	}
-	if err := rows.Err(); err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if entries == nil {
-		entries = []TimelineEntry{}
-	}
-	httputil.WriteJSON(w, http.StatusOK, entries)
+	httputil.WriteJSON(w, http.StatusOK, out)
+}
+
+// timelineJSON is the wire-shape mirror of memdomain.TimelineEntry.
+// Lives in the transport shell so the domain struct stays JSON-less
+// (single source of truth for wire encoding lives at the edge).
+//
+// Crucially: NO `omitempty` tags. Pre-PHASE-2.1 TimelineEntry in
+// src/internal/server/memory/memory_service.go had no omitempty
+// either — nil CreatedAt renders as `"created_at":null` and missing
+// provenance fields render as `"source":""`. Dropping omitempty keeps
+// the wire bytes identical so existing /timeline consumers don't see
+// keys disappear.
+type timelineJSON struct {
+	ID             string     `json:"id"`
+	Category       string     `json:"category"`
+	Content        string     `json:"content"`
+	CreatedAt      *time.Time `json:"created_at"`
+	Source         string     `json:"source"`
+	SourceType     string     `json:"source_type"`
+	ConversationID string     `json:"conversation_id"`
+	MessageID      string     `json:"message_id"`
 }

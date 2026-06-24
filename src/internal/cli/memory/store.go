@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 )
 
 func newStoreCmd(env *cli.Env) *cobra.Command {
@@ -20,25 +20,26 @@ func newStoreCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
+			// Pre-validation kept at CLI for verbatim message parity with
+			// pre-PHASE-2.1 command behavior — service.Store also enforces
+			// the same checks as defense-in-depth for non-CLI callers.
 			if req.ID == "" || req.Category == "" || req.Content == "" {
 				return fmt.Errorf("id, category, content required")
 			}
 			if err := env.Cfg.ValidateCategory(req.Category); err != nil {
 				return fmt.Errorf("invalid: %w", err)
 			}
-			if len(req.Embedding) == 0 {
+			if len(req.Embedding) == 0 && env.Embedder != nil {
 				emb, err := env.Embedder.Embed(env.Ctx, req.Content)
 				if err != nil {
 					return fmt.Errorf("embed: %w", err)
 				}
 				req.Embedding = emb
 			}
-			if err := store.StoreEntityWithEmbedding(env.DB, env.VI, env.Cfg.Schema, core.Entity{
-				ID:        req.ID,
-				Category:  req.Category,
-				Content:   req.Content,
-				Embedding: req.Embedding,
-			}); err != nil {
+			// Construct per-call (six pointer assignments; cheap) so
+			// CLI never holds onto a stale Service ref between commands.
+			memSvc := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
+			if err := memSvc.Store(env.Ctx, req, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("store: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), `{"status":"ok"}`)
