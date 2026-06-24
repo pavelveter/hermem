@@ -15,11 +15,13 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
+	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
+	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -79,6 +81,14 @@ func runServe(env *clienv.Env, port string) error {
 	// is loaded once from cfg at boot — VectorDim is a static
 	// dimensional commitment for the lifetime of the daemon.
 	graphSvc := graphdomain.NewService(env.DB)
+	// PHASE 3.2: migration domain Service covers schema / migration
+	// inspection (db/migrate / db/rollback / db/verify / db/schema).
+	// OUT OF SCOPE: store.RunMigrations + store.StoreSchemaFingerprint
+	// stay in store/ — they are bootstrapping mutating hooks called
+	// from main.go boot and cli/serve.go's SIGHUP loop, not
+	// request-time reads. The HTTP shell exposes 4 NEW routes that
+	// previously had no HTTP surface (only CLI subcommands).
+	migrSvc := migrationdomain.NewService(env.DB)
 
 	srv := server.NewServer(
 		refs,
@@ -87,6 +97,7 @@ func runServe(env *clienv.Env, port string) error {
 		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
 		cnd.New(cndSvc, env.Metrics),
 		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
+		migrsrv.New(migrSvc, env.Metrics, refs),
 		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 	)
 

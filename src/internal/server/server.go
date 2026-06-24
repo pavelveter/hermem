@@ -13,6 +13,9 @@
 //   - server/graph/         — /connected-components, /communities, /graph/verify. Delegates
 //     to internal/graph.Service. Added in PHASE 3.1 (previously /connected-components
 //     and /communities lived on AdminService as a god-object).
+//   - server/migration/     — /db/migrate, /db/rollback, /db/verify, /db/schema. Delegates
+//     to internal/migration.Service. Added in PHASE 3.2 (the four db/* routes previously
+//     lived as CLI-only in cli/db/{migrate,schema,verify,rollback}.go).
 //   - server/               — AdminService: health, metrics, admin/re-embed (graph
 //     analytics routes were extracted in PHASE 3.1).
 //
@@ -37,17 +40,19 @@ import (
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
+	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
-// Server is the HTTP shell. It holds the 6 services + a mux + the atomic
+// Server is the HTTP shell. It holds the 7 services + a mux + the atomic
 // state holder. No domain fields (no DB / VI / Embedder directly —
 // memory's domain service lives in internal/memory, contradiction's in
 // internal/contradiction, task's in internal/task, graph's in
-// internal/graph; each transport shell holds the domain Service
-// reference and threads it as a borrowed pointer).
+// internal/graph, migration's in internal/migration; each transport
+// shell holds the domain Service reference and threads it as a
+// borrowed pointer).
 type Server struct {
 	Refs          *serverstate.Ref
 	Retrieval     *ret.HTTPService
@@ -55,11 +60,12 @@ type Server struct {
 	Memory        *mem.HTTPService
 	Contradiction *cnd.HTTPService
 	Graph         *graphsrv.HTTPService
+	Migration     *migrsrv.HTTPService
 	Admin         *AdminService
 	mux           *http.ServeMux
 }
 
-// NewServer wires the 6 services into a single mux. No HTTP server is started
+// NewServer wires the 7 services into a single mux. No HTTP server is started
 // — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
 //
 // PHASE 2.3 added the contradiction *HTTPService argument; PHASE 2.4
@@ -67,8 +73,10 @@ type Server struct {
 // post-2.4 transport-shell shape (server/task.Service → server/task.HTTPService);
 // PHASE 3.1 inserts the graph *HTTPService argument between contradiction
 // and admin, lifting /connected-components + /communities out of the
-// god-object AdminService.
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, admin *AdminService) *Server {
+// god-object AdminService. PHASE 3.2 inserts the migration *HTTPService
+// argument between graph and admin, exposing 4 NEW routes that had no
+// HTTP surface previously.
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
@@ -76,6 +84,7 @@ func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.
 		Memory:        memory,
 		Contradiction: contradiction,
 		Graph:         graph,
+		Migration:     migration,
 		Admin:         admin,
 	}
 	s.mount()
@@ -99,6 +108,9 @@ func (s *Server) mount() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Graph.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Migration.Routes() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Admin.Routes() {

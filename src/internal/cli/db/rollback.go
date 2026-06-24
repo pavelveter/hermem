@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/migration"
 )
 
 func newRollbackCmd(env *cli.Env) *cobra.Command {
@@ -15,7 +15,9 @@ func newRollbackCmd(env *cli.Env) *cobra.Command {
 		Short: "Roll back the most-recent applied migration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			name, err := store.RollbackMigration(env.DB)
+			// PHASE 3.2: routes through migration.Service.Rollback.
+			svc := migration.NewService(env.DB)
+			name, err := svc.Rollback(env.Ctx)
 			if err != nil {
 				return fmt.Errorf("rollback: %w", err)
 			}
