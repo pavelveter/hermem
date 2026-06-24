@@ -11,11 +11,17 @@ import (
 // newVersionCmd prints the build metadata injected via -ldflags. Replaces
 // the absence of a pre-cobra version command so users can verify they're
 // on the binary they expect without scraping the help banner.
-func newVersionCmd(env clienv.Env) *cobra.Command {
+//
+// PersistentPreRunE is set to noopPreRun (NOT nil) because cobra falls
+// back to the parent's PersistentPreRunE when a subcommand assigns nil
+// — and the parent's PersistentPreRunE opens the database, which we
+// explicitly don't want for a metadata print.
+func newVersionCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Print build version (Version / BuildDate / GitCommit)",
-		Args:  cobra.NoArgs,
+		Use:               "version",
+		Short:             "Print build version (Version / BuildDate / GitCommit)",
+		Args:              cobra.NoArgs,
+		PersistentPreRunE: noopPreRun,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			b := env.Build
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\n  build: %s\n  commit: %s\n",

@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes (CLI surface)
+
+- **Cobra-grouped CLI surface (commit `8f0bf71`).** The flat 26-command
+  registry (`src/cmd/<name>.go` + `init()`-driven `Register`) is gone.
+  Hermem now ships a single cobra command tree under `src/internal/cli/`:
+  - `serve | health | metrics | version` (top-level)
+  - `memory {store,search,retrieve,query,response,edge,ingest,explain,re-embed,quantize}`
+  - `task {status,list,show,dep,tree,create,rollback,executable}` (alias `next`)
+  - `graph {plan,recovery-plan,components,communities,verify,contradictions,provenance}`
+  - `time {temporal,timeline}`
+  - `agent {loop}`
+  - `db {migrate,rollback,verify,schema}`
+  Examples: `hermem memory store …` (was `hermem store`), `hermem task status …`
+  (was `hermem task-status`), `hermem db rollback` (was `hermem migration-rollback`),
+  `hermem graph components` (was `hermem connected-components`),
+  `hermem serve --port 8420` (port is a real cobra flag, no longer a positional arg).
+- **No back-compat aliases.** Every previously-flat command name is
+  permanently removed. Any script that ran `hermem store`, `hermem ingest`,
+  `hermem task-executable`, `hermem execution-plan`, `hermem re-embed`, etc.
+  must be rewritten to the grouped form.
+- **`hermem --help`** now renders the full cobra command tree instead of
+  the legacy single-line `printUsage` block. Each group's `--help`
+  prints only its own subcommands (`hermem task --help`, etc.).
+- **`hermem version`** is new; prints ldflags BuildInfo (Version /
+  BuildDate / GitCommit).
+
+### Implementation notes
+
+- `src/internal/cli/env/env.go` — new sub-package hosting the `Env`,
+  `BuildInfo`, `ReadStdin`, `DecodeStdin`, `DecodeString`, `WriteJSON`
+  helpers. Split out of the cli/ root package so per-group subpackages
+  (`cli/memory`, `cli/task`, …) can depend on the types without forming
+  an import cycle with the orchestrator (which itself depends on the
+  groups for their `NewCmd(env)` factories).
+- ~36 new files in `src/internal/cli/`; all of `src/cmd/` deleted
+  (~1500 lines of duplicated dispatch replaced with ~1900 lines of
+  focused cobra commands).
+- All `log.Fatalf` calls converted to `return fmt.Errorf(...)`; cobra's
+  error renderer formats them, main.go handles exit code 1.
+- `os.Exit(1)` paths (`graph verify`, `db verify`) return errors
+  instead of syscalling; same external exit-code behavior.
+- `provenance` and `re-embed` flags now real cobra flags (no more
+  manual `argTail()` parsing).
+- `cli/time/*.go` aliases stdlib `time` as `stdtime` because the
+  package name collides.
+
+### Validation
+
+`gofmt`, `go vet`, `go build`, `go test ./src/...`, `-race
+./src/internal/cli/...`, `CGO_ENABLED=1 ./src/internal/cli/...` all green
+post-write.
+
 ### Added
 - **Sprint 4: Versioned migration system** — `schema_migrations` table tracks applied versions. `runMigrations` reads embedded SQL files from `src/migrations/` (001_initial_schema, 002_entity_metadata, 003_provenance), applies unapplied files in ordered transactions. `hermem migrate` CLI shows status. Replaces the old ad-hoc `migrateSchema`.
 - **Sprint 4: Schema fingerprinting** — `HashSchema(schema)` produces deterministic SHA-256 fingerprint via JSON + sorted map keys. `CheckSchemaFingerprint` compares stored vs current on startup. `hermem schema` CLI. `SchemaConfig.Fingerprint()` method.

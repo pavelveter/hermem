@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
-	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -99,36 +98,23 @@ func ensureMigrationChecksumsTable(db *sql.DB) error {
 	return err
 }
 
+// migrateEntitiesFlexibleSchema is a permanent no-op as of 2026-06-24.
+//
+// Originally recreated entities to add columns ALTER ADD COLUMN couldn't
+// reach on older SQLite. After 002 (entity_metadata) and 005/007 (degree
+// / priority) shipped, the rebuild is actively harmful: the hard-coded
+// CREATE TABLE entities_new list omits degree / priority /
+// conversation_id / message_id / extracted_from / created_at / status /
+// valid_from / valid_to — DROP+RENAME would silently drop those columns.
+// The mid-tx schema flip also surfaces "no such table: main.entities"
+// to users via triggers fired against the unrenamed tablename.
+//
+// The b2 per-statement runner + 002 together cover the legacy path now
+// (002 adds all 002 columns; per-statement duplicate-column skip
+// tolerates DBs where some are already present). Kept as a no-op so
+// callers can stay; remove entirely if no callers remain.
 func migrateEntitiesFlexibleSchema(db *sql.DB) error {
-	var createSQL string
-	err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='entities'").Scan(&createSQL)
-	if err != nil {
-		return nil
-	}
-	if !strings.Contains(strings.ToUpper(createSQL), "CHECK(CATEGORY IN") && strings.Contains(strings.ToUpper(createSQL), "ARCHIVED INTEGER DEFAULT 0") {
-		return nil
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`CREATE TABLE entities_new (id TEXT PRIMARY KEY, category TEXT NOT NULL, content TEXT NOT NULL, embedding BLOB, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP, archived INTEGER DEFAULT 0, status TEXT DEFAULT NULL)`); err != nil {
-		return fmt.Errorf("entities_new: %w", err)
-	}
-	if _, err := tx.Exec(`INSERT INTO entities_new SELECT id, category, content, embedding, updated_at, last_accessed_at, archived, status FROM entities`); err != nil {
-		return fmt.Errorf("copy: %w", err)
-	}
-	if _, err := tx.Exec("PRAGMA defer_foreign_keys = ON"); err != nil {
-		return fmt.Errorf("defer_fk: %w", err)
-	}
-	if _, err := tx.Exec(`DROP TABLE entities`); err != nil {
-		return fmt.Errorf("drop: %w", err)
-	}
-	if _, err := tx.Exec(`ALTER TABLE entities_new RENAME TO entities`); err != nil {
-		return fmt.Errorf("rename: %w", err)
-	}
-	return tx.Commit()
+	return nil
 }
 
 // SortedKeys returns sorted keys of a bool map.

@@ -12,7 +12,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-func newQueryCmd(env cli.Env) *cobra.Command {
+func newQueryCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "query",
 		Short: "Embed → vector search → graph walk → Markdown context blob",

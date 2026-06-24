@@ -11,7 +11,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newCreateCmd(env cli.Env) *cobra.Command {
+func newCreateCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "create",
 		Short: "Create a task (auto-embeds content and assigns the first stateful category)",

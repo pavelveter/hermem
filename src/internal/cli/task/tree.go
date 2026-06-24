@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newTreeCmd(env cli.Env) *cobra.Command {
+func newTreeCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tree",
 		Short: "Render task tree (ASCII) under a goal_id",

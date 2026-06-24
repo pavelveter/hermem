@@ -9,7 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newComponentsCmd(env cli.Env) *cobra.Command {
+func newComponentsCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "components",
 		Short: "Find connected components in the graph (size ≥ 2)",

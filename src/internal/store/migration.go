@@ -13,23 +13,30 @@ import (
 var migrationFS embed.FS
 
 // RunMigrations applies pending SQL migrations embedded at compile time.
+//
+// Each migration file is split via splitSQL (per-line comment dropping,
+// per-statement buffer accumulation, CREATE TRIGGER BEGIN/END-aware)
+// and its statements are executed one-by-one INSIDE a single transaction.
+// A statement that errors with "duplicate column name" is skipped with
+// a single warning; the transaction continues. Any other error rolls
+// back the entire migration so the next run starts cleanly.
+//
+// Per-statement execution is the b2 hardening: migrations that mix
+// `ALTER TABLE ADD COLUMN` with later `CREATE TABLE` / `CREATE INDEX`
+// / `CREATE TRIGGER` statements can now be re-applied safely on
+// partially-applied databases (the prior design rolled back the entire
+// tx on first duplicate and silently marked the file applied without
+// running the remaining statements).
 func RunMigrations(db *sql.DB) error {
-	entries, err := migrationFS.ReadDir("migrations")
+	files, err := migrationFiles()
 	if err != nil {
-		return fmt.Errorf("read embedded migrations: %w", err)
+		return err
 	}
-	var files []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
-			continue
-		}
-		files = append(files, e.Name())
-	}
-	sort.Strings(files)
 	applied, err := appliedMigrations(db)
 	if err != nil {
 		return fmt.Errorf("read applied migrations: %w", err)
 	}
+
 	for _, name := range files {
 		if applied[name] {
 			continue
@@ -39,29 +46,125 @@ func RunMigrations(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
+		stmts := splitSQL(string(sqlBytes))
+		if len(stmts) == 0 {
+			slog.Info("migration applied (empty)", "migration", name)
+			continue
+		}
+
 		tx, err := db.Begin()
 		if err != nil {
 			return fmt.Errorf("begin tx for %s: %w", name, err)
 		}
-		_, execErr := tx.Exec(string(sqlBytes))
-		if execErr != nil {
-			tx.Rollback()
-			if strings.Contains(execErr.Error(), "duplicate column name") {
-				slog.Info("migration skipped (columns already exist)", "migration", name)
-				recTx, _ := db.Begin()
-				_, _ = recTx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name)
-				_ = recTx.Commit()
-				continue
+
+		var hardErr error
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				if strings.Contains(err.Error(), "duplicate column name") {
+					trim := strings.SplitN(stmt, "\n", 2)[0]
+					slog.Info("migration statement skipped (column already exists)",
+						"migration", name, "stmt", trim)
+					continue
+				}
+				// Best-effort rollback; the tx is already doomed
+				// after the failed Exec.
+				_ = tx.Rollback()
+				hardErr = fmt.Errorf("apply migration %s: %w", name, err)
+				break
 			}
-			return fmt.Errorf("apply migration %s: %w", name, execErr)
 		}
-		_, _ = tx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name)
+		if hardErr != nil {
+			return hardErr
+		}
+
+		if _, err := tx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", name, err)
+		}
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit migration %s: %w", name, err)
 		}
 		slog.Info("migration applied", "migration", name)
 	}
 	return nil
+}
+
+// splitSQL breaks a SQL file into individual statements for per-
+// statement execution inside the migration transaction.
+//
+//   - Whole-line comments starting with `--` are dropped before splitting.
+//   - A statement ends at a top-level `;`.
+//   - A `CREATE TRIGGER ... BEGIN ... END;` block is ONE statement that
+//     ends on a standalone `END;` line — `;` characters inside the
+//     trigger body are NOT statement terminators. Detection uses an
+//     explicit `seenCreateTrigger` bool that flips when a top-level line
+//     contains `CREATE TRIGGER` and clears on any `;`-terminated line,
+//     so a stray `BEGIN` (e.g. a future `BEGIN TRANSACTION`) cannot
+//     accidentally drag us into trigger mode.
+//
+// Single-line triggers (`CREATE TRIGGER foo BEGIN ... END;` all on
+// one line) and quoted string literals with embedded `;` are NOT
+// tracked. Today's 001–007 migrations use neither, so naïve line-
+// walking is safe. Extend with a real tokeniser if either is ever
+// introduced.
+func splitSQL(sqlText string) []string {
+	var out []string
+	var cur strings.Builder
+	inTrigger := false
+	seenCreateTrigger := false
+	for _, line := range strings.Split(sqlText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		cur.WriteString(line)
+		cur.WriteByte('\n')
+
+		// Track CREATE TRIGGER being assembled; reset on top-level `;`.
+		if !inTrigger {
+			if strings.Contains(strings.ToUpper(trimmed), "CREATE TRIGGER") {
+				seenCreateTrigger = true
+			}
+			if trimmed == "BEGIN" && seenCreateTrigger {
+				inTrigger = true
+				seenCreateTrigger = false
+				continue
+			}
+			if strings.HasSuffix(trimmed, ";") {
+				out = append(out, strings.TrimSpace(cur.String()))
+				cur.Reset()
+				seenCreateTrigger = false
+			}
+			continue
+		}
+		// Inside a CREATE TRIGGER body: emit at standalone `END;`.
+		if trimmed == "END;" || trimmed == "END" {
+			out = append(out, strings.TrimSpace(cur.String()))
+			cur.Reset()
+			inTrigger = false
+		}
+	}
+	rest := strings.TrimSpace(cur.String())
+	if rest != "" {
+		out = append(out, rest)
+	}
+	return out
+}
+
+func migrationFiles() ([]string, error) {
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded migrations: %w", err)
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		files = append(files, e.Name())
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 func appliedMigrations(db *sql.DB) (map[string]bool, error) {
@@ -114,19 +217,7 @@ func MigrationStatus(db *sql.DB) ([]MigStatus, error) {
 
 // PendingMigrations returns sorted migration file names.
 func PendingMigrations() ([]string, error) {
-	entries, err := migrationFS.ReadDir("migrations")
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
-			continue
-		}
-		files = append(files, e.Name())
-	}
-	sort.Strings(files)
-	return files, nil
+	return migrationFiles()
 }
 
 // RollbackMigration removes the last-applied migration.

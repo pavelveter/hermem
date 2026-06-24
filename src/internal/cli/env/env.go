@@ -12,23 +12,32 @@
 package env
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
+	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 // Env captures the singleton runtime context. Constructed once in main.go
 // and threaded through every cobra command via NewRootCommand(env).
+//
+// DB, VI, and Worker start nil; EnsureDB() opens them lazily on the
+// first command that needs them. Cobra short-circuits PersistentPreRunE
+// for `--help`, `-h`, and bare `./hermem` (no subcommand), so those paths
+// never touch the database — that's what makes `./hermem --help` print
+// usage instead of "db: migrations: ..." when migrations are broken.
 type Env struct {
 	Ctx       context.Context
 	Cfg       *config.Config
@@ -37,7 +46,21 @@ type Env struct {
 	Embedder  core.Embedder
 	Extractor core.LLMExtractor
 	Reranker  core.Reranker
+	Worker    *metrics.AsyncMetricsWorker
 	Build     BuildInfo
+
+	// Lazy state uses plain bools (NOT sync.Once/Mutex) because cobra
+	// runs PersistentPreRunE / PersistentPostRunE exactly once per
+	// process, sequentially on the main goroutine — no concurrent
+	// EnsureDB() / Close() caller exists in our tree. Using sync
+	// primitives would make vet's copylocks checker flag Env-by-value
+	// copies (subcommands take Env by value) and add churn.
+	//
+	// If you ever spawn a goroutine that touches EnsureDB/Close you
+	// must convert these to sync.Once or sync.Mutex + bool.
+	initDone  bool
+	initErr   error
+	closeDone bool
 }
 
 // BuildInfo carries ldflags-injected build metadata (passed to Env.Build
@@ -46,6 +69,13 @@ type BuildInfo struct {
 	Version   string
 	BuildDate string
 	GitCommit string
+}
+
+// Fatal logs f to stderr with a "hermem:" prefix then exits 1. Centralised
+// here so main.go doesn't need to import "log"/"os" directly. Matches the
+// pre-lazy-init behaviour where Log.Fatalf was used at the same call sites.
+func Fatal(f string, args ...any) {
+	log.Fatalf("hermem: "+f, args...)
 }
 
 // ErrStdinRequired returned by ReadStdin when stdin is a TTY (the user
@@ -95,6 +125,49 @@ func WriteJSON(w io.Writer, data interface{}) error {
 	return json.NewEncoder(w).Encode(data)
 }
 
-// BytesHelper avoids the linter complaining about the bytes import —
-// kept for callers that need a streaming variant of DecodeStrict.
-var _ = bytes.NewReader
+// EnsureDB lazily opens the SQLite database, runs pending migrations,
+// builds the vector index, and starts the metrics worker. Idempotent —
+// repeated or concurrent calls return the same (*sql.DB, error). Wired
+// into cobra via root.PersistentPreRunE so every DB-needing subcommand
+// triggers it transparently without per-command boilerplate.
+//
+// Cobra skips PersistentPreRunE for `--help` / `-h` / bare `./hermem`,
+// so those paths bypass this entirely. PersistentPostRunE on root closes
+// the env after the subcommand returns so callers don't need to do it.
+func (e *Env) EnsureDB() error {
+	if e.initDone {
+		return e.initErr
+	}
+	e.initDone = true
+	if e.Cfg == nil {
+		e.initErr = errors.New("env: nil Cfg — main.go must construct Env with a valid config before calling EnsureDB")
+		return e.initErr
+	}
+	db, err := store.InitDB(config.ResolveDBPath(e.Cfg.DBPath), e.Cfg.VectorDim)
+	if err != nil {
+		e.initErr = fmt.Errorf("init db: %w", err)
+		return e.initErr
+	}
+	metrics.InitMetricsDB(db)
+	e.Worker = metrics.InitMetricsWorker(db)
+	e.DB = db
+	e.VI = vector.NewIndex(e.Cfg.VectorBackend, db, e.Cfg.VectorDim)
+	return nil
+}
+
+// Close drains the metrics worker, then closes the database. Idempotent
+// — safe to call multiple times (double defer or via SIGINT cleanup).
+// Called from root.PersistentPostRunE so graceful shutdown works even
+// though main.go's `defer env.Close()` operates on a value-passed copy.
+func (e *Env) Close() {
+	if e.closeDone {
+		return
+	}
+	e.closeDone = true
+	if e.Worker != nil {
+		e.Worker.Stop()
+	}
+	if e.DB != nil {
+		_ = e.DB.Close()
+	}
+}

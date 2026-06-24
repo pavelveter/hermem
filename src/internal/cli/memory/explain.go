@@ -12,7 +12,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-func newExplainCmd(env cli.Env) *cobra.Command {
+func newExplainCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "explain",
 		Short: "Explain the reasoning path from query to retrieved entities",

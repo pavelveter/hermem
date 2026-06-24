@@ -16,6 +16,13 @@ import (
 	mytime "github.com/pavelveter/hermem/src/internal/cli/time"
 )
 
+// noopPreRun is the PersistentPreRunE set on subcommands that must run
+// WITHOUT database access (currently `version` and `metrics`). It is a
+// package-local var (not nil) because cobra falls back to the parent's
+// PersistentPreRunE when a subcommand assigns nil — and the parent's
+// PersistentPreRunE opens the database, which we explicitly don't want.
+var noopPreRun = func(_ *cobra.Command, _ []string) error { return nil }
+
 const longHelp = `hermem houses a knowledge graph + vector store with an LLM-driven
 extraction engine.
 
@@ -37,7 +44,14 @@ group usage; "hermem --help" prints the full tree.`
 
 // NewRootCommand returns the fully-wired root command. Subcommands attach
 // here so main.go only needs to call NewRootCommand(env).Execute().
-func NewRootCommand(env clienv.Env) *cobra.Command {
+//
+// env is taken BY VALUE because cli.<group> NewCmd factories take value-
+// too for uniform signatures. PersistentPreRunE / PersistentPostRunE
+// capture env by reference (Go closure semantics), so mutations inside
+// EnsureDB / Close propagate to the closure-captured env. main.go's
+// own env copy stays nil and never participates in cleanup — that's
+// why PersistentPostRunE is wired here, not left to main.go's defer.
+func NewRootCommand(env *clienv.Env) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "hermem",
 		Short:         "hermem — knowledge graph server and CLI",
@@ -45,6 +59,26 @@ func NewRootCommand(env clienv.Env) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       env.Build.Version,
+		// Cobra skips PersistentPreRunE for --help, -h, and bare
+		// `./hermem` (root has no Run/RunE → cobra auto-prints help).
+		// For every other subcommand this transparently opens the DB,
+		// runs pending migrations, builds the vector index, and starts
+		// the async metrics worker — so subcommand code can assume
+		// env.DB / env.VI are non-nil.
+		//
+		// The lambda adapter is required: env.EnsureDB has signature
+		// `func() error`; cobra's hook expects
+		// `func(*cobra.Command, []string) error` — Go's method-value
+		// syntax binds the receiver but leaves the parameter list
+		// wrong, so an explicit lambda is needed.
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error { return env.EnsureDB() },
+		// PersistentPostRunE fires after the subcommand's RunE returns
+		// (success OR error path). It is the only place we can drive
+		// graceful shutdown because main.go's `defer env.Close()`
+		// operates on a copy of the value-passed Env that never sees
+		// EnsureDB write to it. env.Close is bool-idempotent so a
+		// subsequent main defer is a no-op rather than a double-close.
+		PersistentPostRunE: func(_ *cobra.Command, _ []string) error { env.Close(); return nil },
 	}
 	root.AddCommand(
 		newServeCmd(env),

@@ -16,7 +16,7 @@ import (
 
 // NewCmd returns the graph group cobra command. Attach it under the root
 // to expose `hermem graph <sub>`.
-func NewCmd(env cli.Env) *cobra.Command {
+func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "graph",
 		Short: "Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)",

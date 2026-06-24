@@ -15,7 +15,7 @@ import (
 
 // NewCmd returns the task group cobra command. Attach it under the root
 // to expose `hermem task <sub>`.
-func NewCmd(env cli.Env) *cobra.Command {
+func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "task",
 		Short: "Task lifecycle (status / list / show / dep / tree / create / rollback / next)",

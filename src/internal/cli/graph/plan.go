@@ -9,7 +9,7 @@ import (
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 )
 
-func newPlanCmd(env cli.Env) *cobra.Command {
+func newPlanCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "plan",
 		Short: "Render execution plan for a goal (topologically sorted blocked tasks)",

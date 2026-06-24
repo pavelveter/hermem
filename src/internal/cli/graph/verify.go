@@ -14,7 +14,7 @@ import (
 // on failure; we now return an error and let main.go exit non-zero — the
 // result is identical from a shell's POV but the failure path is now
 // type-checked and covered by cobra's error renderer.
-func newVerifyCmd(env cli.Env) *cobra.Command {
+func newVerifyCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify",
 		Short: "Verify graph integrity (orbits, embedding dim, FK consistency). Exit 1 on failure.",

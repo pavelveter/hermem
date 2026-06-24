@@ -20,7 +20,7 @@ go build -o hermem ./src
 echo '{"query":"What is Go?"}' | ./hermem query
 
 # Server mode: long-running HTTP service on :8420.
-./hermem serve 8420 &
+./hermem serve --port 8420 &
 curl -s http://localhost:8420/health   # → {"status":"ok"}
 ```
 
@@ -197,40 +197,219 @@ Hermem is a single binary that reads JSON from stdin and writes JSON
 to stdout. There is no REPL, no daemon, no IPC — every command is a
 one-shot read-process-print.
 
-### Commands
+### 4.1 Command tree (Cobra grouped grammar)
 
-| Command | Reads (stdin JSON)              | Writes (stdout JSON)             |
-|---------|----------------------------------|----------------------------------|
-| `store` | `{id, category, content, …}`     | `{"status":"ok"}`                |
-| `search`| `{query, top_k?}`                | `[{entity, similarity}, …]`      |
-| `query` | `{query}`                        | `{"context": "<markdown>"}`      |
-| `explain` | `{query}` | `RetrievalResult` (with score breakdown) |
-| `edge`  | `{source_id, target_id, relation_type, auto_create?}` | `{"status":"ok"}` |
-| `ingest`| `{dialog}`                       | `{"status":"ok"}`                |
-| `task-status` | `{id, status}` | `{"status":"ok"}` |
-| `task-executable` | `{goal_id?}` | `{"tasks":[{"id","category","content","status","updated_at"}, …]}` |
-| `task-next` | `{goal_id?}` | `{"tasks":[{"id","category","content","status","updated_at"}, …]}` |
-| `task-list` | `{status?, goal_id?}` | `{"tasks":[{"id","category","content","status","updated_at"}, …]}` |
-| `task-show` | `{id}` | `{"entity":{…},"blocked_by":[…],"recovers_via":[…]}` |
-| `task-dep` | `{source_id, target_id, relation_type?, add?}` | `{"status":"ok"}` |
-| `task-create` | `{content, context_ids?, id?}` | `{"id":"…","status":"ok"}` |
-| `task-rollback` | `{id}` | `{"rollback_task_id":"…"}` |
-| `verify` | `{dim?}` | `{"status":"ok"}` (or report) |
-| `migrate` | (none — reads DB) | Migration status table |
-| `schema` | (none — reads DB + config) | Stored vs current schema fingerprint |
-| `explain` | `{query}` | `RetrievalResult` (with score breakdown) |
-| `temporal` | `{query, time_from?, time_to?, top_k?}` | `RetrievalResult` (time-filtered) |
-| `timeline` | (none — arg: limit) | Recent entities by created_at |
-| `contradictions` | (none — arg: entity_id?) | Contradiction pairs |
-| `execution-plan` | `{goal_id}` | Priority-sorted task execution plan |
-| `provenance` | (none — args: --conversation, --message, --source, --limit) | Entities by memory origin |
-| `recovery-plan` | `{id}` | Ordered recovery task chain |
-| `connected-components` | (none — arg: min_size) | Graph connected components |
-| `communities` | (none — args: --min-size, --max-iterations) | Louvain community detection |
-| `re-embed` | (none — args: --batch-size, --model) | Batch re-embed all entities |
-| `quantize` | `{embedding}` | Test vector quantization |
+The CLI uses a `git`/`kubectl`-style grouped tree. Top-level commands
+plus 6 subcommand groups; every group has its own `--help`.
 
-### `migrate`
+```bash
+# Top-level
+hermem serve [--port 8420]                    HTTP server
+hermem health                                 DB ping (exit 1 on fail)
+hermem metrics                                Prometheus exposition
+hermem version                                Build metadata (ldflags)
+
+# `hermem memory …` — knowledge CRUD + retrieval
+hermem memory store         < req.json        Upsert entity
+hermem memory search        < req.json        Top-K cosine neighbours
+hermem memory retrieve      < req.json        Graph walk from explicit seed_ids
+hermem memory query         < req.json        embed → search → walk → markdown
+hermem memory response      < req.json        Full pipeline + LLM response
+hermem memory edge          < req.json        Add typed edge (opt auto_create)
+hermem memory ingest        < req.json        LLM-extract + dedup-merge
+hermem memory explain       < req.json        Retrieval with score breakdown
+hermem memory re-embed      [--batch-size N] [--model M]   Batch re-embed all
+hermem memory quantize      < req.json        Scalar int8 roundtrip + stats
+
+# `hermem task …` — task lifecycle
+hermem task status          < req.json        Update task status
+hermem task list            < req.json        Filter by status / goal_id
+hermem task show            < req.json        task + blocked_by + recovers_via
+hermem task dep             < req.json        add/remove dependency edge
+hermem task tree            < req.json        ASCII tree under a goal_id
+hermem task create          < req.json        Auto-embed + assign stateful category
+hermem task rollback        < req.json        Find recovers_via companion
+hermem task next            [{}]              Executable tasks (alias: executable)
+
+# `hermem graph …` — graph analytics
+hermem graph plan           < req.json        Topo-sorted plan under goal_id
+hermem graph recovery-plan  < req.json        recovers_via chain walk
+hermem graph components                      Connected components (size ≥ 2)
+hermem graph communities                     Louvain + global modularity
+hermem graph verify                          Integrity check (exit 1 on fail)
+hermem graph contradictions [entity-id]      Optional positional ID filter
+hermem graph provenance [--conversation X] [--message M] [--source S] [--limit N]
+
+# `hermem time …` — temporal queries
+hermem time temporal        < req.json        Time-windowed retrieval (RFC3339)
+hermem time timeline                         Recent 50 entities (created_at DESC)
+
+# `hermem agent …` — agentic flows
+hermem agent loop           < req.json        algo.AgentLoop on a goal_id
+
+# `hermem db …` — migration / schema housekeeping
+hermem db migrate                             Migration status (applied / pending)
+hermem db rollback                            Roll back most-recent applied migration
+hermem db verify                              Checksum integrity check (exit 1)
+hermem db schema                              Stored vs current schema fingerprint
+```
+
+> **Breaking change (commit `8f0bf71`):** the previously-flat 26-command
+> surface is gone — `store`, `task-status`, `migration-rollback`,
+> `connected-components`, etc. are no longer callable. All scripts must
+> be rewritten to the grouped form above. There are no aliases.
+
+### 4.2 Request/response reference (per-command)
+
+Request / response shapes are unchanged from the pre-Cobra release
+(`DisallowUnknownFields` strict-decode on the wire), but the invocations
+now use the grouped grammar.
+
+#### `hermem memory store`
+
+Upsert an entity. The embedder is consulted automatically if `embedding`
+is omitted from the payload. After storing, edges are automatically
+created to up to 3 existing entities with cosine similarity > 0.85
+(relation type `related_to`). Unknown category → exit 1 + non-zero
+structured error from `httputil.DecodeStrict`.
+
+```bash
+echo '{
+  "id": "user-likes-coffee",
+  "category": "opinion",
+  "content": "User drinks espresso every morning"
+}' | ./hermem memory store
+```
+
+You can supply a pre-computed embedding to skip the embedder call
+(useful in tests; must be a `float32` array in §11-correct stride):
+
+```bash
+echo '{
+  "id": "f32-explicit",
+  "category": "world",
+  "content": "Pre-computed embedding test",
+  "embedding": [0.1, 0.2, 0.3, 0.4]
+}' | ./hermem memory store
+```
+
+#### `hermem memory search`
+
+Returns the top-K entities by cosine similarity to the embedded query.
+
+```bash
+echo '{"query":"coffee preferences","top_k":3}' | ./hermem memory search
+```
+
+`top_k` defaults to 5 when omitted or ≤ 0. Output is a JSON array of
+`{entity, similarity}` objects sorted descending by `similarity`.
+
+#### `hermem memory query`
+
+Full pipeline: embed → vector search → graph walk → markdown render.
+
+```bash
+echo '{"query":"Tell me about France"}' | ./hermem memory query
+# → {"context":"## world\n- Paris is the capital of France\n…"}
+```
+
+`MaxDepth` for the graph walk uses the value from `[retrieval]`
+(`depth_ceiling` is the hard clamp; the CLI always uses 2 by default).
+
+#### `hermem memory edge`
+
+Create an edge between two existing entities. Optional `auto_create`
+(default `false`) will auto-create missing entities as placeholder
+nodes (`category=world`, `content=id`) before linking.
+
+```bash
+# Both entities must already exist:
+echo '{"source_id":"user-likes-coffee","target_id":"espresso","relation_type":"prefers"}' \
+  | ./hermem memory edge
+
+# Auto-create missing entities on the fly:
+echo '{"source_id":"user-likes-coffee","target_id":"new-concept","relation_type":"related_to","auto_create":true}' \
+  | ./hermem memory edge
+```
+
+#### `hermem memory ingest`
+
+Synchronous one-pass of the ingestion worker — extract entities,
+embed, dedup-merge, persist.
+
+```bash
+echo '{
+  "dialog": "User: What is Go?\nAssistant: Go is a statically typed language.\nUser: Who created it?\nAssistant: Rob Pike, Robert Griesemer and Ken Thompson."
+}' | ./hermem memory ingest
+```
+
+Use this in cron/automation when you don't need the streaming worker.
+For a long-running channel of messages, use the HTTP `/ingest`
+endpoint or import `MemoryWorker` directly.
+
+#### `hermem task …`
+
+The full task lifecycle group is JSON-stdin driven. Examples:
+
+```bash
+# Update status
+echo '{"id":"step-1","status":"running"}' | ./hermem task status
+
+# List executable globally (cobra `--help`-equivalent URL query
+# param behaviour applies via stdin JSON body for goal-scoped view).
+echo '{}' | ./hermem task next
+echo '{"goal_id":"goal-1"}' | ./hermem task next        # scoped to a goal
+echo '{"status":"pending"}' | ./hermem task list       # filter by status
+echo '{"goal_id":"goal-1"}'  | ./hermem task list       # filter by goal
+echo '{"id":"step-1"}'       | ./hermem task show       # + blocked_by + recovers_via
+echo '{"source_id":"step-1","target_id":"step-0","add":true}'  | ./hermem task dep
+echo '{"content":"Run tests"}'                         | ./hermem task create
+echo '{"content":"Run tests","context_ids":["step-0"]}' | ./hermem task create
+echo '{"goal_id":"goal-1"}' | ./hermem task tree        # ASCII tree
+echo '{"id":"step-1"}'      | ./hermem task rollback    # recovers_via neighbour
+```
+
+#### `hermem graph …`
+
+Graph analytics. The first three commands are JSON-stdin driven; the
+rest read parameters from cobra flags:
+
+```bash
+echo '{"goal_id":"goal-1"}' | ./hermem graph plan
+echo '{"id":"step-1"}'      | ./hermem graph recovery-plan
+./hermem graph components                             # size ≥ 2
+./hermem graph communities                            # Louvain + global Q
+./hermem graph verify                                 # integrity check (exit 1 on fail)
+./hermem graph contradictions e1                      # optional positional entity-id
+./hermem graph provenance --conversation conv-1 --limit 10
+./hermem graph provenance --message msg-3 --source dialog --limit 20
+```
+
+#### `hermem time …`
+
+```bash
+echo '{"query":"user beliefs about Go","time_from":"2026-03-01T00:00:00Z","time_to":"2026-04-01T00:00:00Z","top_k":5}' \
+  | ./hermem time temporal
+./hermem time timeline                                # last 50 entities
+```
+
+#### `hermem agent loop`
+
+```bash
+echo '{"goal_id":"goal-1"}' | ./hermem agent loop
+# Yields one line per task: [<id>] <content>  [<category>]
+```
+
+#### `hermem db …`
+
+```bash
+./hermem db migrate                  # migration status
+./hermem db rollback                 # roll back most-recent applied migration
+./hermem db verify                   # checksum integrity (exit 1 on mismatch)
+./hermem db schema                   # stored vs current schema fingerprint
+```
+
+### `db migrate`
 
 Shows versioned migration status. Each embedded SQL migration is listed
 with `[OK]` or `[--]` status and applied-at timestamp. Migrations are
@@ -238,7 +417,7 @@ applied automatically by `InitDB` at startup; this command is for
 operator visibility into the schema_migrations table.
 
 ```bash
-./hermem migrate
+./hermem db migrate
 # [OK] 001_initial_schema.sql      (2026-06-23T10:00:00)
 # [OK] 002_entity_metadata.sql     (2026-06-23T10:00:00)
 # [OK] 003_provenance.sql          (2026-06-23T10:00:00)
@@ -732,31 +911,41 @@ curl -s "http://localhost:8420/contradictions?id=e1"
 
 ## 6. CLI vs. Server — side-by-side
 
-| Task                | CLI                                                    | HTTP                                                  |
+CLI invocations use the new Cobra grouped grammar (commit `8f0bf71`).
+HTTP endpoints are unchanged. Both share the same `DisallowUnknownFields`
+strict-decode contract.
+
+| Task                | CLI (cobra grouped)                                    | HTTP                                                  |
 |---------------------|--------------------------------------------------------|-------------------------------------------------------|
-| Store a fact        | `… \| ./hermem store`                                  | `curl -X POST …/store -d '{…}'`                       |
-| Search by query     | `… \| ./hermem search`                                 | `curl -X POST …/search -d '{…}'`                      |
-| Full query → md   | `… \| ./hermem query`                                  | `curl -X POST …/query -d '{…}'`                       |
-| Query with time     | `… \| ./hermem temporal`                               | `curl -X POST …/query/temporal -d '{…}'`              |
-| Ingest dialog       | `… \| ./hermem ingest`                                 | `curl -X POST …/ingest -d '{…}'`                      |
-| Update task status  | `… \| ./hermem task-status`                            | `curl -X POST …/task/status -d '{…}'`                 |
-| List executable     | `… \| ./hermem task-executable`                        | `curl -X POST …/task/executable`                       |
-| Next executable     | `… \| ./hermem task-next`                              | `curl -X POST …/task/next`                             |
-| List tasks          | `… \| ./hermem task-list`                              | `curl -X POST …/task/list`                             |
-| Show task           | `… \| ./hermem task-show`                              | `curl -X POST …/task/show`                             |
-| Task dependency     | `… \| ./hermem task-dep`                               | `curl -X POST …/task/dep`                              |
-| Create task         | `… \| ./hermem task-create`                            | `curl -X POST …/task/create`                           |
-| Rollback task       | `… \| ./hermem task-rollback`                          | `curl -X POST …/task/rollback`                         |
-| Task tree           | `… \| ./hermem task-tree`                              | `curl -X POST …/task/tree`                             |
-| Verify graph       | `… \| ./hermem verify`                                | `curl -X POST …/verify -d '{…}'`                       |
-| Timeline            | `./hermem timeline [limit]`                            | `curl …/timeline?limit=N`                             |
-| Contradictions      | `./hermem contradictions [entity_id]`                  | `curl …/contradictions[?id=X]`                        |
-| Health              | n/a (CLI is one-shot)                                  | `curl …/health`                                       |
+| Store a fact        | `… \| ./hermem memory store`                           | `curl -X POST …/store -d '{…}'`                       |
+| Search by query     | `… \| ./hermem memory search`                          | `curl -X POST …/search -d '{…}'`                      |
+| Full query → md   | `… \| ./hermem memory query`                           | `curl -X POST …/query -d '{…}'`                       |
+| Query with time     | `… \| ./hermem time temporal`                          | `curl -X POST …/query/temporal -d '{…}'`              |
+| Ingest dialog       | `… \| ./hermem memory ingest`                          | `curl -X POST …/ingest -d '{…}'`                      |
+| Update task status  | `… \| ./hermem task status`                            | `curl -X POST …/task/status -d '{…}'`                 |
+| List executable     | `… \| ./hermem task executable` / `task next`          | `curl -X POST …/task/executable`                       |
+| Next executable     | `… \| ./hermem task next` (alias of executable)        | `curl -X POST …/task/next`                             |
+| List tasks          | `… \| ./hermem task list`                              | `curl -X POST …/task/list`                             |
+| Show task           | `… \| ./hermem task show`                              | `curl -X POST …/task/show`                             |
+| Task dependency     | `… \| ./hermem task dep`                               | `curl -X POST …/task/dep`                              |
+| Create task         | `… \| ./hermem task create`                            | `curl -X POST …/task/create`                           |
+| Rollback task       | `… \| ./hermem task rollback`                          | `curl -X POST …/task/rollback`                         |
+| Task tree           | `… \| ./hermem task tree`                              | `curl -X POST …/task/tree`                             |
+| Verify graph       | `… \| ./hermem graph verify`                           | `curl -X POST …/verify -d '{…}'`                       |
+| Timeline            | `./hermem time timeline`                               | `curl …/timeline?limit=N`                             |
+| Contradictions      | `./hermem graph contradictions [entity-id]`             | `curl …/contradictions[?id=X]`                        |
+| Provenance          | `./hermem graph provenance [--conversation X] [--message M] [--source S] [--limit N]` | `curl …/provenance?conversation_id=X&message_id=Y&source=Z&limit=N` |
+| Execution plan      | `./hermem graph plan < req.json`                       | n/a — CLI-only derived view                            |
+| Connected components| `./hermem graph components`                            | `curl …/connected-components?min_size=N`              |
+| Communities         | `./hermem graph communities`                           | `curl …/communities?min_size=N&max_iterations=N`      |
+| Re-embed            | `./hermem memory re-embed [--batch-size N] [--model M]`| `curl -X POST …/admin/re-embed -d '{…}'`               |
+| Health              | `./hermem health` (exit 1 on DB unreachable)             | `curl …/health/ready`                                 |
+| Metrics             | `./hermem metrics`                                     | `curl …/metrics`                                      |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
-| Errors              | Exit non-zero + `log.Fatalf` to stderr                 | `HTTP 400` + structured `ErrorResponse` body          |
+| Errors              | Exit non-zero + cobra error renderer to stderr         | `HTTP 400` + structured `ErrorResponse` body          |
 | Embedding model     | Read from `[embedder] model`                           | Same                                                  |
-| DB file             | `[database] path` from working-dir `hermem.ini`        | Same                                                  |
-| Strict JSON         | Yes (`DisallowUnknownFields`)                          | Yes                                                   |
+| DB file             | `[database] path` from `hermem.ini` next to binary      | Same                                                  |
+| Strict JSON         | Yes (`httputil.DecodeStrict` / `DisallowUnknownFields`)| Same                                                  |
 
 ---
 
@@ -1190,24 +1379,23 @@ silently produce wrong cosine scores.
 
 | Concern                         | File                              |
 |---------------------------------|-----------------------------------|
-| INI parsing, defaults           | `src/config.go`                   |
-| Schema, embedding serialisation | `src/db.go`                       |
-| VectorIndex interface, search backends (InMemory / SqliteVec) | `src/vector.go` |
-| Graph walk, ranking, formatting | `src/retrieval.go`                |
-| Background worker, dedup, edges | `src/ingestion.go`                |
-| Contradiction detection        | `src/contradiction.go`            |
-| Community detection (Louvain)  | `src/community.go`                |
-| Background re-embedding        | `src/reembed.go`                  |
-| Vector quantization            | `src/quantize.go`                 |
-| Embedding cache (LRU)          | `src/cache.go`                    |
-| Agent state engine             | `src/agent_loop.go`               |
-| Multi-hop retrieval            | `src/multi_hop.go`                |
-| Ollama / OpenAI HTTP            | `src/embedder.go`, `src/extractor.go` |
-| HTTP handlers, strict decoder   | `src/server.go`                   |
-| CLI entry-point                 | `src/main.go`                     |
-| Retention GC loop               | `src/retention.go`                |
-| Auth + request-id middleware    | `src/middleware.go`               |
-| Metrics                         | `src/metrics.go`                  |
-| Accelerate SIMD cosine (darwin) | `src/cosine_darwin.go`            |
-| Pure-Go cosine fallback         | `src/cosine.go`                   |
-| Per-package tests               | `src/*_test.go`                   |
+| INI parsing, defaults           | `src/internal/config/config.go`   |
+| Schema, embedding serialisation | `src/internal/store/migration.go`  |
+| VectorIndex interface, search backends (InMemory / SqliteVec) | `src/internal/vector/vector.go` |
+| Graph walk, ranking, formatting | `src/internal/retrieval/...`       |
+| Background worker, dedup, edges | `src/internal/ingestion/worker.go` |
+| Contradiction detection        | `src/internal/retrieval/contradictions.go` |
+| Community detection (Louvain)  | `src/internal/algo/community.go`   |
+| Background re-embedding        | `src/internal/algo/reembed.go`    |
+| Vector quantization            | `src/internal/vector/quantize.go` |
+| Ollama / OpenAI HTTP            | `src/internal/embedder/*`         |
+| HTTP handlers, strict decoder   | `src/internal/server/server.go`   |
+| CLI dispatch (Cobra root)       | `src/internal/cli/root.go`        |
+| CLI helpers, runtime Env        | `src/internal/cli/env/env.go`     |
+| CLI subcommand groups          | `src/internal/cli/{memory,task,graph,time,agent,db}/<sub>.go` |
+| Top-level CLI (`serve`, `health`, `metrics`, `version`) | `src/internal/cli/<top>.go` |
+| Binary entry-point              | `src/main.go`                     |
+| Retention GC loop               | `src/internal/retention/...`      |
+| Accelerate SIMD cosine (darwin) | `src/internal/cosine/cosine_darwin.go` |
+| Pure-Go cosine fallback         | `src/internal/cosine/cosine.go`   |
+| Per-package tests               | `src/**/*_test.go`                |

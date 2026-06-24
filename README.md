@@ -41,7 +41,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **State-on-Graph (Batch 9)** — stateful entities with `status`, configurable dependency relations, CTE-based executable-node walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
 - **Declarative schema** — categories, relation types, FSM rules defined in `hermem.ini` `[schema]`; no recompilation needed
 - **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
-- **Graph integrity verify** — `verify` CLI command checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types
+- **Graph integrity verify** — `hermem graph verify` checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types (exit 1 on problems)
 - **Retrieval explainability** — `/query/explain` endpoint returns vector/recency/depth score breakdown per retrieved fact
 - **Contradiction detection** — heuristic `isContradiction` detects conflicting statements at ingest; prevents merging, creates `contradicts` edges instead
 - **Temporal retrieval** — `/query/temporal` endpoint filters graph walk by time range (`time_from`/`time_to` RFC3339)
@@ -54,29 +54,81 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Critical path analysis** — `CriticalPath(db, schema, goalID)` walks the longest weighted path from leaf to goal
 - **Recovery plans** — `GenerateRecoveryPlan` follows `recovers_via` chains; `GET /recovery-plan?id=X` HTTP endpoint
 - **Graph clustering** — `FindConnectedComponents` BFS-based connected components; `GET /connected-components?min_size=N`
-- **Community detection** — Louvain one-pass modularity optimisation; `hermem communities` CLI + `GET /communities` HTTP
-- **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem re-embed` CLI + `POST /admin/re-embed` HTTP
+- **Community detection** — Louvain one-pass modularity optimisation; `hermem graph communities` CLI + `GET /communities` HTTP
+- **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem memory re-embed [--batch-size N] [--model M]` CLI + `POST /admin/re-embed` HTTP
 - **Embedding cache** — `EmbeddingCache` LRU (map + doubly-linked list) wired into vector index for hot-path speedup
-- **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem quantize` CLI
+- **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem memory quantize` (stdin) CLI
 - **Docker** — multi-stage build, non-root user
 
 ## CLI Commands
 
+Cobra-grouped grammar (`git` / `kubectl` style). Every command reads its
+payload from stdin; `hermem <group> --help` shows only that group's
+commands. Top-level commands: `serve`, `health`, `metrics`, `version`.
+
+> **Breaking change (commit `8f0bf71`):** the previously-flat 26-command
+> surface is gone. There are no back-compat aliases. Any script that
+> ran `hermem store`, `hermem task-status`, `hermem migration-rollback`,
+> etc. must be rewritten to the grouped form below.
+
+```bash
+# Top-level
+hermem serve [--port 8420]              HTTP server (SIGHUP reloads hermem.ini)
+hermem health                           DB ping (mirrors /health/ready, exit 1 on fail)
+hermem metrics                          Prometheus exposition
+hermem version                          ldflags build metadata
+
+# Memory CRUD + retrieval
+hermem memory store        < req.json   Upsert entity (id/category/content + opt embedding)
+hermem memory search       < req.json   Top-K cosine neighbours (default top_k=5)
+hermem memory retrieve     < req.json   Graph walk from explicit seed_ids
+hermem memory query        < req.json   embed → search → walk → markdown context
+hermem memory response     < req.json   Full pipeline + LLM-generated response
+hermem memory edge         < req.json   Add typed edge (body.auto_create=true creates endpoints)
+hermem memory ingest       < req.json   LLM-extract + dedup-merge entities from dialog
+hermem memory explain      < req.json   Retrieval with score breakdown per fact
+hermem memory re-embed     [--batch-size N] [--model M]   Batch re-embed all entities
+hermem memory quantize     < req.json   Scalar int8 roundtrip + compression stats
+
+# Task lifecycle
+hermem task status         < req.json   Update task status (pending/running/completed/failed)
+hermem task list           < req.json   Filter by status / goal_id
+hermem task show           < req.json   task + blocked_by + recovers_via relations
+hermem task dep            < req.json   add/remove a dependency edge
+hermem task tree           < req.json   ASCII tree under a goal_id
+hermem task create         < req.json   Auto-embed + assign first stateful category
+hermem task rollback       < req.json   Find recovers_via companion task
+hermem task next           [{}]         Executable tasks (alias: task executable)
+hermem task executable     [{}]         Same as `task next`
+
+# Graph analytics
+hermem graph plan          < req.json   Topologically-sorted plan under goal_id
+hermem graph recovery-plan < req.json   recovers_via chain walk from failed task
+hermem graph components                  Connected components (size ≥ 2)
+hermem graph communities                 Louvain community detection + global modularity
+hermem graph verify                      Integrity check (exit 1 on problems)
+hermem graph contradictions [entity-id]  Optional positional ID filter
+hermem graph provenance [--conversation X] [--message M] [--source S] [--limit N]
+
+# Temporal
+hermem time temporal        < req.json  Time-windowed retrieval (time_from/time_to RFC3339)
+hermem time timeline                    Recent 50 entities by created_at DESC
+
+# Agent flows
+hermem agent loop           < req.json  algo.AgentLoop on a goal_id (yields each task)
+
+# Database ops
+hermem db migrate                       Migration status (applied / pending)
+hermem db rollback                      Roll back most-recent applied migration
+hermem db verify                        Checksum integrity check (exit 1 on mismatch)
+hermem db schema                        Stored vs current schema fingerprint
 ```
-hermem migrate            # Show versioned migration status
-hermem schema             # Show current vs stored schema fingerprint
-hermem serve              # Start HTTP server (SIGHUP to reload config)
-hermem contradictions     # List contradicts edges (optional: [entity_id])
-hermem temporal           # Query with time range (JSON stdin with time_from/time_to)
-hermem timeline [limit]   # Show recent entities ordered by created_at
-hermem provenance         # Query entities by conversation/message/source
-hermem execution-plan     # Topologically sorted task plan (JSON stdin: goal_id)
-hermem recovery-plan      # Walk recovers_via chain from failed task (JSON stdin: id)
-hermem connected-components [min_size]  # Find graph connected components
-hermem communities        # Louvain community detection (--min-size=N --max-iterations=N)
-hermem re-embed           # Batch re-embed all entities after model/dim change (--batch-size=N)
-hermem quantize           # Test vector quantization (JSON stdin: embedding)
-```
+
+All `memory`/`task`/`graph`/`time`/`agent` commands that read structured
+input require JSON on **stdin** (`echo '{...}' | hermem <group> <cmd>` or
+`hermem <group> <cmd> < req.json`). Cobra flags (`--port`, `--batch-size`,
+`--conversation`, `--limit`, etc.) use Go-style `--name value` syntax
+and are documented under each command via `hermem <group> <cmd> --help`.
 
 ## Quick Start
 
@@ -86,9 +138,21 @@ git clone https://github.com/pavelveter/hermem.git
 cd hermem
 go build -o hermem ./src
 
-# Run the demo (creates hermem.db)
-./hermem
+# Inspect the command tree (top-level + 6 groups)
+./hermem --help
 ```
+
+The pre-cobra default `./hermem` was a `store → query` smoke demo; it no
+longer creates a DB on its own. New smoke sequence after build:
+
+```bash
+./hermem serve --port 8420 &      # boot HTTP server (background)
+curl -s http://localhost:8420/health/ready   # → {"status":"ok"}
+echo '{"id":"hello","category":"world","content":"hello world"}' \
+  | ./hermem memory store           # creates hermem.db on first store
+```
+
+For one-shot CLI use without a server, see [USAGE.md §4.2](USAGE.md#4-cli-mode-runbook).
 
 ## Installation
 
@@ -137,10 +201,10 @@ cp hermem /usr/local/bin/
 sudo cp hermem.ini /usr/local/bin/hermem.ini
 
 # Run CLI (works regardless of cwd)
-echo '{"query":"What is Go?"}' | hermem query
+echo '{"query":"What is Go?"}' | hermem memory query
 
-# Or run as server
-hermem serve 8420
+# Or run as server (port is a real cobra flag, not a positional arg)
+hermem serve --port 8420
 ```
 
 ## Dependencies
@@ -153,10 +217,12 @@ hermem serve 8420
 ## Configuration
 
 All settings are read from `hermem.ini` **next to the binary executable**
-(`os.Executable()`-resolved), so `~/.hermes/bin/hermem store` behaves
-the same regardless of the caller's working directory — a stray
-`hermem.db` no longer leaks into a transient CWD. INI format.
-If the file doesn't exist, defaults are used.
+(`os.Executable()`-resolved), so `~/.hermes/bin/hermem memory store`
+behaves the same regardless of the caller's working directory — a
+stray `hermem.db` no longer leaks into a transient CWD. INI format.
+If the file doesn't exist, defaults are used. The CLI is cobra-grouped;
+see [USAGE.md §4.1](USAGE.md#4-command-tree-cobra-grouped-grammar) for the
+full subcommand tree.
 
 ### hermem.ini — all settings
 
@@ -369,49 +435,122 @@ The ingestion worker:
 
 ## File Structure
 
+Post-Cobra-migration layout (commit `8f0bf71`). The old `src/<file>.go`
+flat tree and the `src/cmd/<name>.go` registry are gone. Source lives
+under 13 packages in `src/internal/`.
+
 ```
 hermem/
-├── src/
-│   ├── db.go                # SQLite schema, migration runner, fingerprint
-│   ├── config.go            # INI config loader, schema validation
-│   ├── embedder.go          # Embedder interface (Ollama / OpenAI)
-│   ├── extractor.go         # LLMExtractor interface + allowlist filtering
-│   ├── vector.go            # VectorIndex interface + wrappers
-│   ├── vector_inmemory.go   # InMemoryVectorIndex — RAM-cached cosine scan
-│   ├── vector_sqlitevec.go  # SqliteVecIndex — vec0 KNN (build tag)
-│   ├── cosine.go            # CosineSimilarity — pure Go fallback (!darwin)
-│   ├── cosine_darwin.go     # CosineSimilarity — Apple Accelerate AMX (darwin)
-│   ├── retrieval.go         # Recursive CTE graph walk, ranking, markdown
-│   ├── ingestion.go         # Ingestion worker, entity extraction, dedup
-│   ├── contradiction.go     # Contradiction detection heuristic (no LLM)
-│   ├── server.go            # HTTP API server + strict JSON decoder
-│   ├── main.go              # Entry point (CLI subcommands + serve)
-│   ├── metrics.go           # expvar metrics endpoint
-│   ├── middleware.go        # Auth + request-id middleware
-│   ├── retention.go         # Garbage collector + retention policy
-│   ├── migrations/          # Versioned SQL migration files (embedded)
-│   │   ├── 001_initial_schema.sql
-│   │   ├── 002_entity_metadata.sql
-│   │   ├── 003_provenance.sql
-│   │   ├── 004_episodic_sessions.sql
-│   │   ├── 005_centrality.sql
-│   │   ├── 006_weighted_edges.sql
-│   │   └── 007_task_priorities.sql
-│   ├── *_test.go            # Per-package tests (90 tests)
-├── hermem.ini               # Sample config file
-├── plugins/
-│   └── memory/
-│       └── hermem/          # Hermes Agent memory provider plugin
-│           ├── __init__.py
-│           └── plugin.yaml
+├── README.md                ← This file (high-level overview + quick start)
+├── USAGE.md                 ← Operator runbook (CLI + HTTP side-by-side,
+│                              payload reference, error model, DB schema,
+│                              embedding-model notes, operational runbook)
+├── CHANGELOG.md             ← Keep-a-Changelog format, semver
+├── skills/hermem/SKILL.md   ← Hermes Agent skill manifest (plugin metadata +
+│                              grouped-CLI grammar + procedure for agents)
+├── ROADMAP.md               ← (project planning docs)
+├── VISION.md
+├── Dockerfile               ← Multi-stage build, non-root user
+├── docker-compose.yml       ← Local stack orchestration
+├── hermem.ini               ← Sample config (full key reference in §Configuration)
+├── install.sh               ← One-command installer for Hermes Agent
+├── go.mod / go.sum          ← Go module + lockfile (uses gopkg.in/ini.v1, spf13/cobra)
+├── plugins/memory/hermem/   ← Hermes Agent provider plugin (Python)
+│   ├── __init__.py
+│   └── plugin.yaml          # 3 tools: hermem_search / hermem_store / hermem_query
+└── src/
+    ├── main.go              ← Binary entry: loads config + DB + VI + Embedder +
+    │                         Extractor + Reranker + BuildInfo, constructs
+    │                         cli.Env, calls cli.NewRootCommand(env).Execute().
+    │                         Builds SIGHUP reload loop on prod. server (hermem serve).
+    └── internal/            ← 13 packages
+        ├── ai/              ← LLM client helpers (Ollama + OpenAI), extractor
+        │                      base, retrieval prompts (operator-facing
+        │                      construction in config.NewEmbedder/NewExtractor)
+        ├── algo/            ← Graph algorithms (no LLM / SQL):
+        │                      VerifyGraph, ExecutionPlan, CriticalPath,
+        │                      FindConnectedComponents, DetectCommunities,
+        │                      AgentLoop, ReEmbedAll
+        ├── cli/             ← Cobra command tree (~44 files; see CLI Commands
+        │                      section above for the user-visible layout)
+        │   ├── root.go      ← NewRootCommand wires top-level + 6 groups
+        │   ├── env/env.go   ← Runtime Env, BuildInfo, ReadStdin, DecodeStdin,
+        │   │                  DecodeString, WriteJSON, ErrStdinRequired
+        │   ├── serve.go | health.go | metrics.go | version.go   ← top-level
+        │   ├── memory/      ← 10 subs: store/search/retrieve/query/response/
+        │   │                  edge/ingest/explain/re-embed/quantize
+        │   ├── task/        ← 8 subs: status/list/show/dep/tree/create/
+        │   │                  rollback/executable (alias `next`)
+        │   ├── graph/       ← 7 subs: plan/recovery-plan/components/
+        │   │                  communities/verify/contradictions/provenance
+        │   ├── time/        ← 2 subs: temporal/timeline
+        │   ├── agent/       ← 1 sub: loop
+        │   └── db/          ← 4 subs: migrate/rollback/verify/schema
+        ├── config/          ← INI loader (gopkg.in/ini.v1), Config.Validate,
+        │                      schema fingerprinting, Reranker factory
+        ├── core/            ← Public types: Entity, Edge, request/response
+        │                      structs, SchemaConfig, RetrieveContextOptions
+        ├── httputil/        ← HTTP strict-decode helpers (DecodeStrict,
+        │                      WriteJSON, WriteError, MaxBodyBytes)
+        ├── ingestion/       ← Background extraction worker
+        │   ├── worker.go    ← NewIngestionWorker factory + lifecycle
+        │   └── dialog.go    ← ProcessDialog (LLM extract + dedup-merge)
+        ├── metrics/         ← AsyncMetricsWorker + Prometheus exposition
+        │                      + InitMetricsDB / InitMetricsWorker lifecycle
+        ├── retrieval/       ← Recursive CTE graph walk, ranking pipeline,
+        │                      FormatContextMarkdown, contradiction helpers
+        ├── server/          ← HTTP API server, split into 4 sub-services
+        │   ├── server.go    ← Slim shell: route registration, ReloadState
+        │   │                  (atomic.Pointer swap), graceful shutdown
+        │   ├── admin_service.go ← /health* + /admin/* + /schema
+        │   ├── middleware.go ← X-API-Key, request-id, slog, recover
+        │   ├── requests.go  ← Shared request structs (StoreRequest, etc.)
+        │   ├── memory/      ← POST /store, /ingest, /edge (write) +
+        │   │                  owns the IngestionWorker
+        │   ├── retrieval/   ← POST /search, /query, /retrieve, /explain,
+        │   │                  /response, /query/temporal (read)
+        │   └── task/        ← POST /task/* + /verify
+        ├── serverstate/     ← atomic.Pointer[State] for SIGHUP-safe config
+        │                      reload across all handlers
+        ├── store/           ← SQL access + migration runner (init, codec,
+        │   │                  entity, edge, task, graph, community, recovery,
+        │   │                  schema)
+        │   ├── migration.go ← InitDB, runMigrations, StoreSchemaFingerprint
+        │   ├── init.go      ← DSN + PRAGMAs (WAL, FK, synchronous=NORMAL,
+        │   │                  auto_vacuum=INCREMENTAL)
+        │   ├── *_test.go    ← 4 test files in this pkg
+        │   └── migrations/  ← Embedded SQL apply-set
+        │       ├── 001_initial_schema.sql
+        │       ├── 002_entity_metadata.sql
+        │       ├── 003_provenance.sql
+        │       ├── 004_episodic_sessions.sql
+        │       ├── 005_centrality.sql
+        │       ├── 006_weighted_edges.sql
+        │       └── 007_task_priorities.sql
+        └── vector/          ← VectorIndex + backends + cosine + quant + cache
+            ├── index.go     ← VectorIndex interface, embedding serialisation,
+            │                  NormalizeVector at ingest
+            ├── inmemory.go  ← InMemoryVectorIndex: flatMatrix + cblas_sgemv
+            │                  (or pure-Go loop), LRU cache, BatchDotProducts
+            ├── cosine.go    ← Pure-Go fallback (build tag: !darwin || !cgo)
+            ├── cosine_darwin.go ← Apple Accelerate (cblas) AMX fast path
+            │                  (build tag: darwin && cgo)
+            ├── quantize.go  ← Scalar int8 roundtrip + compression stats
+            │                  (QuantizeVector / DequantizeVector)
+            └── *_test.go    ← Cosine parity tests + quantize roundtrip
 ```
+
+All `*_test.go` files together amount to ~12 test files across the
+`internal/` tree (`store` has the most, `retrieval` and `vector` come
+next). Each file typically holds 5-15 tests; total test function count
+is in the 100-200 range, growing as features land.
 
 ## HTTP API Server
 
 Run Hermem as an HTTP service for integration with Hermes Agent or other systems:
 
 ```bash
-./hermem serve 8420
+./hermem serve --port 8420
 ```
 
 ### Endpoints
@@ -555,7 +694,7 @@ hermes memory
 The plugin works in CLI mode by default (no server needed). For server mode:
 
 ```bash
-~/.hermes/bin/hermem serve 8420
+~/.hermes/bin/hermem serve --port 8420
 export HERMEM_URL=http://localhost:8420
 ```
 
@@ -671,12 +810,15 @@ go test -v -run TestIntegration
 go test -v -run TestTiming
 ```
 
-The per-package tests (`config_test.go`, `vector_test.go`,
-`retrieval_test.go`, `ingestion_test.go`, `extractor_test.go`,
-`server_test.go`) use `helpers_test.go → memDB(t)` (`:memory:`
-SQLite + `stubEmbedder`/`stubExtractor` mocks); `verify_test.go` is
-file-backed so its `TestTiming` exercises the real `PRAGMA journal_mode
-= WAL` path.
+Per-package tests live under each internal package as `*_test.go`.
+The store package's `helpers_test.go → memDB(t)` fixture sets up an
+in-memory SQLite + stub embedder/extractor mocks used by the
+integration tests; `tasks_test.go` and `recovery_test.go` (also in
+`store/`) exercise scheduler-flavoured SQL roundtrips. The file-backed
+test in `store/` (using `verify-test.db`) is the only one that runs
+against the real `PRAGMA journal_mode = WAL` path. The CLI smoke test
+lives at `src/internal/cli/cli_test.go` and asserts the cobra tree
+shape + `--help` rendering.
 
 ## Documentation
 

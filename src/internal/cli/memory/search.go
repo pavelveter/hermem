@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-func newSearchCmd(env cli.Env) *cobra.Command {
+func newSearchCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "search",
 		Short: "Top-K nearest neighbors by query embedding",

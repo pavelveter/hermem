@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newListCmd(env cli.Env) *cobra.Command {
+func newListCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List tasks filtered by status and/or goal_id",

@@ -9,7 +9,7 @@ import (
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 )
 
-func newReEmbedCmd(env cli.Env) *cobra.Command {
+func newReEmbedCmd(env *cli.Env) *cobra.Command {
 	var (
 		batchSize int
 		model     string

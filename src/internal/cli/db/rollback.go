@@ -9,7 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newRollbackCmd(env cli.Env) *cobra.Command {
+func newRollbackCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "rollback",
 		Short: "Roll back the most-recent applied migration",

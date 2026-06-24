@@ -10,7 +10,7 @@ import (
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 )
 
-func newTimelineCmd(env cli.Env) *cobra.Command {
+func newTimelineCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "timeline",
 		Short: "Most-recent 50 entities (created_at DESC, archived=0)",

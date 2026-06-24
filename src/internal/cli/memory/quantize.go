@@ -9,7 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-func newQuantizeCmd(env cli.Env) *cobra.Command {
+func newQuantizeCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "quantize",
 		Short: "Quantize a single embedding locally (no DB / no embedder call)",

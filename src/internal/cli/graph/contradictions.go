@@ -12,7 +12,7 @@ import (
 // newContradictionsCmd — single optional positional [entity-id] narrows
 // the result. cobra.MaximumNArgs(1) gives the same semantic validation
 // the pre-cobra os.Args[2] read did, but as a first-class CLI contract.
-func newContradictionsCmd(env cli.Env) *cobra.Command {
+func newContradictionsCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "contradictions [entity-id]",
 		Short: "List contradictions (optional entity-id narrows the query)",
