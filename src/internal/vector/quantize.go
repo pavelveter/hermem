@@ -38,7 +38,11 @@ func QuantizeVector(v []float32) QuantizedVector {
 	if max == min {
 		scale = 1
 	}
-	codes := quantCodePool.Get().([]int8)[:len(v):len(v)]
+	// 2-index slice expression preserves the underlying array's capacity
+	// across pool reuse. The earlier 3-index `[:len(v):len(v)]` form
+	// reset cap back to len, defeating the whole point of the pool on
+	// hot paths with variable-length embeddings.
+	codes := quantCodePool.Get().([]int8)[:len(v)]
 	for i, x := range v {
 		codes[i] = int8((x - min) * scale)
 	}
