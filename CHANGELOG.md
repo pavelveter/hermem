@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round-7 P2 batch (Russian negation, DEADCODE marker, SKILL bump)
+
+- **Russian negation list extension (§ 7)** — `IsIngestionContradiction` in `src/internal/ingestion/dialog.go` catches bare Russian negation particles (` не `, ` нет `, ` никогда `, ` ни за что`) plus common inflections of `любить` / `ненавидеть` / `хотеть` and the idiom `не нравится`. Doc comment surfaces the trade-off (high recall on listed forms; brittleness on rarer morphology). 14-case table-driven test in `dialog_test.go` pins the English baseline + the new Russian regression traps.
+- **MemoryWorker DEADCODE annotation (§ 4)** — `cli/memory/ingest.go` uses `ProcessDialog` (one-shot); the channel-based `MemoryWorker` is reserved for external batch consumers. Doc comment explicitly forbids removal absent the planned P1 § 4 checkpoint work landing.
+- **SKILL.md version bump (§ 9a)** — `version: 0.1.0` → `version: 0.2.0`. Power-curated installations pinning `=0.1.0` will need to update the pin.
+- **USAGE.md § 10 schema table (§ 9c)** — added the `degree` / `priority` rows under `entities` (migrations `005_centrality.sql` / `007_task_priorities.sql`) and the `weight` row under `edges` (migration `006_weighted_edges.sql`). Narrative below the table already cited these columns in adjacent prose, so no inconsistency.
+
+### Round-8 / TODO § 4 — ingest worker checkpoint + drain
+
+- **§ 4.1 Checkpoint partial batches on ctx cancellation** — `MemoryWorkerResilient` (new companion to the legacy `MemoryWorker`) in `src/internal/ingestion/dialog.go` writes a JSON `IngestionCheckpoint{LastCommittedIndex, LastCommittedAt, WorkerID}` per successful `ProcessDialogWithProvenance`. Atomic-counter-unique tmp filenames + POSIX-atomic `os.Rename` for crash-safe writes. Each goroutine writes a LOCAL `IngestionCheckpoint` copy so concurrent flushes never race on a shared struct field. 9-case `checkpoint_test.go` table-driven test pins round-trip, missing/corrupt fallback, atomic-rename, and 16-goroutine concurrent safety.
+- **§ 4.2 Drain the channel on ctx cancel** — same function drains the unprocessed channel buffer into a JSONL side file (`pendingPath`) bounded by a 5s deadline (`defaultDrainTimeout`) so a producer that doesn't close its channel cannot stall the worker. JSONL round-trip test confirms producer-side replay fidelity.
+- **MemoryWorker doc comment updated** — explicit "ZERO in-tree callers" framing + `grep -rnF MemoryWorker src/internal/ | grep -v _test.go` audit one-liner. Both functions ship side-by-side for future callers.
+- **MemoryMessage JSON tags** — `json:"dialog" | json:"conversation_id" | json:"message_id"` on `src/internal/core/types.go` so the `pending.jsonl` drain file is readable by Go AND any external producer/language that consumes it on restart.
+
 ### Breaking changes (CLI surface)
 
 - **Cobra-grouped CLI surface (commit `8f0bf71`).** The flat 26-command

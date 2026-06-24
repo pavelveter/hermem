@@ -246,10 +246,13 @@ type Provenance struct {
 }
 
 // MemoryMessage is a dialog to be processed by the ingestion pipeline.
+// JSON tags normalize the surface so the pending.jsonl drain file
+// (written by MemoryWorkerResilient § 4.2) is readable by Go AND
+// by any external producer/language that consumes it on restart.
 type MemoryMessage struct {
-	Dialog         string
-	ConversationID string
-	MessageID      string
+	Dialog         string `json:"dialog"`
+	ConversationID string `json:"conversation_id"`
+	MessageID      string `json:"message_id"`
 }
 
 // ReEmbedResult is the output of ReEmbedAll.
