@@ -1,24 +1,18 @@
 package store
 
 import (
-	"crypto/sha256"
 	"database/sql"
 	"embed"
-	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"sort"
 	"strings"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
-// RunMigrations applies pending SQL migrations.
+// RunMigrations applies pending SQL migrations embedded at compile time.
 func RunMigrations(db *sql.DB) error {
 	entries, err := migrationFS.ReadDir("migrations")
 	if err != nil {
@@ -55,14 +49,16 @@ func RunMigrations(db *sql.DB) error {
 			if strings.Contains(execErr.Error(), "duplicate column name") {
 				slog.Info("migration skipped (columns already exist)", "migration", name)
 				recTx, _ := db.Begin()
-				recTx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name)
-				recTx.Commit()
+				_, _ = recTx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name)
+				_ = recTx.Commit()
 				continue
 			}
 			return fmt.Errorf("apply migration %s: %w", name, execErr)
 		}
-		tx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name)
-		tx.Commit()
+		_, _ = tx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name)
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", name, err)
+		}
 		slog.Info("migration applied", "migration", name)
 	}
 	return nil
@@ -85,6 +81,7 @@ func appliedMigrations(db *sql.DB) (map[string]bool, error) {
 	return applied, rows.Err()
 }
 
+// MigStatus is one migration's applied state.
 type MigStatus struct {
 	Name      string
 	Applied   bool
@@ -98,24 +95,24 @@ func MigrationStatus(db *sql.DB) ([]MigStatus, error) {
 		return nil, err
 	}
 	appliedAt := make(map[string]string)
-	rows, _ := db.Query("SELECT version, applied_at FROM schema_migrations ORDER BY applied_at")
-	if rows != nil {
+	if rows, err := db.Query("SELECT version, applied_at FROM schema_migrations ORDER BY applied_at"); err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var v, at string
-			rows.Scan(&v, &at)
-			appliedAt[v] = at
+			if err := rows.Scan(&v, &at); err == nil {
+				appliedAt[v] = at
+			}
 		}
 	}
 	files, _ := PendingMigrations()
-	var out []MigStatus
+	out := make([]MigStatus, 0, len(files))
 	for _, name := range files {
-		out = append(out, MigStatus{name, applied[name], appliedAt[name]})
+		out = append(out, MigStatus{Name: name, Applied: applied[name], AppliedAt: appliedAt[name]})
 	}
 	return out, nil
 }
 
-// PendingMigrations returns migration file names.
+// PendingMigrations returns sorted migration file names.
 func PendingMigrations() ([]string, error) {
 	entries, err := migrationFS.ReadDir("migrations")
 	if err != nil {
@@ -142,13 +139,13 @@ func RollbackMigration(db *sql.DB) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read last migration: %w", err)
 	}
-	db.Exec("DELETE FROM schema_migrations WHERE version = ?", name)
-	db.Exec("DELETE FROM migration_checksums WHERE version = ?", name)
+	_, _ = db.Exec("DELETE FROM schema_migrations WHERE version = ?", name)
+	_, _ = db.Exec("DELETE FROM migration_checksums WHERE version = ?", name)
 	slog.Info("migration rolled back", "migration", name)
 	return name, nil
 }
 
-// MigrationChecksum returns a hex-encoded FNV-1a hash.
+// MigrationChecksum returns a hex-encoded FNV-1a hash of the migration file contents.
 func MigrationChecksum(name string) (string, error) {
 	sqlBytes, err := migrationFS.ReadFile("migrations/" + name)
 	if err != nil {
@@ -162,21 +159,23 @@ func MigrationChecksum(name string) (string, error) {
 	return fmt.Sprintf("%016x", h), nil
 }
 
+// MigMismatch reports one migration whose stored checksum diverges from current.
 type MigMismatch struct {
 	Name            string
 	StoredChecksum  string
 	CurrentChecksum string
 }
 
-// VerifyMigrationIntegrity checks all applied migrations against current checksums.
+// VerifyMigrationIntegrity compares applied migrations against their current checksums.
 func VerifyMigrationIntegrity(db *sql.DB) ([]MigMismatch, error) {
 	stored := make(map[string]string)
 	if rows, err := db.Query("SELECT version, checksum FROM migration_checksums"); err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var v, c string
-			rows.Scan(&v, &c)
-			stored[v] = c
+			if err := rows.Scan(&v, &c); err == nil {
+				stored[v] = c
+			}
 		}
 	}
 	applied, _ := appliedMigrations(db)
@@ -184,80 +183,8 @@ func VerifyMigrationIntegrity(db *sql.DB) ([]MigMismatch, error) {
 	for name := range applied {
 		current, _ := MigrationChecksum(name)
 		if st, ok := stored[name]; ok && st != current {
-			mismatches = append(mismatches, MigMismatch{name, st, current})
+			mismatches = append(mismatches, MigMismatch{Name: name, StoredChecksum: st, CurrentChecksum: current})
 		}
 	}
 	return mismatches, nil
-}
-
-// HashSchema produces a deterministic SHA-256 fingerprint.
-func HashSchema(schema core.SchemaConfig) string {
-	rep := map[string]interface{}{
-		"categories": SortedKeys(schema.AllowedCategories),
-		"relations":  SortedKeys(schema.AllowedRelations),
-		"stateful":   SortedKeys(schema.StatefulCategories),
-		"states":     schema.ValidStateOrder,
-		"blocking":   schema.RelationBlocking,
-		"unblocking": schema.StateUnblocking,
-		"recovery":   schema.RelationRecovery,
-	}
-	b, _ := json.Marshal(rep)
-	h := sha256.Sum256(b)
-	return fmt.Sprintf("%x", h[:8])
-}
-
-// CheckSchemaFingerprint compares current vs stored schema fingerprint.
-func CheckSchemaFingerprint(db *sql.DB, schema core.SchemaConfig) (stored, current string, err error) {
-	current = HashSchema(schema)
-	err = db.QueryRow("SELECT value FROM meta WHERE key = 'schema_fingerprint'").Scan(&stored)
-	if err == sql.ErrNoRows {
-		db.Exec("INSERT INTO meta (key, value) VALUES ('schema_fingerprint', ?)", current)
-		return "", current, nil
-	}
-	if err != nil {
-		return "", "", err
-	}
-	return stored, current, nil
-}
-
-// StoreSchemaFingerprint writes the current schema fingerprint.
-func StoreSchemaFingerprint(db *sql.DB, schema core.SchemaConfig) error {
-	_, err := db.Exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_fingerprint', ?)", HashSchema(schema))
-	return err
-}
-
-// EmbeddingToBytes converts a float32 slice to little-endian bytes.
-func EmbeddingToBytes(embedding []float32) []byte {
-	buf := make([]byte, len(embedding)*4)
-	for i, v := range embedding {
-		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(v))
-	}
-	return buf
-}
-
-// BytesToEmbedding converts bytes back to float32 slice.
-func BytesToEmbedding(data []byte) []float32 {
-	if len(data)%4 != 0 {
-		return nil
-	}
-	embedding := make([]float32, len(data)/4)
-	for i := range embedding {
-		embedding[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[i*4 : i*4+4]))
-	}
-	return embedding
-}
-
-// DecodeVector decodes a BLOB into a float32 slice with dimension validation.
-func DecodeVector(data []byte, expectedDim int) ([]float32, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty vector blob")
-	}
-	if len(data) != expectedDim*4 {
-		return nil, fmt.Errorf("vector dimension drift: blob %d bytes, want %d", len(data), expectedDim*4)
-	}
-	emb := make([]float32, expectedDim)
-	for i := range emb {
-		emb[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[i*4 : i*4+4]))
-	}
-	return emb, nil
 }

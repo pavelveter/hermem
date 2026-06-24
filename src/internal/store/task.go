@@ -238,16 +238,3 @@ func RenderTaskTree(nodes []*core.TreeNode, prefix string) string {
 	}
 	return sb.String()
 }
-
-// FindRollbackTask looks up the recovers_via edge from a failed task.
-func FindRollbackTask(db *sql.DB, schema core.SchemaConfig, failedTaskID string) (string, error) {
-	var targetID string
-	err := db.QueryRow(`SELECT ed.target_id FROM edges ed WHERE ed.source_id = ? AND ed.relation_type = ? LIMIT 1`, failedTaskID, schema.RelationRecovery).Scan(&targetID)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("find rollback task: %w", err)
-	}
-	return targetID, nil
-}

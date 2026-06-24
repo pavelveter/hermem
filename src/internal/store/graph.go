@@ -161,27 +161,3 @@ func FindConnectedComponents(db *sql.DB, minSize int) ([]core.ConnectedComponent
 	sort.Slice(components, func(i, j int) bool { return components[i].Size > components[j].Size })
 	return components, nil
 }
-
-// GenerateRecoveryPlan walks the recovers_via chain from a failed task.
-func GenerateRecoveryPlan(db *sql.DB, schema core.SchemaConfig, failedTaskID string) ([]core.Entity, error) {
-	var plan []core.Entity
-	visited := make(map[string]bool)
-	current := failedTaskID
-	for current != "" && !visited[current] {
-		visited[current] = true
-		rollbackID, err := FindRollbackTask(db, schema, current)
-		if err != nil {
-			return nil, fmt.Errorf("recovery plan: step from %s: %w", current, err)
-		}
-		if rollbackID == "" {
-			break
-		}
-		e, err := GetTaskByID(db, schema, rollbackID)
-		if err != nil {
-			return nil, fmt.Errorf("recovery plan: get task %s: %w", rollbackID, err)
-		}
-		plan = append(plan, e)
-		current = rollbackID
-	}
-	return plan, nil
-}
