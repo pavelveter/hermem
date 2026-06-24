@@ -1,7 +1,6 @@
 package algo
 
 import (
-	"strings"
 	"sync"
 )
 
@@ -88,17 +87,4 @@ func (c *EmbeddingCache) evict() {
 		c.tail.prev.next = nil
 	}
 	c.tail = c.tail.prev
-}
-
-// IsContradiction checks if two texts are contradictory via simple negation heuristics.
-func IsContradiction(a, b string) bool {
-	negWords := []string{"not", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "never", "no", "hate", "dislike"}
-	al := strings.ToLower(a)
-	bl := strings.ToLower(b)
-	for _, n := range negWords {
-		if strings.Contains(al, n) != strings.Contains(bl, n) {
-			return true
-		}
-	}
-	return false
 }

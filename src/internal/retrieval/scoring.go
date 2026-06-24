@@ -91,17 +91,6 @@ func computeSim(nodeVec, queryEmbedding []float32, queryNorm float32) float32 {
 	return vector.CosineSimilarityWithNorm(nodeVec, queryEmbedding, queryNorm)
 }
 
-func computeRecency(updatedAt time.Time, halfLifeHours float32) float32 {
-	if updatedAt.IsZero() || halfLifeHours <= 0 {
-		return 1
-	}
-	hoursOld := float32(time.Since(updatedAt).Hours())
-	if hoursOld <= 0 {
-		return 1
-	}
-	return float32(math.Exp(-float64(hoursOld) / float64(halfLifeHours)))
-}
-
 func recencyScore(updatedAt time.Time, halfLifeHours float32) float32 {
 	if updatedAt.IsZero() || halfLifeHours <= 0 {
 		return 1

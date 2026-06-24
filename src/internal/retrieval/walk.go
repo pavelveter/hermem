@@ -90,7 +90,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		rn := rankedNode{node: node, score: score}
 		if opts.Explain {
 			rn.sim = computeSim(nodeVec, opts.QueryEmbedding, queryNorm)
-			rn.recency = computeRecency(node.Entity.UpdatedAt, w.RecencyHalfLifeHours)
+			rn.recency = recencyScore(node.Entity.UpdatedAt, w.RecencyHalfLifeHours)
 		}
 		ranked = append(ranked, rn)
 		if node.Depth == 0 {
