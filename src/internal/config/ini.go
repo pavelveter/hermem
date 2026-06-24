@@ -32,15 +32,7 @@ func LoadConfig(path string) (*Config, error) {
 			RunInterval:     1 * time.Hour,
 			DeleteBatchSize: 500,
 		},
-		Ranking: core.RankingWeight{
-			VectorWeight:          0.7,
-			RecencyWeight:         0.3,
-			DepthPenalty:          0.05,
-			RecencyHalfLifeHours:  720,
-			TemporalWeight:        0.1,
-			TemporalHalfLifeHours: 720,
-			CentralityWeight:      0.05,
-		},
+		Ranking:         core.RankingWeight{}, // numeric defaults live in (RankingWeight).WithDefaults — applied below after INI parsing
 		RerankerTimeout: 30 * time.Second,
 		Schema:          core.DefaultSchemaConfig(false),
 	}
@@ -163,6 +155,10 @@ func LoadConfig(path string) (*Config, error) {
 	cfg.Ranking.TemporalWeight = getFloat32("ranking", "temporal_weight", cfg.Ranking.TemporalWeight)
 	cfg.Ranking.TemporalHalfLifeHours = getFloat32("ranking", "temporal_half_life_hours", cfg.Ranking.TemporalHalfLifeHours)
 	cfg.Ranking.CentralityWeight = getFloat32("ranking", "centrality_weight", cfg.Ranking.CentralityWeight)
+
+	// Single source of truth for ranking-weight defaults. Both this site and
+	// retrieval/walk.go call WithDefaults so the two paths can never drift.
+	cfg.Ranking = cfg.Ranking.WithDefaults()
 
 	if v, ok := getStr("reranker", "provider"); ok {
 		cfg.RerankerProvider = strings.ToLower(v)

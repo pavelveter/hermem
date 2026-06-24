@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -16,29 +15,6 @@ type rankedNode struct {
 	score   float32
 	sim     float32
 	recency float32
-}
-
-// resolvedRankingWeight returns w with zero fields replaced by defaults.
-func resolvedRankingWeight(w core.RankingWeight) core.RankingWeight {
-	if w.VectorWeight == 0 {
-		w.VectorWeight = 0.7
-	}
-	if w.RecencyWeight == 0 {
-		w.RecencyWeight = 0.3
-	}
-	if w.DepthPenalty == 0 {
-		w.DepthPenalty = 0.05
-	}
-	if w.RecencyHalfLifeHours == 0 {
-		w.RecencyHalfLifeHours = 720
-	}
-	if w.TemporalHalfLifeHours == 0 {
-		w.TemporalHalfLifeHours = 720
-	}
-	if w.CentralityWeight == 0 {
-		w.CentralityWeight = 0.05
-	}
-	return w
 }
 
 // defaultCompositeScorer returns a Scorer implementing the canonical formula.
@@ -64,32 +40,7 @@ func sortByScoreDesc(ranked []rankedNode) {
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
 }
 
-// --- helpers used by walk.go ---
-
-func vectorNormForQuery(q []float32) float32 {
-	if len(q) == 0 {
-		return 0
-	}
-	return vector.VectorNorm(q)
-}
-
-func decodeNodeVec(blob []byte, dim int) []float32 {
-	if len(blob) == 0 || dim == 0 {
-		return nil
-	}
-	v, err := store.DecodeVector(blob, dim)
-	if err != nil {
-		return nil
-	}
-	return v
-}
-
-func computeSim(nodeVec, queryEmbedding []float32, queryNorm float32) float32 {
-	if len(queryEmbedding) == 0 || len(nodeVec) == 0 {
-		return 0
-	}
-	return vector.CosineSimilarityWithNorm(nodeVec, queryEmbedding, queryNorm)
-}
+// --- scoring helpers used by walk.go + tests ---
 
 func recencyScore(updatedAt time.Time, halfLifeHours float32) float32 {
 	if updatedAt.IsZero() || halfLifeHours <= 0 {

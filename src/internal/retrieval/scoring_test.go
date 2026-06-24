@@ -5,11 +5,12 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// resolvedRankingWeight fills zero fields with defaults.
-func TestResolvedRankingWeight_ZeroFieldsGetDefaults(t *testing.T) {
-	got := resolvedRankingWeight(core.RankingWeight{})
+// (RankingWeight).WithDefaults fills zero fields with the canonical defaults.
+func TestWithDefaults_ZeroFieldsGetDefaults(t *testing.T) {
+	got := core.RankingWeight{}.WithDefaults()
 	if got.VectorWeight != 0.7 {
 		t.Fatalf("VectorWeight default: want 0.7, got %v", got.VectorWeight)
 	}
@@ -30,7 +31,7 @@ func TestResolvedRankingWeight_ZeroFieldsGetDefaults(t *testing.T) {
 	}
 }
 
-func TestResolvedRankingWeight_NonZeroFieldsPreserved(t *testing.T) {
+func TestWithDefaults_NonZeroFieldsPreserved(t *testing.T) {
 	in := core.RankingWeight{
 		VectorWeight:          0.5,
 		RecencyWeight:         0.4,
@@ -40,7 +41,7 @@ func TestResolvedRankingWeight_NonZeroFieldsPreserved(t *testing.T) {
 		TemporalHalfLifeHours: 200,
 		CentralityWeight:      0.3,
 	}
-	got := resolvedRankingWeight(in)
+	got := in.WithDefaults()
 	if got.VectorWeight != 0.5 || got.RecencyWeight != 0.4 || got.DepthPenalty != 0.1 {
 		t.Fatalf("non-zero fields were zeroed: %+v", got)
 	}
@@ -106,9 +107,9 @@ func TestSortByScoreDesc_StableOnTies(t *testing.T) {
 
 // defaultCompositeScorer: integration with vector + recency.
 func TestDefaultCompositeScorer_UsesVectorAndRecency(t *testing.T) {
-	w := resolvedRankingWeight(core.RankingWeight{
+	w := core.RankingWeight{
 		VectorWeight: 1, RecencyWeight: 0, DepthPenalty: 0,
-	})
+	}.WithDefaults()
 	scorer := defaultCompositeScorer(w)
 
 	oldTime := time.Now().Add(-2000 * time.Hour)
@@ -124,8 +125,8 @@ func TestDefaultCompositeScorer_UsesVectorAndRecency(t *testing.T) {
 	q := []float32{1, 0}
 	v := []float32{1, 0}
 
-	gotOld := scorer(old, v, q, vectorNormForQuery(q))
-	gotRecent := scorer(recent, v, q, vectorNormForQuery(q))
+	gotOld := scorer(old, v, q, vector.VectorNorm(q))
+	gotRecent := scorer(recent, v, q, vector.VectorNorm(q))
 	// Identical vectors → identical sim, but recency boosts newer.
 	if gotRecent <= gotOld {
 		t.Fatalf("recent node should outrank equally-relevant old node: gotRecent=%v gotOld=%v", gotRecent, gotOld)
