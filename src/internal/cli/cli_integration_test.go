@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"hash/fnv"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,18 +23,32 @@ import (
 func testEnv(t *testing.T) *clienv.Env {
 	t.Helper()
 	dir := t.TempDir()
+	cfg := &config.Config{
+		DBPath:    filepath.Join(dir, "hermem_test.db"),
+		Schema:    core.DefaultSchemaConfig(false),
+		VectorDim: 3,
+	}
 	env := &clienv.Env{
 		// Ctx must be non-nil: env.DB.PingContext(env.Ctx) and every QueryContext
 		// call dereference ctx internally; a nil context.Context interface triggers
 		// a panic inside database/sql while holding db.mu, which then wedges
 		// t.Cleanup(env.Close) on the same mutex and produces a deterministic 240s
-		// timeout. See TestCLI_History commit notes for the deadlock trace.
+		// timeout. See the fix(cli) commit notes for the deadlock trace.
 		Ctx: context.Background(),
-		Cfg: &config.Config{
-			DBPath:    filepath.Join(dir, "hermem_test.db"),
-			Schema:    core.DefaultSchemaConfig(false),
-			VectorDim: 3,
-		},
+		Cfg: cfg,
+		// Embedder must be wired because cli/memory/{store,search,edge},
+		// cli/task/create, and friends call env.Embedder.Embed(env.Ctx, content)
+		// inline. Tests bypass main.go (which sets env.Embedder from config) so
+		// the field is otherwise zero-value nil → nil-method-receiver panic at
+		// runtime. FakeEmbedder is deterministic + offline (no Ollama needed).
+		Embedder: &fakeEmbedder{dim: cfg.VectorDim},
+		// KeepDBOpen stops root.PersistentPostRunE from closing env.DB after
+		// each executeCmd. Tests in this file routinely run TWO cmds per test
+		// (e.g. TestCLI_MemoryEdge stores src + tgt then adds the edge); without
+		// this flag, the second cmd runs against a closed DB and fails fast with
+		// `sql: database is closed`. t.Cleanup(env.Close) below still handles
+		// final teardown.
+		KeepDBOpen: true,
 	}
 	t.Cleanup(func() { env.Close() })
 	return env
@@ -41,14 +57,20 @@ func testEnv(t *testing.T) *clienv.Env {
 func testStatefulEnv(t *testing.T) *clienv.Env {
 	t.Helper()
 	dir := t.TempDir()
+	cfg := &config.Config{
+		DBPath:    filepath.Join(dir, "hermem_stateful_test.db"),
+		Schema:    statefulSchema(),
+		VectorDim: 3,
+	}
 	env := &clienv.Env{
-		// See testEnv; same requirement applies.
+		// See testEnv; same Ctx + Embedder requirements apply.
 		Ctx: context.Background(),
-		Cfg: &config.Config{
-			DBPath:    filepath.Join(dir, "hermem_stateful_test.db"),
-			Schema:    statefulSchema(),
-			VectorDim: 3,
-		},
+		Cfg: cfg,
+		// See testEnv; by the same tests-multi-executeCmd logic,
+		// KeepDBOpen is required here too. State tests like
+		// TestCLI_TaskDep issue task/create twice in a row.
+		Embedder:   &fakeEmbedder{dim: cfg.VectorDim},
+		KeepDBOpen: true,
 	}
 	t.Cleanup(func() { env.Close() })
 	return env
@@ -349,3 +371,52 @@ func TestCLI_MemorySearch(t *testing.T) {
 		t.Fatalf("memory search: %v\noutput: %s", err, out)
 	}
 }
+
+// --- Fake embedder (test-only) ---
+//
+// fakeEmbedder hashes content with FNV-1a into a dim-dim unit vector. Tests
+// run fully offline (no Ollama / OpenAI HTTP) and get deterministic vectors,
+// so a "hello" entity and a "world" entity always produce distinct unit
+// vectors; the same content always produces the same vector across runs.
+//
+// The hash is folded across dims by reading 8 bits at a time out of the
+// 32-bit FNV seed; for tests with VectorDim=3 the first three bytes cover
+// the vector. For larger dims the bits fold deterministically; collisions
+// are acceptable for test fixtures, not for production embedding.
+type fakeEmbedder struct {
+	dim int
+}
+
+func (f *fakeEmbedder) Embed(_ context.Context, content string) ([]float32, error) {
+	if f.dim <= 0 {
+		return []float32{}, nil
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(content))
+	seed := h.Sum32()
+
+	v := make([]float32, f.dim)
+	for i := 0; i < f.dim; i++ {
+		v[i] = float32((seed>>uint((i%4)*8))&0xff) / 255.0
+	}
+
+	// Normalise to unit length so cosine-similarity comparisons across test
+	// embeddings behave like production. Zero-vector fallback returns the
+	// standard basis vector e0 — keeps vector-index.Store happy on empty input.
+	var sumSq float64
+	for _, x := range v {
+		sumSq += float64(x) * float64(x)
+	}
+	if sumSq == 0 {
+		v[0] = 1.0
+		return v, nil
+	}
+	inv := 1.0 / math.Sqrt(sumSq)
+	for i := range v {
+		v[i] = float32(float64(v[i]) * inv)
+	}
+	return v, nil
+}
+
+// Compile-time check that fakeEmbedder satisfies core.Embedder.
+var _ core.Embedder = (*fakeEmbedder)(nil)
