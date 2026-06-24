@@ -47,17 +47,35 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Temporal retrieval** — `/query/temporal` endpoint filters graph walk by time range (`time_from`/`time_to` RFC3339)
 - **Episodic memory** — `/timeline` endpoint returns entities ordered by `created_at` DESC with provenance
 - **Memory provenance** — tracks `conversation_id`, `message_id`, `extracted_from` per entity; entity metadata (`confidence`, `source`, `source_type`, temporal validity)
+- **Graph centrality** — `degree` column on entities (auto-maintained via SQL triggers on edges); `log10(1+degree)` scoring boosts hub nodes
+- **Weighted edges** — `weight` column on edges (default 1.0); `path_weight` accumulation in CTE graph walk replaces integer depth for penalty
+- **Provenance APIs** — `GET /provenance?conversation_id=X&message_id=Y&source=Z` returns entities by memory origin
+- **Task priorities** — `priority` column on stateful entities; `ExecutionPlan` and `GetExecutableTasks` order by priority DESC
+- **Critical path analysis** — `CriticalPath(db, schema, goalID)` walks the longest weighted path from leaf to goal
+- **Recovery plans** — `GenerateRecoveryPlan` follows `recovers_via` chains; `GET /recovery-plan?id=X` HTTP endpoint
+- **Graph clustering** — `FindConnectedComponents` BFS-based connected components; `GET /connected-components?min_size=N`
+- **Community detection** — Louvain one-pass modularity optimisation; `hermem communities` CLI + `GET /communities` HTTP
+- **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem re-embed` CLI + `POST /admin/re-embed` HTTP
+- **Embedding cache** — `EmbeddingCache` LRU (map + doubly-linked list) wired into vector index for hot-path speedup
+- **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem quantize` CLI
 - **Docker** — multi-stage build, non-root user
 
 ## CLI Commands
 
 ```
-hermem migrate         # Show versioned migration status
-hermem schema          # Show current vs stored schema fingerprint
-hermem serve           # Start HTTP server (SIGHUP to reload config)
-hermem contradictions  # List contradicts edges (optional: [entity_id])
-hermem temporal        # Query with time range (JSON stdin with time_from/time_to)
-hermem timeline [limit]  # Show recent entities ordered by created_at
+hermem migrate            # Show versioned migration status
+hermem schema             # Show current vs stored schema fingerprint
+hermem serve              # Start HTTP server (SIGHUP to reload config)
+hermem contradictions     # List contradicts edges (optional: [entity_id])
+hermem temporal           # Query with time range (JSON stdin with time_from/time_to)
+hermem timeline [limit]   # Show recent entities ordered by created_at
+hermem provenance         # Query entities by conversation/message/source
+hermem execution-plan     # Topologically sorted task plan (JSON stdin: goal_id)
+hermem recovery-plan      # Walk recovers_via chain from failed task (JSON stdin: id)
+hermem connected-components [min_size]  # Find graph connected components
+hermem communities        # Louvain community detection (--min-size=N --max-iterations=N)
+hermem re-embed           # Batch re-embed all entities after model/dim change (--batch-size=N)
+hermem quantize           # Test vector quantization (JSON stdin: embedding)
 ```
 
 ## Quick Start
@@ -375,7 +393,10 @@ hermem/
 │   │   ├── 001_initial_schema.sql
 │   │   ├── 002_entity_metadata.sql
 │   │   ├── 003_provenance.sql
-│   │   └── 004_episodic_sessions.sql
+│   │   ├── 004_episodic_sessions.sql
+│   │   ├── 005_centrality.sql
+│   │   ├── 006_weighted_edges.sql
+│   │   └── 007_task_priorities.sql
 │   ├── *_test.go            # Per-package tests (90 tests)
 ├── hermem.ini               # Sample config file
 ├── plugins/
@@ -421,6 +442,11 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/edge` | POST | Add a typed edge between two entities (or auto-create missing ones) |
 | `/contradictions` | GET | List contradict edges (optional `?id=X` filter) |
 | `/timeline` | GET | Recent entities by created_at DESC (optional `?limit=N`) |
+| `/provenance` | GET | Entities by memory origin (`?conversation_id=&message_id=&source=&limit=`) |
+| `/recovery-plan` | GET | Recovery task chain for failed task (`?id=X`) |
+| `/connected-components` | GET | Graph connected components (`?min_size=N`) |
+| `/communities` | GET | Louvain community detection (`?min_size=N&max_iterations=N`) |
+| `/admin/re-embed` | POST | Trigger background re-embedding (`{"dim": 768, "batch_size": 50}`) |
 
 ### Examples
 
