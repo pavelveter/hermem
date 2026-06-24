@@ -9,7 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newMigrateCmd(env cli.Env) *cobra.Command {
+func newMigrateCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate",
 		Short: "Show migration status (applied / pending)",

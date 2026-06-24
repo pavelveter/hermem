@@ -10,7 +10,7 @@ import (
 // Cobra's --help output is implicitly covered since each command's Use
 // string is non-empty.
 func TestNewRoot_HasExpectedCommands(t *testing.T) {
-	cmd := NewRootCommand(cli.Env{
+	cmd := NewRootCommand(&cli.Env{
 		Build: cli.BuildInfo{Version: "test", BuildDate: "now", GitCommit: "abc"},
 	})
 
@@ -41,7 +41,7 @@ func TestNewRoot_HasExpectedCommands(t *testing.T) {
 // TestRoot_HelpRunsWithoutPanic ensures cobra can render --help without
 // crashing — catches mis-formed Use/Short strings at unit-test time.
 func TestRoot_HelpRunsWithoutPanic(t *testing.T) {
-	cmd := NewRootCommand(cli.Env{})
+	cmd := NewRootCommand(&cli.Env{})
 	cmd.SetArgs([]string{"--help"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("root --help errored: %v", err)

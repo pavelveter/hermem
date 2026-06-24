@@ -11,7 +11,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
-func newResponseCmd(env cli.Env) *cobra.Command {
+func newResponseCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "response",
 		Short: "Generate an LLM response using retrieved graph context as evidence",

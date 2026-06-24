@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newDepCmd(env cli.Env) *cobra.Command {
+func newDepCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "dep",
 		Short: "Add or remove a blocking dependency between two tasks (body {add:true|false})",

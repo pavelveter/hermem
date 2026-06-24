@@ -12,7 +12,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-func newLoopCmd(env cli.Env) *cobra.Command {
+func newLoopCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "loop",
 		Short: "Run agent execution loop on a goal_id (yields each task to stdout)",

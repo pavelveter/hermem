@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newShowCmd(env cli.Env) *cobra.Command {
+func newShowCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
 		Short: "Show one task with its blocked-by and recovers-via relations",

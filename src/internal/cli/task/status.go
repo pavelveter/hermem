@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newStatusCmd(env cli.Env) *cobra.Command {
+func newStatusCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Update a task's status (e.g. /* done */ / *blocked*)",

@@ -13,7 +13,7 @@ import (
 // newVerifyCmd checks migration checksums. Pre-cobra called os.Exit(1)
 // on integrity mismatch; now we return an error and main.go handles exit
 // code 1, so the failure path is no longer a hidden syscall.
-func newVerifyCmd(env cli.Env) *cobra.Command {
+func newVerifyCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify",
 		Short: "Verify migration checksums (exit 1 on mismatch)",

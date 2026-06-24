@@ -13,7 +13,7 @@ import (
 )
 
 // NewCmd returns the time group cobra command.
-func NewCmd(env cli.Env) *cobra.Command {
+func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "time",
 		Short: "Temporal queries (temporal / timeline)",

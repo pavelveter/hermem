@@ -22,7 +22,7 @@ import (
 
 // newServeCmd boots the HTTP server. Replaces the old flat `hermem serve`.
 // Port is a real cobra flag (--port/-p, default 8420) — no positional arg.
-func newServeCmd(env clienv.Env) *cobra.Command {
+func newServeCmd(env *clienv.Env) *cobra.Command {
 	var port string
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -36,7 +36,7 @@ func newServeCmd(env clienv.Env) *cobra.Command {
 	return cmd
 }
 
-func runServe(env clienv.Env, port string) error {
+func runServe(env *clienv.Env, port string) error {
 	slog.Info("hermem starting",
 		"port", port,
 		"version", env.Build.Version,

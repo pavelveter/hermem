@@ -11,7 +11,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
-func newRetrieveCmd(env cli.Env) *cobra.Command {
+func newRetrieveCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "retrieve",
 		Short: "Graph-walk retrieval from explicit seed IDs (no embedding step)",

@@ -9,7 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newCommunitiesCmd(env cli.Env) *cobra.Command {
+func newCommunitiesCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "communities",
 		Short: "Detect communities and report global modularity",

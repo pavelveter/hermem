@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-func newEdgeCmd(env cli.Env) *cobra.Command {
+func newEdgeCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "edge",
 		Short: "Add or auto-create a relation edge between two entities (--auto-create creates missing endpoints)",

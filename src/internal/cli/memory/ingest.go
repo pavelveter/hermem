@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/ingestion"
 )
 
-func newIngestCmd(env cli.Env) *cobra.Command {
+func newIngestCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ingest",
 		Short: "Drain a dialog through the LLM extractor and ingest extracted facts",

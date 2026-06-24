@@ -1,6 +1,5 @@
-// Package main is the hermem binary entrypoint — config/DB/vector-index/
-// embedder wiring plus build vars; the CLI itself is wired in
-// src/internal/cli/.
+// Package main is the hermem binary entrypoint — config + lazy runtime
+// wiring plus build vars; the CLI itself lives under src/internal/cli/.
 //
 // Build-time variables injected via -ldflags:
 //
@@ -11,16 +10,10 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
-	"os"
 
 	"github.com/pavelveter/hermem/src/internal/cli"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/metrics"
-	"github.com/pavelveter/hermem/src/internal/store"
-	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 var (
@@ -32,28 +25,21 @@ var (
 func main() {
 	cfg, err := config.LoadConfigFromBinaryDir()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		clienv.Fatal("config: %v", err)
 	}
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("config: %v", err)
+		clienv.Fatal("config: %v", err)
 	}
 
-	db, err := store.InitDB(config.ResolveDBPath(cfg.DBPath), cfg.VectorDim)
-	if err != nil {
-		log.Fatalf("db: %v", err)
-	}
-	defer db.Close()
-
-	metrics.InitMetricsDB(db)
-	vi := vector.NewIndex(cfg.VectorBackend, db, cfg.VectorDim)
-	mw := metrics.InitMetricsWorker(db)
-	defer mw.Stop()
-
+	// Embedder / Extractor / Reranker don't need the DB — build them
+	// eagerly so they are ready when EnsureDB later constructs the
+	// server. DB / VI / Worker start nil and are populated lazily by
+	// env.EnsureDB(), called from cobra's root PersistentPreRunE.
 	env := clienv.Env{
 		Ctx:       context.Background(),
 		Cfg:       cfg,
-		DB:        db,
-		VI:        vi,
+		DB:        nil,
+		VI:        nil,
 		Embedder:  cfg.NewEmbedder(),
 		Extractor: cfg.NewExtractor(),
 		Reranker:  cfg.NewReranker(),
@@ -63,9 +49,11 @@ func main() {
 			GitCommit: gitCommit,
 		},
 	}
+	// Defer env.Close() — handles both db.Close and worker.Stop.
+	// env.Close is sync.Once idempotent so double-defer is safe.
+	defer env.Close()
 
-	if err := cli.NewRootCommand(env).Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	if err := cli.NewRootCommand(&env).Execute(); err != nil {
+		clienv.Fatal("%v", err)
 	}
 }

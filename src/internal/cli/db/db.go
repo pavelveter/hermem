@@ -10,7 +10,7 @@ import (
 )
 
 // NewCmd returns the db group cobra command.
-func NewCmd(env cli.Env) *cobra.Command {
+func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db",
 		Short: "Database housekeeping (migrate / rollback / verify / schema)",

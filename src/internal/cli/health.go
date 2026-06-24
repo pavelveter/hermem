@@ -13,7 +13,7 @@ import (
 // (cobra turns the RunE error into exit 1 in main.go). Mirrors the
 // GET /health/ready HTTP handler so a CLI-only deployment can probe the
 // process without an HTTP roundtrip.
-func newHealthCmd(env clienv.Env) *cobra.Command {
+func newHealthCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "health",
 		Short: "Health probe (pings the DB; mirrors /health/ready)",

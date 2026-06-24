@@ -14,7 +14,7 @@ import (
 // it under both `task executable` and the friendlier alias `task next`.
 // Empty stdin is silently substituted with "{}" so the command runs when
 // invoked from a shell without piping JSON.
-func newExecutableCmd(env cli.Env) *cobra.Command {
+func newExecutableCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:     "executable",
 		Aliases: []string{"next"},

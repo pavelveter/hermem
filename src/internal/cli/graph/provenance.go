@@ -11,7 +11,7 @@ import (
 
 // newProvenanceCmd — pre-cobra parsed flags from os.Args[2:]. Now real
 // cobra flags with --help strings.
-func newProvenanceCmd(env cli.Env) *cobra.Command {
+func newProvenanceCmd(env *cli.Env) *cobra.Command {
 	var (
 		convID string
 		msgID  string

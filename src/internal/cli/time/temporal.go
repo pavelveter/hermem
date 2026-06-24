@@ -13,7 +13,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-func newTemporalCmd(env cli.Env) *cobra.Command {
+func newTemporalCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "temporal",
 		Short: "Time-bounded retrieval (time_from / time_to in RFC3339)",

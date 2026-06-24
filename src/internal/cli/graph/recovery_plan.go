@@ -9,7 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newRecoveryPlanCmd(env cli.Env) *cobra.Command {
+func newRecoveryPlanCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "recovery-plan",
 		Short: "Render recovery plan for a failed task (RHS-of-relations walk)",

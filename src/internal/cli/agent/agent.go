@@ -10,7 +10,7 @@ import (
 )
 
 // NewCmd returns the agent group cobra command.
-func NewCmd(env cli.Env) *cobra.Command {
+func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agent",
 		Short: "Agentic flows (loop)",

@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func newStoreCmd(env cli.Env) *cobra.Command {
+func newStoreCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "store",
 		Short: "Store an entity (JSON stdin: id/category/content + optional embedding)",
