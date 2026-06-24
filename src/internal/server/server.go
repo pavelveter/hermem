@@ -1,176 +1,120 @@
-// Package server provides the HTTP API server with all handlers split into handlers.go,
-// JSON utilities, middleware, and the standalone server entrypoint.
+// Package server provides the HTTP API shell.
+//
+// After the god-object split this package is just a dispatcher + lifecycle
+// manager. Domain logic lives in the 4 sub-packages:
+//
+//   - server/retrieval/  — search, retrieve, query, response, query_explain, provenance, contradictions
+//   - server/task/       — task/status, executable, list, show, dep, tree, create, rollback, recovery-plan
+//   - server/memory/     — store, ingest, edge, timeline  (owns the IngestionWorker)
+//   - server/            — AdminService: health, metrics, connected-components, communities, re-embed
+//
+// Shared per-request configuration is read atomically via *serverstate.Ref —
+// concurrent SIGHUP-driven state swaps are safe with in-flight handlers.
 package server
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/algo"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/ingestion"
-	"github.com/pavelveter/hermem/src/internal/metrics"
+	mem "github.com/pavelveter/hermem/src/internal/server/memory"
+	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
+	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
+	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
-// ServerState holds schema-derived fields swapped atomically on SIGHUP.
-type ServerState struct {
-	Schema             core.SchemaConfig
-	ValidCategories    map[string]bool
-	ValidRelationTypes map[string]bool
-}
-
-// Server is the HTTP API server.
+// Server is the HTTP shell. It holds the 4 services + a mux + the atomic
+// state holder. No domain fields (no DB / VI / Embedder directly — those live
+// on services).
 type Server struct {
-	DB            *sql.DB
-	VI            core.VectorIndex
-	Worker        *ingestion.IngestionWorker
-	Embedder      core.Embedder
-	RetrievalOpts core.RetrieveContextOptions
-	State         atomic.Pointer[ServerState]
+	Refs      *serverstate.Ref
+	Retrieval *ret.Service
+	Task      *tasksvc.Service
+	Memory    *mem.Service
+	Admin     *AdminService
+	mux       *http.ServeMux
 }
 
-// NewServer creates a Server.
-func NewServer(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, extractor core.LLMExtractor, dedupThreshold float32, retrievalOpts core.RetrieveContextOptions, schema core.SchemaConfig) *Server {
-	validCategories := schema.AllowedCategories
-	if validCategories == nil {
-		validCategories = map[string]bool{}
-	}
-	validRelationTypes := schema.AllowedRelations
-	if validRelationTypes == nil {
-		validRelationTypes = map[string]bool{}
-	}
+// NewServer wires the 4 services into a single mux. No HTTP server is started
+// — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
+func NewServer(refs *serverstate.Ref, retrieval *ret.Service, task *tasksvc.Service, memory *mem.Service, admin *AdminService) *Server {
 	s := &Server{
-		DB: db, VI: vi, Embedder: embedder,
-		Worker:        ingestion.NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema),
-		RetrievalOpts: retrievalOpts,
+		Refs:      refs,
+		Retrieval: retrieval,
+		Task:      task,
+		Memory:    memory,
+		Admin:     admin,
 	}
-	s.State.Store(&ServerState{Schema: schema, ValidCategories: validCategories, ValidRelationTypes: validRelationTypes})
+	s.mount()
 	return s
 }
 
-// ReloadState atomically swaps schema state on SIGHUP.
-func (s *Server) ReloadState(schema core.SchemaConfig, ranking core.RankingWeight, reranker core.Reranker) {
-	cats := schema.AllowedCategories
-	if cats == nil {
-		cats = map[string]bool{}
+// mount wires every URL on the standard mux. /task/executable and /task/next
+// both route to HandleTaskExecutable — both keys are distinct so both register.
+func (s *Server) mount() {
+	mux := http.NewServeMux()
+	for path, hf := range s.Retrieval.Routes() {
+		mux.HandleFunc(path, hf)
 	}
-	rels := schema.AllowedRelations
-	if rels == nil {
-		rels = map[string]bool{}
+	for path, hf := range s.Task.Routes() {
+		mux.HandleFunc(path, hf)
 	}
-	s.State.Store(&ServerState{Schema: schema, ValidCategories: cats, ValidRelationTypes: rels})
-	s.Worker.ReloadSchema(schema)
-	s.RetrievalOpts.RankingWeight = ranking
-	s.RetrievalOpts.Reranker = reranker
+	for path, hf := range s.Memory.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Admin.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	s.mux = mux
 }
 
-// --- JSON utilities ---
-
-// WriteJSON encodes data as JSON and writes it with the given status code.
-func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
-}
-
-// WriteError writes a JSON error response.
-func WriteError(w http.ResponseWriter, status int, msg string) {
-	WriteJSON(w, status, core.ErrorResponse{Error: msg})
-}
-
-// WriteErrorWithCode writes a structured error with code and field.
-func WriteErrorWithCode(w http.ResponseWriter, status int, msg, code, field string) {
-	WriteJSON(w, status, core.ErrorResponse{Error: msg, Code: code, Field: field})
-}
-
-// DecodeStrict parses JSON while rejecting unknown fields and trailing data.
-func DecodeStrict(r io.Reader, dst interface{}) (code, field, msg string, ok bool) {
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
-	err := dec.Decode(dst)
-	if err == nil {
-		if dec.More() {
-			return "trailing_data", "", "trailing data after JSON value", false
-		}
-		return "", "", "", true
+// ReloadState atomically swaps the configuration state and propagates a
+// schema change to the IngestionWorker. Safe to call concurrently with
+// in-flight handlers — handlers always read s.Refs.Load() per request.
+func (s *Server) ReloadState(newState *serverstate.State) {
+	if newState == nil {
+		panic("server: ReloadState called with nil state")
 	}
-	if errors.Is(err, io.EOF) {
-		return "empty_body", "", "request body is empty", false
-	}
-	var typeErr *json.UnmarshalTypeError
-	if errors.As(err, &typeErr) {
-		return "invalid_type", typeErr.Field, fmt.Sprintf("invalid type for field %q", typeErr.Field), false
-	}
-	if strings.HasPrefix(err.Error(), "json: unknown field") {
-		fn := strings.Trim(strings.TrimPrefix(err.Error(), "json: unknown field "), `"`)
-		return "unknown_field", fn, "unknown field: " + fn, false
-	}
-	return "bad_json", "", "invalid json: " + err.Error(), false
+	s.Refs.Store(newState)
+	s.Memory.OnStateChange(newState)
 }
 
-// parseIntParam reads an int query parameter with a default.
-func parseIntParam(r *http.Request, name string, def int) int {
-	if s := r.URL.Query().Get(name); s != "" {
-		if n, err := strconv.Atoi(s); err == nil {
-			return n
-		}
-	}
-	return def
+// Mux exposes the wired mux for tests and tooling.
+func (s *Server) Mux() *http.ServeMux { return s.mux }
+
+// ServeConfig bundles the run-time dependencies the lifecycle needs in
+// addition to the wired *Server (GC scope, auth key, listen port).
+type ServeConfig struct {
+	DB        *sql.DB
+	VI        core.VectorIndex
+	Retention core.RetentionPolicy
+	APIKey    string
+	Port      string
 }
 
-// --- Standalone server (used by main.go "serve" CLI) ---
-
-// StartStandaloneConfig bundles the wiring for the standalone HTTP server.
-type StartStandaloneConfig struct {
-	DB                *sql.DB
-	VI                core.VectorIndex
-	Embedder          core.Embedder
-	Extractor         core.LLMExtractor
-	Reranker          core.Reranker
-	Schema            core.SchemaConfig
-	Ranking           core.RankingWeight
-	DedupThreshold    float32
-	DepthCeiling      int
-	MaxRetrievedNodes int
-	Retention         core.RetentionPolicy
-	APIKey            string
-	Port              string
-}
-
-// StartStandalone starts an HTTP server with GC + graceful shutdown. Blocks until SIGINT/SIGTERM.
-func StartStandalone(cfg StartStandaloneConfig) error {
+// Serve runs the HTTP listener + GC + graceful shutdown. Blocks until
+// SIGINT/SIGTERM, then drains in order: HTTP → GC → return.
+//
+// Caller is expected to start its own SIGHUP goroutine that calls
+// (*Server).ReloadState on config changes.
+func (s *Server) Serve(cfg ServeConfig) error {
 	if cfg.Port == "" {
 		cfg.Port = "8420"
 	}
-
-	srv := NewServer(cfg.DB, cfg.VI, cfg.Embedder, cfg.Extractor, cfg.DedupThreshold,
-		core.RetrieveContextOptions{
-			DepthCeiling:      cfg.DepthCeiling,
-			MaxRetrievedNodes: cfg.MaxRetrievedNodes,
-			RankingWeight:     cfg.Ranking,
-			Reranker:          cfg.Reranker,
-		},
-		cfg.Schema)
 
 	gcCtx, gcCancel := context.WithCancel(context.Background())
 	gcDone := make(chan struct{})
 	go func() { algo.GarbageCollector(gcCtx, cfg.DB, cfg.VI, cfg.Retention); close(gcDone) }()
 
-	var handler http.Handler = registerRoutes(srv)
+	var handler http.Handler = s.Mux()
 	handler = SlogMiddleware(handler)
 	handler = RequestIDMiddleware(APIKeyMiddleware(cfg.APIKey)(handler))
 	handler = RecoveryMiddleware(handler)
@@ -185,7 +129,6 @@ func StartStandalone(cfg StartStandaloneConfig) error {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
 	go func() {
 		slog.Info("server ready", "port", cfg.Port)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -204,38 +147,4 @@ func StartStandalone(cfg StartStandaloneConfig) error {
 	<-gcDone
 	slog.Info("server stopped")
 	return nil
-}
-
-// registerRoutes wires every URL pattern on the standard mux.
-func registerRoutes(srv *Server) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", srv.HandleHealth)
-	mux.HandleFunc("/health/live", srv.HandleHealthLive)
-	mux.HandleFunc("/health/ready", srv.HandleHealthReady)
-	mux.HandleFunc("/metrics", metrics.MetricsHandler)
-	mux.HandleFunc("/store", srv.HandleStore)
-	mux.HandleFunc("/search", srv.HandleSearch)
-	mux.HandleFunc("/retrieve", srv.HandleRetrieve)
-	mux.HandleFunc("/ingest", srv.HandleIngest)
-	mux.HandleFunc("/query", srv.HandleQuery)
-	mux.HandleFunc("/edge", srv.HandleEdge)
-	mux.HandleFunc("/task/status", srv.HandleTaskStatus)
-	mux.HandleFunc("/task/executable", srv.HandleTaskExecutable)
-	mux.HandleFunc("/task/next", srv.HandleTaskExecutable)
-	mux.HandleFunc("/task/list", srv.HandleTaskList)
-	mux.HandleFunc("/task/show", srv.HandleTaskShow)
-	mux.HandleFunc("/task/dep", srv.HandleTaskDep)
-	mux.HandleFunc("/task/tree", srv.HandleTaskTree)
-	mux.HandleFunc("/task/create", srv.HandleTaskCreate)
-	mux.HandleFunc("/task/rollback", srv.HandleTaskRollback)
-	mux.HandleFunc("/query/explain", srv.HandleQueryExplain)
-	mux.HandleFunc("/contradictions", srv.HandleContradictions)
-	mux.HandleFunc("/timeline", srv.HandleTimeline)
-	mux.HandleFunc("/provenance", srv.HandleProvenance)
-	mux.HandleFunc("/recovery-plan", srv.HandleRecoveryPlan)
-	mux.HandleFunc("/connected-components", srv.HandleConnectedComponents)
-	mux.HandleFunc("/communities", srv.HandleCommunities)
-	mux.HandleFunc("/admin/re-embed", srv.HandleReEmbed)
-	mux.HandleFunc("/response", srv.HandleResponse)
-	return mux
 }
