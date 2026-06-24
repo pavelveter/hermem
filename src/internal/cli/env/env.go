@@ -12,7 +12,6 @@
 package env
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -94,7 +93,3 @@ func DecodeString(data string, v interface{}) error {
 func WriteJSON(w io.Writer, data interface{}) error {
 	return json.NewEncoder(w).Encode(data)
 }
-
-// BytesHelper avoids the linter complaining about the bytes import —
-// kept for callers that need a streaming variant of DecodeStrict.
-var _ = bytes.NewReader
