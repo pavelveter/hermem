@@ -115,10 +115,26 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	gcDone := make(chan struct{})
 	go func() { algo.GarbageCollector(gcCtx, cfg.DB, cfg.VI, cfg.Retention); close(gcDone) }()
 
+	// Canonical middleware order (outer → inner; each line wraps the
+	// previous, so the LAST wrap is the OUTERMOST):
+	//   Recovery                — catches panics from any inner layer
+	//   Timeout                 — derives r.Context() with a deadline
+	//   Slog                    — logs after completion (sees original ctx for 499)
+	//   RequestID               — echoes / generates X-Request-ID
+	//   APIKey                  — 401 on bad X-API-Key
+	//   MaxBytes                — wraps r.Body with MaxBytesReader
+	//   SafeBodyClose           — drains + closes r.Body on every exit path
+	//   mux handlers            — innermost; receives a fully-prepared request
+	// Adding a middleware anywhere else breaks one of the contracts:
+	// outside Recovery means a panic can tear down the listener; inside
+	// SafeBodyClose means a handler's drain runs after the deferred
+	// close and returns 0 bytes (silent loss under MaxBytes).
 	var handler http.Handler = s.Mux()
+	handler = SafeBodyCloseMiddleware(handler)
+	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
 	handler = SlogMiddleware(handler)
 	handler = RequestIDMiddleware(APIKeyMiddleware(cfg.APIKey)(handler))
-	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
+	handler = TimeoutMiddleware(120 * time.Second)(handler)
 	handler = RecoveryMiddleware(handler)
 
 	httpSrv := &http.Server{

@@ -98,10 +98,13 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 			continue
 		}
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
-			buf := make([]byte, 256)
-			n, _ := resp.Body.Read(buf)
-			resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(buf[:n]))
+			// Drain so the underlying TCP connection is returned to
+			// the keep-alive pool instead of being reset on Close.
+			// Reading only 256 bytes (the previous behaviour) left the
+			// remainder on the wire and forced a RST on the next retry.
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d (transient)", resp.StatusCode)
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}

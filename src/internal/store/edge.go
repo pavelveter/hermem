@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -13,10 +14,17 @@ import (
 // transaction so concurrent AddEdge calls cannot interleave. INSERT OR
 // IGNORE remains as a fast-path duplicate guard; the tx guarantees
 // atomicity when called from multiple goroutines.
+//
+// Isolation: explicit sql.LevelSerializable (mattn/go-sqlite3 already
+// acquires the write lock up front for DEFERRED txs, so this is
+// documentation rather than a runtime behaviour change — but the
+// explicit intent at the call site means a future driver swap to one
+// that defaults to LevelRepeatableRead won't silently drop the
+// strict-serial contract).
 func AddEdge(db *sql.DB, src, dst, rel string, weight float32) error {
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+		return fmt.Errorf("begin edge tx (Serializable): %w", err)
 	}
 	defer tx.Rollback() // safe after Commit
 

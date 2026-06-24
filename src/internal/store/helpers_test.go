@@ -7,11 +7,13 @@ import (
 )
 
 // openTestDB returns an in-memory SQLite database with the full hermem schema.
+// Uses MemDBRandom so concurrent tests under -race don't share the global
+// `:memory:` cache and corrupt each other's fixtures.
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := MemDB()
+	db, err := MemDBRandom()
 	if err != nil {
-		t.Fatalf("memdb: %v", err)
+		t.Fatalf("memdb random: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
 	return db
