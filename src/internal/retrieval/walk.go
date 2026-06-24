@@ -6,6 +6,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 // RetrieveContext performs a recursive CTE graph walk from seed IDs and returns re-ranked results.
@@ -21,7 +22,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		effDepth = opts.DepthCeiling
 	}
 
-	w := resolvedRankingWeight(opts.RankingWeight)
+	w := opts.RankingWeight.WithDefaults()
 	scorer := opts.CompositeScorer
 	if scorer == nil {
 		scorer = defaultCompositeScorer(w)
@@ -58,7 +59,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 	}
 	defer rows.Close()
 
-	queryNorm := vectorNormForQuery(opts.QueryEmbedding)
+	queryNorm := vector.VectorNorm(opts.QueryEmbedding)
 	result := &core.RetrievalResult{
 		SeedNodes:    []core.GraphNode{},
 		WorldFacts:   []core.RetrievedFact{},
@@ -84,12 +85,12 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 			break
 		}
 
-		nodeVec := decodeNodeVec(embBlob, len(opts.QueryEmbedding))
+		nodeVec, _ := store.DecodeVector(embBlob, len(opts.QueryEmbedding))
 		score := scorer(node, nodeVec, opts.QueryEmbedding, queryNorm)
 		node.RankingScore = score
 		rn := rankedNode{node: node, score: score}
 		if opts.Explain {
-			rn.sim = computeSim(nodeVec, opts.QueryEmbedding, queryNorm)
+			rn.sim = vector.CosineSimilarityWithNorm(nodeVec, opts.QueryEmbedding, queryNorm)
 			rn.recency = recencyScore(node.Entity.UpdatedAt, w.RecencyHalfLifeHours)
 		}
 		ranked = append(ranked, rn)
