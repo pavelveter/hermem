@@ -41,7 +41,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **State-on-Graph (Batch 9)** — stateful entities with `status`, configurable dependency relations, CTE-based executable-node walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
 - **Declarative schema** — categories, relation types, FSM rules defined in `hermem.ini` `[schema]`; no recompilation needed
 - **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
-- **Graph integrity verify** — `verify` CLI command checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types
+- **Graph integrity verify** — `hermem graph verify` checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types (exit 1 on problems)
 - **Retrieval explainability** — `/query/explain` endpoint returns vector/recency/depth score breakdown per retrieved fact
 - **Contradiction detection** — heuristic `isContradiction` detects conflicting statements at ingest; prevents merging, creates `contradicts` edges instead
 - **Temporal retrieval** — `/query/temporal` endpoint filters graph walk by time range (`time_from`/`time_to` RFC3339)
@@ -54,10 +54,10 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Critical path analysis** — `CriticalPath(db, schema, goalID)` walks the longest weighted path from leaf to goal
 - **Recovery plans** — `GenerateRecoveryPlan` follows `recovers_via` chains; `GET /recovery-plan?id=X` HTTP endpoint
 - **Graph clustering** — `FindConnectedComponents` BFS-based connected components; `GET /connected-components?min_size=N`
-- **Community detection** — Louvain one-pass modularity optimisation; `hermem communities` CLI + `GET /communities` HTTP
-- **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem re-embed` CLI + `POST /admin/re-embed` HTTP
+- **Community detection** — Louvain one-pass modularity optimisation; `hermem graph communities` CLI + `GET /communities` HTTP
+- **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem memory re-embed [--batch-size N] [--model M]` CLI + `POST /admin/re-embed` HTTP
 - **Embedding cache** — `EmbeddingCache` LRU (map + doubly-linked list) wired into vector index for hot-path speedup
-- **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem quantize` CLI
+- **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem memory quantize` (stdin) CLI
 - **Docker** — multi-stage build, non-root user
 
 ## CLI Commands
