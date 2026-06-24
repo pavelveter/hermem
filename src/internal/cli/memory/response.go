@@ -8,7 +8,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/retrieval"
+	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
 func newResponseCmd(env *cli.Env) *cobra.Command {
@@ -27,16 +27,18 @@ func newResponseCmd(env *cli.Env) *cobra.Command {
 			if req.Query == "" {
 				return fmt.Errorf("query is required")
 			}
+			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
 			opts := core.RetrieveContextOptions{
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
 				RankingWeight:     env.Cfg.Ranking,
 				Reranker:          env.Reranker,
+				Ctx:               env.Ctx,
 			}
 			if req.MaxDepth > 0 {
 				opts.MaxDepth = req.MaxDepth
 			}
-			out, err := retrieval.GenerateResponse(env.Ctx, env.DB, env.VI, env.Embedder, opts, req.Query)
+			out, err := svc.Response(env.Ctx, req.Query, opts)
 			if err != nil {
 				return fmt.Errorf("response: %w", err)
 			}

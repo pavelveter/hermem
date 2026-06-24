@@ -8,8 +8,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/retrieval"
-	"github.com/pavelveter/hermem/src/internal/vector"
+	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
 func newQueryCmd(env *cli.Env) *cobra.Command {
@@ -28,31 +27,22 @@ func newQueryCmd(env *cli.Env) *cobra.Command {
 			if req.Query == "" {
 				return fmt.Errorf("query required")
 			}
-			if req.TopK <= 0 {
-				req.TopK = 3
-			}
-			emb, _ := env.Embedder.Embed(env.Ctx, req.Query)
-			results, _ := vector.SearchByVector(env.DB, env.VI, emb, req.TopK)
-			seedIDs := make([]string, 0, len(results))
-			for _, r := range results {
-				seedIDs = append(seedIDs, r.Entity.ID)
-			}
+			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
 			opts := core.RetrieveContextOptions{
 				MaxDepth:          2,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
-				QueryEmbedding:    emb,
 				QueryText:         req.Query,
 				Ctx:               env.Ctx,
 				RankingWeight:     env.Cfg.Ranking,
 				Reranker:          env.Reranker,
 			}
-			ctxResult, err := retrieval.RetrieveContext(env.DB, seedIDs, opts)
+			markdown, err := svc.Query(env.Ctx, req.Query, req.TopK, opts)
 			if err != nil {
-				return fmt.Errorf("retrieve: %w", err)
+				return fmt.Errorf("query: %w", err)
 			}
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{
-				"context": retrieval.FormatContextMarkdown(ctxResult),
+				"context": markdown,
 			})
 		},
 	}
