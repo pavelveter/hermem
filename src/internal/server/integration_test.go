@@ -14,6 +14,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/ai"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
+	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -31,13 +32,13 @@ func (e *stubEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 
 // testFixture holds a fully wired test server + its dependencies.
 type testFixture struct {
-	ts      *httptest.Server
-	db      *sql.DB
-	vi      *vector.InMemoryVectorIndex
-	embed   *stubEmbedder
-	srv     *Server
-	state   *serverstate.State
-	refs    *serverstate.Ref
+	ts    *httptest.Server
+	db    *sql.DB
+	vi    *vector.InMemoryVectorIndex
+	embed *stubEmbedder
+	srv   *Server
+	state *serverstate.State
+	refs  *serverstate.Ref
 }
 
 func newTestFixture(t *testing.T) *testFixture {
@@ -55,10 +56,11 @@ func newTestFixture(t *testing.T) *testFixture {
 	state := serverstate.New(schema, 0, 100, core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{})
 	refs := serverstate.NewRef(state)
 
-	retSvc := ret.New(db, vi, embed, refs)
-	taskSvc := tasksvc.New(db, vi, embed, refs)
-	memSvc := mem.New(db, vi, embed, nil, refs)
-	adminSvc := NewAdminService(db, vi, embed, refs)
+	metrics := metricspkg.New()
+	retSvc := ret.New(db, vi, embed, metrics, refs)
+	taskSvc := tasksvc.New(db, vi, embed, metrics, refs)
+	memSvc := mem.New(db, vi, embed, nil, metrics, refs)
+	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
 	srv := NewServer(refs, retSvc, taskSvc, memSvc, adminSvc)
 
 	var handler http.Handler = srv.Mux()
@@ -187,7 +189,10 @@ func TestStore_RejectsInvalidCategory(t *testing.T) {
 
 func TestStore_RejectsMissingFields(t *testing.T) {
 	f := newTestFixture(t)
-	tests := []struct{ name string; body interface{} }{
+	tests := []struct {
+		name string
+		body interface{}
+	}{
 		{"empty id", map[string]string{"id": "", "category": "world", "content": "test"}},
 		{"empty category", map[string]string{"id": "e3", "category": "", "content": "test"}},
 		{"empty content", map[string]string{"id": "e3", "category": "world", "content": ""}},
@@ -249,7 +254,10 @@ func TestEdge_Success(t *testing.T) {
 
 func TestEdge_RejectsMissingFields(t *testing.T) {
 	f := newTestFixture(t)
-	tests := []struct{ name string; body interface{} }{
+	tests := []struct {
+		name string
+		body interface{}
+	}{
 		{"missing source", map[string]string{"target_id": "t2", "relation_type": "related_to"}},
 		{"missing target", map[string]string{"source_id": "s1", "relation_type": "related_to"}},
 		{"missing relation", map[string]string{"source_id": "s1", "target_id": "t2"}},
@@ -353,7 +361,10 @@ func TestQueryExplain_ReturnsExplain(t *testing.T) {
 
 func TestTaskStatus_RejectsMissingFields(t *testing.T) {
 	f := newTestFixture(t)
-	tests := []struct{ name string; body interface{} }{
+	tests := []struct {
+		name string
+		body interface{}
+	}{
 		{"no id", map[string]string{"status": "done"}},
 		{"no status", map[string]string{"id": "t1"}},
 	}
@@ -490,8 +501,9 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	embed := &stubEmbedder{}
 	refs := serverstate.NewRef(serverstate.New(core.DefaultSchemaConfig(false), 0, 100,
 		core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
-	srv := NewServer(refs, ret.New(db, vi, embed, refs), tasksvc.New(db, vi, embed, refs),
-		mem.New(db, vi, embed, nil, refs), NewAdminService(db, vi, embed, refs))
+	metrics := metricspkg.New()
+	srv := NewServer(refs, ret.New(db, vi, embed, metrics, refs), tasksvc.New(db, vi, embed, metrics, refs),
+		mem.New(db, vi, embed, nil, metrics, refs), NewAdminService(db, vi, embed, metrics, refs))
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
@@ -621,7 +633,10 @@ func TestTaskRollback_RejectsNoID(t *testing.T) {
 
 func TestTaskDep_RejectsMissingFields(t *testing.T) {
 	f := newTestFixture(t)
-	tests := []struct{ name string; body interface{} }{
+	tests := []struct {
+		name string
+		body interface{}
+	}{
 		{"no source", map[string]string{"target_id": "t2", "add": "true"}},
 		{"no target", map[string]string{"source_id": "s1", "add": "true"}},
 	}

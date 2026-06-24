@@ -18,6 +18,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/cli"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
+	"github.com/pavelveter/hermem/src/internal/metrics"
 )
 
 var (
@@ -72,6 +73,12 @@ func main() {
 	// eagerly so they are ready when EnsureDB later constructs the
 	// server. DB / VI / Worker start nil and are populated lazily by
 	// env.EnsureDB(), called from cobra's root PersistentPreRunE.
+	//
+	// Metrics is also built eagerly: HTTP handlers reach it via a
+	// closure-captured env.Metrics at request time, so a nil-pointer
+	// at handler invocation would 500 every handler that bumps a
+	// counter. env.EnsureDB has a backup fallback (e.Metrics == nil)
+	// for callers that bypass main.go entirely.
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	env := clienv.Env{
@@ -82,6 +89,7 @@ func main() {
 		Embedder:  cfg.NewEmbedder(),
 		Extractor: cfg.NewExtractor(),
 		Reranker:  cfg.NewReranker(),
+		Metrics:   metrics.New(),
 		Build: clienv.BuildInfo{
 			Version:   version,
 			BuildDate: buildDate,

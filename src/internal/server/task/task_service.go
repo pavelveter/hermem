@@ -27,12 +27,15 @@ type Service struct {
 	DB       *sql.DB
 	VI       core.VectorIndex
 	Embedder core.Embedder
+	Metrics  *metrics.Metrics
 	Refs     *serverstate.Ref
 }
 
-// New constructs a Service.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, refs *serverstate.Ref) *Service {
-	return &Service{DB: db, VI: vi, Embedder: embedder, Refs: refs}
+// New constructs a Service. m is the request-counter holder threaded
+// from Env.Metrics; handler bumps go through s.Metrics.Inc* in the
+// same goroutine that draws the per-request schema from s.Refs.Load().
+func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, m *metrics.Metrics, refs *serverstate.Ref) *Service {
+	return &Service{DB: db, VI: vi, Embedder: embedder, Metrics: m, Refs: refs}
 }
 
 // Routes returns the URL → handler mapping for this service.
@@ -69,7 +72,7 @@ func (s *Service) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := store.SetStatus(s.DB, s.Refs.Load().Schema, req.ID, req.Status); err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		if strings.Contains(err.Error(), "not found") {
 			httputil.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -77,7 +80,7 @@ func (s *Service) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	metrics.IncTaskStatus()
+	s.Metrics.IncTaskStatus()
 	httputil.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -86,14 +89,14 @@ func (s *Service) HandleTaskExecutable(w http.ResponseWriter, r *http.Request) {
 	state := s.Refs.Load()
 	tasks, err := retrieval.GetExecutableTasks(s.DB, state.Schema, goals)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if tasks == nil {
 		tasks = []core.Entity{}
 	}
-	metrics.IncTaskExec()
+	s.Metrics.IncTaskExec()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskExecutableResponse{Tasks: tasks})
 }
 
@@ -111,14 +114,14 @@ func (s *Service) HandleTaskList(w http.ResponseWriter, r *http.Request) {
 	state := s.Refs.Load()
 	tasks, err := store.ListTasks(s.DB, state.Schema, req.Status, req.GoalID)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if tasks == nil {
 		tasks = []core.Entity{}
 	}
-	metrics.IncTaskList()
+	s.Metrics.IncTaskList()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskExecutableResponse{Tasks: tasks})
 }
 
@@ -140,7 +143,7 @@ func (s *Service) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
 	state := s.Refs.Load()
 	entity, blocked, recovers, err := store.GetTaskWithRelations(s.DB, state.Schema, req.ID)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		if strings.Contains(err.Error(), "not found") {
 			httputil.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -148,7 +151,7 @@ func (s *Service) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncTaskShow()
+	s.Metrics.IncTaskShow()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskShowResponse{Entity: entity, BlockedBy: blocked, RecoversVia: recovers})
 }
 
@@ -181,7 +184,7 @@ func (s *Service) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
 	} else {
 		_ = store.DeleteEdge(s.DB, req.SourceID, req.TargetID, rel)
 	}
-	metrics.IncTaskDep()
+	s.Metrics.IncTaskDep()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -202,11 +205,11 @@ func (s *Service) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
 	}
 	rollbackID, err := store.FindRollbackTask(s.DB, s.Refs.Load().Schema, req.ID)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncTaskRollback()
+	s.Metrics.IncTaskRollback()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskRollbackResponse{RollbackTaskID: rollbackID})
 }
 
@@ -223,11 +226,11 @@ func (s *Service) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
 	}
 	nodes, err := store.GetTaskTree(s.DB, s.Refs.Load().Schema, req.GoalID)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncTaskTree()
+	s.Metrics.IncTaskTree()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskTreeResponse{Tree: store.RenderTaskTree(nodes, "")})
 }
 
@@ -251,7 +254,7 @@ func (s *Service) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	emb, err := s.Embedder.Embed(r.Context(), req.Content)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -263,7 +266,7 @@ func (s *Service) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	entity := core.Entity{ID: req.ID, Category: cat, Content: req.Content, Embedding: emb}
 	if err := store.StoreEntityWithEmbedding(s.DB, s.VI, state.Schema, entity); err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -273,7 +276,7 @@ func (s *Service) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	vector.AutoLinkEdges(r.Context(), s.DB, s.VI, s.Embedder, req.ID, emb)
-	metrics.IncTaskCreate()
+	s.Metrics.IncTaskCreate()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskCreateResponse{ID: req.ID, Status: "ok"})
 }
 
@@ -285,7 +288,7 @@ func (s *Service) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	plan, err := store.GenerateRecoveryPlan(s.DB, s.Refs.Load().Schema, id)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
