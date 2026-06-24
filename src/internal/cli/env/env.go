@@ -41,6 +41,11 @@ import (
 // for `--help`, `-h`, and bare `./hermem` (no subcommand), so those paths
 // never touch the database — that's what makes `./hermem --help` print
 // usage instead of "db: migrations: ..." when migrations are broken.
+//
+// Metrics is constructed eagerly in main.go AND on first hot-reload in
+// EnvManager.Reload (carried forward from the prior *Env via safeGet).
+// It holds the 16 atomic.Int64 Prometheus-request counters that the
+// server's request handlers bump — see metrics/metrics.go for the model.
 type Env struct {
 	Ctx       context.Context
 	Cancel    context.CancelFunc
@@ -50,6 +55,7 @@ type Env struct {
 	Embedder  core.Embedder
 	Extractor core.LLMExtractor
 	Reranker  core.Reranker
+	Metrics   *metrics.Metrics
 	Worker    *metrics.AsyncMetricsWorker
 	Build     BuildInfo
 
@@ -167,6 +173,15 @@ func (e *Env) EnsureDB() error {
 	e.Worker = metrics.InitMetricsWorker(db)
 	e.DB = db
 	e.VI = vector.NewIndex(e.Cfg.VectorBackend, db, e.Cfg.VectorDim)
+	// Initialise the request-counters Metrics if main.go did not.
+	// main.go sets env.Metrics eagerly (BEFORE EnsureDB) so server
+	// handlers can reach it via the env-captured closure at request time;
+	// the fallback lets `hermem <cmd>` invocations without a pre-build
+	// Env (any direct caller of NewRootCommand / EnsureDB) still get a
+	// non-nil Metrics to pass to service constructors.
+	if e.Metrics == nil {
+		e.Metrics = metrics.New()
+	}
 	return nil
 }
 
@@ -291,6 +306,7 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 		Embedder:   safeGet(prev, func(e *Env) core.Embedder { return e.Embedder }),
 		Extractor:  safeGet(prev, func(e *Env) core.LLMExtractor { return e.Extractor }),
 		Reranker:   safeGet(prev, func(e *Env) core.Reranker { return e.Reranker }),
+		Metrics:    safeGet(prev, func(e *Env) *metrics.Metrics { return e.Metrics }),
 		Worker:     safeGet(prev, func(e *Env) *metrics.AsyncMetricsWorker { return e.Worker }),
 		KeepDBOpen: safeGet(prev, func(e *Env) bool { return e.KeepDBOpen }),
 		initDone:   safeGet(prev, func(e *Env) bool { return e.initDone }),
@@ -373,6 +389,7 @@ func (m *EnvManager) MutateSet(mutator func(current *Env) error) error {
 		Embedder:   current.Embedder,
 		Extractor:  current.Extractor,
 		Reranker:   current.Reranker,
+		Metrics:    current.Metrics,
 		Worker:     current.Worker,
 		KeepDBOpen: current.KeepDBOpen,
 		initDone:   current.initDone,

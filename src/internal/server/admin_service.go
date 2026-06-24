@@ -15,18 +15,25 @@ import (
 // AdminService handles health, system stat endpoints, and admin operations.
 //
 // Handlers in this group do NOT depend on schema state — they read directly
-// from DB / VI / Embedder / metrics. The schema-aware endpoints (store, edge,
+// from DB / VI / Embedder / Metrics. The schema-aware endpoints (store, edge,
 // ingest, etc.) live in retrieval/task/memory services.
 type AdminService struct {
 	DB       *sql.DB
 	VI       core.VectorIndex
 	Embedder core.Embedder
+	Metrics  *metrics.Metrics
 	Refs     *serverstate.Ref
 }
 
-// NewAdminService constructs an AdminService.
-func NewAdminService(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, refs *serverstate.Ref) *AdminService {
-	return &AdminService{DB: db, VI: vi, Embedder: embedder, Refs: refs}
+// NewAdminService constructs an AdminService. m is the request-counter
+// holder owned by Env.Metrics — every handler that bumps a counter
+// (BumpsIncErr etc.) reaches it through this field. The /metrics HTTP
+// route is served by the same m via the closure in Routes() below, so a
+// scrape AND a handler-driven increment observe the SAME atomic.Int64
+// fields — no observable drift between the scraper's view and the
+// handlers' contribution.
+func NewAdminService(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, m *metrics.Metrics, refs *serverstate.Ref) *AdminService {
+	return &AdminService{DB: db, VI: vi, Embedder: embedder, Metrics: m, Refs: refs}
 }
 
 // Routes returns the URL → handler mapping for this service.
@@ -35,11 +42,20 @@ func (s *AdminService) Routes() map[string]http.HandlerFunc {
 		"/health":               s.HandleHealth,
 		"/health/live":          s.HandleHealthLive,
 		"/health/ready":         s.HandleHealthReady,
-		"/metrics":              metrics.MetricsHandler,
+		"/metrics":              s.HandleMetrics,
 		"/connected-components": s.HandleConnectedComponents,
 		"/communities":          s.HandleCommunities,
 		"/admin/re-embed":       s.HandleReEmbed,
 	}
+}
+
+// HandleMetrics serves Prometheus-format metrics. Routes to
+// s.Metrics.MetricsHandler so the exposed counters are the SAME
+// atomic.Int64 fields that the rest of the handler suite bumps —
+// scraper and incrementer share a single *Metrics, no parallel
+// state path that could drift.
+func (s *AdminService) HandleMetrics(w http.ResponseWriter, r *http.Request) {
+	s.Metrics.MetricsHandler(w, r)
 }
 
 func (s *AdminService) HandleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -64,7 +80,7 @@ func (s *AdminService) HandleConnectedComponents(w http.ResponseWriter, r *http.
 	minSize := httputil.ParseIntParam(r, "min_size", 2)
 	components, err := store.FindConnectedComponents(s.DB, minSize)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -82,7 +98,7 @@ func (s *AdminService) HandleCommunities(w http.ResponseWriter, r *http.Request)
 	}
 	all, globalQ, err := store.DetectCommunities(s.DB, maxIter)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -127,7 +143,7 @@ func (s *AdminService) HandleReEmbed(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := algo.ReEmbedAll(r.Context(), s.DB, s.VI, s.Embedder, req.Dim, req.BatchSize, req.Model)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

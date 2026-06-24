@@ -27,12 +27,16 @@ type Service struct {
 	DB       *sql.DB
 	VI       core.VectorIndex
 	Embedder core.Embedder
+	Metrics  *metrics.Metrics
 	Refs     *serverstate.Ref
 }
 
-// New constructs a Service.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, refs *serverstate.Ref) *Service {
-	return &Service{DB: db, VI: vi, Embedder: embedder, Refs: refs}
+// New constructs a Service. m is the metrics holder threaded from
+// Env.Metrics — handler counters (IncSearch, IncErr, etc.) reach
+// s.Metrics.* under the closure-captured pointer, no package-level
+// atomic.Int64 globals are touched.
+func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, m *metrics.Metrics, refs *serverstate.Ref) *Service {
+	return &Service{DB: db, VI: vi, Embedder: embedder, Metrics: m, Refs: refs}
 }
 
 // Routes returns the URL → handler mapping for this service.
@@ -81,17 +85,17 @@ func (s *Service) HandleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	embedding, err := s.Embedder.Embed(r.Context(), req.Query)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("embed failed: %v", err))
 		return
 	}
 	results, err := vector.SearchByVector(s.DB, s.VI, embedding, req.TopK)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncSearch()
+	s.Metrics.IncSearch()
 	httputil.WriteJSON(w, http.StatusOK, results)
 }
 
@@ -118,11 +122,11 @@ func (s *Service) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 	opts.Ctx = r.Context()
 	result, err := pkgretrieval.RetrieveContext(s.DB, req.SeedIDs, opts)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncRetrieve()
+	s.Metrics.IncRetrieve()
 	httputil.WriteJSON(w, http.StatusOK, result)
 }
 
@@ -146,7 +150,7 @@ func (s *Service) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	embedding, err := s.Embedder.Embed(r.Context(), req.Query)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -161,11 +165,11 @@ func (s *Service) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	opts.Ctx = r.Context()
 	ctxResult, err := pkgretrieval.RetrieveContext(s.DB, seedIDs, opts)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncQuery()
+	s.Metrics.IncQuery()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"context": pkgretrieval.FormatContextMarkdown(ctxResult)})
 }
 
@@ -193,7 +197,7 @@ func (s *Service) HandleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := pkgretrieval.GenerateResponse(r.Context(), s.DB, s.VI, s.Embedder, opts, req.Query)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, "response generation failed: "+err.Error())
 		return
 	}
@@ -227,11 +231,11 @@ func (s *Service) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
 	opts.Explain = true
 	result, err := pkgretrieval.RetrieveContext(s.DB, seedIDs, opts)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncQuery()
+	s.Metrics.IncQuery()
 	httputil.WriteJSON(w, http.StatusOK, result)
 }
 
@@ -240,7 +244,7 @@ func (s *Service) HandleProvenance(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("conversation_id"), r.URL.Query().Get("message_id"),
 		r.URL.Query().Get("source"), httputil.ParseIntParam(r, "limit", 50))
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -250,7 +254,7 @@ func (s *Service) HandleProvenance(w http.ResponseWriter, r *http.Request) {
 func (s *Service) HandleContradictions(w http.ResponseWriter, r *http.Request) {
 	pairs, err := store.GetContradictions(s.DB, r.URL.Query().Get("id"))
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

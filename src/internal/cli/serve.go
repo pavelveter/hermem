@@ -51,10 +51,10 @@ func runServe(env *clienv.Env, port string) error {
 
 	srv := server.NewServer(
 		refs,
-		ret.New(env.DB, env.VI, env.Embedder, refs),
-		tasksvc.New(env.DB, env.VI, env.Embedder, refs),
-		mem.New(env.DB, env.VI, env.Embedder, worker, refs),
-		server.NewAdminService(env.DB, env.VI, env.Embedder, refs),
+		ret.New(env.DB, env.VI, env.Embedder, env.Metrics, refs),
+		tasksvc.New(env.DB, env.VI, env.Embedder, env.Metrics, refs),
+		mem.New(env.DB, env.VI, env.Embedder, worker, env.Metrics, refs),
+		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 	)
 
 	// SIGHUP reload loop — separate from HTTP lifecycle so we can re-validate

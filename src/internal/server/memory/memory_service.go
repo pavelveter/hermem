@@ -27,12 +27,17 @@ type Service struct {
 	VI       core.VectorIndex
 	Embedder core.Embedder
 	Worker   *ingestion.IngestionWorker
+	Metrics  *metrics.Metrics
 	Refs     *serverstate.Ref
 }
 
-// New constructs a Service.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, worker *ingestion.IngestionWorker, refs *serverstate.Ref) *Service {
-	return &Service{DB: db, VI: vi, Embedder: embedder, Worker: worker, Refs: refs}
+// New constructs a Service. m is non-nil in production — set via
+// cmd-line startup in main.go via Env.Metrics; tests that bypass
+// main.go (server/integration_test.go, cli/cli_integration_test.go)
+// pass metrics.New() directly so concurrent test bodies don't
+// cross-pollinate each other's request counters.
+func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, worker *ingestion.IngestionWorker, m *metrics.Metrics, refs *serverstate.Ref) *Service {
+	return &Service{DB: db, VI: vi, Embedder: embedder, Worker: worker, Metrics: m, Refs: refs}
 }
 
 // Routes returns the URL → handler mapping for this service.
@@ -67,7 +72,7 @@ func (s *Service) rejectSchemaConflict(w http.ResponseWriter, gen uint64) bool {
 	if !s.Refs.IsStale(gen) {
 		return false
 	}
-	metrics.IncSchemaConflict()
+	s.Metrics.IncSchemaConflict()
 	httputil.WriteErrorWithCode(w, http.StatusConflict,
 		"schema changed during request; retry",
 		"schema_conflict", "")
@@ -100,12 +105,12 @@ func (s *Service) HandleStore(w http.ResponseWriter, r *http.Request) {
 	}
 	entity := core.Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}
 	if err := store.StoreEntityWithEmbedding(s.DB, s.VI, state.Schema, entity); err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	vector.AutoLinkEdges(r.Context(), s.DB, s.VI, s.Embedder, req.ID, entity.Embedding)
-	metrics.IncStore()
+	s.Metrics.IncStore()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -125,11 +130,11 @@ func (s *Service) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Worker.ProcessDialog(r.Context(), req.Dialog); err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncIngest()
+	s.Metrics.IncIngest()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -164,11 +169,11 @@ func (s *Service) HandleEdge(w http.ResponseWriter, r *http.Request) {
 		err = store.AddEdge(s.DB, req.SourceID, req.TargetID, req.RelationType, req.Weight)
 	}
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	metrics.IncEdge()
+	s.Metrics.IncEdge()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -185,7 +190,7 @@ func (s *Service) HandleTimeline(w http.ResponseWriter, r *http.Request) {
 		`SELECT id, category, content, created_at, source, source_type, conversation_id, message_id FROM entities WHERE archived = 0 AND created_at IS NOT NULL ORDER BY created_at DESC LIMIT ?`,
 		limit)
 	if err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -196,7 +201,7 @@ func (s *Service) HandleTimeline(w http.ResponseWriter, r *http.Request) {
 		var createdAt sql.NullTime
 		var source, sourceType, convID, msgID sql.NullString
 		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &createdAt, &source, &sourceType, &convID, &msgID); err != nil {
-			metrics.IncErr()
+			s.Metrics.IncErr()
 			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -219,7 +224,7 @@ func (s *Service) HandleTimeline(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, e)
 	}
 	if err := rows.Err(); err != nil {
-		metrics.IncErr()
+		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
