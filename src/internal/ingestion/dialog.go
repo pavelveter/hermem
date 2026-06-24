@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mattn/go-sqlite3"
@@ -301,13 +302,38 @@ func IsIngestionContradiction(a, b string) bool {
 	return false
 }
 
-// MemoryWorker processes MemoryMessage channel items — batch entry point for parallel ingestion.
+// MemoryWorker processes MemoryMessage channel items — batch entry point
+// for parallel ingestion.
+//
+// Concurrency is bounded by a semaphore so a flooding producer cannot
+// drive the worker into OOM or starve the SQLite single-writer (set in
+// store.InitDB SetMaxOpenConns(1)) under sustained produce pressure.
+//
+// On ctx.Done() the loop returns cleanly without leaving dangling goroutines:
+// in-flight goroutines observe ctx through ProcessDialogWithProvenance and
+// unwind themselves; the WaitGroup barriers the function exit.
 func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ch <-chan core.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema)
+	const maxParallel = 8
+	sem := make(chan struct{}, maxParallel)
+	var wg sync.WaitGroup
 	for msg := range ch {
-		prov := core.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
-		if err := worker.ProcessDialogWithProvenance(ctx, msg.Dialog, prov); err != nil {
-			slog.Error("dialog processing failed", "err", err, "dialog_len", len(msg.Dialog))
+		msg := msg // capture loop variable for goroutine
+		wg.Add(1)
+		select {
+		case <-ctx.Done():
+			wg.Done()
+			return
+		case sem <- struct{}{}:
 		}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			prov := core.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
+			if err := worker.ProcessDialogWithProvenance(ctx, msg.Dialog, prov); err != nil {
+				slog.Error("dialog processing failed", "err", err, "dialog_len", len(msg.Dialog))
+			}
+		}()
 	}
+	wg.Wait()
 }

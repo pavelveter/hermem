@@ -106,7 +106,17 @@ func DetectCommunities(db *sql.DB, maxIterations int) ([]core.Community, float64
 			commInternal[oldComm] -= 2 * neighbourComms[oldComm]
 			commTotal[oldComm] -= nodeWeight[i]
 
-			for newComm, wToComm := range neighbourComms {
+			// Sort neighbour community IDs so ties on deltaQ resolve
+			// deterministically. Without this, Go's randomized map iteration
+			// would yield a different community assignment (and therefore a
+			// different GraphRAG output) on every restart of the same DB.
+			sortedComms := make([]int, 0, len(neighbourComms))
+			for c := range neighbourComms {
+				sortedComms = append(sortedComms, c)
+			}
+			sort.Ints(sortedComms)
+			for _, newComm := range sortedComms {
+				wToComm := neighbourComms[newComm]
 				if newComm == oldComm {
 					continue
 				}
