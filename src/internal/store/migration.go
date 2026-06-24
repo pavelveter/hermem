@@ -216,10 +216,16 @@ func appliedMigrations(db *sql.DB) (map[string]bool, error) {
 }
 
 // MigStatus is one migration's applied state.
+//
+// JSON tags added in PHASE 3.2 so the migration HTTP shell can
+// write the type as the envelope directly — same precedent as
+// core.ContradictionPair / core.ConnectedComponent / core.Community.
+// omitempty on AppliedAt matches the CLI's per-row print contract
+// (non-applied rows omit the field rather than render as "").
 type MigStatus struct {
-	Name      string
-	Applied   bool
-	AppliedAt string
+	Name      string `json:"name"`
+	Applied   bool   `json:"applied"`
+	AppliedAt string `json:"applied_at,omitempty"`
 }
 
 // MigrationStatus returns the list of all migration files with their applied status.
@@ -281,11 +287,16 @@ func MigrationChecksum(name string) (string, error) {
 	return fmt.Sprintf("%016x", h), nil
 }
 
-// MigMismatch reports one migration whose stored checksum diverges from current.
+// MigMismatch reports one migration whose stored checksum diverges
+// from current.
+//
+// JSON tags added in PHASE 3.2 so the migration HTTP shell can
+// serialise the type directly into the /db/verify envelope (no
+// parallel transport struct required).
 type MigMismatch struct {
-	Name            string
-	StoredChecksum  string
-	CurrentChecksum string
+	Name            string `json:"name"`
+	StoredChecksum  string `json:"stored_checksum"`
+	CurrentChecksum string `json:"current_checksum"`
 }
 
 // VerifyMigrationIntegrity compares applied migrations against their current checksums.

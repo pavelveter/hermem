@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/migration"
 )
 
 func newMigrateCmd(env *cli.Env) *cobra.Command {
@@ -15,7 +15,11 @@ func newMigrateCmd(env *cli.Env) *cobra.Command {
 		Short: "Show migration status (applied / pending)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			status, err := store.MigrationStatus(env.DB)
+			// PHASE 3.2: routes through the transport-agnostic migration
+			// Service rather than hitting store.* directly. Mirrors the
+			// PHASE 2.x + 3.1 pattern of "domain service per call".
+			svc := migration.NewService(env.DB)
+			status, err := svc.Status(env.Ctx)
 			if err != nil {
 				return fmt.Errorf("migrate status: %w", err)
 			}

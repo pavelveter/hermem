@@ -18,10 +18,12 @@ import (
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
+	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
+	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -84,8 +86,13 @@ func newTestFixture(t *testing.T) *testFixture {
 	// the test schema used by stubEmbedder + seedEntityWithEmb.
 	graphDom := graphdomain.NewService(db)
 	graphSvc := graphsrv.New(graphDom, metrics, refs, testVectorDim)
+	// PHASE 3.2 fixture: migration HTTPService is constructed from a
+	// domain Service + metrics + refs. Refs is required because the
+	// /db/schema handler loads the live schema per request from refs.
+	migrDom := migrationdomain.NewService(db)
+	migrSvc := migrsrv.New(migrDom, metrics, refs)
 	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, graphSvc, adminSvc)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, graphSvc, migrSvc, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -535,8 +542,12 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// this fixture file are 3-dim.
 	graphDom := graphdomain.NewService(db)
 	graphSvc := graphsrv.New(graphDom, metrics, refs, testVectorDim)
+	// PHASE 3.2 fixture: API-key auth fixture also needs the migration
+	// HTTPService wired in the NewServer call.
+	migrDom := migrationdomain.NewService(db)
+	migrSvc := migrsrv.New(migrDom, metrics, refs)
 	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
-		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), graphSvc, NewAdminService(db, vi, embed, metrics, refs))
+		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), graphSvc, migrSvc, NewAdminService(db, vi, embed, metrics, refs))
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
