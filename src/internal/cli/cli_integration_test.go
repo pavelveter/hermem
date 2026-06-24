@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -21,6 +22,12 @@ func testEnv(t *testing.T) *clienv.Env {
 	t.Helper()
 	dir := t.TempDir()
 	env := &clienv.Env{
+		// Ctx must be non-nil: env.DB.PingContext(env.Ctx) and every QueryContext
+		// call dereference ctx internally; a nil context.Context interface triggers
+		// a panic inside database/sql while holding db.mu, which then wedges
+		// t.Cleanup(env.Close) on the same mutex and produces a deterministic 240s
+		// timeout. See TestCLI_History commit notes for the deadlock trace.
+		Ctx: context.Background(),
 		Cfg: &config.Config{
 			DBPath:    filepath.Join(dir, "hermem_test.db"),
 			Schema:    core.DefaultSchemaConfig(false),
@@ -35,6 +42,8 @@ func testStatefulEnv(t *testing.T) *clienv.Env {
 	t.Helper()
 	dir := t.TempDir()
 	env := &clienv.Env{
+		// See testEnv; same requirement applies.
+		Ctx: context.Background(),
 		Cfg: &config.Config{
 			DBPath:    filepath.Join(dir, "hermem_stateful_test.db"),
 			Schema:    statefulSchema(),
