@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/ingestion"
+	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 )
 
 func newIngestCmd(env *cli.Env) *cobra.Command {
@@ -20,11 +20,12 @@ func newIngestCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
+			// Pre-validation kept at CLI for verbatim message parity.
 			if req.Dialog == "" {
 				return fmt.Errorf("dialog required")
 			}
-			w := ingestion.NewIngestionWorker(env.DB, env.VI, env.Extractor, env.Embedder, env.Cfg.DedupThreshold, env.Cfg.Schema)
-			if err := w.ProcessDialog(env.Ctx, req.Dialog); err != nil {
+			memSvc := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
+			if err := memSvc.Ingest(env.Ctx, req.Dialog, env.Cfg.DedupThreshold, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("ingest: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), `{"status":"ok"}`)

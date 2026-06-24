@@ -12,7 +12,7 @@ import (
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/ingestion"
+	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	"github.com/pavelveter/hermem/src/internal/server"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
@@ -47,13 +47,18 @@ func runServe(env *clienv.Env, port string) error {
 	)
 
 	refs := serverstate.NewRef(buildState(env.Cfg, env.Reranker))
-	worker := ingestion.NewIngestionWorker(env.DB, env.VI, env.Extractor, env.Embedder, env.Cfg.DedupThreshold, env.Cfg.Schema)
+	// PHASE 2.1: build the domain Service once and hand the HTTP shell
+	// (server/memory) a borrowed pointer. IngestionWorker is created
+	// inside Mem.Ingest per call — no long-lived worker race against
+	// SIGHUP mid-call schema mutation. Embedder/Extractor live inside
+	// memdomain.Service exclusively; no transport-level duplication.
+	memSvc := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
 
 	srv := server.NewServer(
 		refs,
 		ret.New(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 		tasksvc.New(env.DB, env.VI, env.Embedder, env.Metrics, refs),
-		mem.New(env.DB, env.VI, env.Embedder, worker, env.Metrics, refs),
+		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
 		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 	)
 

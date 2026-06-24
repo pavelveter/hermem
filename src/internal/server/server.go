@@ -1,11 +1,13 @@
 // Package server provides the HTTP API shell.
 //
 // After the god-object split this package is just a dispatcher + lifecycle
-// manager. Domain logic lives in the 4 sub-packages:
+// manager. Domain logic lives in the 4 sub-packages plus the extracted
+// domain Service for memory:
 //
 //   - server/retrieval/  — search, retrieve, query, response, query_explain, provenance, contradictions
 //   - server/task/       — task/status, executable, list, show, dep, tree, create, rollback, recovery-plan
-//   - server/memory/     — store, ingest, edge, timeline  (owns the IngestionWorker)
+//   - server/memory/     — HTTP shell for /store, /ingest, /edge, /timeline (POST and GET). Delegates
+//     domain logic to internal/memory.Service.
 //   - server/            — AdminService: health, metrics, connected-components, communities, re-embed
 //
 // Shared per-request configuration is read atomically via *serverstate.Ref —
@@ -33,20 +35,21 @@ import (
 )
 
 // Server is the HTTP shell. It holds the 4 services + a mux + the atomic
-// state holder. No domain fields (no DB / VI / Embedder directly — those live
-// on services).
+// state holder. No domain fields (no DB / VI / Embedder directly —
+// memory's domain service lives in internal/memory and is borrowed
+// by the server/memory shell as a Service reference).
 type Server struct {
 	Refs      *serverstate.Ref
 	Retrieval *ret.Service
 	Task      *tasksvc.Service
-	Memory    *mem.Service
+	Memory    *mem.HTTPService
 	Admin     *AdminService
 	mux       *http.ServeMux
 }
 
 // NewServer wires the 4 services into a single mux. No HTTP server is started
 // — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
-func NewServer(refs *serverstate.Ref, retrieval *ret.Service, task *tasksvc.Service, memory *mem.Service, admin *AdminService) *Server {
+func NewServer(refs *serverstate.Ref, retrieval *ret.Service, task *tasksvc.Service, memory *mem.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:      refs,
 		Retrieval: retrieval,
@@ -77,15 +80,19 @@ func (s *Server) mount() {
 	s.mux = mux
 }
 
-// ReloadState atomically swaps the configuration state and propagates a
-// schema change to the IngestionWorker. Safe to call concurrently with
-// in-flight handlers — handlers always read s.Refs.Load() per request.
+// ReloadState atomically swaps the configuration state. Safe to call
+// concurrently with in-flight handlers — handlers always read
+// s.Refs.Load() per request.
+//
+// Memory.HTTPService has no long-lived IngestionWorker (PHASE 2.1: worker
+// is constructed per Ingest call), so no OnStateChange propagation is
+// required. Schema mutations land on the next /ingest call that the
+// caller makes, atomically capturing state.Schema from s.Refs.Load().
 func (s *Server) ReloadState(newState *serverstate.State) {
 	if newState == nil {
 		panic("server: ReloadState called with nil state")
 	}
 	s.Refs.Store(newState)
-	s.Memory.OnStateChange(newState)
 }
 
 // Mux exposes the wired mux for tests and tooling.
