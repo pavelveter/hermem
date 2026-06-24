@@ -700,13 +700,20 @@ export HERMEM_URL=http://localhost:8420
 
 ### Plugin tools
 
-The plugin exposes three tools to the Hermes agent:
+The plugin exposes ten tools to the Hermes agent:
 
 | Tool | Description |
 |------|-------------|
 | `hermem_search` | Search graph memory by vector similarity |
 | `hermem_store` | Store a fact in graph memory |
 | `hermem_query` | Full pipeline: search + graph walk + markdown context |
+| `hermem_edge` | Link two entities with a typed relation |
+| `hermem_retrieve` | Graph walk from explicit seed IDs (multi-hop) |
+| `hermem_timeline` | Most recent entities (ordered by created_at) |
+| `hermem_contradictions` | List conflicting facts (global or ID-scoped) |
+| `hermem_task_create` | Create a task node, optionally linked to context |
+| `hermem_task_status` | Update task lifecycle status |
+| `hermem_task_list` | List operational tasks filtered by status / goal |
 
 ### How it works with Hermes
 

@@ -143,6 +143,22 @@ post-write.
   go test -count=1 -bench='BenchmarkRetrieveContextStar' -benchtime=20x -run='^$' -benchmem ./src/...
   ```
 
+### Plugin — agent tool surface (v0.2.0)
+
+`plugins/memory/hermem` now exposes ten tools to Hermes Agent (was three). New schemas added: `hermem_edge`, `hermem_retrieve`, `hermem_timeline`, `hermem_contradictions`, `hermem_task_create`, `hermem_task_status`, `hermem_task_list`. The three legacy schemas (`hermem_search`, `hermem_store`, `hermem_query`) are preserved verbatim so existing installations keep working.
+
+Plugin internals:
+
+- `_call(path, data)` keys by HTTP path / cobra-style positional arg. Nested commands like `task/create` are split on `/` and passed as positional args to the CLI binary so the new cobra tree is reached transparently (HTTP path is the same).
+- `_cli_args(path)` is the single point that translates `memory store`-style paths into `["hermem", "memory", "store"]` lists for `subprocess.run`.
+- `_http` recognises 400/422 as expected rejection noise (logged at info) rather than as an unexpected error, so an LLM agent's malformed payloads don't pollute the warning stream.
+- `_cli` distinguishes `TimeoutExpired` from `FileNotFoundError` from generic `Exception` and logs each at a different severity; the timeouts are exposed as module constants (`_DEFAULT_CLI_TIMEOUT_S=10`, `_DEFAULT_HTTP_TIMEOUT_S=5`).
+- `_json_result(resp, default_error)` consolidates the None → error envelope + non-None pass-through pattern used by every new dispatch handler.
+
+Excluded-from-tool-surface (operator-only, edge cases): `/admin/re-embed`, `/connected-components`, `/communities`, `/query/explain`, `/health*`, `/metrics`, `/task/rollback`, `/recovery-plan`, `agent-loop`. Rationale in the plugin source godoc.
+
+`plugin.yaml` bumped from 0.1.0 to 0.2.0. README's "Plugin tools" table now lists all ten.
+
   Snapshot (macOS, darwin/arm64, Accelerate cblas_sdot, GOOS=darwin):
 
   | bench                                 | ns/op         | B/op      | allocs/op |
