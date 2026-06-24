@@ -168,6 +168,46 @@ Excluded-from-tool-surface (operator-only, edge cases): `/admin/re-embed`, `/con
 
   The `Precompute` row pays one sqrt per row (normB only); the `Recompute` row pays two (query + node). Wall-clock figures vary by host; relative gap is stable. Re-running the bench refreshes both rows.
 
+### Multi-hop — iterative seed expansion
+
+`retrieval.MultiHopRetrieveContext` is now a real multi-hop walk, not a passthrough to `RetrieveContext`.
+
+Algorithm (Design A — Iterative Seed Expansion):
+
+1. Shallow graph walk from the just-discovered seeds (`MaxDepth=ShallowDepth=1`).
+2. Pick top-`TopKPerHop=2` facts across all retrieval buckets + seed contents, ordered by `RankingScore` desc with `Content` asc tiebreak for determinism.
+3. Embed each fact's content via the supplied `Embedder`.
+4. `VectorIndex.SearchBatch` for `VectorTopK=3` neighbours per embedding — the "vector jump" across topological gaps.
+5. Union new IDs into the accumulated seed set; break the loop early when no new seeds, the seed set is empty, or the budget (`MaxTotalMultiHopSeeds=20`) is hit.
+6. Final call: a single `RetrieveContext` over the union of all seeds owns dedup-by-content, ranking, and bucket-population.
+
+Hardening:
+
+- Empty-seeds short-circuit at the top: tolerates `len(seedIDs)==0` with nil vi/embedder/db.
+- Three `ctx.Err()` checkpoints per iteration (loop entry, before embed round-trip, before `SearchBatch` round-trip).
+- `sort.Strings(finalSeeds)` before the final call for stable SQL IN-clause ordering (Go map iteration is randomized, and the parameter order influences `ORDER BY depth ASC, category ASC` ties).
+- Tuneables renamed to CamelCase (`MaxTotalMultiHopSeeds`, `TopKPerHop`, `VectorTopK`, `ShallowDepth`) and discoverable via grep; still function-local `const`s — not externally tunable.
+
+`opts.MultiHopCount` semantics:
+
+| Value | Behaviour |
+| :--- | :--- |
+| `≤0` (unset) | **NEW default: 2 hops.** Requires `vi` + `embedder`. |
+| `1` | Strict passthrough to `RetrieveContext`. Nil `vi`/`embedder` allowed. |
+| `≥2` | Iterative expansion; nil `vi`/`embedder` returns an error. |
+
+BEHAVIOUR-CHANGE NOTE: callers that switch from `RetrieveContext` to `MultiHopRetrieveContext` without explicitly setting `MultiHopCount` enter the new 2-hop path and MUST supply `vi` + `embedder` or the call errors with `"multi-hop (count=N) requires non-nil VectorIndex and Embedder"`. Existing direct `RetrieveContext` callers (`GenerateResponse` in `response.go`, every `retrieval_service.go` handler) are UNAFFECTED since the migration is opt-in.
+
+Tests:
+
+- `TestMultiHopRetrieveContext_PassthroughOnCountOne` — `MultiHopCount=1` still delegates (back-compat path).
+- `TestMultiHopRetrieveContext_DiscoversDisconnectedSubgraph` — headline test: two topologically disconnected subgraphs (`a→b`, `c→d`) with semantically identical `alpha`/`delta` vectors. Multi-hop pulls `delta` into the seed set via vector jump; the final walk then reaches `gamma` via the `c→d` edge.
+- `TestSingleHopRetrieveDoesNotCrossTopologicalGap` — negative control: single-hop definitively cannot reach `delta` from `a`.
+- `TestMultiHopRetrieveContext_EmptySeedsReturnsEmptyResult` — short-circuit tolerates nil vi/embedder/db.
+- `TestMultiHopRetrieveContext_RequiresIndexAndEmbedderWhenCountGTE2` — `MultiHopCount≥2` with nil deps errors instead of silently degrading.
+
+A `TODO(retrieval/tests)` breadcrumb at the end of `walk.go` flags two tracked followups: assertion coverage for the three loop-break conditions (`nextSeeds empty`, `accumulated > MaxTotalMultiHopSeeds`, `currentSeeds empty`), and the per-hop seed-content re-embed redundancy in `topKFromResult`.
+
 ## [PR9] — Retention, auth, id_map, CTE filters
 
 ### Added
