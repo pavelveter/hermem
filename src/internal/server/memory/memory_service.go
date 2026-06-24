@@ -51,6 +51,29 @@ func (s *Service) OnStateChange(state *serverstate.State) {
 	s.Worker.ReloadSchema(state.Schema)
 }
 
+// rejectSchemaConflict writes the canonical 409 Schema-Conflict envelope
+// and returns true if a SIGHUP swapped the global config since the
+// handler captured state.Generation at request start. The caller pattern
+// is:
+//
+//	if s.rejectSchemaConflict(w, state.Generation) { return }
+//
+// Centralising the JSON code string + metrics increment + status ensures
+// HandleStore + HandleEdge (and any future handler that adopts the same
+// guard) cannot drift on the envelope. Bumps IncSchemaConflict (not
+// IncErr) so a SIGHUP-burst of rejected writes doesn't pollute the
+// operator's error-rate dashboard — schema-concurrency 409s are healthy.
+func (s *Service) rejectSchemaConflict(w http.ResponseWriter, gen uint64) bool {
+	if !s.Refs.IsStale(gen) {
+		return false
+	}
+	metrics.IncSchemaConflict()
+	httputil.WriteErrorWithCode(w, http.StatusConflict,
+		"schema changed during request; retry",
+		"schema_conflict", "")
+	return true
+}
+
 func (s *Service) HandleStore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -69,6 +92,10 @@ func (s *Service) HandleStore(w http.ResponseWriter, r *http.Request) {
 	state := s.Refs.Load()
 	if !state.ValidCategories[req.Category] {
 		httputil.WriteError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown category: %s", req.Category))
+		return
+	}
+	// Cross-state tx guard: see Service.rejectSchemaConflict.
+	if s.rejectSchemaConflict(w, state.Generation) {
 		return
 	}
 	entity := core.Entity{ID: req.ID, Category: req.Category, Content: req.Content, Embedding: req.Embedding}
@@ -124,6 +151,10 @@ func (s *Service) HandleEdge(w http.ResponseWriter, r *http.Request) {
 	state := s.Refs.Load()
 	if !state.ValidRelationTypes[req.RelationType] {
 		httputil.WriteError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown relation_type: %s", req.RelationType))
+		return
+	}
+	// Cross-state tx guard: see Service.rejectSchemaConflict.
+	if s.rejectSchemaConflict(w, state.Generation) {
 		return
 	}
 	var err error
