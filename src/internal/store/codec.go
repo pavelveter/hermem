@@ -8,6 +8,9 @@ import (
 
 // EmbeddingToBytes converts a float32 slice to little-endian bytes (4 bytes per element).
 func EmbeddingToBytes(embedding []float32) []byte {
+	if len(embedding) == 0 {
+		return nil
+	}
 	buf := make([]byte, len(embedding)*4)
 	for i, v := range embedding {
 		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(v))
@@ -18,7 +21,7 @@ func EmbeddingToBytes(embedding []float32) []byte {
 // BytesToEmbedding converts bytes back to a float32 slice without dimension validation.
 // Use DecodeVector when dimension must be checked.
 func BytesToEmbedding(data []byte) []float32 {
-	if len(data)%4 != 0 {
+	if len(data) == 0 || len(data)%4 != 0 {
 		return nil
 	}
 	embedding := make([]float32, len(data)/4)

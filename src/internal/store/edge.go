@@ -8,9 +8,20 @@ import (
 )
 
 // AddEdge inserts an edge between two existing entities.
+//
+// The existence check, cycle check, and INSERT run inside a single
+// transaction so concurrent AddEdge calls cannot interleave. INSERT OR
+// IGNORE remains as a fast-path duplicate guard; the tx guarantees
+// atomicity when called from multiple goroutines.
 func AddEdge(db *sql.DB, src, dst, rel string, weight float32) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() // safe after Commit
+
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM entities WHERE id IN (?, ?)", src, dst).Scan(&count); err != nil {
+	if err := tx.QueryRow("SELECT COUNT(*) FROM entities WHERE id IN (?, ?)", src, dst).Scan(&count); err != nil {
 		return fmt.Errorf("failed to check entity existence: %w", err)
 	}
 	if count != 2 {
@@ -19,11 +30,22 @@ func AddEdge(db *sql.DB, src, dst, rel string, weight float32) error {
 	if weight == 0 {
 		weight = 1.0
 	}
-	_, err := db.Exec(`INSERT OR IGNORE INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, ?, ?)`, src, dst, rel, weight)
+	var hasCycle int
+	err = tx.QueryRow(`WITH RECURSIVE cycle_check AS (
+		SELECT ? AS target
+		UNION ALL
+		SELECT ed.source_id FROM cycle_check cc JOIN edges ed ON ed.target_id = cc.target AND ed.relation_type = ?
+	) SELECT COUNT(*) FROM cycle_check WHERE target = ?`, dst, rel, src).Scan(&hasCycle)
 	if err != nil {
+		return fmt.Errorf("cycle check: %w", err)
+	}
+	if hasCycle > 0 {
+		return fmt.Errorf("adding edge %s->%s creates a cycle", src, dst)
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, ?, ?)`, src, dst, rel, weight); err != nil {
 		return fmt.Errorf("failed to insert edge: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // DeleteEdge removes a single edge row.

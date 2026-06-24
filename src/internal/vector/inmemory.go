@@ -126,19 +126,21 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
-	entry := vectorEntry{id: id, vec: vec, norm: 1}
+	stored := make([]float32, len(vec))
+	copy(stored, vec)
+	entry := vectorEntry{id: id, vec: stored, norm: 1}
 	if i, ok := idx.byID[id]; ok {
 		idx.entries[i] = entry
 		if idx.cols > 0 {
-			copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], vec)
+			copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], stored)
 		}
 	} else {
 		if idx.cols == 0 {
-			idx.cols = len(vec)
+			idx.cols = len(stored)
 		}
 		idx.byID[id] = len(idx.entries)
 		idx.entries = append(idx.entries, entry)
-		idx.flatMatrix = append(idx.flatMatrix, vec...)
+		idx.flatMatrix = append(idx.flatMatrix, stored...)
 	}
 	return nil
 }
@@ -147,19 +149,21 @@ func (idx *InMemoryVectorIndex) BulkStore(_ context.Context, pairs []core.BulkPa
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	for _, p := range pairs {
-		entry := vectorEntry{id: p.ID, vec: p.Vec, norm: 1}
+		stored := make([]float32, len(p.Vec))
+		copy(stored, p.Vec)
+		entry := vectorEntry{id: p.ID, vec: stored, norm: 1}
 		if i, ok := idx.byID[p.ID]; ok {
 			idx.entries[i] = entry
 			if idx.cols > 0 {
-				copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], p.Vec)
+				copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], stored)
 			}
 		} else {
 			if idx.cols == 0 {
-				idx.cols = len(p.Vec)
+				idx.cols = len(stored)
 			}
 			idx.byID[p.ID] = len(idx.entries)
 			idx.entries = append(idx.entries, entry)
-			idx.flatMatrix = append(idx.flatMatrix, p.Vec...)
+			idx.flatMatrix = append(idx.flatMatrix, stored...)
 		}
 	}
 	return nil

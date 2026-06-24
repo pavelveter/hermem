@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
@@ -40,6 +42,11 @@ func VerifyGraph(db *sql.DB, schema core.SchemaConfig, vectorDim int) (core.Veri
 // AgentLoop executes tasks in a goal's dependency tree in topological order.
 func AgentLoop(ctx context.Context, db *sql.DB, schema core.SchemaConfig, goalID string, execFunc func(context.Context, core.Entity) error) error {
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		tasks, err := retrieval.GetExecutableTasks(db, schema, goalID)
 		if err != nil {
 			return fmt.Errorf("agent loop: get executable: %w", err)
@@ -48,13 +55,21 @@ func AgentLoop(ctx context.Context, db *sql.DB, schema core.SchemaConfig, goalID
 			break
 		}
 		for _, task := range tasks {
-			if err := execFunc(ctx, task); err != nil {
-				return fmt.Errorf("agent loop: exec %s: %w", task.ID, err)
-			}
+			func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						slog.Error("agent loop: exec panic", "task_id", task.ID, "recover", rec)
+					}
+				}()
+				if err := execFunc(ctx, task); err != nil {
+					slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
+				}
+			}()
 			if err := store.SetStatus(db, schema, task.ID, schema.StateUnblocking); err != nil {
 				return fmt.Errorf("agent loop: set status %s: %w", task.ID, err)
 			}
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
 	return nil
 }

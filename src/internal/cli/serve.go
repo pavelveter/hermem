@@ -57,7 +57,9 @@ func runServe(env *clienv.Env, port string) error {
 
 	// SIGHUP reload loop — separate from HTTP lifecycle so we can re-validate
 	// config without restarting. srv.ReloadState atomically swaps the State
-	// and propagates to memory.OnStateChange (which calls Worker.ReloadSchema).
+	// via serverstate.Ref (atomic.Pointer) — concurrent handlers always read a
+	// consistent snapshot through s.Refs.Load(). No additional synchronisation
+	// is needed between this goroutine and HTTP handler goroutines.
 	sighup := make(chan os.Signal, 1)
 	signal.Notify(sighup, syscall.SIGHUP)
 	go func() {

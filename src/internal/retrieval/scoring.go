@@ -33,10 +33,19 @@ func defaultCompositeScorer(w core.RankingWeight) core.CompositeScorer {
 
 // compositeScore computes the linear combination of features minus depth penalty.
 func compositeScore(w core.RankingWeight, sim, recency, temporalBoost, centrality, pathWeight float32) float32 {
-	return w.VectorWeight*sim + w.RecencyWeight*recency + w.TemporalWeight*temporalBoost + w.CentralityWeight*centrality - w.DepthPenalty*pathWeight
+	s := w.VectorWeight*sim + w.RecencyWeight*recency + w.TemporalWeight*temporalBoost + w.CentralityWeight*centrality - w.DepthPenalty*pathWeight
+	if math.IsNaN(float64(s)) || math.IsInf(float64(s), 0) {
+		return 0
+	}
+	return s
 }
 
 func sortByScoreDesc(ranked []rankedNode) {
+	for i := range ranked {
+		if math.IsNaN(float64(ranked[i].score)) || math.IsInf(float64(ranked[i].score), 0) {
+			ranked[i].score = 0
+		}
+	}
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
 }
 
@@ -46,7 +55,7 @@ func recencyScore(updatedAt time.Time, halfLifeHours float32) float32 {
 	if updatedAt.IsZero() || halfLifeHours <= 0 {
 		return 1
 	}
-	hoursOld := float32(time.Since(updatedAt).Hours())
+	hoursOld := float32(time.Since(updatedAt.UTC()).Hours())
 	if hoursOld <= 0 {
 		return 1
 	}
@@ -57,7 +66,7 @@ func temporalScore(createdAt *time.Time, halfLifeHours float32) float32 {
 	if createdAt == nil || createdAt.IsZero() || halfLifeHours <= 0 {
 		return 0
 	}
-	hoursOld := float32(time.Since(*createdAt).Hours())
+	hoursOld := float32(time.Since(createdAt.UTC()).Hours())
 	if hoursOld <= 0 {
 		return 1
 	}

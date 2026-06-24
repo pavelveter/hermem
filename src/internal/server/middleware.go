@@ -47,9 +47,29 @@ func APIKeyMiddleware(apiKey string) func(http.Handler) http.Handler {
 	}
 }
 
+// MaxBytesMiddleware caps request bodies locally to protect against OOM DoS.
+// Composes with httputil.DecodeStrict which already enforces strict JSON.
+func MaxBytesMiddleware(limit int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // SlogMiddleware logs every request after it completes.
 func SlogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			slog.Debug("request cancelled", "method", r.Method, "path", r.URL.Path)
+			http.Error(w, "request cancelled", 499)
+			return
+		default:
+		}
 		start := time.Now()
 		next.ServeHTTP(w, r)
 		slog.Debug("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
