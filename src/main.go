@@ -10,6 +10,9 @@ package main
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/pavelveter/hermem/src/internal/cli"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
@@ -35,8 +38,10 @@ func main() {
 	// eagerly so they are ready when EnsureDB later constructs the
 	// server. DB / VI / Worker start nil and are populated lazily by
 	// env.EnsureDB(), called from cobra's root PersistentPreRunE.
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 	env := clienv.Env{
-		Ctx:       context.Background(),
+		Ctx:       ctx,
 		Cfg:       cfg,
 		DB:        nil,
 		VI:        nil,

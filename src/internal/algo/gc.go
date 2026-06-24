@@ -34,7 +34,18 @@ func GarbageCollector(ctx context.Context, db *sql.DB, vi core.VectorIndex, poli
 			if len(ids) == 0 {
 				continue
 			}
-			tx, _ := db.BeginTx(ctx, nil)
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				slog.Warn("gc begin tx", "err", err)
+				continue
+			}
+			// Soft-archive: the row stays in entities with archived=1; the
+			// flag excludes it from retrieval/walk neighbors. We do NOT
+			// hard-delete edges here — that would be inconsistent with
+			// soft-delete semantics and would lose lineage on any future
+			// un-archive (no edge restoration path). If a later migration
+			// turns on FK constraints, that migration is the right place
+			// to declare ON DELETE behavior; it should match this policy.
 			for _, id := range ids {
 				if _, err := tx.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id = ?`, id); err != nil {
 					slog.Warn("gc archive", "id", id, "err", err)
@@ -42,7 +53,7 @@ func GarbageCollector(ctx context.Context, db *sql.DB, vi core.VectorIndex, poli
 			}
 			if err := tx.Commit(); err != nil {
 				slog.Warn("gc commit", "err", err)
-				continue
+				continue // vi.Remove only after successful commit
 			}
 			vi.Remove(ctx, ids)
 			slog.Info("gc archived", "count", len(ids))

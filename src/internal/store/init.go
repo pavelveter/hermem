@@ -28,7 +28,12 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	db.SetMaxOpenConns(4)
+	// SQLite is single-writer-with-WAL; opening more conns would just
+	// race on _busy_timeout / SQLITE_BUSY. One writer is the proven
+	// production pattern.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
 
 	if _, err := db.Exec("PRAGMA journal_mode = WAL;"); err != nil {
 		db.Close()

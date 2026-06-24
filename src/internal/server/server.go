@@ -25,6 +25,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/algo"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/httputil"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -117,6 +118,7 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	var handler http.Handler = s.Mux()
 	handler = SlogMiddleware(handler)
 	handler = RequestIDMiddleware(APIKeyMiddleware(cfg.APIKey)(handler))
+	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
 	handler = RecoveryMiddleware(handler)
 
 	httpSrv := &http.Server{

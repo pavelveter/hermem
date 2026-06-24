@@ -82,6 +82,15 @@ func RunMigrations(db *sql.DB) error {
 			_ = tx.Rollback()
 			return fmt.Errorf("record migration %s: %w", name, err)
 		}
+		checksum, err := MigrationChecksum(name)
+		if err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("checksum %s: %w", name, err)
+		}
+		if _, err := tx.Exec("INSERT INTO migration_checksums (version, checksum) VALUES (?, ?)", name, checksum); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record checksum %s: %w", name, err)
+		}
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit migration %s: %w", name, err)
 		}
