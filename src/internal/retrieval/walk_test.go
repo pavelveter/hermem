@@ -238,10 +238,15 @@ func TestRetrieveContext_CyclicGraphDoesNotInfiniteLoop(t *testing.T) {
 // --- MultiHopRetrieveContext ---
 
 // stubEmbedder returns predefined vectors keyed by content; identical for
-// repeated inputs (deterministic for tests).
-type stubEmbedder struct{ vecs map[string][]float32 }
+// repeated inputs (deterministic for tests). `calls` records every Embed()
+// content argument in arrival order so tests can assert dedup invariants.
+type stubEmbedder struct {
+	vecs  map[string][]float32
+	calls []string
+}
 
 func (s *stubEmbedder) Embed(_ context.Context, c string) ([]float32, error) {
+	s.calls = append(s.calls, c)
 	v, ok := s.vecs[c]
 	if !ok {
 		return nil, errors.New("stubEmbedder: no vec for content " + c)
@@ -314,6 +319,79 @@ func TestMultiHopRetrieveContext_DiscoversDisconnectedSubgraph(t *testing.T) {
 	}
 	if !contains(facts, "alpha") {
 		t.Fatalf("seed 'alpha' should be in seed nodes (then result facts): got %v", facts)
+	}
+}
+
+// Within-hop dedup invariant: topKFromResult dedups by Content string
+// so a depth-0 seed (which RetrieveContext dual-buckets into SeedNodes
+// AND its category) is embedded exactly ONCE per hop iteration.
+//
+// Topology — 2 entities, NO graph edges between them, semantically
+// identical vectors — isolates the within-hop dedup from across-hops
+// re-walk effects:
+//   - With dedup + includeSeedContents=true at h=1:
+//     topFacts = [a] (alpha appears once across WorldFacts and SeedNodes).
+//     Embed count: 1.
+//   - Without dedup: topFacts = [a, a] (WorldFacts dual entry + SeedNodes
+//     synthetic). Embed count: 2 → test fails on the "no duplicate"
+//     assertion below.
+//   - Across hops: hop 2 walks from [d] only. No edge back to a means
+//     the walk CANNOT re-encounter a via a graph path, so "a-content"
+//     stays embedded exactly once across the whole multi-hop call.
+//
+// Including the includeSeedContents=true positive case — at hop 1 the
+// user-anchor content must be embedded so the vector jump has signal
+// for SearchBatch.
+func TestMultiHopRetrieveContext_NoContentReEmbedded(t *testing.T) {
+	db := openTestDB(t)
+	// Two entities, NO edges. Anchor "a" is the user's content; "d" has
+	// an identical vector so it's reachable ONLY via vector jump. The
+	// missing edges are critical: hop 2's walk from [d] cannot re-walk
+	// a via any graph path, eliminating the across-hops re-walk
+	// false-positive that bit the earlier 4-entity version of this test.
+	seedEntityWithEmbedding(t, db, "a", "world", "a-content", []float32{1, 0, 0})
+	seedEntityWithEmbedding(t, db, "d", "world", "d-content", []float32{1, 0, 0})
+
+	emb := &stubEmbedder{vecs: map[string][]float32{
+		"a-content": {1, 0, 0},
+		"d-content": {1, 0, 0},
+	}}
+	vi := vector.NewInMemoryVectorIndex(db)
+
+	if _, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth:      1,
+		MultiHopCount: 3, // 2 discovery iterations: h=1 (include seeds), h=2 (exclude).
+		// Loop is `for h := 1; h < hops; h++`, so hops=3 runs h=1 AND h=2
+		// (hops=2 would only run h=1 and skip the d-content positive case).
+		QueryEmbedding: []float32{1, 0, 0},
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	if len(emb.calls) == 0 {
+		t.Fatal("expected embed calls; got none — multi-hop didn't run")
+	}
+	// Invariant: each distinct Content embedded exactly ONCE across the
+	// whole multi-hop call. Within-hop dedup makes this hold.
+	counts := map[string]int{}
+	for _, c := range emb.calls {
+		counts[c]++
+	}
+	for content, n := range counts {
+		if n > 1 {
+			t.Fatalf("content %q was embedded %d times across multi-hop; want 1 (dedup invariant). calls=%v",
+				content, n, emb.calls)
+		}
+	}
+	// Positive cases:
+	//   - hop 1 embeds the user's anchor so the vector jump has signal.
+	//   - hop 2 embeds the discovered d-content so the walk keeps
+	//     expanding into new territory.
+	if !contains(emb.calls, "a-content") {
+		t.Fatalf("hop 1 should embed 'a-content' (user's anchor); got calls=%v", emb.calls)
+	}
+	if !contains(emb.calls, "d-content") {
+		t.Fatalf("hop 2 should embed 'd-content' (discovered via vector jump); got calls=%v", emb.calls)
 	}
 }
 

@@ -233,7 +233,7 @@ func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder core.Embe
 
 		// 2. Top-K facts across all buckets + seed contents, ordered by
 		//    RankingScore descending (Content ascending tiebreak).
-		topFacts := topKFromResult(res, TopKPerHop)
+		topFacts := topKFromResult(res, TopKPerHop, h == 1)
 		if len(topFacts) == 0 {
 			break
 		}
@@ -295,27 +295,60 @@ func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder core.Embe
 // empty) and the per-hop seed re-embed redundancy (topKFromResult
 // re-emits SeedNode contents every hop).
 
-// topKFromResult pulls the top-K facts from all four retrieval buckets PLUS
-// the seed contents, ordered by RankingScore descending then Content
-// ascending for deterministic selection. Empty buckets contribute nothing.
-// The seed contents are included so the loop's embeddings anchor on the
-// entities the user actually asked about (not just adjacent nodes).
-func topKFromResult(res *core.RetrievalResult, k int) []core.RetrievedFact {
+// topKFromResult picks the top-K facts across the four retrieval buckets,
+// optionally including seed contents, ordered by RankingScore descending
+// then Content ascending for deterministic selection.
+//
+// Two idempotency guarantees:
+//
+//  1. Content-level dedup (within a single call). RetrieveContext ranks
+//     seeds into BOTH SeedNodes AND one of the buckets, so the same
+//     Content string can surface twice in the helper's input. Without
+//     dedup, the topK trim could leave us re-embedding the same content
+//     twice within one hop. We collapse on Content string before sort.
+//
+//  2. includeSeedContents gates the SeedNode-contents append (a separate
+//     optimisation for across-hops cases). On hop 1 we keep the seeds so
+//     embeddings anchor on the user's actual interests. On later hops
+//     those seeds are either already-discovered anchors OR the discoveries
+//     themselves — re-embedding them just wastes a round-trip.
+func topKFromResult(res *core.RetrievalResult, k int, includeSeedContents bool) []core.RetrievedFact {
 	if res == nil || k <= 0 {
 		return nil
 	}
-	all := make([]core.RetrievedFact, 0,
-		len(res.WorldFacts)+len(res.Opinions)+
-			len(res.Experiences)+len(res.Observations)+len(res.SeedNodes))
-	all = append(all, res.WorldFacts...)
-	all = append(all, res.Opinions...)
-	all = append(all, res.Experiences...)
-	all = append(all, res.Observations...)
-	for _, n := range res.SeedNodes {
-		all = append(all, core.RetrievedFact{
-			Content:      n.Entity.Content,
-			RankingScore: n.RankingScore,
-		})
+	seen := make(map[string]bool)
+	all := make([]core.RetrievedFact, 0)
+	add := func(content string, score float32) {
+		if content == "" || seen[content] {
+			return
+		}
+		seen[content] = true
+		all = append(all, core.RetrievedFact{Content: content, RankingScore: score})
+	}
+	// Iteration order below is intentional. walk.go dual-buckets depth-0
+	// seeds (SeedNodes AND their category bucket), so the dedup's
+	// first-write-wins picks whichever entry arrives FIRST. Putting
+	// buckets first means the canonical dedup winner is the bucket entry;
+	// both bucket and SeedNode entries derive from the same
+	// `rn.score` in walk.go, so the choice is correctness-preserving.
+	// Do not reorder — a swap would silently change which entry survives
+	// the dedup without changing observable ranking.
+	for _, f := range res.WorldFacts {
+		add(f.Content, f.RankingScore)
+	}
+	for _, f := range res.Opinions {
+		add(f.Content, f.RankingScore)
+	}
+	for _, f := range res.Experiences {
+		add(f.Content, f.RankingScore)
+	}
+	for _, f := range res.Observations {
+		add(f.Content, f.RankingScore)
+	}
+	if includeSeedContents {
+		for _, n := range res.SeedNodes {
+			add(n.Entity.Content, n.RankingScore)
+		}
 	}
 	sort.SliceStable(all, func(i, j int) bool {
 		if all[i].RankingScore != all[j].RankingScore {
