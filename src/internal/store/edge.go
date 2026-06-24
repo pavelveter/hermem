@@ -32,10 +32,10 @@ func AddEdge(db *sql.DB, src, dst, rel string, weight float32) error {
 	}
 	var hasCycle int
 	err = tx.QueryRow(`WITH RECURSIVE cycle_check AS (
-		SELECT ? AS target
+		SELECT ? AS node
 		UNION ALL
-		SELECT ed.source_id FROM cycle_check cc JOIN edges ed ON ed.target_id = cc.target AND ed.relation_type = ?
-	) SELECT COUNT(*) FROM cycle_check WHERE target = ?`, dst, rel, src).Scan(&hasCycle)
+		SELECT ed.target_id FROM cycle_check cc JOIN edges ed ON ed.source_id = cc.node AND ed.relation_type = ?
+	) SELECT COUNT(*) FROM cycle_check WHERE node = ?`, dst, rel, src).Scan(&hasCycle)
 	if err != nil {
 		return fmt.Errorf("cycle check: %w", err)
 	}
