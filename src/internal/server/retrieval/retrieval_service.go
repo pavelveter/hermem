@@ -2,9 +2,11 @@
 // subsystem. Domain logic lives in src/internal/retrieval (Service);
 // this package owns transport-only concerns: JSON encoding, method
 // checks, request-body limits, schema-conflict guards where applicable,
-// metric increments, and the route registry including /contradictions
-// which is conceptually PHASE 2.3 territory but stays here until the
-// ContradictionService extraction lands.
+// and metric increments.
+//
+// /contradictions moved to src/internal/server/contradiction in
+// PHASE 2.3 (ContradictionService extraction). It is no longer in
+// this HTTP shell's Routes() registry.
 //
 // Following the same pattern as PHASE 2.1's MemoryService extraction:
 // HTTPService is a thin shell — parse → validate → call RetSvc.* →
@@ -20,7 +22,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
-	"github.com/pavelveter/hermem/src/internal/store"
 )
 
 // HTTPService is the transport shell for the read-side domain.
@@ -44,18 +45,17 @@ func New(retSvc *retrieval.Service, m *metrics.Metrics, refs *serverstate.Ref) *
 
 // Routes returns the URL → handler mapping for this service.
 //
-// /contradictions is intentionally retained here pending PHASE 2.3;
-// when ContradictionService lands, the route moves to that package's
-// transport shell and gets removed from this Routes() registry.
+// /contradictions moved to src/internal/server/contradiction in
+// PHASE 2.3 (ContradictionService extraction). It is no longer
+// registered here.
 func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/search":         s.HandleSearch,
-		"/retrieve":       s.HandleRetrieve,
-		"/query":          s.HandleQuery,
-		"/response":       s.HandleResponse,
-		"/query/explain":  s.HandleQueryExplain,
-		"/provenance":     s.HandleProvenance,
-		"/contradictions": s.HandleContradictions,
+		"/search":        s.HandleSearch,
+		"/retrieve":      s.HandleRetrieve,
+		"/query":         s.HandleQuery,
+		"/response":      s.HandleResponse,
+		"/query/explain": s.HandleQueryExplain,
+		"/provenance":    s.HandleProvenance,
 	}
 }
 
@@ -242,22 +242,6 @@ func (s *HTTPService) HandleProvenance(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, entities)
 }
 
-// HandleContradions is reserved for PHASE 2.3 — the route lives in this
-// shell's Routes() registry until the ContradictionService extraction
-// lands, at which point it moves to that package's transport shell.
-// s.RetSvc.DB() reaches through to the underlying *sql.DB via a
-// temporary accessor (marked for removal in PHASE 2.3) so the
-// /contradictions endpoint keeps working without a domain Service
-// method.
-func (s *HTTPService) HandleContradictions(w http.ResponseWriter, r *http.Request) {
-	pairs, err := store.GetContradictions(s.RetSvc.DB(), r.URL.Query().Get("id"))
-	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if pairs == nil {
-		pairs = []core.ContradictionPair{}
-	}
-	httputil.WriteJSON(w, http.StatusOK, pairs)
-}
+// HandleContradictions moved to src/internal/server/contradiction in
+// PHASE 2.3 (ContradictionService extraction). The route is no longer
+// registered in this HTTPService.

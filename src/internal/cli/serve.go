@@ -11,10 +11,12 @@ import (
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
+	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
+	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -57,12 +59,17 @@ func runServe(env *clienv.Env, port string) error {
 	// PHASE 2.2: same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.
 	retSvc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+	// PHASE 2.3: contradiction domain Service is read-only and
+	// DB-only (no vector index / embedder / schema); same shape as
+	// retrieval/memory but slimmer dependencies.
+	cndSvc := contradictdomain.NewService(env.DB)
 
 	srv := server.NewServer(
 		refs,
 		ret.New(retSvc, env.Metrics, refs),
 		tasksvc.New(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
+		cnd.New(cndSvc, env.Metrics),
 		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 	)
 

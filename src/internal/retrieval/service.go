@@ -58,16 +58,6 @@ func NewService(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Servic
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 
-// DB returns the underlying *sql.DB. Used by the retrieval HTTP shell
-// for /contradictions pending PHASE 2.3 (ContradictionService
-// extraction); the accessor is removed once HandleContradictions
-// migrates to the new package.
-//
-// Marked with a clear migration deadline so the leak doesn't outlive
-// its purpose. Treat as the only acceptable cross-boundary reach-through
-// for now and remove it the moment a ContradictionService lands.
-func (s *Service) DB() *sql.DB { return s.db }
-
 // Search embeds the query and returns top-K nearest neighbours.
 //
 // Both embedding and vector-search errors propagate up so callers can
