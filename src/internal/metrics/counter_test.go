@@ -54,21 +54,22 @@ func TestCounters_ConcurrentIncrementStrictSum(t *testing.T) {
 // every Inc* once, then verify each delta is exactly 1.
 func TestAllIncHelpers_BumpDistinctCounters(t *testing.T) {
 	snapshot := map[string]int64{
-		"store":         storeCount.Load(),
-		"search":        searchCount.Load(),
-		"retrieve":      retrieveCount.Load(),
-		"ingest":        ingestCount.Load(),
-		"query":         queryCount.Load(),
-		"edge":          edgeCount.Load(),
-		"err":           errorCount.Load(),
-		"task_status":   taskStatusCount.Load(),
-		"task_exec":     taskExecCount.Load(),
-		"task_list":     taskListCount.Load(),
-		"task_show":     taskShowCount.Load(),
-		"task_dep":      taskDepCount.Load(),
-		"task_rollback": taskRollbackCnt.Load(),
-		"task_tree":     taskTreeCount.Load(),
-		"task_create":   taskCreateCnt.Load(),
+		"store":           storeCount.Load(),
+		"search":          searchCount.Load(),
+		"retrieve":        retrieveCount.Load(),
+		"ingest":          ingestCount.Load(),
+		"query":           queryCount.Load(),
+		"edge":            edgeCount.Load(),
+		"err":             errorCount.Load(),
+		"schema_conflict": schemaConflictCount.Load(),
+		"task_status":     taskStatusCount.Load(),
+		"task_exec":       taskExecCount.Load(),
+		"task_list":       taskListCount.Load(),
+		"task_show":       taskShowCount.Load(),
+		"task_dep":        taskDepCount.Load(),
+		"task_rollback":   taskRollbackCnt.Load(),
+		"task_tree":       taskTreeCount.Load(),
+		"task_create":     taskCreateCnt.Load(),
 	}
 	IncStore()
 	IncSearch()
@@ -77,6 +78,7 @@ func TestAllIncHelpers_BumpDistinctCounters(t *testing.T) {
 	IncQuery()
 	IncEdge()
 	IncErr()
+	IncSchemaConflict()
 	IncTaskStatus()
 	IncTaskExec()
 	IncTaskList()
@@ -103,6 +105,8 @@ func TestAllIncHelpers_BumpDistinctCounters(t *testing.T) {
 			after = edgeCount.Load()
 		case "err":
 			after = errorCount.Load()
+		case "schema_conflict":
+			after = schemaConflictCount.Load()
 		case "task_status":
 			after = taskStatusCount.Load()
 		case "task_exec":
@@ -144,6 +148,7 @@ func TestWriteExposition_PrometheusFormat(t *testing.T) {
 		"hermem_query_total ",
 		"hermem_edge_total ",
 		"hermem_errors_total ",
+		"hermem_schema_conflict_total ",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("exposition missing %q\nfull body:\n%s", want, body)
