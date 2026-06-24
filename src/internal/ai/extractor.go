@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,6 +18,7 @@ type OllamaLLMExtractor struct {
 	Model       string
 	Temperature float32
 	client      *http.Client
+	resilient   *ResilientClient
 }
 
 func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout time.Duration) *OllamaLLMExtractor {
@@ -34,10 +34,18 @@ func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout t
 	if timeout <= 0 {
 		timeout = 300 * time.Second
 	}
-	return &OllamaLLMExtractor{BaseURL: baseURL, Model: model, Temperature: temperature, client: &http.Client{Timeout: timeout}}
+	c := &http.Client{Timeout: timeout}
+	return &OllamaLLMExtractor{
+		BaseURL:     baseURL,
+		Model:       model,
+		Temperature: temperature,
+		client:      c,
+		resilient:   NewResilientClient(c, 4, DefaultBackoffs),
+	}
 }
 
 type chatMessage struct{ Role, Content string }
+
 type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
@@ -62,38 +70,35 @@ func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string)
 	}
 	req.Options.Temperature = e.Temperature
 	body, _ := json.Marshal(req)
-	// Retry logic — exponential backoff on 5xx and network errors, fail fast on 4xx
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		resp, err := e.client.Post(strings.TrimRight(e.BaseURL, "/")+"/api/chat", "application/json", bytes.NewReader(body))
-		if err != nil {
-			lastErr = err
-			time.Sleep(time.Duration(attempt+1) * time.Second)
-			continue
-		}
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode >= 500 {
-			lastErr = fmt.Errorf("ollama extract: %d: %s", resp.StatusCode, string(b))
-			time.Sleep(time.Duration(attempt+1) * time.Second)
-			continue
-		}
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("ollama extract: %d: %s", resp.StatusCode, string(b))
-		}
-		var cr chatResponse
-		if err := json.Unmarshal(b, &cr); err != nil {
-			lastErr = fmt.Errorf("ollama extract decode: %w", err)
-			continue
-		}
-		var result core.ExtractionResult
-		if err := json.Unmarshal([]byte(cr.Message.Content), &result); err != nil {
-			lastErr = fmt.Errorf("parse extraction result: %w", err)
-			continue
-		}
-		return &result, nil
+	url := strings.TrimRight(e.BaseURL, "/") + "/api/chat"
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ollama extract: build request: %w", err)
 	}
-	return nil, fmt.Errorf("ollama extract: retries exhausted: %w", lastErr)
+	httpReq.Header.Set("Content-Type", "application/json")
+	captured := body
+	httpReq.Body = io.NopCloser(strings.NewReader(string(captured)))
+	httpReq.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(captured))), nil
+	}
+	resp, err := e.resilient.Do(ctx, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("ollama extract: %w", err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("ollama extract: %d: %s", resp.StatusCode, string(b))
+	}
+	var cr chatResponse
+	if err := json.Unmarshal(b, &cr); err != nil {
+		return nil, fmt.Errorf("ollama extract decode: %w", err)
+	}
+	var result core.ExtractionResult
+	if err := json.Unmarshal([]byte(cr.Message.Content), &result); err != nil {
+		return nil, fmt.Errorf("parse extraction result: %w", err)
+	}
+	return &result, nil
 }
 
 // OpenAILLMExtractor implements core.LLMExtractor against the OpenAI /v1/chat/completions endpoint.
@@ -103,6 +108,7 @@ type OpenAILLMExtractor struct {
 	Model       string
 	Temperature float32
 	client      *http.Client
+	resilient   *ResilientClient
 }
 
 func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, timeout time.Duration) *OpenAILLMExtractor {
@@ -118,7 +124,15 @@ func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, t
 	if timeout <= 0 {
 		timeout = 300 * time.Second
 	}
-	return &OpenAILLMExtractor{BaseURL: baseURL, APIKey: apiKey, Model: model, Temperature: temperature, client: &http.Client{Timeout: timeout}}
+	c := &http.Client{Timeout: timeout}
+	return &OpenAILLMExtractor{
+		BaseURL:     baseURL,
+		APIKey:      apiKey,
+		Model:       model,
+		Temperature: temperature,
+		client:      c,
+		resilient:   NewResilientClient(c, 4, DefaultBackoffs),
+	}
 }
 
 func (e *OpenAILLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
@@ -129,12 +143,20 @@ func (e *OpenAILLMExtractor) ExtractEntities(ctx context.Context, dialog string)
 		"temperature":     e.Temperature,
 		"response_format": map[string]string{"type": "json_object"},
 	})
-	req, _ := http.NewRequest("POST", strings.TrimRight(e.BaseURL, "/")+"/chat/completions", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	if e.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+e.APIKey)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(e.BaseURL, "/")+"/chat/completions", nil)
+	if err != nil {
+		return nil, fmt.Errorf("openai extract: build request: %w", err)
 	}
-	resp, err := e.client.Do(req)
+	httpReq.Header.Set("Content-Type", "application/json")
+	if e.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+e.APIKey)
+	}
+	captured := body
+	httpReq.Body = io.NopCloser(strings.NewReader(string(captured)))
+	httpReq.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(captured))), nil
+	}
+	resp, err := e.resilient.Do(ctx, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("openai extract: %w", err)
 	}
