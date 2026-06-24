@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/store"
+	graphsvc "github.com/pavelveter/hermem/src/internal/graph"
 )
 
 func newCommunitiesCmd(env *cli.Env) *cobra.Command {
@@ -15,7 +15,13 @@ func newCommunitiesCmd(env *cli.Env) *cobra.Command {
 		Short: "Detect communities and report global modularity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			comms, globalQ, err := store.DetectCommunities(env.DB, 50)
+			// PHASE 3.1: routes through the transport-agnostic graph
+			// Service. minSize filtering is intentionally NOT done here
+			// — Communities returns the unfiltered list to match the
+			// domain contract; CLI currently doesn't filter either,
+			// keeping pre-PHASE-3.1 behavior identical.
+			svc := graphsvc.NewService(env.DB)
+			comms, globalQ, err := svc.Communities(env.Ctx, 50)
 			if err != nil {
 				return fmt.Errorf("communities: %w", err)
 			}

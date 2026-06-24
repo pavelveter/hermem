@@ -10,7 +10,11 @@
 //   - server/contradiction/ — GET /contradictions[?id=X]. Delegates to internal/contradiction.Service.
 //     Added in PHASE 2.3 (previously /contradictions lived in server/retrieval
 //     behind a temporary retrieval.Service.DB() reach-through).
-//   - server/               — AdminService: health, metrics, connected-components, communities, re-embed
+//   - server/graph/         — /connected-components, /communities, /graph/verify. Delegates
+//     to internal/graph.Service. Added in PHASE 3.1 (previously /connected-components
+//     and /communities lived on AdminService as a god-object).
+//   - server/               — AdminService: health, metrics, admin/re-embed (graph
+//     analytics routes were extracted in PHASE 3.1).
 //
 // Shared per-request configuration is read atomically via *serverstate.Ref —
 // concurrent SIGHUP-driven state swaps are safe with in-flight handlers.
@@ -31,41 +35,47 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
+	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
-// Server is the HTTP shell. It holds the 5 services + a mux + the atomic
+// Server is the HTTP shell. It holds the 6 services + a mux + the atomic
 // state holder. No domain fields (no DB / VI / Embedder directly —
 // memory's domain service lives in internal/memory, contradiction's in
-// internal/contradiction, task's in internal/task; each transport shell
-// holds the domain Service reference and threads it as a borrowed
-// pointer).
+// internal/contradiction, task's in internal/task, graph's in
+// internal/graph; each transport shell holds the domain Service
+// reference and threads it as a borrowed pointer).
 type Server struct {
 	Refs          *serverstate.Ref
 	Retrieval     *ret.HTTPService
 	Task          *tasksvc.HTTPService
 	Memory        *mem.HTTPService
 	Contradiction *cnd.HTTPService
+	Graph         *graphsrv.HTTPService
 	Admin         *AdminService
 	mux           *http.ServeMux
 }
 
-// NewServer wires the 5 services into a single mux. No HTTP server is started
+// NewServer wires the 6 services into a single mux. No HTTP server is started
 // — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
 //
 // PHASE 2.3 added the contradiction *HTTPService argument; PHASE 2.4
 // renamed the task *Service argument to *HTTPService to mirror the
-// post-2.4 transport-shell shape (server/task.Service → server/task.HTTPService).
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, contradiction *cnd.HTTPService, admin *AdminService) *Server {
+// post-2.4 transport-shell shape (server/task.Service → server/task.HTTPService);
+// PHASE 3.1 inserts the graph *HTTPService argument between contradiction
+// and admin, lifting /connected-components + /communities out of the
+// god-object AdminService.
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
 		Task:          task,
 		Memory:        memory,
 		Contradiction: contradiction,
+		Graph:         graph,
 		Admin:         admin,
 	}
 	s.mount()
@@ -86,6 +96,9 @@ func (s *Server) mount() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Contradiction.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Graph.Routes() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Admin.Routes() {

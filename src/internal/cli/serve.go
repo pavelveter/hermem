@@ -13,10 +13,12 @@ import (
 	"github.com/pavelveter/hermem/src/internal/config"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
+	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
+	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -70,6 +72,13 @@ func runServe(env *clienv.Env, port string) error {
 	// The HTTP shell (server/task) takes a borrowed pointer to this
 	// Service and threads it into the 10-endpoint mux.
 	taskSvc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+	// PHASE 3.1: graph domain Service is read-only and DB-only
+	// (same shape as contradiction's PHASE 2.3 precedent). The
+	// HTTP shell mounts /connected-components + /communities
+	// (moved from AdminService) plus the NEW /graph/verify. Dim
+	// is loaded once from cfg at boot — VectorDim is a static
+	// dimensional commitment for the lifetime of the daemon.
+	graphSvc := graphdomain.NewService(env.DB)
 
 	srv := server.NewServer(
 		refs,
@@ -77,6 +86,7 @@ func runServe(env *clienv.Env, port string) error {
 		tasksvc.New(taskSvc, env.Metrics, refs),
 		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
 		cnd.New(cndSvc, env.Metrics),
+		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
 		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 	)
 
