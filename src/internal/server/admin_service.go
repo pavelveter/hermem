@@ -9,7 +9,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
-	"github.com/pavelveter/hermem/src/internal/store"
 )
 
 // AdminService handles health, system stat endpoints, and admin operations.
@@ -37,15 +36,17 @@ func NewAdminService(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, m 
 }
 
 // Routes returns the URL → handler mapping for this service.
+//
+// PHASE 3.1 lifted /connected-components + /communities out into the
+// new server/graph HTTP shell. AdminService now owns only health
+// probes, /metrics, and re-embed (PHASE 3.5 candidate).
 func (s *AdminService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/health":               s.HandleHealth,
-		"/health/live":          s.HandleHealthLive,
-		"/health/ready":         s.HandleHealthReady,
-		"/metrics":              s.HandleMetrics,
-		"/connected-components": s.HandleConnectedComponents,
-		"/communities":          s.HandleCommunities,
-		"/admin/re-embed":       s.HandleReEmbed,
+		"/health":         s.HandleHealth,
+		"/health/live":    s.HandleHealthLive,
+		"/health/ready":   s.HandleHealthReady,
+		"/metrics":        s.HandleMetrics,
+		"/admin/re-embed": s.HandleReEmbed,
 	}
 }
 
@@ -76,49 +77,12 @@ func (s *AdminService) HandleHealthReady(w http.ResponseWriter, r *http.Request)
 	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "checks": checks})
 }
 
-func (s *AdminService) HandleConnectedComponents(w http.ResponseWriter, r *http.Request) {
-	minSize := httputil.ParseIntParam(r, "min_size", 2)
-	components, err := store.FindConnectedComponents(s.DB, minSize)
-	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if components == nil {
-		components = []core.ConnectedComponent{}
-	}
-	httputil.WriteJSON(w, http.StatusOK, components)
-}
-
-func (s *AdminService) HandleCommunities(w http.ResponseWriter, r *http.Request) {
-	minSize := httputil.ParseIntParam(r, "min_size", 2)
-	maxIter := httputil.ParseIntParam(r, "max_iterations", 50)
-	if maxIter <= 0 || maxIter > 200 {
-		maxIter = 50
-	}
-	all, globalQ, err := store.DetectCommunities(s.DB, maxIter)
-	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	var filtered []core.Community
-	for _, c := range all {
-		if c.Size >= minSize {
-			filtered = append(filtered, c)
-		}
-	}
-	if filtered == nil {
-		filtered = []core.Community{}
-	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"communities":          filtered,
-		"global_modularity":    globalQ,
-		"total_communities":    len(all),
-		"filtered_communities": len(filtered),
-	})
-}
-
+// HandleReEmbed — POST /admin/re-embed. Re-embed every entity using
+// the configure walk. Pre-PHASE-3.1 this handler topped a
+// god-object-shaped service; PHASE 3.5 will move it to a dedicated
+// reembed HTTP shell. For now it stays here because it reaches into
+// DB + VI + Embedder + Metrics — a multi-dep domain that will split
+// into its own shell in a follow-up PHASE.
 func (s *AdminService) HandleReEmbed(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")

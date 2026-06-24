@@ -6,21 +6,24 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pavelveter/hermem/src/internal/algo"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
+	graphsvc "github.com/pavelveter/hermem/src/internal/graph"
 )
 
-// newVerifyCmd runs algo.VerifyGraph. Pre-cobra this called os.Exit(1)
-// on failure; we now return an error and let main.go exit non-zero — the
-// result is identical from a shell's POV but the failure path is now
-// type-checked and covered by cobra's error renderer.
+// newVerifyCmd runs graph.Service.Verify. PHASE 3.1 now goes through
+// the domain service instead of algo.VerifyGraph directly. The CLI
+// retains the !report.Pass() exit-1 logic because that's a CLI-shape
+// concern (shell exit codes), not a domain concern.
 func newVerifyCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify",
 		Short: "Verify graph integrity (orbits, embedding dim, FK consistency). Exit 1 on failure.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			report, err := algo.VerifyGraph(env.DB, env.Cfg.Schema, env.Cfg.VectorDim)
+			svc := graphsvc.NewService(env.DB)
+			// Verify takes (schema, dim) per call so SIGHUP-driven
+			// config reloads apply without reconstructing the service.
+			report, err := svc.Verify(env.Ctx, env.Cfg.Schema, env.Cfg.VectorDim)
 			if err != nil {
 				return fmt.Errorf("verify: %w", err)
 			}

@@ -14,11 +14,13 @@ import (
 	"github.com/pavelveter/hermem/src/internal/ai"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
+	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
+	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -29,6 +31,13 @@ import (
 )
 
 // stubEmbedder returns a fixed 3-dim vector for any input.
+// testVectorDim pins the vector dimensionality for the test fixtures
+// in this file. PHASE 3.1: graph HTTPService.New() takes Dim as a
+// construction arg; tests build the shell inline, so they need to
+// know the dim. The stubEmbedder returns 3-dim vectors and the
+// seedEntityWithEmb tests seed 3-dim embeddings — keep aligned.
+const testVectorDim = 3
+
 type stubEmbedder struct{}
 
 func (e *stubEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
@@ -70,8 +79,13 @@ func newTestFixture(t *testing.T) *testFixture {
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
 	cndDom := contradictdomain.NewService(db)
 	cndSvc := cnd.New(cndDom, metrics)
+	// PHASE 3.1 fixture: graph HTTPService is constructed from a domain
+	// Service + metrics + refs + VectorDim. VectorDim is 3 here to match
+	// the test schema used by stubEmbedder + seedEntityWithEmb.
+	graphDom := graphdomain.NewService(db)
+	graphSvc := graphsrv.New(graphDom, metrics, refs, testVectorDim)
 	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, adminSvc)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, graphSvc, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -516,8 +530,13 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	memDom := memdomain.New(db, vi, embed, nil)
 	cndDom := contradictdomain.NewService(db)
 	taskDom := taskdomain.NewService(db, embed, vi)
+	// PHASE 3.1: graph HTTPService in the API-key auth fixture too.
+	// Uses VectorDim=3 because the stubEmbedder + dim-checking tests in
+	// this fixture file are 3-dim.
+	graphDom := graphdomain.NewService(db)
+	graphSvc := graphsrv.New(graphDom, metrics, refs, testVectorDim)
 	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
-		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), NewAdminService(db, vi, embed, metrics, refs))
+		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), graphSvc, NewAdminService(db, vi, embed, metrics, refs))
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
