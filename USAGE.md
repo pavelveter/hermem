@@ -17,7 +17,7 @@ do at the keyboard*.
 go build -o hermem ./src
 
 # CLI mode: pipe JSON into stdin. No server, no Ollama process to keep alive.
-echo '{"query":"What is Go?"}' | ./hermem query
+echo '{"query":"What is Go?"}' | ./hermem memory query
 
 # Server mode: long-running HTTP service on :8420.
 ./hermem serve --port 8420 &
@@ -443,22 +443,20 @@ The CLI uses the **same strict JSON contract as the HTTP server**
 Validation is **declarative**: categories and relation types are
 enforced via the `[schema]` section. Unknown values return
 `422 Unprocessable Entity`. When `[schema]` is absent, classic
-defaults apply and the state machine is disabled.
-
-### `store`
+defaults apply and the state machine is disabled.### `store`
 
 Upsert an entity. The embedder is consulted automatically if
 `embedding` is omitted from the payload. After storing, edges are
 automatically created to up to 3 existing entities with cosine
-similarity > 0.85 (relation type `related_to`).
-Unknown category → `422 Unprocessable Entity`.
+similarity > 0.85 (relation type `related_to`). Unknown category
+→ `422 Unprocessable Entity`.
 
 ```bash
 echo '{
   "id": "user-likes-coffee",
   "category": "opinion",
   "content": "User drinks espresso every morning"
-}' | ./hermem store
+}' | ./hermem memory store
 ```
 
 You can supply a pre-computed embedding to skip the embedder call
@@ -470,7 +468,7 @@ echo '{
   "category": "world",
   "content": "Pre-computed embedding test",
   "embedding": [0.1, 0.2, 0.3, 0.4]
-}' | ./hermem store
+}' | ./hermem memory store
 ```
 
 ### `search`
@@ -478,7 +476,7 @@ echo '{
 Returns the top-K entities by cosine similarity to the embedded query.
 
 ```bash
-echo '{"query":"coffee preferences","top_k":3}' | ./hermem search
+echo '{"query":"coffee preferences","top_k":3}' | ./hermem memory search
 ```
 
 `top_k` defaults to 5 when omitted or ≤ 0. Output is a JSON array of
@@ -489,7 +487,7 @@ echo '{"query":"coffee preferences","top_k":3}' | ./hermem search
 Full pipeline: embed → vector search → graph walk → markdown render.
 
 ```bash
-echo '{"query":"Tell me about France"}' | ./hermem query
+echo '{"query":"Tell me about France"}' | ./hermem memory query
 # → {"context":"## world\n- Paris is the capital of France\n…"}
 ```
 
@@ -505,10 +503,12 @@ nodes (`category=world`, `content=id`) before linking.
 
 ```bash
 # Both entities must already exist:
-echo '{"source_id":"user-likes-coffee","target_id":"espresso","relation_type":"prefers"}' | ./hermem edge
+echo '{"source_id":"user-likes-coffee","target_id":"espresso","relation_type":"prefers"}' \
+  | ./hermem memory edge
 
 # Auto-create missing entities on the fly:
-echo '{"source_id":"user-likes-coffee","target_id":"new-concept","relation_type":"related_to","auto_create":true}' | ./hermem edge
+echo '{"source_id":"user-likes-coffee","target_id":"new-concept","relation_type":"related_to","auto_create":true}' \
+  | ./hermem memory edge
 ```
 
 ### `ingest`
@@ -519,7 +519,7 @@ embed, dedup-merge, persist.
 ```bash
 echo '{
   "dialog": "User: What is Go?\nAssistant: Go is a statically typed language.\nUser: Who created it?\nAssistant: Rob Pike, Robert Griesemer and Ken Thompson."
-}' | ./hermem ingest
+}' | ./hermem memory ingest
 ```
 
 Use this in cron/automation when you don't need the streaming worker.
@@ -545,7 +545,7 @@ Description=Hermem graph-memory HTTP server
 After=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/hermem serve 8420
+ExecStart=/usr/local/bin/hermem serve --port 8420
 Restart=on-failure
 WorkingDirectory=/var/lib/hermem
 Environment=HERMEM_INI=/etc/hermem.ini
@@ -1245,6 +1245,8 @@ A single SQLite file with two (or three) tables. The schema lives in
 | `updated_at`    | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
 | `last_accessed_at` | DATETIME | `CURRENT_TIMESTAMP` default; GC uses this for TTL.    |
 | `archived`      | INTEGER     | 0 = active, 1 = excluded from graph walks by GC.      |
+| `degree`        | INTEGER     | `0` default; auto-maintained by SQL triggers on edges INSERT/DELETE. Powers `log10(1+degree)` centrality scoring in the ranker (`[ranking] centrality_weight`). |
+| `priority`      | INTEGER     | `0` default; `task/list` + `task/executable` + `ExecutionPlan` order by `priority DESC`. Added in migration `007_task_priorities.sql`. |
 
 Entity IDs are primary keys — repeated `store` calls upsert (the row
 is replaced; edges are not deleted). The DB is configured with
@@ -1260,12 +1262,15 @@ the float32 stride does not change.
 | `source_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
 | `target_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
 | `relation_type` | TEXT        | Relation label from `[schema] allowed_relations` (defaults: `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts`, `blocked_by`, `recovers_via`). Unknown values are rejected with HTTP 422. |
+| `weight`        | REAL        | `1.0` default; added in migration `006_weighted_edges.sql`. Used by the CTE `path_weight` accumulator and the ranker's `compositeScore` (which uses `pathWeight` instead of integer `depth` for the penalty term). |
 
 Composite PK `(source_id, target_id, relation_type)` means duplicate
-edges auto-dedupe on insert. There is no `weight` or timestamp column
-on edges — weight is implicit (always 1.0 in the current model) and
-edge provenance is recovered via `RetrievedFact.parent_id` /
-`relation_type` from the graph walk.
+edges auto-dedupe on insert. `weight` defaults to `1.0` for every
+write path (auto-link `related_to` >0.85 cosine from `/store`, bulk
+merge edges from `ProcessDialogWithProvenance`, manual `memory edge`).
+All reads use `COALESCE(weight, 1.0)` so a hand-edited legacy row never
+crashes a multiplier path. Edge provenance is recovered via
+`RetrievedFact.parent_id` / `relation_type` from the graph walk.
 
 ### `vec_entities` (when `[database] backend = sqlite-vec`)
 
@@ -1379,23 +1384,26 @@ silently produce wrong cosine scores.
 
 | Concern                         | File                              |
 |---------------------------------|-----------------------------------|
-| INI parsing, defaults           | `src/internal/config/config.go`   |
-| Schema, embedding serialisation | `src/internal/store/migration.go`  |
-| VectorIndex interface, search backends (InMemory / SqliteVec) | `src/internal/vector/vector.go` |
-| Graph walk, ranking, formatting | `src/internal/retrieval/...`       |
-| Background worker, dedup, edges | `src/internal/ingestion/worker.go` |
-| Contradiction detection        | `src/internal/retrieval/contradictions.go` |
-| Community detection (Louvain)  | `src/internal/algo/community.go`   |
-| Background re-embedding        | `src/internal/algo/reembed.go`    |
-| Vector quantization            | `src/internal/vector/quantize.go` |
-| Ollama / OpenAI HTTP            | `src/internal/embedder/*`         |
-| HTTP handlers, strict decoder   | `src/internal/server/server.go`   |
+| INI parsing, defaults, Validate | `src/internal/config/ini.go` + `src/internal/config/config.go` (defaults) |
+| Schema, embedding serialisation | `src/internal/store/migration.go` (migrations runner) + `src/internal/store/init.go` (DSN + PRAGMAs) |
+| VectorIndex interface, search backends (InMemory / SqliteVec) | `src/internal/vector/index.go` (interface) + `src/internal/vector/inmemory.go` + `src/internal/vector/quantize.go` |
+| Graph walk, ranking, formatting | `src/internal/retrieval/{walk,scoring,formatting,response,tasks}.go` |
+| Background worker, dedup, edges | `src/internal/ingestion/worker.go` (IngestionWorker) + `src/internal/ingestion/dialog.go` (ProcessDialog) |
+| Contradiction detection        | `src/internal/store/graph.go::GetContradictions` |
+| Community detection (Louvain)  | `src/internal/store/community.go` |
+| Background re-embedding        | `src/internal/algo/reembed.go::ReEmbedAll` |
+| LRU embedding cache             | `src/internal/algo/cache.go` + `src/internal/vector/index.go::storeLocked` |
+| Ollama / OpenAI HTTP (ResilientClient-wrapped) | `src/internal/ai/{client,embedder,extractor,reranker}.go` |
+| HTTP handlers, strict decoder   | `src/internal/server/server.go` (mux shell) + `src/internal/server/middleware.go` + `src/internal/httputil/httputil.go::DecodeStrict` |
+| Config state, hot reload        | `src/internal/serverstate/state.go` (`atomic.Pointer[State]`) + `src/internal/cli/env/env.go::EnvManager` |
 | CLI dispatch (Cobra root)       | `src/internal/cli/root.go`        |
 | CLI helpers, runtime Env        | `src/internal/cli/env/env.go`     |
 | CLI subcommand groups          | `src/internal/cli/{memory,task,graph,time,agent,db}/<sub>.go` |
-| Top-level CLI (`serve`, `health`, `metrics`, `version`) | `src/internal/cli/<top>.go` |
+| Top-level CLI (`serve`, `health`, `metrics`, `version`) | `src/internal/cli/{serve,health,metrics,version}.go` |
 | Binary entry-point              | `src/main.go`                     |
-| Retention GC loop               | `src/internal/retention/...`      |
-| Accelerate SIMD cosine (darwin) | `src/internal/cosine/cosine_darwin.go` |
-| Pure-Go cosine fallback         | `src/internal/cosine/cosine.go`   |
+| Retention GC loop               | `src/internal/algo/gc.go::GarbageCollector` |
+| Accelerate SIMD cosine (darwin) | `src/internal/vector/cosine_darwin.go` (build-tag `darwin && cgo`) |
+| Pure-Go cosine fallback         | `src/internal/vector/cosine.go`   (build-tag `!darwin || !cgo`) |
+| Coch-Granger cyclic-task safe scheduler   | `src/internal/store/task.go::BuildNode` (iterative work-stack DFS) |
+| NaN/Inf-safe embedding read     | `src/internal/store/codec.go::BytesToFloat32Safe` |
 | Per-package tests               | `src/**/*_test.go`                |
