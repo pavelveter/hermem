@@ -24,6 +24,7 @@ import (
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -63,7 +64,8 @@ func newTestFixture(t *testing.T) *testFixture {
 	metrics := metricspkg.New()
 	retDom := retdomain.NewService(db, vi, embed)
 	retSvc := ret.New(retDom, metrics, refs)
-	taskSvc := tasksvc.New(db, vi, embed, metrics, refs)
+	taskDom := taskdomain.NewService(db, embed, vi)
+	taskSvc := tasksvc.New(taskDom, metrics, refs)
 	memDom := memdomain.New(db, vi, embed, nil) // nil extractor — ingest-only path verifies error envelope
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
 	cndDom := contradictdomain.NewService(db)
@@ -513,7 +515,8 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	retDom := retdomain.NewService(db, vi, embed)
 	memDom := memdomain.New(db, vi, embed, nil)
 	cndDom := contradictdomain.NewService(db)
-	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(db, vi, embed, metrics, refs),
+	taskDom := taskdomain.NewService(db, embed, vi)
+	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
 		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), NewAdminService(db, vi, embed, metrics, refs))
 
 	var handler http.Handler = srv.Mux()

@@ -9,6 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -388,8 +389,9 @@ func TestE2E_AgentLoop(t *testing.T) {
 	storeEntity(t, db, vi, schema, core.Entity{ID: "al-task2", Category: "task", Content: "do second", Embedding: []float32{0, 1, 0}})
 	mustAddEdge(t, db, "al-task1", "al-task2", schema.RelationBlocking)
 
-	// First task (no blockers) should be executable
-	tasks, err := retrieval.GetExecutableTasks(db, schema, "")
+	// First task (no blockers) should be executable. PHASE 2.4:
+	// retrieval.GetExecutableTasks migrated to internal/task/service.go.
+	tasks, err := taskdomain.NewService(db, nil, nil).Executable(context.Background(), "", schema)
 	if err != nil {
 		t.Fatalf("get executable: %v", err)
 	}
@@ -401,7 +403,7 @@ func TestE2E_AgentLoop(t *testing.T) {
 	if err := store.SetStatus(db, schema, "al-task1", "completed"); err != nil {
 		t.Fatalf("set status: %v", err)
 	}
-	tasks2, err := retrieval.GetExecutableTasks(db, schema, "")
+	tasks2, err := taskdomain.NewService(db, nil, nil).Executable(context.Background(), "", schema)
 	if err != nil {
 		t.Fatalf("get executable after complete: %v", err)
 	}

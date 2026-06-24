@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 func newTreeCmd(env *cli.Env) *cobra.Command {
@@ -20,11 +20,12 @@ func newTreeCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
-			nodes, err := store.GetTaskTree(env.DB, env.Cfg.Schema, req.GoalID)
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			tree, err := svc.Tree(env.Ctx, req.GoalID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("tree: %w", err)
 			}
-			fmt.Fprint(cmd.OutOrStdout(), store.RenderTaskTree(nodes, ""))
+			fmt.Fprint(cmd.OutOrStdout(), tree)
 			return nil
 		},
 	}

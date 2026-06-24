@@ -1,47 +1,53 @@
-// Package task hosts the task-graph HTTP service: status, executable, list,
-// show, dep, rollback, tree, create, recovery-plan.
+// Package task hosts the task-graph HTTP transport.
 //
-// TaskCreate is the only handler that needs the embedder + vector-index
-// (to embed the new task and auto-link it). The other handlers operate
-// purely on the relational schema and the task DAG.
+// Domain logic lives in src/internal/task (Service); this package owns
+// transport-only concerns: JSON encoding, method checks, request-body
+// limits, metric increments, and the route registry for /task/* and
+// /recovery-plan.
+//
+// Following the same pattern as PHASE 2.1 (memory), 2.2 (retrieval),
+// 2.3 (contradiction): HTTPService is a thin shell — parse → validate
+// → call TaskSvc.* → write envelope. The domain Service has no
+// knowledge of HTTP, httputil, serverstate.Ref, or metrics; the schema
+// is loaded once per request via Refs and threaded into the domain.
 package task
 
 import (
-	"database/sql"
-	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
-	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
-	"github.com/pavelveter/hermem/src/internal/store"
-	"github.com/pavelveter/hermem/src/internal/vector"
+	tasksvc "github.com/pavelveter/hermem/src/internal/task"
 )
 
-// Service handles task-graph endpoints.
-type Service struct {
-	DB       *sql.DB
-	VI       core.VectorIndex
-	Embedder core.Embedder
-	Metrics  *metrics.Metrics
-	Refs     *serverstate.Ref
+// HTTPService is the transport shell for the task domain.
+//
+// Holds the domain Service (TaskSvc), the metrics counters (Metrics),
+// and the serverstate.Ref for per-request schema reads. The shell
+// decides which transport-level concerns (IncErr, IncTaskExec, etc.)
+// fire on each response; the domain never sees them.
+type HTTPService struct {
+	TaskSvc *tasksvc.Service
+	Metrics *metrics.Metrics
+	Refs    *serverstate.Ref
 }
 
-// New constructs a Service. m is the request-counter holder threaded
-// from Env.Metrics; handler bumps go through s.Metrics.Inc* in the
-// same goroutine that draws the per-request schema from s.Refs.Load().
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, m *metrics.Metrics, refs *serverstate.Ref) *Service {
-	return &Service{DB: db, VI: vi, Embedder: embedder, Metrics: m, Refs: refs}
+// New constructs an HTTPService. In production cli/serve.go wires the
+// domain Service from env.DB + env.Embedder + env.VI via
+// task.NewService(...). Tests construct inline.
+func New(svc *tasksvc.Service, m *metrics.Metrics, refs *serverstate.Ref) *HTTPService {
+	return &HTTPService{TaskSvc: svc, Metrics: m, Refs: refs}
 }
 
 // Routes returns the URL → handler mapping for this service.
-// Note: /task/executable and /task/next both route to HandleTaskExecutable —
-// the second alias exists for legacy CLI frontends.
-func (s *Service) Routes() map[string]http.HandlerFunc {
+//
+// Note: /task/executable and /task/next both route to
+// HandleTaskExecutable — the second alias exists for legacy CLI
+// frontends (cobra's `task next` uses the same handler).
+func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"/task/status":     s.HandleTaskStatus,
 		"/task/executable": s.HandleTaskExecutable,
@@ -56,7 +62,8 @@ func (s *Service) Routes() map[string]http.HandlerFunc {
 	}
 }
 
-func (s *Service) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
+// HandleTaskStatus — POST /task/status. Transitions one task's state.
+func (s *HTTPService) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -71,8 +78,11 @@ func (s *Service) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "id, status required")
 		return
 	}
-	if err := store.SetStatus(s.DB, s.Refs.Load().Schema, req.ID, req.Status); err != nil {
+	state := s.Refs.Load()
+	if err := s.TaskSvc.Status(r.Context(), req.ID, req.Status, state.Schema); err != nil {
 		s.Metrics.IncErr()
+		// "task not found: <id>" → 400 (client mistake: wrong id).
+		// Other errors → 422 (semantic violation: unknown state value).
 		if strings.Contains(err.Error(), "not found") {
 			httputil.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -84,23 +94,25 @@ func (s *Service) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-func (s *Service) HandleTaskExecutable(w http.ResponseWriter, r *http.Request) {
+// HandleTaskExecutable — GET /task/executable[?goal_id=X] (and /task/next).
+//
+// Returns TaskExecutableResponse{Tasks: ...}. Empty result normalized
+// to `[]` at domain level; HTTP envelope stays consistent.
+func (s *HTTPService) HandleTaskExecutable(w http.ResponseWriter, r *http.Request) {
 	goals := r.URL.Query().Get("goal_id")
 	state := s.Refs.Load()
-	tasks, err := retrieval.GetExecutableTasks(s.DB, state.Schema, goals)
+	tasks, err := s.TaskSvc.Executable(r.Context(), goals, state.Schema)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if tasks == nil {
-		tasks = []core.Entity{}
-	}
 	s.Metrics.IncTaskExec()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskExecutableResponse{Tasks: tasks})
 }
 
-func (s *Service) HandleTaskList(w http.ResponseWriter, r *http.Request) {
+// HandleTaskList — POST /task/list. Returns TaskExecutableResponse{Tasks: ...}.
+func (s *HTTPService) HandleTaskList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -112,20 +124,18 @@ func (s *Service) HandleTaskList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := s.Refs.Load()
-	tasks, err := store.ListTasks(s.DB, state.Schema, req.Status, req.GoalID)
+	tasks, err := s.TaskSvc.List(r.Context(), req.Status, req.GoalID, state.Schema)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if tasks == nil {
-		tasks = []core.Entity{}
-	}
 	s.Metrics.IncTaskList()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskExecutableResponse{Tasks: tasks})
 }
 
-func (s *Service) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
+// HandleTaskShow — POST /task/show. Returns TaskShowResponse.
+func (s *HTTPService) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -141,7 +151,7 @@ func (s *Service) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := s.Refs.Load()
-	entity, blocked, recovers, err := store.GetTaskWithRelations(s.DB, state.Schema, req.ID)
+	entity, blocked, recovers, err := s.TaskSvc.Show(r.Context(), req.ID, state.Schema)
 	if err != nil {
 		s.Metrics.IncErr()
 		if strings.Contains(err.Error(), "not found") {
@@ -155,7 +165,11 @@ func (s *Service) HandleTaskShow(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, core.TaskShowResponse{Entity: entity, BlockedBy: blocked, RecoversVia: recovers})
 }
 
-func (s *Service) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
+// HandleTaskDep — POST /task/dep. Adds or removes a dependency edge
+// between two tasks. Pre-validation against state.ValidRelationTypes
+// stays in the HTTP shell (it's about what the schema *currently*
+// considers valid, not about the domain's own invariants).
+func (s *HTTPService) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -170,25 +184,27 @@ func (s *Service) HandleTaskDep(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "source_id, target_id required")
 		return
 	}
-	rel := req.RelationType
 	state := s.Refs.Load()
+	rel := req.RelationType
 	if rel == "" {
 		rel = state.Schema.RelationBlocking
 	}
 	if !state.ValidRelationTypes[rel] {
-		httputil.WriteError(w, http.StatusUnprocessableEntity, fmt.Sprintf("unknown relation_type: %s", rel))
+		httputil.WriteError(w, http.StatusUnprocessableEntity, "unknown relation_type: "+rel)
 		return
 	}
-	if req.Add {
-		_ = store.AddEdge(s.DB, req.SourceID, req.TargetID, rel, 1.0)
-	} else {
-		_ = store.DeleteEdge(s.DB, req.SourceID, req.TargetID, rel)
+	if err := s.TaskSvc.Dep(r.Context(), req.SourceID, req.TargetID, rel, req.Add); err != nil {
+		s.Metrics.IncErr()
+		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	s.Metrics.IncTaskDep()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Service) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
+// HandleTaskRollback — POST /task/rollback. Finds the rollback
+// companion task for a given task ID.
+func (s *HTTPService) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -203,7 +219,7 @@ func (s *Service) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "id required")
 		return
 	}
-	rollbackID, err := store.FindRollbackTask(s.DB, s.Refs.Load().Schema, req.ID)
+	rollbackID, err := s.TaskSvc.Rollback(r.Context(), req.ID, s.Refs.Load().Schema)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
@@ -213,7 +229,8 @@ func (s *Service) HandleTaskRollback(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, core.TaskRollbackResponse{RollbackTaskID: rollbackID})
 }
 
-func (s *Service) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
+// HandleTaskTree — POST /task/tree. Returns the rendered tree string.
+func (s *HTTPService) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -224,17 +241,21 @@ func (s *Service) HandleTaskTree(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
 		return
 	}
-	nodes, err := store.GetTaskTree(s.DB, s.Refs.Load().Schema, req.GoalID)
+	tree, err := s.TaskSvc.Tree(r.Context(), req.GoalID, s.Refs.Load().Schema)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.Metrics.IncTaskTree()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskTreeResponse{Tree: store.RenderTaskTree(nodes, "")})
+	httputil.WriteJSON(w, http.StatusOK, core.TaskTreeResponse{Tree: tree})
 }
 
-func (s *Service) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
+// HandleTaskCreate — POST /task/create. Embeds content + stores + adds
+// context edges + auto-links. ID generation (core.NewTaskID) stays in
+// the HTTP shell: it's a transport-side concern (clients lacking IDs
+// need the server to generate one before the domain call).
+func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -252,48 +273,37 @@ func (s *Service) HandleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if req.ID == "" {
 		req.ID = core.NewTaskID()
 	}
-	emb, err := s.Embedder.Embed(r.Context(), req.Content)
+	state := s.Refs.Load()
+	newID, err := s.TaskSvc.Create(r.Context(), req.ID, req.Content, req.ContextIDs, state.Schema)
 	if err != nil {
 		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	state := s.Refs.Load()
-	cat := config.FirstStatefulCategory(state.Schema)
-	if cat == "" {
-		httputil.WriteError(w, http.StatusUnprocessableEntity, "no stateful category configured")
-		return
-	}
-	entity := core.Entity{ID: req.ID, Category: cat, Content: req.Content, Embedding: emb}
-	if err := store.StoreEntityWithEmbedding(s.DB, s.VI, state.Schema, entity); err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	for _, cid := range req.ContextIDs {
-		if cid != "" {
-			_ = store.AddEdge(s.DB, req.ID, cid, "related_to", 1.0)
+		// "create: no stateful category configured" → 422 (semantic).
+		if strings.Contains(err.Error(), "no stateful category") {
+			httputil.WriteError(w, http.StatusUnprocessableEntity, err.Error())
+			return
 		}
+		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	vector.AutoLinkEdges(r.Context(), s.DB, s.VI, s.Embedder, req.ID, emb)
 	s.Metrics.IncTaskCreate()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskCreateResponse{ID: req.ID, Status: "ok"})
+	httputil.WriteJSON(w, http.StatusOK, core.TaskCreateResponse{ID: newID, Status: "ok"})
 }
 
-func (s *Service) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) {
+// HandleRecoveryPlan — GET /recovery-plan[?id=X]. Returns a list of
+// recovery entities (or `[]` on empty). Note: this handler lives in
+// the TASK HTTPService because recovery is task-only; no other shell
+// owns it.
+func (s *HTTPService) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "id required")
 		return
 	}
-	plan, err := store.GenerateRecoveryPlan(s.DB, s.Refs.Load().Schema, id)
+	plan, err := s.TaskSvc.RecoveryPlan(r.Context(), id, s.Refs.Load().Schema)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	if plan == nil {
-		plan = []core.Entity{}
 	}
 	httputil.WriteJSON(w, http.StatusOK, plan)
 }

@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 func newListCmd(env *cli.Env) *cobra.Command {
@@ -20,12 +20,10 @@ func newListCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
-			tasks, err := store.ListTasks(env.DB, env.Cfg.Schema, req.Status, req.GoalID)
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			tasks, err := svc.List(env.Ctx, req.Status, req.GoalID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("list: %w", err)
-			}
-			if tasks == nil {
-				tasks = []core.Entity{}
 			}
 			return cli.WriteJSON(cmd.OutOrStdout(), core.TaskExecutableResponse{Tasks: tasks})
 		},

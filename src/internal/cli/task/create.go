@@ -6,9 +6,8 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 func newCreateCmd(env *cli.Env) *cobra.Command {
@@ -27,22 +26,16 @@ func newCreateCmd(env *cli.Env) *cobra.Command {
 			if req.ID == "" {
 				req.ID = core.NewTaskID()
 			}
-			emb, err := env.Embedder.Embed(env.Ctx, req.Content)
-			if err != nil {
-				return fmt.Errorf("embed: %w", err)
-			}
-			cat := config.FirstStatefulCategory(env.Cfg.Schema)
-			if cat == "" {
-				return fmt.Errorf("no stateful category configured")
-			}
-			entity := core.Entity{
-				ID:        req.ID,
-				Category:  cat,
-				Content:   req.Content,
-				Embedding: emb,
-			}
-			if err := store.StoreEntityWithEmbedding(env.DB, env.VI, env.Cfg.Schema, entity); err != nil {
-				return fmt.Errorf("store: %w", err)
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			// Service.Create handles embed + store + context_id edges +
+			// auto-link internally. CLI behavior drift in PHASE 2.4:
+			// pre-PHASE-2.4 this command returned errors verbatim from
+			// embed / StoreEntityWithEmbedding. Post-PHASE-2.4 the
+			// domain wraps everything in "create: <err>" prefix; the
+			// shape mirrors HTTP shell's 500 envelope so terminal
+			// surface stays consistent across transports.
+			if _, err := svc.Create(env.Ctx, req.ID, req.Content, req.ContextIDs, env.Cfg.Schema); err != nil {
+				return fmt.Errorf("create: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), `{"status":"ok"}`)
 			return nil

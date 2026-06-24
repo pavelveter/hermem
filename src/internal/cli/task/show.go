@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 func newShowCmd(env *cli.Env) *cobra.Command {
@@ -23,7 +23,8 @@ func newShowCmd(env *cli.Env) *cobra.Command {
 			if req.ID == "" {
 				return fmt.Errorf("id required")
 			}
-			entity, blocked, recovers, err := store.GetTaskWithRelations(env.DB, env.Cfg.Schema, req.ID)
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			entity, blocked, recovers, err := svc.Show(env.Ctx, req.ID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("show: %w", err)
 			}
