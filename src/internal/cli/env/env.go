@@ -51,6 +51,17 @@ type Env struct {
 	Worker    *metrics.AsyncMetricsWorker
 	Build     BuildInfo
 
+	// KeepDBOpen disables auto-closing the database in
+	// root.PersistentPostRunE. Default is false (production behaviour:
+	// env closes after each `$ hermem <cmd>` returns, so a shell
+	// invocation does not leave an orphan file handle). Tests set this
+	// to true so they can run multiple executeCmd calls against the
+	// same env within one test body; tests rely on t.Cleanup(env.Close)
+	// for final teardown. Hot-reloaded Envs propagate the field via
+	// EnvManager.Reload so a reload mid-test doesn't accidentally
+	// re-enable auto-close.
+	KeepDBOpen bool
+
 	// Lazy state uses plain bools (NOT sync.Once/Mutex) because cobra
 	// runs PersistentPreRunE / PersistentPostRunE exactly once per
 	// process, sequentially on the main goroutine — no concurrent
@@ -248,18 +259,19 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 	}
 	prev := m.Get()
 	newEnv := &Env{
-		Cfg:       cfg,
-		Build:     copyBuild(prev),
-		Ctx:       prevCtx(prev),
-		DB:        prevDB(prev),
-		VI:        prevVI(prev),
-		Embedder:  prevEmbedder(prev),
-		Extractor: prevExtractor(prev),
-		Reranker:  prevReranker(prev),
-		Worker:    prevWorker(prev),
-		initDone:  prevInitDone(prev),
-		initErr:   prevInitErr(prev),
-		closeDone: prevCloseDone(prev),
+		Cfg:        cfg,
+		Build:      copyBuild(prev),
+		Ctx:        prevCtx(prev),
+		DB:         prevDB(prev),
+		VI:         prevVI(prev),
+		Embedder:   prevEmbedder(prev),
+		Extractor:  prevExtractor(prev),
+		Reranker:   prevReranker(prev),
+		Worker:     prevWorker(prev),
+		KeepDBOpen: prevKeepDBOpen(prev),
+		initDone:   prevInitDone(prev),
+		initErr:    prevInitErr(prev),
+		closeDone:  prevCloseDone(prev),
 	}
 	m.current.Store(newEnv)
 	return newEnv, nil
@@ -335,4 +347,14 @@ func prevCloseDone(prev *Env) bool {
 		return false
 	}
 	return prev.closeDone
+}
+
+// prevKeepDBOpen mirrors the KeepDBOpen setting through EnvManager.Reload so
+// tests in flight at the moment of a reload do not silently start
+// auto-closing their DB.
+func prevKeepDBOpen(prev *Env) bool {
+	if prev == nil {
+		return false
+	}
+	return prev.KeepDBOpen
 }

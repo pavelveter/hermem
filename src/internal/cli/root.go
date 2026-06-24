@@ -78,7 +78,18 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		// operates on a copy of the value-passed Env that never sees
 		// EnsureDB write to it. env.Close is bool-idempotent so a
 		// subsequent main defer is a no-op rather than a double-close.
-		PersistentPostRunE: func(_ *cobra.Command, _ []string) error { env.Close(); return nil },
+		//
+		// env.KeepDBOpen (set true by cli_integration_test.go and any
+		// other caller that wants to drive multiple commands against
+		// one env) short-circuits the close so the DB stays open across
+		// executeCmd boundaries. The teardown is left to t.Cleanup
+		// in tests and to main.go's own defer in production.
+		PersistentPostRunE: func(_ *cobra.Command, _ []string) error {
+			if !env.KeepDBOpen {
+				env.Close()
+			}
+			return nil
+		},
 	}
 	root.AddCommand(
 		newServeCmd(env),
