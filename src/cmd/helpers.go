@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pavelveter/hermem/src/internal/server"
+	"github.com/pavelveter/hermem/src/internal/httputil"
 )
 
 // --- stdin helpers ---
@@ -25,11 +25,11 @@ func ReadStdin() string {
 	return strings.TrimSpace(string(data))
 }
 
-// DecodeStdin reads JSON from stdin into v using server.DecodeStrict — so
+// DecodeStdin reads JSON from stdin into v using httputil.DecodeStrict — so
 // trailing data, unknown fields, and type mismatches all surface from one
 // source rather than being re-implemented per command.
 func DecodeStdin(v interface{}) {
-	if code, field, msg, ok := server.DecodeStrict(bytes.NewReader([]byte(ReadStdin())), v); !ok {
+	if code, field, msg, ok := httputil.DecodeStrict(bytes.NewReader([]byte(ReadStdin())), v); !ok {
 		log.Fatalf("invalid request: %s (code=%s field=%s)", msg, code, field)
 	}
 }
@@ -38,7 +38,7 @@ func DecodeStdin(v interface{}) {
 // caller has already pre-read stdin and may substitute a default body when
 // the pipe was empty (e.g. cmd/task-executable falling back to "{}").
 func DecodeString(data string, v interface{}) {
-	if code, field, msg, ok := server.DecodeStrict(strings.NewReader(data), v); !ok {
+	if code, field, msg, ok := httputil.DecodeStrict(strings.NewReader(data), v); !ok {
 		log.Fatalf("invalid request: %s (code=%s field=%s)", msg, code, field)
 	}
 }
