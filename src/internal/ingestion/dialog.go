@@ -226,8 +226,11 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 	return nil, nil
 }
 
-// IsIngestionContradiction is the same negation heuristic as algo.IsContradiction —
-// duplicated locally to keep ingestion independent of algo (algo depends on ingestion indirectly).
+// IsIngestionContradiction guards dedup by negation heuristic: if an almost-identical
+// existing entity flips on any one of these common-enough negation tokens that the
+// incoming one doesn't (or vice versa), treat it as a contradiction rather than a
+// merge. Cheap, language-light, no LLM round-trip — good enough to flag for the
+// contradiction-resolution path in processOneItem.
 func IsIngestionContradiction(a, b string) bool {
 	negWords := []string{"not", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "never", "no", "hate", "dislike"}
 	al := strings.ToLower(a)
