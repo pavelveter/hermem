@@ -1245,6 +1245,8 @@ A single SQLite file with two (or three) tables. The schema lives in
 | `updated_at`    | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
 | `last_accessed_at` | DATETIME | `CURRENT_TIMESTAMP` default; GC uses this for TTL.    |
 | `archived`      | INTEGER     | 0 = active, 1 = excluded from graph walks by GC.      |
+| `degree`        | INTEGER     | `0` default; auto-maintained by SQL triggers on edges INSERT/DELETE. Powers `log10(1+degree)` centrality scoring. |
+| `priority`      | INTEGER     | `0` default; `task/list` + `task/executable` + `ExecutionPlan` order by `priority DESC`. Added in migration `007_task_priorities.sql`. |
 | `degree`        | INTEGER     | `0` default; auto-maintained by SQL triggers on edges INSERT/DELETE. Powers `log10(1+degree)` centrality scoring in the ranker (`[ranking] centrality_weight`). |
 | `priority`      | INTEGER     | `0` default; `task/list` + `task/executable` + `ExecutionPlan` order by `priority DESC`. Added in migration `007_task_priorities.sql`. |
 
@@ -1262,6 +1264,7 @@ the float32 stride does not change.
 | `source_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
 | `target_id`     | TEXT        | FK → `entities.id` (cascade on delete).             |
 | `relation_type` | TEXT        | Relation label from `[schema] allowed_relations` (defaults: `prefers`, `uses`, `mentions`, `related_to`, `part_of`, `causes`, `contradicts`, `blocked_by`, `recovers_via`). Unknown values are rejected with HTTP 422. |
+| `weight`        | REAL        | `1.0` default; added in migration `006_weighted_edges.sql`. Used by CTE `path_weight` accumulator and the ranker's `compositeScore`. Read with `COALESCE(weight, 1.0)`. |
 | `weight`        | REAL        | `1.0` default; added in migration `006_weighted_edges.sql`. Used by the CTE `path_weight` accumulator and the ranker's `compositeScore` (which uses `pathWeight` instead of integer `depth` for the penalty term). |
 
 Composite PK `(source_id, target_id, relation_type)` means duplicate
