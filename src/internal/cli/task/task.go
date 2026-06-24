@@ -5,6 +5,10 @@
 //
 // All subcommands consume JSON from stdin except `next` which silently
 // falls back to "{}" when stdin is empty so it can run unpipe'd.
+//
+// PHASE 2.4: each subcommand constructs a fresh taskdomain.NewService
+// per call (six pointer assignments; cheap) and delegates — mirrors the
+// pattern from cli/memory/store+ingest+edge post-PHASE-2.1.
 package task
 
 import (

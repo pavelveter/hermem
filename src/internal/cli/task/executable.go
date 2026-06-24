@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/retrieval"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 // newExecutableCmd lists tasks whose blockers are all done. Cobra exposes
@@ -34,12 +34,10 @@ func newExecutableCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeString(data, &req); err != nil {
 				return err
 			}
-			tasks, err := retrieval.GetExecutableTasks(env.DB, env.Cfg.Schema, req.GoalID)
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			tasks, err := svc.Executable(env.Ctx, req.GoalID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("executable: %w", err)
-			}
-			if tasks == nil {
-				tasks = []core.Entity{}
 			}
 			return cli.WriteJSON(cmd.OutOrStdout(), core.TaskExecutableResponse{Tasks: tasks})
 		},

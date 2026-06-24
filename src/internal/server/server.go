@@ -39,13 +39,14 @@ import (
 
 // Server is the HTTP shell. It holds the 5 services + a mux + the atomic
 // state holder. No domain fields (no DB / VI / Embedder directly —
-// memory's domain service lives in internal/memory and contradiction's
-// domain Service lives in internal/contradiction; both are borrowed by
-// their respective transport shells as Service references).
+// memory's domain service lives in internal/memory, contradiction's in
+// internal/contradiction, task's in internal/task; each transport shell
+// holds the domain Service reference and threads it as a borrowed
+// pointer).
 type Server struct {
 	Refs          *serverstate.Ref
 	Retrieval     *ret.HTTPService
-	Task          *tasksvc.Service
+	Task          *tasksvc.HTTPService
 	Memory        *mem.HTTPService
 	Contradiction *cnd.HTTPService
 	Admin         *AdminService
@@ -55,9 +56,10 @@ type Server struct {
 // NewServer wires the 5 services into a single mux. No HTTP server is started
 // — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
 //
-// PHASE 2.3 added the contradiction *HTTPService argument; previously /contradictions
-// routed through server/retrieval which reached DB via retrieval.Service.DB().
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.Service, memory *mem.HTTPService, contradiction *cnd.HTTPService, admin *AdminService) *Server {
+// PHASE 2.3 added the contradiction *HTTPService argument; PHASE 2.4
+// renamed the task *Service argument to *HTTPService to mirror the
+// post-2.4 transport-shell shape (server/task.Service → server/task.HTTPService).
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, contradiction *cnd.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,

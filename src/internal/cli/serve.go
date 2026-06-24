@@ -22,6 +22,7 @@ import (
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 	"github.com/pavelveter/hermem/src/internal/util/safego"
 )
 
@@ -63,11 +64,17 @@ func runServe(env *clienv.Env, port string) error {
 	// DB-only (no vector index / embedder / schema); same shape as
 	// retrieval/memory but slimmer dependencies.
 	cndSvc := contradictdomain.NewService(env.DB)
+	// PHASE 2.4: task domain Service holds db + embedder + vi. The
+	// embedded AutoLinkEdges inside Service.Create is the only call
+	// path that uses embedder + vi; all other methods are pure SQL.
+	// The HTTP shell (server/task) takes a borrowed pointer to this
+	// Service and threads it into the 10-endpoint mux.
+	taskSvc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
 
 	srv := server.NewServer(
 		refs,
 		ret.New(retSvc, env.Metrics, refs),
-		tasksvc.New(env.DB, env.VI, env.Embedder, env.Metrics, refs),
+		tasksvc.New(taskSvc, env.Metrics, refs),
 		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
 		cnd.New(cndSvc, env.Metrics),
 		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),

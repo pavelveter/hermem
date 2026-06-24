@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 func newDepCmd(env *cli.Env) *cobra.Command {
@@ -30,12 +30,16 @@ func newDepCmd(env *cli.Env) *cobra.Command {
 			if err := env.Cfg.ValidateRelation(rel); err != nil {
 				return fmt.Errorf("invalid: %w", err)
 			}
-			if req.Add {
-				if err := store.AddEdge(env.DB, req.SourceID, req.TargetID, rel, 1.0); err != nil {
-					return fmt.Errorf("add: %w", err)
-				}
-			} else {
-				_ = store.DeleteEdge(env.DB, req.SourceID, req.TargetID, rel)
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			// CLI behavior drift in PHASE 2.4: pre-PHASE-2.4 `task dep`
+			// returned an error on duplicate-edge AddEdge failures
+			// ("add: %w"). Post-PHASE-2.4 Service.Dep matches the HTTP
+			// shell's pre-PHASE-2.4 behavior of swallowing AddEdge
+			// errors so duplicate adds become no-ops rather than
+			// surfaced 500s. The ValidateRelation pre-check above is
+			// preserved so an unknown relation_type still errors out.
+			if err := svc.Dep(env.Ctx, req.SourceID, req.TargetID, rel, req.Add); err != nil {
+				return fmt.Errorf("dep: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), `{"status":"ok"}`)
 			return nil

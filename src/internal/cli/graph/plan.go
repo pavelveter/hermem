@@ -24,7 +24,7 @@ func newPlanCmd(env *cli.Env) *cobra.Command {
 			if req.GoalID == "" {
 				return fmt.Errorf("goal_id required")
 			}
-			tasks, err := algo.ExecutionPlan(env.DB, env.Cfg.Schema, req.GoalID)
+			tasks, err := algo.ExecutionPlan(env.Ctx, env.DB, env.Cfg.Schema, req.GoalID)
 			if err != nil {
 				return fmt.Errorf("plan: %w", err)
 			}

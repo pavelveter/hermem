@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 func newRollbackCmd(env *cli.Env) *cobra.Command {
@@ -23,7 +23,8 @@ func newRollbackCmd(env *cli.Env) *cobra.Command {
 			if req.ID == "" {
 				return fmt.Errorf("id required")
 			}
-			rollbackID, err := store.FindRollbackTask(env.DB, env.Cfg.Schema, req.ID)
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			rollbackID, err := svc.Rollback(env.Ctx, req.ID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("rollback: %w", err)
 			}

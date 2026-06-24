@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 func newStatusCmd(env *cli.Env) *cobra.Command {
@@ -23,7 +23,10 @@ func newStatusCmd(env *cli.Env) *cobra.Command {
 			if req.ID == "" || req.Status == "" {
 				return fmt.Errorf("id, status required")
 			}
-			if err := store.SetStatus(env.DB, env.Cfg.Schema, req.ID, req.Status); err != nil {
+			// Construct per-call (six pointer assignments; cheap) so
+			// CLI never holds onto a stale Service ref between commands.
+			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			if err := svc.Status(env.Ctx, req.ID, req.Status, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("status: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), `{"status":"ok"}`)
