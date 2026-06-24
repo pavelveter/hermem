@@ -59,7 +59,20 @@ func NormalizeVector(v []float32) {
 
 // BatchDotProducts computes dot(query, matrix[r]) for every row r of an rows×cols matrix.
 // Matrix is stored row-major. Output slice length must equal rows.
+//
+// Mirrors the bounds-bump contract from cosine_darwin.go: if any of the
+// inputs is undersized the function panics immediately rather than
+// walking past the supplied slices inside the inner loop. Callers (public
+// Search in inmemory.go) MUST validate dimensions first via the
+// sentinel ErrInvalidQueryDim / ErrMatrixCorrupted and only reach this
+// function with consistent shapes.
 func BatchDotProducts(query []float32, matrix []float32, rows, cols int, dot []float32) {
+	if rows == 0 || cols == 0 {
+		return
+	}
+	_ = query[cols-1]
+	_ = matrix[rows*cols-1]
+	_ = dot[rows-1]
 	for r := 0; r < rows; r++ {
 		var d float32
 		for c := 0; c < cols; c++ {

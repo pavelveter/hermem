@@ -3,11 +3,76 @@ package vector
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
+
+// maxSearchN caps the per-call entries returned by Search. Pool slots are
+// sized to this ceiling so the underlying []float32 and []int arrays are
+// reused across calls with amortised allocation cost. Search calls with n
+// above this ceiling fall through to a per-call make([]T, n) — the
+// threshold is a hot-path optimisation, not a hard limit.
+const maxSearchN = 50_000
+
+var (
+	dotPool = sync.Pool{
+		New: func() any {
+			s := make([]float32, 0, maxSearchN)
+			return &s
+		},
+	}
+	intPool = sync.Pool{
+		New: func() any {
+			s := make([]int, 0, maxSearchN)
+			return &s
+		},
+	}
+)
+
+// getDots / putDots: amortise the cosine-scratch buffer across searches.
+// Caller MUST defer putDots(). The pool slot cap is canonical maxSearchN;
+// slices with a different cap are dropped on Put so the next Get() always
+// sees the same capacity.
+func getDots(n int) []float32 {
+	if n > maxSearchN {
+		return make([]float32, n)
+	}
+	p := dotPool.Get().(*[]float32)
+	if cap(*p) < n {
+		return make([]float32, n)
+	}
+	return (*p)[:n]
+}
+
+func putDots(d []float32) {
+	if cap(d) != maxSearchN {
+		return
+	}
+	d = d[:0]
+	dotPool.Put(&d)
+}
+
+func getInts(n int) []int {
+	if n > maxSearchN {
+		return make([]int, n)
+	}
+	p := intPool.Get().(*[]int)
+	if cap(*p) < n {
+		return make([]int, n)
+	}
+	return (*p)[:n]
+}
+
+func putInts(d []int) {
+	if cap(d) != maxSearchN {
+		return
+	}
+	d = d[:0]
+	intPool.Put(&d)
+}
 
 type vectorEntry struct {
 	id   string
@@ -65,14 +130,22 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 	if n == 0 || idx.cols == 0 {
 		return nil, nil
 	}
+	if len(queryEmbedding) != idx.cols {
+		return nil, fmt.Errorf("%w: got %d, want %d", ErrInvalidQueryDim, len(queryEmbedding), idx.cols)
+	}
+	if len(idx.flatMatrix) != n*idx.cols {
+		return nil, fmt.Errorf("%w: matrix has %d, expected %d", ErrMatrixCorrupted, len(idx.flatMatrix), n*idx.cols)
+	}
 	NormalizeVector(queryEmbedding)
 	queryNorm := VectorNorm(queryEmbedding)
-	dots := make([]float32, n)
+	dots := getDots(n)
+	defer putDots(dots)
 	BatchDotProducts(queryEmbedding, idx.flatMatrix, n, idx.cols, dots)
 	for i := range dots {
 		dots[i] /= queryNorm
 	}
-	idxs := make([]int, n)
+	idxs := getInts(n)
+	defer putInts(idxs)
 	for i := range idxs {
 		idxs[i] = i
 	}
@@ -95,16 +168,24 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 		out := make([][]string, len(queries))
 		return out, nil
 	}
+	if len(idx.flatMatrix) != n*idx.cols {
+		return nil, fmt.Errorf("%w: matrix has %d, expected %d", ErrMatrixCorrupted, len(idx.flatMatrix), n*idx.cols)
+	}
 	out := make([][]string, len(queries))
+	dots := getDots(n)
+	defer putDots(dots)
+	idxs := getInts(n)
+	defer putInts(idxs)
 	for qi, q := range queries {
+		if len(q) != idx.cols {
+			return nil, fmt.Errorf("%w: query %d has %d, want %d", ErrInvalidQueryDim, qi, len(q), idx.cols)
+		}
 		NormalizeVector(q)
 		qNorm := VectorNorm(q)
-		dots := make([]float32, n)
 		BatchDotProducts(q, idx.flatMatrix, n, idx.cols, dots)
 		for i := range dots {
 			dots[i] /= qNorm
 		}
-		idxs := make([]int, n)
 		for i := range idxs {
 			idxs[i] = i
 		}

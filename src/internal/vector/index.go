@@ -3,10 +3,21 @@ package vector
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
+)
+
+// Sentinel errors returned by VectorIndex implementations when the
+// supplied query dimension or the in-memory matrix layout is inconsistent
+// with the index's contracted shape. Callers MUST check for these via
+// errors.Is before any other recovery; the in-function bounds-bump panic
+// in BatchDotProducts remains as a last-line defensive check.
+var (
+	ErrInvalidQueryDim = errors.New("vector: query dimension mismatch with index")
+	ErrMatrixCorrupted = errors.New("vector: flat matrix size != N * dim")
 )
 
 // NewIndex creates a VectorIndex for the given backend.
