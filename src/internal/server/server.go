@@ -236,5 +236,6 @@ func registerRoutes(srv *Server) *http.ServeMux {
 	mux.HandleFunc("/connected-components", srv.HandleConnectedComponents)
 	mux.HandleFunc("/communities", srv.HandleCommunities)
 	mux.HandleFunc("/admin/re-embed", srv.HandleReEmbed)
+	mux.HandleFunc("/response", srv.HandleResponse)
 	return mux
 }

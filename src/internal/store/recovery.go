@@ -9,6 +9,9 @@ import (
 
 // GenerateRecoveryPlan walks the recovers_via chain forward from a failed task,
 // returning the ordered list of recovery tasks to execute.
+// A cycle in the recovers_via graph is broken at the second visit to any task
+// by explicitly checking visited[rollbackID] before each append — prevents
+// looping a→b→c→a from re-including the failed task `a` at the tail.
 func GenerateRecoveryPlan(db *sql.DB, schema core.SchemaConfig, failedTaskID string) ([]core.Entity, error) {
 	var plan []core.Entity
 	visited := make(map[string]bool)
@@ -20,6 +23,9 @@ func GenerateRecoveryPlan(db *sql.DB, schema core.SchemaConfig, failedTaskID str
 			return nil, fmt.Errorf("recovery plan: step from %s: %w", current, err)
 		}
 		if rollbackID == "" {
+			break
+		}
+		if visited[rollbackID] {
 			break
 		}
 		e, err := GetTaskByID(db, schema, rollbackID)

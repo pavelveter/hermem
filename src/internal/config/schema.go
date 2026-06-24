@@ -65,6 +65,13 @@ func ParseSchemaSection(section *ini.Section, path string) (core.SchemaConfig, e
 		}
 	}
 	schema := DefaultSchemaConfig(true)
+	// Reset relation-ref + state-ref defaults so a [schema] section is fully
+	// self-contained: defaults from DefaultSchemaConfig should not pollute a
+	// custom override. If the user wants relation_blocking/recovery or a
+	// state_unblocking, they declare it in the INI; otherwise they stay empty.
+	schema.RelationBlocking = ""
+	schema.RelationRecovery = ""
+	schema.StateUnblocking = ""
 	if v := ParseCSVList(section.Key("allowed_categories").String()); len(v) > 0 {
 		schema.AllowedCategories = BoolMap(v)
 	} else {

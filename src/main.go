@@ -44,7 +44,8 @@ func printUsage(w io.Writer) {
 Usage: hermem <command> [args]
 
 Commands:
-  store, search, query, edge, ingest, explain       Knowledge CRUD (JSON stdin)
+  store, search, retrieve, query, response, edge,
+                 ingest, explain                  Knowledge CRUD (JSON stdin)
   task-status, task-list, task-show, task-dep,      Task management (JSON stdin)
   task-tree, task-create, task-rollback,
   task-executable (alias: task-next)
@@ -59,6 +60,8 @@ Commands:
   re-embed       Re-embed all entities
   quantize       Quantize an embedding locally (JSON stdin)
   schema         Show schema fingerprint
+  health         Health probe (pings DB; mirrors /health/ready)
+  metrics        Prometheus exposition (mirrors /metrics)
   serve [port]   Start HTTP server (default :8420)
 `)
 }
@@ -110,6 +113,10 @@ func main() {
 		cliSearch(ctx, db, vi, embedder)
 	case "query":
 		cliQuery(ctx, cfg, db, vi, embedder, reranker)
+	case "retrieve":
+		cliRetrieve(ctx, cfg, db, reranker)
+	case "response":
+		cliResponse(ctx, cfg, db, vi, embedder, reranker)
 	case "edge":
 		cliEdge(ctx, cfg, db, vi, embedder)
 	case "ingest":
@@ -164,6 +171,10 @@ func main() {
 		cliQuantize()
 	case "schema":
 		cliSchema(db, cfg)
+	case "health":
+		cliHealth(ctx, db)
+	case "metrics":
+		cliMetrics()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		os.Exit(1)
@@ -710,6 +721,77 @@ func cliSchema(db *sql.DB, cfg *config.Config) {
 	if stored != "" && stored != current {
 		fmt.Println("WARNING: schema changed!")
 	}
+}
+
+// cliRetrieve mirrors the /retrieve HTTP endpoint — graph walk from explicit seed
+// IDs without client-side embedding. Reranker is wired in so CLI output matches
+// the server's /retrieve retrieval ranking exactly (otherwise the CLI silently
+// degrades to no-reranker results).
+func cliRetrieve(ctx context.Context, cfg *config.Config, db *sql.DB, reranker core.Reranker) {
+	var req core.RetrieveRequest
+	decodeStdin(&req)
+	if len(req.SeedIDs) == 0 {
+		log.Fatal("seed_ids required")
+	}
+	if req.MaxDepth <= 0 {
+		req.MaxDepth = 2
+	}
+	opts := core.RetrieveContextOptions{
+		MaxDepth:          req.MaxDepth,
+		DepthCeiling:      cfg.MaxDepthCeiling,
+		MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+		RankingWeight:     cfg.Ranking,
+		Reranker:          reranker,
+		Ctx:               ctx,
+	}
+	result, err := retrieval.RetrieveContext(db, req.SeedIDs, opts)
+	if err != nil {
+		log.Fatalf("retrieve: %v", err)
+	}
+	_ = json.NewEncoder(os.Stdout).Encode(result)
+}
+
+// cliResponse mirrors the /response HTTP endpoint — one-shot "answer" pipeline
+// backed by retrieval.GenerateResponse (embed query → top-3 graph seeds →
+// multi-hop walk → Markdown render). Reranker is wired in for server-parity.
+func cliResponse(ctx context.Context, cfg *config.Config, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, reranker core.Reranker) {
+	var req struct {
+		Query    string `json:"query"`
+		MaxDepth int    `json:"max_depth,omitempty"`
+	}
+	decodeStdin(&req)
+	if req.Query == "" {
+		log.Fatal("query is required")
+	}
+	opts := core.RetrieveContextOptions{
+		DepthCeiling:      cfg.MaxDepthCeiling,
+		MaxRetrievedNodes: cfg.MaxRetrievedNodes,
+		RankingWeight:     cfg.Ranking,
+		Reranker:          reranker,
+	}
+	if req.MaxDepth > 0 {
+		opts.MaxDepth = req.MaxDepth
+	}
+	out, err := retrieval.GenerateResponse(ctx, db, vi, embedder, opts, req.Query)
+	if err != nil {
+		log.Fatalf("response: %v", err)
+	}
+	_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"response": out})
+}
+
+// cliHealth mirrors /health/ready — pings the DB, exits 0 on success, 1 on degraded.
+func cliHealth(ctx context.Context, db *sql.DB) {
+	if err := db.PingContext(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "unhealthy: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(`{"status":"ok","checks":{"database":"ok"}}`)
+}
+
+// cliMetrics dumps the Prometheus exposition format the /metrics handler emits,
+// reusing metrics.WriteExposition so server and CLI output match byte-for-byte.
+func cliMetrics() {
+	metrics.WriteExposition(os.Stdout)
 }
 
 // cliServe delegates the long HTTP server lifecycle to server.StartStandalone

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"sync/atomic"
 )
@@ -41,9 +42,10 @@ func IncTaskRollback() { taskRollbackCnt.Add(1) }
 func IncTaskTree()     { taskTreeCount.Add(1) }
 func IncTaskCreate()   { taskCreateCnt.Add(1) }
 
-// MetricsHandler serves Prometheus-format metrics.
-func MetricsHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+// WriteExposition writes Prometheus exposition-format metrics to w.
+// Used both by MetricsHandler (HTTP) and the `hermem metrics` CLI command —
+// kept as one source of truth so CLI and server output match byte-for-byte.
+func WriteExposition(w io.Writer) {
 	fmt.Fprintf(w, "# HELP hermem_store_total Total store operations\n# TYPE hermem_store_total counter\nhermem_store_total %d\n", storeCount.Load())
 	fmt.Fprintf(w, "# HELP hermem_search_total Total search operations\n# TYPE hermem_search_total counter\nhermem_search_total %d\n", searchCount.Load())
 	fmt.Fprintf(w, "# HELP hermem_retrieve_total Total retrieve operations\n# TYPE hermem_retrieve_total counter\nhermem_retrieve_total %d\n", retrieveCount.Load())
@@ -51,4 +53,10 @@ func MetricsHandler(w http.ResponseWriter, _ *http.Request) {
 	fmt.Fprintf(w, "# HELP hermem_query_total Total query operations\n# TYPE hermem_query_total counter\nhermem_query_total %d\n", queryCount.Load())
 	fmt.Fprintf(w, "# HELP hermem_edge_total Total edge operations\n# TYPE hermem_edge_total counter\nhermem_edge_total %d\n", edgeCount.Load())
 	fmt.Fprintf(w, "# HELP hermem_errors_total Total errors\n# TYPE hermem_errors_total counter\nhermem_errors_total %d\n", errorCount.Load())
+}
+
+// MetricsHandler serves Prometheus-format metrics.
+func MetricsHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	WriteExposition(w)
 }

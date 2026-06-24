@@ -29,7 +29,7 @@ func ListTasks(db *sql.DB, schema core.SchemaConfig, status, goalID string) ([]c
 		args = append(args, schema.RelationBlocking)
 		args = append(args, catArgs...)
 	}
-	query := "SELECT e.id, e.category, e.content, e.status, e.updated_at, COALESCE(e.priority, 0) FROM entities e WHERE " + strings.Join(wheres, " AND ") + " ORDER BY e.id"
+	query := "SELECT e.id, e.category, e.content, COALESCE(e.status, '') AS status, e.updated_at, COALESCE(e.priority, 0) FROM entities e WHERE " + strings.Join(wheres, " AND ") + " ORDER BY e.id"
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
@@ -43,7 +43,7 @@ func GetTaskWithRelations(db *sql.DB, schema core.SchemaConfig, id string) (core
 	var e core.Entity
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{id}, catArgs...)
-	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
+	err := db.QueryRow("SELECT id, category, content, COALESCE(status, '') AS status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return core.Entity{}, nil, nil, fmt.Errorf("task not found: %s", id)
 	}
@@ -66,7 +66,7 @@ func GetTaskByID(db *sql.DB, schema core.SchemaConfig, id string) (core.Entity, 
 	var e core.Entity
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{id}, catArgs...)
-	err := db.QueryRow("SELECT id, category, content, status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
+	err := db.QueryRow("SELECT id, category, content, COALESCE(status, '') AS status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return core.Entity{}, fmt.Errorf("task not found: %s", id)
 	}
@@ -84,7 +84,7 @@ func GetTasksByIDs(db *sql.DB, schema core.SchemaConfig, ids []string) (map[stri
 	phs, args := InClauseArgs(ids)
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	args = append(args, catArgs...)
-	query := "SELECT id, category, content, status, updated_at FROM entities WHERE id IN (" + phs + ") AND category IN (" + catPH + ")"
+	query := "SELECT id, category, content, COALESCE(status, '') AS status, updated_at FROM entities WHERE id IN (" + phs + ") AND category IN (" + catPH + ")"
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get tasks by ids: %w", err)
@@ -120,7 +120,7 @@ func GetRootTasks(db *sql.DB, schema core.SchemaConfig) ([]core.Entity, error) {
 	if catPH == "" {
 		return []core.Entity{}, nil
 	}
-	query := `SELECT e.id, e.category, e.content, e.status, e.updated_at, COALESCE(e.priority, 0) FROM entities e WHERE e.category IN (` + catPH + `) AND e.archived = 0 AND e.id NOT IN (SELECT source_id FROM edges WHERE target_id = e.id AND relation_type = ?)`
+	query := `SELECT e.id, e.category, e.content, COALESCE(e.status, '') AS status, e.updated_at, COALESCE(e.priority, 0) FROM entities e WHERE e.category IN (` + catPH + `) AND e.archived = 0 AND NOT EXISTS (SELECT 1 FROM edges WHERE target_id = e.id AND relation_type = ?)`
 	args := append(catArgs, schema.RelationBlocking)
 	rows, err := db.Query(query, args...)
 	if err != nil {
