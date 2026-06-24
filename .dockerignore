@@ -1,0 +1,25 @@
+# Build artifacts
+hermem
+hermem.db
+hermem.db-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+*.test
+verify-test.db
+coverage.out
+
+# Dependencies
+vendor/
+
+# Docker
+.dockerignore
