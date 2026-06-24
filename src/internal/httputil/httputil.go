@@ -44,6 +44,23 @@ func WriteErrorWithCode(w http.ResponseWriter, status int, msg, code, field stri
 
 // DecodeStrict parses JSON while rejecting unknown fields and trailing data.
 // Returns (code, field, msg, ok). On success, returns ("", "", "", true).
+//
+// CONTRACT: the caller is responsible for r.Body lifecycle. After this
+// function returns (success or any error path) the caller MUST drain any
+// unread bytes from r.Body and close it. The SafeBodyCloseMiddleware in
+// the server package enforces this on the success / explicit-return
+// paths, but custom entry points (CLI commands, tests, integration
+// adapters) MUST mirror the pattern:
+//
+//	defer func() {
+//	    _, _ = io.Copy(io.Discard, r.Body)
+//	    _ = r.Body.Close()
+//	}()
+//
+// Failure to drain leaks the connection into CLOSE_WAIT; failure to
+// Close compounds it. The MaxBytesReader cap on r.Body returns a
+// MaxBytesError on overflow — callers should NOT retry the same body
+// after that error.
 func DecodeStrict(r io.Reader, dst interface{}) (code, field, msg string, ok bool) {
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()

@@ -1,10 +1,13 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"sort"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -17,10 +20,19 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	v.Set("_sync", "NORMAL")
 	v.Set("_fk", "true")
 
+	// Build a SQLite URI. The builder is idempotent against a caller that
+	// already supplied a `file:` prefix (per-test fixtures use
+	// `file:memdb-X?mode=memory&cache=shared`; production uses bare paths
+	// like `hermem.db` — both must end up with a single `file:` prefix).
+	// When the caller already supplied a `?`, our appended pragmas use
+	// `&` so we don't reset the query boundary.
 	var dsn string
-	if dbPath == ":memory:" {
+	switch {
+	case dbPath == ":memory:":
 		dsn = ":memory:?" + v.Encode()
-	} else {
+	case strings.HasPrefix(dbPath, "file:"):
+		dsn = dbPath + "&" + v.Encode()
+	default:
 		dsn = "file:" + dbPath + "?" + v.Encode()
 	}
 
@@ -50,6 +62,10 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	if _, err := db.Exec("PRAGMA auto_vacuum = INCREMENTAL;"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("auto_vacuum: %w", err)
+	}
+	if _, err := verifyPragmaOrder(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("pragma verify: %w", err)
 	}
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)`); err != nil {
@@ -134,3 +150,47 @@ func SortedKeys(m map[string]bool) []string {
 
 // MemDB opens an in-memory database for testing.
 func MemDB() (*sql.DB, error) { return InitDB(":memory:", 3) }
+
+// MemDBRandom opens an in-memory database with a per-call random DSN so
+// concurrent tests don't share the global `:memory:` cache. Each call
+// gets a fresh `file:memdb-<hex>?mode=memory&cache=shared` DSN — the
+// random suffix prevents two goroutines opening the SAME shared cache
+// from racing on schema_migrations / entities table creation. InitDB
+// itself appends `_journal_mode=WAL&_busy_timeout=5000&_sync=NORMAL&_fk=true`
+// to the query string, so we do NOT add ANY sqlite3 DSN pragma here
+// (a duplicate `_busy_timeout` parameter would be concatenated by the
+// driver into a malformed value like `5000?_busy_timeout=5000`).
+// `_busy_timeout=5000` keeps concurrent Commits from eating SQLITE_BUSY
+// under `-race`. Drop this on every test that opens its own DB;
+// production code stays on MemDB() (or InitDB(realpath, ...)).
+func MemDBRandom() (*sql.DB, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return nil, fmt.Errorf("rand: %w", err)
+	}
+	dsn := fmt.Sprintf("file:memdb-%x?mode=memory&cache=shared", b[:])
+	return InitDB(dsn, 3)
+}
+
+// verifyPragmaOrder asserts journal_mode is WAL. Without WAL,
+// `synchronous=NORMAL` may corrupt on power loss (the DSN we set is
+// journal_mode=WAL _and_ _sync=NORMAL; SQLite applies them in order,
+// and the SQL PRAGMAs below are a defence-in-depth). If journal_mode
+// is not WAL, log a WARN so an operator notices on first start-up
+// rather than on the first failing checkpoint.
+//
+// Returns the active mode (trimmed, lower-cased) so callers and tests
+// can branch on observed state without re-querying.
+func verifyPragmaOrder(db *sql.DB) (string, error) {
+	var mode string
+	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
+		slog.Error("InitDB: PRAGMA journal_mode query failed", "err", err)
+		return "", fmt.Errorf("PRAGMA journal_mode: %w", err)
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "wal" {
+		slog.Warn("InitDB: journal_mode != WAL; synchronous=NORMAL may be unsafe under power loss",
+			"active_mode", mode)
+	}
+	return mode, nil
+}
