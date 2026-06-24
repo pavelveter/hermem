@@ -1,0 +1,101 @@
+# ── Hermem + Ollama — production stack ────────────────────────
+#
+# Setup:
+#   1. (GPU only) Install nvidia-container-toolkit.
+#   2. docker compose up -d
+#
+#    The stack uses hermem.docker.ini (Ollama at ollama:11434).
+#    To use your own config, change the ini volume mount below.
+#
+# Stop:   docker compose down
+# Rebuild after source changes:  docker compose build hermem
+
+services:
+
+  # ── Hermem ──────────────────────────────────────────────────
+  hermem:
+    build:
+      context: .
+      args:
+        VERSION: "0.2.0"
+    image: hermem:0.2.0
+    container_name: hermem
+    restart: unless-stopped
+    ports:
+      - "8420:8420"
+    volumes:
+      - hermem-data:/data
+      # Mount the docker-specific config (Ollama at ollama:11434).
+      - ./hermem.docker.ini:/usr/local/bin/hermem.ini:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8420/health/live"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 2
+    networks:
+      - hermem-net
+
+  # ── Ollama (GPU-accelerated) ────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hermem-ollama
+    restart: unless-stopped
+    ports:
+      # Bind to localhost only — no external access to Ollama API.
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    # ── GPU support — comment out the entire `deploy:` block if you ──
+    #     don't have an NVIDIA GPU + nvidia-container-toolkit installed.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - hermem-net
+
+  # ── One-shot: pull embedding + chat models ──────────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: hermem-ollama-init
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Pulling embedding model..."
+        ollama pull nomic-embed-text
+        echo "Pulling chat model..."
+        ollama pull qwen2.5-coder:7b
+        echo "Done."
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - hermem-net
+
+volumes:
+  hermem-data:
+    driver: local
+  ollama-data:
+    driver: local
+
+networks:
+  hermem-net:
+    driver: bridge
