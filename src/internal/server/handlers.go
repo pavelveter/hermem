@@ -138,6 +138,37 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (s *Server) HandleResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		Query    string `json:"query"`
+		MaxDepth int    `json:"max_depth,omitempty"`
+	}
+	if code, field, msg, ok := DecodeStrict(r.Body, &req); !ok {
+		WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+	if req.Query == "" {
+		WriteError(w, http.StatusUnprocessableEntity, "query is required")
+		return
+	}
+	opts := s.RetrievalOpts
+	if req.MaxDepth > 0 {
+		opts.MaxDepth = req.MaxDepth
+	}
+	out, err := retrieval.GenerateResponse(r.Context(), s.DB, s.VI, s.Embedder, opts, req.Query)
+	if err != nil {
+		metrics.IncErr()
+		WriteError(w, http.StatusInternalServerError, "response generation failed: "+err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"response": out})
+}
+
 func (s *Server) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
