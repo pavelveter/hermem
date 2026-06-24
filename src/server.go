@@ -994,6 +994,49 @@ func (s *Server) HandleTimeline(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entries)
 }
 
+// HandleRecoveryPlan walks the recovers_via chain from a failed task
+// and returns the ordered recovery task sequence.
+// GET /recovery-plan?id=failed-task-id
+func (s *Server) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id required")
+		return
+	}
+	state := s.state.Load()
+	plan, err := GenerateRecoveryPlan(s.db, state.schema, id)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if plan == nil {
+		plan = []Entity{}
+	}
+	writeJSON(w, http.StatusOK, plan)
+}
+
+// HandleConnectedComponents finds all connected components in the graph.
+// GET /connected-components?min_size=2
+func (s *Server) HandleConnectedComponents(w http.ResponseWriter, r *http.Request) {
+	minSize := 2
+	if ms := r.URL.Query().Get("min_size"); ms != "" {
+		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
+			minSize = n
+		}
+	}
+	components, err := FindConnectedComponents(s.db, minSize)
+	if err != nil {
+		incErr()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if components == nil {
+		components = []ConnectedComponent{}
+	}
+	writeJSON(w, http.StatusOK, components)
+}
+
 // HandleContradictions returns contradicts edges. Accepts optional
 // ?id=X query param to filter by entity (checks both sides).
 // GET /contradictions[?id=entity-x]

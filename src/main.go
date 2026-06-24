@@ -48,6 +48,13 @@ func GenerateResponse(ctx context.Context, db *sql.DB, vi VectorIndex, embedder 
 	return FormatContextMarkdown(contextResult), nil
 }
 
+func truncateSlice(s []string, max int) []string {
+	if len(s) <= max {
+		return s
+	}
+	return append(s[:max], "...")
+}
+
 func readInput() string {
 	stat, err := os.Stdin.Stat()
 	if err != nil {
@@ -689,6 +696,48 @@ func main() {
 			fmt.Printf("[%s] %s  [%s]\n", t.ID, t.Content, t.Status)
 		}
 
+	case "recovery-plan":
+		// P2: recovery plan — walk recovers_via chain from a failed task.
+		var req struct {
+			ID string `json:"id"`
+		}
+		if _, _, msg, ok := decodeStrict(bytes.NewReader([]byte(readInput())), &req); !ok {
+			log.Fatalf("invalid request: %s", msg)
+		}
+		if req.ID == "" {
+			log.Fatal("id required")
+		}
+		plan, err := GenerateRecoveryPlan(db, cfg.Schema, req.ID)
+		if err != nil {
+			log.Fatalf("recovery plan: %v", err)
+		}
+		if len(plan) == 0 {
+			fmt.Println("No recovery plan found (no recovers_via edges configured).")
+		} else {
+			for i, t := range plan {
+				fmt.Printf("%d. [%s] %s  [%s]\n", i+1, t.ID, t.Content, t.Status)
+			}
+		}
+
+	case "connected-components":
+		// P2: graph clustering — find connected components.
+		minSize := 2
+		if len(os.Args) > 2 {
+			fmt.Sscanf(os.Args[2], "%d", &minSize)
+		}
+		components, err := FindConnectedComponents(db, minSize)
+		if err != nil {
+			log.Fatalf("connected components: %v", err)
+		}
+		if len(components) == 0 {
+			fmt.Println("No connected components found.")
+		} else {
+			for _, c := range components {
+				fmt.Printf("Component (size=%d, avg_degree=%.1f): %v\n",
+					c.Size, c.AvgDegree, truncateSlice(c.IDs, 5))
+			}
+		}
+
 	case "provenance":
 		// P1: provenance API — query entities by conversation, message, source.
 		conversationID := ""
@@ -810,6 +859,8 @@ func main() {
 		mux.HandleFunc("/query/temporal", srv.HandleQueryTemporal)
 		mux.HandleFunc("/timeline", srv.HandleTimeline)
 		mux.HandleFunc("/provenance", srv.HandleProvenance)
+		mux.HandleFunc("/recovery-plan", srv.HandleRecoveryPlan)
+		mux.HandleFunc("/connected-components", srv.HandleConnectedComponents)
 
 		middlewareStack := recoveryMiddleware(requestIDMiddleware(authMiddleware(cfg.APIKey)(slogMiddleware(mux))))
 
