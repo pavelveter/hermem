@@ -17,9 +17,10 @@ var migrationFS embed.FS
 // Each migration file is split via splitSQL (per-line comment dropping,
 // per-statement buffer accumulation, CREATE TRIGGER BEGIN/END-aware)
 // and its statements are executed one-by-one INSIDE a single transaction.
-// A statement that errors with "duplicate column name" is skipped with
-// a single warning; the transaction continues. Any other error rolls
-// back the entire migration so the next run starts cleanly.
+// A statement whose error matches one of the idempotency strings
+// ("duplicate column name", "already exists") is skipped with a single
+// warning; the transaction continues. Any other error rolls back the
+// entire migration so the next run starts cleanly.
 //
 // Per-statement execution is the b2 hardening: migrations that mix
 // `ALTER TABLE ADD COLUMN` with later `CREATE TABLE` / `CREATE INDEX`
@@ -60,10 +61,10 @@ func RunMigrations(db *sql.DB) error {
 		var hardErr error
 		for _, stmt := range stmts {
 			if _, err := tx.Exec(stmt); err != nil {
-				if strings.Contains(err.Error(), "duplicate column name") {
+				if isIdempotentMigrationError(err) {
 					trim := strings.SplitN(stmt, "\n", 2)[0]
-					slog.Info("migration statement skipped (column already exists)",
-						"migration", name, "stmt", trim)
+					slog.Info("migration statement skipped (already applied)",
+						"migration", name, "stmt", trim, "err", err.Error())
 					continue
 				}
 				// Best-effort rollback; the tx is already doomed
@@ -165,6 +166,27 @@ func migrationFiles() ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+// isIdempotentMigrationError reports whether a single statement's
+// error text indicates the construct is already present and the
+// transaction can safely skip past it. Catches:
+//
+//   - "duplicate column name: <X>"   (ALTER TABLE ... ADD COLUMN)
+//   - "index <X> already exists"   (CREATE INDEX without IF NOT EXISTS)
+//   - "trigger <X> already exists" (CREATE TRIGGER without IF NOT EXISTS)
+//   - "table <X> already exists"   (CREATE TABLE without IF NOT EXISTS,
+//     defensive — our Migrations all use IF NOT EXISTS)
+//
+// Returns false for everything else; the caller treats those as hard
+// errors and rolls back.
+func isIdempotentMigrationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate column name") ||
+		strings.Contains(msg, "already exists")
 }
 
 func appliedMigrations(db *sql.DB) (map[string]bool, error) {
