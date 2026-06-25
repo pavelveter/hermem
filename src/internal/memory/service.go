@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/ingestion"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -103,33 +102,6 @@ func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schem
 		return err
 	}
 	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, req.ID, req.Embedding)
-	return nil
-}
-
-// Ingest runs LLM extraction → embed → DB-insert on one dialog.
-//
-// IngestionWorker is constructed PER CALL (six pointer assignments;
-// cheap) rather than held as a long-lived Service field. Two reasons:
-//
-//  1. SIGHUP race — the long-lived pre-PHASE-2.1 worker mutates
-//     schema mid-call via Worker.ReloadSchema; per-call construction
-//     binds the schema at call time so reloaded-on-different-state
-//     scenarios are unaffected by goroutine-local mutation races.
-//
-//  2. CLI/HTP parity — both transports end up running identical
-//     pipeline code through a freshly-constructed worker; no
-//     "production-only" / "CLI-only" divergence.
-func (s *Service) Ingest(ctx context.Context, dialog string, dedupThreshold float32, schema core.SchemaConfig) error {
-	if dialog == "" {
-		return fmt.Errorf("ingest: dialog required")
-	}
-	if s.extractor == nil {
-		return fmt.Errorf("ingest: no extractor wired")
-	}
-	w := ingestion.NewIngestionWorker(s.db, s.vi, s.extractor, s.embedder, dedupThreshold, schema)
-	if err := w.ProcessDialog(ctx, dialog); err != nil {
-		return fmt.Errorf("ingest: %w", err)
-	}
 	return nil
 }
 

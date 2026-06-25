@@ -43,7 +43,6 @@ func New(mem *memdomain.Service, m *metrics.Metrics, refs *serverstate.Ref, dedu
 func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"/store":    s.HandleStore,
-		"/ingest":   s.HandleIngest,
 		"/edge":     s.HandleEdge,
 		"/timeline": s.HandleTimeline,
 	}
@@ -117,40 +116,6 @@ func (s *HTTPService) HandleStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Metrics.IncStore()
-	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-// HandleIngest — POST /ingest. Drains a dialog through the LLM
-// extractor and ingests all extracted entities + relations. The
-// IngestionWorker is constructed inside Mem.Ingest per call — Service
-// carries no long-lived worker, so SIGHUP races with mid-call schema
-// mutation simply cannot occur.
-func (s *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.IngestRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return
-	}
-	// Pre-PHASE-2.1 the missing-field check happened inline at the
-	// HTTP layer — kept here verbatim so existing /ingest clients
-	// continue to see 400 for empty dialogs. The domain Mem.Ingest
-	// also enforces the same field as defense-in-depth.
-	if req.Dialog == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "dialog required")
-		return
-	}
-	state := s.Refs.Load()
-	if err := s.Mem.Ingest(r.Context(), req.Dialog, s.DedupThreshold, state.Schema); err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	s.Metrics.IncIngest()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

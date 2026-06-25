@@ -7,7 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	memdomain "github.com/pavelveter/hermem/src/internal/memory"
+	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 )
 
 func newIngestCmd(env *cli.Env) *cobra.Command {
@@ -24,8 +24,11 @@ func newIngestCmd(env *cli.Env) *cobra.Command {
 			if req.Dialog == "" {
 				return fmt.Errorf("dialog required")
 			}
-			memSvc := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
-			if err := memSvc.Ingest(env.Ctx, req.Dialog, env.Cfg.DedupThreshold, env.Cfg.Schema); err != nil {
+			// PHASE 3.4: ingest orchestration moved to ingest.Service.Ingest;
+			// memory.Service.Ingest removed in PHASE 3.4. The dialog pipeline
+			// body is unchanged — only the domain Service constructor pointer.
+			ingestSvc := ingestdomain.NewService(env.DB, env.VI, env.Embedder, env.Extractor)
+			if err := ingestSvc.Ingest(env.Ctx, req.Dialog, env.Cfg.DedupThreshold, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("ingest: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), `{"status":"ok"}`)
