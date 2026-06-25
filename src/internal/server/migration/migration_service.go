@@ -80,7 +80,7 @@ func (s *HTTPService) HandleMigrationRollback(w http.ResponseWriter, r *http.Req
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	name, err := s.Svc.Rollback(r.Context())
+	name, err := s.Svc.Rollback(r.Context(), "")
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())

@@ -12,6 +12,7 @@ import (
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/cli/graph"
 	"github.com/pavelveter/hermem/src/internal/cli/memory"
+	"github.com/pavelveter/hermem/src/internal/cli/profile"
 	"github.com/pavelveter/hermem/src/internal/cli/task"
 	mytime "github.com/pavelveter/hermem/src/internal/cli/time"
 )
@@ -36,6 +37,7 @@ Group layout:
   time       temporal / timeline
   agent      loop
   db         migrate / rollback / verify / schema
+  profile    cpu / heap / goroutine / trace
   (group --help shows only its own subcommands.)
 
 All commands that take a JSON payload read it from stdin. Optional flags
@@ -102,6 +104,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		mytime.NewCmd(env),
 		agent.NewCmd(env),
 		db.NewCmd(env),
+		profile.NewCmd(env),
 	)
 	root.SetContext(env.Ctx)
 	return root

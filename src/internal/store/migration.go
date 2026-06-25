@@ -1,8 +1,10 @@
 package store
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -87,7 +89,12 @@ func RunMigrations(db *sql.DB) error {
 			_ = tx.Rollback()
 			return fmt.Errorf("checksum %s: %w", name, err)
 		}
-		if _, err := tx.Exec("INSERT INTO migration_checksums (version, checksum) VALUES (?, ?)", name, checksum); err != nil {
+		checksumSHA256, err := MigrationChecksumSHA256(name)
+		if err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("checksum sha256 %s: %w", name, err)
+		}
+		if _, err := tx.Exec("INSERT INTO migration_checksums (version, checksum, checksum_sha256) VALUES (?, ?, ?)", name, checksum, checksumSHA256); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("record checksum %s: %w", name, err)
 		}
@@ -223,12 +230,15 @@ func appliedMigrations(db *sql.DB) (map[string]bool, error) {
 // omitempty on AppliedAt matches the CLI's per-row print contract
 // (non-applied rows omit the field rather than render as "").
 type MigStatus struct {
-	Name      string `json:"name"`
-	Applied   bool   `json:"applied"`
-	AppliedAt string `json:"applied_at,omitempty"`
+	Name           string `json:"name"`
+	Applied        bool   `json:"applied"`
+	AppliedAt      string `json:"applied_at,omitempty"`
+	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
+	ChecksumMatch  *bool  `json:"checksum_match,omitempty"`
 }
 
-// MigrationStatus returns the list of all migration files with their applied status.
+// MigrationStatus returns the list of all migration files with their
+// applied status and SHA-256 checksums (where stored).
 func MigrationStatus(db *sql.DB) ([]MigStatus, error) {
 	applied, err := appliedMigrations(db)
 	if err != nil {
@@ -244,10 +254,27 @@ func MigrationStatus(db *sql.DB) ([]MigStatus, error) {
 			}
 		}
 	}
+	storedChecksums := make(map[string]string)
+	if rows, err := db.Query("SELECT version, checksum_sha256 FROM migration_checksums"); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var v, c string
+			if err := rows.Scan(&v, &c); err == nil {
+				storedChecksums[v] = c
+			}
+		}
+	}
 	files, _ := PendingMigrations()
 	out := make([]MigStatus, 0, len(files))
 	for _, name := range files {
-		out = append(out, MigStatus{Name: name, Applied: applied[name], AppliedAt: appliedAt[name]})
+		m := MigStatus{Name: name, Applied: applied[name], AppliedAt: appliedAt[name]}
+		if sc, ok := storedChecksums[name]; ok && sc != "" {
+			m.ChecksumSHA256 = sc
+			current, err := MigrationChecksumSHA256(name)
+			match := err == nil && sc == current
+			m.ChecksumMatch = &match
+		}
+		out = append(out, m)
 	}
 	return out, nil
 }
@@ -258,7 +285,9 @@ func PendingMigrations() ([]string, error) {
 }
 
 // RollbackMigration removes the last-applied migration.
-func RollbackMigration(db *sql.DB) (string, error) {
+// When target is non-empty, rolls back every migration applied after
+// (and not including) the target version.
+func RollbackMigration(db *sql.DB, target string) (string, error) {
 	var name string
 	err := db.QueryRow("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").Scan(&name)
 	if err == sql.ErrNoRows {
@@ -267,10 +296,23 @@ func RollbackMigration(db *sql.DB) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read last migration: %w", err)
 	}
-	_, _ = db.Exec("DELETE FROM schema_migrations WHERE version = ?", name)
-	_, _ = db.Exec("DELETE FROM migration_checksums WHERE version = ?", name)
-	slog.Info("migration rolled back", "migration", name)
-	return name, nil
+	if target == "" {
+		_, _ = db.Exec("DELETE FROM schema_migrations WHERE version = ?", name)
+		_, _ = db.Exec("DELETE FROM migration_checksums WHERE version = ?", name)
+		slog.Info("migration rolled back", "migration", name)
+		return name, nil
+	}
+	// Target-based rollback: remove everything after target.
+	_, err = db.Exec(`DELETE FROM schema_migrations WHERE version > ?`, target)
+	if err != nil {
+		return "", fmt.Errorf("rollback to %s: %w", target, err)
+	}
+	_, err = db.Exec(`DELETE FROM migration_checksums WHERE version > ?`, target)
+	if err != nil {
+		return "", fmt.Errorf("rollback checksums to %s: %w", target, err)
+	}
+	slog.Info("migration rolled back to target", "target", target)
+	return target, nil
 }
 
 // MigrationChecksum returns a hex-encoded FNV-1a hash of the migration file contents.
@@ -287,6 +329,17 @@ func MigrationChecksum(name string) (string, error) {
 	return fmt.Sprintf("%016x", h), nil
 }
 
+// MigrationChecksumSHA256 returns a hex-encoded SHA-256 hash of the
+// migration file contents. Used for hardened integrity verification.
+func MigrationChecksumSHA256(name string) (string, error) {
+	sqlBytes, err := migrationFS.ReadFile("migrations/" + name)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(sqlBytes)
+	return hex.EncodeToString(h[:]), nil
+}
+
 // MigMismatch reports one migration whose stored checksum diverges
 // from current.
 //
@@ -299,10 +352,12 @@ type MigMismatch struct {
 	CurrentChecksum string `json:"current_checksum"`
 }
 
-// VerifyMigrationIntegrity compares applied migrations against their current checksums.
+// VerifyMigrationIntegrity compares applied migrations against their
+// stored SHA-256 checksums. Returns every migration whose checksum
+// diverges (tampered, or applied before SHA-256 was tracked).
 func VerifyMigrationIntegrity(db *sql.DB) ([]MigMismatch, error) {
 	stored := make(map[string]string)
-	if rows, err := db.Query("SELECT version, checksum FROM migration_checksums"); err == nil {
+	if rows, err := db.Query("SELECT version, checksum_sha256 FROM migration_checksums WHERE checksum_sha256 IS NOT NULL"); err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var v, c string
@@ -314,8 +369,12 @@ func VerifyMigrationIntegrity(db *sql.DB) ([]MigMismatch, error) {
 	applied, _ := appliedMigrations(db)
 	var mismatches []MigMismatch
 	for name := range applied {
-		current, _ := MigrationChecksum(name)
-		if st, ok := stored[name]; ok && st != current {
+		st, ok := stored[name]
+		if !ok {
+			continue // pre-SHA-256 migration, skip
+		}
+		current, _ := MigrationChecksumSHA256(name)
+		if st != current {
 			mismatches = append(mismatches, MigMismatch{Name: name, StoredChecksum: st, CurrentChecksum: current})
 		}
 	}

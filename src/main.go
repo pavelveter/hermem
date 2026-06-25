@@ -19,6 +19,7 @@ import (
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/tracing"
 )
 
 var (
@@ -90,6 +91,7 @@ func main() {
 		Extractor: cfg.NewExtractor(),
 		Reranker:  cfg.NewReranker(),
 		Metrics:   metrics.New(),
+		Tracer:    tracing.NewTracerFromEnv(),
 		Build: clienv.BuildInfo{
 			Version:   version,
 			BuildDate: buildDate,

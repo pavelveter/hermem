@@ -67,7 +67,7 @@ func TestService_Rollback_NoError(t *testing.T) {
 	// should observe a non-empty name (the most-recent applied
 	// migration). Either outcome is acceptable for this test — the
 	// contract is "no error, returns the name or empty".
-	name, err := svc.Rollback(context.Background())
+	name, err := svc.Rollback(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
@@ -98,6 +98,27 @@ func TestService_Verify_NoMismatchOnConsistentDB(t *testing.T) {
 	if len(mismatches) != 0 {
 		t.Errorf("want 0 mismatches on just-migrated DB, got %d: %+v",
 			len(mismatches), mismatches)
+	}
+}
+
+func TestService_DryRun_ReturnsEmptyAfterMemDB(t *testing.T) {
+	// MemDB runs all embedded migrations at init, so DryRun should
+	// return an empty (non-nil) pending list.
+	db, err := store.MemDB()
+	if err != nil {
+		t.Fatalf("memdb: %v", err)
+	}
+	defer db.Close()
+	svc := NewService(db)
+	pending, err := svc.DryRun(context.Background())
+	if err != nil {
+		t.Fatalf("DryRun: %v", err)
+	}
+	if pending == nil {
+		t.Fatal("want non-nil slice, got nil")
+	}
+	if len(pending) != 0 {
+		t.Errorf("want 0 pending after MemDB init, got %d", len(pending))
 	}
 }
 
