@@ -57,9 +57,9 @@ func TestLive_ReturnsOk(t *testing.T) {
 
 func TestReady_OK(t *testing.T) {
 	svc, _ := newHealthFixture(t)
-	code, result := svc.Ready(context.Background())
-	if code != 200 {
-		t.Fatalf("want 200, got %d: %v", code, result)
+	healthy, result := svc.Ready(context.Background())
+	if !healthy {
+		t.Fatalf("want healthy=true, got body: %v", result)
 	}
 	if result["status"] != "ok" {
 		t.Fatalf("want status=ok, got %v", result)
@@ -69,9 +69,9 @@ func TestReady_OK(t *testing.T) {
 func TestReady_DBError(t *testing.T) {
 	svc, db := newHealthFixture(t)
 	db.Close() // force PingContext failure
-	code, result := svc.Ready(context.Background())
-	if code != 503 {
-		t.Fatalf("want 503, got %d: %v", code, result)
+	healthy, result := svc.Ready(context.Background())
+	if healthy {
+		t.Fatalf("want healthy=false, got body: %v", result)
 	}
 	if result["status"] != "degraded" {
 		t.Fatalf("want status=degraded, got %v", result)

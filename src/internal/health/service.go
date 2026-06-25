@@ -42,12 +42,14 @@ func (s *Service) Live() map[string]string {
 }
 
 // Ready returns the readiness probe result. Pings the DB;
-// returns degraded if PingContext fails.
-func (s *Service) Ready(ctx context.Context) (int, map[string]interface{}) {
+// healthy=false means degraded (DB unreachable). The HTTP shell
+// maps healthy→200, !healthy→503 — the domain layer stays
+// transport-agnostic (no HTTP status codes).
+func (s *Service) Ready(ctx context.Context) (healthy bool, body map[string]interface{}) {
 	checks := map[string]string{"database": "ok"}
-	if err := s.db.PingContext(ctx); err != nil {
-		checks["database"] = "unreachable: " + err.Error()
-		return 503, map[string]interface{}{"status": "degraded", "checks": checks}
+	if pingErr := s.db.PingContext(ctx); pingErr != nil {
+		checks["database"] = "unreachable: " + pingErr.Error()
+		return false, map[string]interface{}{"status": "degraded", "checks": checks}
 	}
-	return 200, map[string]interface{}{"status": "ok", "checks": checks}
+	return true, map[string]interface{}{"status": "ok", "checks": checks}
 }
