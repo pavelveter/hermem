@@ -18,6 +18,7 @@ import (
 	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
+	reembeddomain "github.com/pavelveter/hermem/src/internal/reembed"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
@@ -27,6 +28,7 @@ import (
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
+	reembedsrv "github.com/pavelveter/hermem/src/internal/server/reembed"
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -79,6 +81,11 @@ func runServe(env *clienv.Env, port string) error {
 	// entity projection. db-only — no embedder, no vector index, no
 	// schema gates (read surface, not write surface).
 	timelineSvc := timelinedomain.New(env.DB)
+	// PHASE 3.6: reembed domain Service owns the batch re-embedding
+	// orchestrator moved from algo/reembed.go (deleted in this phase).
+	// The three deps (db, vi, embedder) are Service fields; per-call
+	// args (dim, batchSize, model) come from the request.
+	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
 	// PHASE 2.2: same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.
 	retSvc := retdomain.NewService(env.DB, env.VI, env.Embedder)
@@ -141,7 +148,8 @@ func runServe(env *clienv.Env, port string) error {
 		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
 		migrsrv.New(migrSvc, env.Metrics, refs),
 		retsrv.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
-		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),
+		reembedsrv.New(reembedSvc, env.Metrics),
+		server.NewAdminService(env.DB, env.Metrics),
 	)
 
 	// SIGHUP reload loop — separate from HTTP lifecycle so we can re-validate

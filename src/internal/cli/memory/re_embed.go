@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pavelveter/hermem/src/internal/algo"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
+	"github.com/pavelveter/hermem/src/internal/reembed"
 )
 
 func newReEmbedCmd(env *cli.Env) *cobra.Command {
@@ -22,7 +22,11 @@ func newReEmbedCmd(env *cli.Env) *cobra.Command {
 			if batchSize <= 0 {
 				batchSize = 50
 			}
-			result, err := algo.ReEmbedAll(env.Ctx, env.DB, env.VI, env.Embedder, env.Cfg.VectorDim, batchSize, model)
+			// PHASE 3.6: ReEmbedAll moved from algo.ReEmbedAll to
+			// reembed.Service.ReEmbedAll. Inline construction
+			// follows the PHASE 3.4 + 3.5 CLI precedent.
+			svc := reembed.New(env.DB, env.VI, env.Embedder)
+			result, err := svc.ReEmbedAll(env.Ctx, env.Cfg.VectorDim, batchSize, model)
 			if err != nil {
 				return fmt.Errorf("re-embed: %w", err)
 			}

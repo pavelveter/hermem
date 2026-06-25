@@ -64,6 +64,7 @@ import (
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
+	reembedsrv "github.com/pavelveter/hermem/src/internal/server/reembed"
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -92,6 +93,7 @@ type Server struct {
 	Graph         *graphsrv.HTTPService
 	Migration     *migrsrv.HTTPService
 	Retention     *retsrv.HTTPService
+	Reembed       *reembedsrv.HTTPService
 	Admin         *AdminService
 	mux           *http.ServeMux
 }
@@ -119,7 +121,7 @@ type Server struct {
 // The memory HTTP shell keeps only /store; URL contracts for /edge,
 // /timeline, /ingest are byte-identical so existing clients see no
 // drift.
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, admin *AdminService) *Server {
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, reembed *reembedsrv.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
@@ -132,6 +134,7 @@ func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.
 		Graph:         graph,
 		Migration:     migration,
 		Retention:     retention,
+		Reembed:       reembed,
 		Admin:         admin,
 	}
 	s.mount()
@@ -170,6 +173,9 @@ func (s *Server) mount() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Retention.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Reembed.Routes() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Admin.Routes() {
