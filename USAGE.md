@@ -1412,3 +1412,102 @@ silently produce wrong cosine scores.
 | Coch-Granger cyclic-task safe scheduler   | `src/internal/store/task.go::BuildNode` (iterative work-stack DFS) |
 | NaN/Inf-safe embedding read     | `src/internal/store/codec.go::BytesToFloat32Safe` |
 | Per-package tests               | `src/**/*_test.go`                |
+| Per-domain model projection contracts | `src/internal/core/{fact,evidence,episode,task,goal,belief}_test.go` (4 each) + `compose_test.go` (4) + `pairs_test.go` (35 subtests) — `go test -race ./src/internal/core/...` (64 total) |
+
+---
+
+## 15. Domain Models
+
+Hermem’s persistence layer is anchored on `core.Entity`, a 19-field
+struct that maps onto the underlying SQLite `entities` row. The 19
+fields decompose into 5 per-domain model types — each carrying one
+orthogonal concern — plus a derived view (Goal) that re-views one
+of those types with intent.
+
+For new code, prefer the per-domain types (`Fact`, `Evidence`,
+`Episode`, `Task`, `Belief`) and use the `Compose`/`Decompose`
+helpers when `Entity` is the only available interface. Existing
+code continues to operate on `Entity` directly — **no breaking
+change**. Internal packages migrate to per-domain types at their
+own pace.
+
+### The 5 per-domain models
+
+| Model      | Fields | Purpose                                              |
+|------------|--------|------------------------------------------------------|
+| `Fact`     | 4      | The semantic claim — content + embedding.            |
+| `Evidence` | 3      | Quality meta — confidence + source + source type.    |
+| `Episode`  | 3      | Provenance — conversation / message / extraction origin. |
+| `Task`     | 4      | Lifecycle — status + validity window + priority.    |
+| `Belief`   | 5      | Persistence / retention / centrality — timestamps + archived + degree. |
+| `Goal`     | 0 new  | Re-views `Task`’s shape with `Category = "goal"` (service-layer intent). |
+
+Total: 4 + 3 + 3 + 4 + 5 = **19 fields**. These are the same 19
+fields on `Entity`. Goal adds no new field; it re-views Task’s
+shape with intent.
+
+### Entity is the umbrella persistence view
+
+`Entity` is what the SQLite `entities` table stores and what
+`store.go` reads into. All 19 fields live on this single struct.
+Whenever a 19-field row is the only available representation, work
+with `Entity` and decompose on demand.
+
+### Decompose / Compose
+
+Each band has a typed projection method on `Entity`:
+
+```go
+fact := entity.AsFact()       // Fact{ID, Category, Content, Embedding}
+ev   := entity.AsEvidence()   // Evidence{Confidence, Source, SourceType}
+ep   := entity.AsEpisode()    // Episode{ConversationID, MessageID, ExtractedFrom}
+tk   := entity.AsTask()       // Task{Status, ValidFrom, ValidTo, Priority}
+b    := entity.AsBelief()     // Belief{CreatedAt, UpdatedAt, LastAccessedAt, Archived, Degree}
+g    := entity.AsGoal()       // Goal{Status, ValidFrom, ValidTo, Priority}
+                              // — Task shape with Category="goal" intent
+```
+
+Each per-domain model has the inverse `AsEntity()`. To reassemble
+a complete `Entity` from the 5 per-domain projections:
+
+```go
+entity := core.Compose(fact, evidence, episode, task, belief)
+```
+
+`Compose` is a free function (not a method on `Entity`) — the
+receiver would be unused. Field-by-field, no shared mutable state.
+
+### Goal reduces through Task
+
+Goal exposes no `Goal.AsTask()` method by design. Callers that
+want to bridge Goal into a Task-positioned slot (e.g. when calling
+`Compose`) inline-copy the 4 lifecycle fields:
+
+```go
+task := core.Task{
+    Status:    goal.Status,
+    ValidFrom: goal.ValidFrom,
+    ValidTo:   goal.ValidTo,
+    Priority:  goal.Priority,
+}
+entity := core.Compose(fact, ev, ep, task, b)
+```
+
+The pattern is documented once in `compose.go` and locked by
+`TestGoal_ReducesToTask` in `goal_test.go`.
+
+### When to use which type
+
+| Use case                          | Type                            |
+|-----------------------------------|---------------------------------|
+| New persistence code              | per-domain model                |
+| Graph traversal edge code         | compose-decompose at boundary   |
+| SQLite scan / store               | `Entity` (umbrella view)        |
+| HTTP request/response bodies      | `Entity` (umbrella view)        |
+| Internal service (band work)      | per-domain type                 |
+
+The cross-pair projection matrix in `pairs_test.go` locks the
+orthogonal-band invariant: every ordered pair (X, Y) yields equal
+band values regardless of which X was round-tripped through.
+Pointer identity is preserved on `*time.Time` fields for self-pairs
+(`X == Y`) and lost (zeroed) for cross-pairs (`X != Y`).

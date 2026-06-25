@@ -14,7 +14,9 @@ A lightweight, single-binary graph memory system for LLM agents. Stores facts as
 User Query ──> [Embedder] ──> [Vector Search] ──> Top-K Seeds ──> [CTE Graph Walk] ──> Markdown Context
 ```
 
-The system stores knowledge as entities (nodes) connected by typed edges. Each entity belongs to a category defined in `[schema]`:
+The system stores knowledge as entities (nodes) connected by typed edges. Each `Entity` is a 19‑field umbrella persistence view that decomposes into 5 per-domain models on demand (`Fact` / `Evidence` / `Episode` / `Task` / `Belief`) plus a `Goal` view that re‑views `Task`’s shape with intent. New code prefers the per‑domain types; existing code continues to use `Entity` directly. See **[USAGE.md §15](USAGE.md#15-domain-models)** for the model map, Compose/Decompose helpers, and the Goal‑reduces‑through‑Task contract.
+
+Each entity belongs to a category defined in `[schema]`:
 
 | Category (default) | Purpose |
 |--------------------|---------|
@@ -43,6 +45,7 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
 - **Graph integrity verify** — `hermem graph verify` checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types (exit 1 on problems)
 - **Retrieval explainability** — `/query/explain` endpoint returns vector/recency/depth score breakdown per retrieved fact
+- **Per-domain Entity decomposition** — 5 typed models (Fact, Evidence, Episode, Task, Belief) projected from the 19‑field umbrella `Entity`; `core.Compose(…)` reassembles; 64 contract tests lock orthogonal‑band semantics. Goal re‑views Task’s shape with no new field.
 - **Contradiction detection** — heuristic `isContradiction` detects conflicting statements at ingest; prevents merging, creates `contradicts` edges instead
 - **Temporal retrieval** — `/query/temporal` endpoint filters graph walk by time range (`time_from`/`time_to` RFC3339)
 - **Episodic memory** — `/timeline` endpoint returns entities ordered by `created_at` DESC with provenance

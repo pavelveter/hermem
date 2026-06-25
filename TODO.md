@@ -55,7 +55,7 @@ P0 — ENTITY MODEL REFACTOR
 [x] Introduce Belief model
 [x] Keep backward compatibility layer
 [x] Add tests for all model conversions
-[ ] Document domain model boundaries
+[x] Document domain model boundaries
 
 ==================================================
 P0 — CONTRADICTION ENGINE 2.0

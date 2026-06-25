@@ -269,6 +269,34 @@ Tests:
 
 A `TODO(retrieval/tests)` breadcrumb at the end of `walk.go` flags two tracked followups: assertion coverage for the three loop-break conditions (`nextSeeds empty`, `accumulated > MaxTotalMultiHopSeeds`, `currentSeeds empty`), and the per-hop seed-content re-embed redundancy in `topKFromResult`.
 
+### PHASE 4 P0 — Entity model refactor (June 2026)
+
+Nine-phase per-domain projection refactor that split the 19-field
+`core.Entity` into 5 typed per-domain models (Fact, Evidence, Episode,
+Task, Belief) + a Goal view (no new field). Entity remains the
+umbrella persistence view mapped onto the SQLite `entities` row.
+
+**Per-domain models introduced:**
+- `Fact{ID, Category, Content, Embedding}` — the semantic claim.
+- `Evidence{Confidence, Source, SourceType}` — quality meta-block.
+- `Episode{ConversationID, MessageID, ExtractedFrom}` — provenance.
+- `Task{Status, ValidFrom, ValidTo, Priority}` — lifecycle + priority.
+- `Goal` — re-views Task's shape with `Category="goal"` intent.
+- `Belief{CreatedAt, UpdatedAt, LastAccessedAt, Archived, Degree}` — persistence / retention / centrality.
+
+**Helpers:**
+- `Entity.AsX()` — decompose (X ∈ {Fact, Evidence, Episode, Task, Belief, Goal}).
+- `X.AsEntity()` — recompose any individual band onto Entity.
+- `core.Compose(Fact, Evidence, Episode, Task, Belief) Entity` — free function field-by-field wires all 19 fields. Goal bridges via inline 4-field copy (no `Goal.AsTask()` method).
+
+**Tests:**
+- 8 test files in `src/internal/core/`: per-model contract (4 each × 6 models = 24), Compose helper (4), cross-pair projection matrix (35 subtests) = **64** tests/subtests under `-race`.
+
+Backward-compat layer preserved — all prior tests pass unchanged.
+README.md (Features + Architecture) and USAGE.md §15 (Domain Models)
+document the new type landscape and mark Entity as the umbrella
+persistence view.
+
 ## [PR9] — Retention, auth, id_map, CTE filters
 
 ### Added
