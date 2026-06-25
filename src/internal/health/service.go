@@ -1,55 +1,86 @@
-// Package health owns the transport-agnostic health-probe domain.
-//
-// PHASE 3.7 lifts the /health, /health/live, /health/ready handlers out
-// of the server.AdminService god-object into its own flat pkg following
-// the PHASE 3.1–3.6 pattern: flat pkg, stateless Service, no HTTP / CLI
-// coupling. The HTTP shell lives in src/internal/server/health/.
-//
-// Health + Live are stateless (always ok); Ready pings the DB and
-// returns degraded if unreachable. AdminService no longer owns health
-// probes — it keeps only /metrics (a one-route Prometheus wrapper).
 package health
 
 import (
 	"context"
-	"database/sql"
+	"time"
 )
 
-// Service is the transport-agnostic health-probe domain.
-// Holds db for the Ready probe's PingContext call; Health
-// and Live are pure stateless passthroughs.
+type Check struct {
+	Name     string
+	Probe    func(ctx context.Context) error
+	Timeout  time.Duration
+	Severity string
+}
+
+type CheckResult struct {
+	OK        bool   `json:"ok"`
+	LatencyMs int64  `json:"latency_ms"`
+	Error     string `json:"error,omitempty"`
+	Critical  bool   `json:"critical"`
+}
+
+type Status struct {
+	Status  string                 `json:"status"`
+	Latency int64                  `json:"latency_ms"`
+	Checks  map[string]CheckResult `json:"checks,omitempty"`
+	Ready   bool                   `json:"-"`
+}
+
 type Service struct {
-	db *sql.DB
+	checks []Check
 }
 
-// New constructs a health Service. db is required — a nil db
-// would make Ready always return degraded.
-func New(db *sql.DB) *Service {
-	return &Service{db: db}
+func New(checks ...Check) *Service {
+	return &Service{checks: checks}
 }
 
-// Health returns the canonical liveness probe result.
-// Always ok — the process is running.
 func (s *Service) Health() map[string]string {
 	return map[string]string{"status": "ok"}
 }
 
-// Live returns the Kubernetes-style liveness result.
-// Always ok — identical to Health; separate route for
-// orchestrator-level probe separation.
 func (s *Service) Live() map[string]string {
 	return map[string]string{"status": "ok"}
 }
 
-// Ready returns the readiness probe result. Pings the DB;
-// healthy=false means degraded (DB unreachable). The HTTP shell
-// maps healthy→200, !healthy→503 — the domain layer stays
-// transport-agnostic (no HTTP status codes).
-func (s *Service) Ready(ctx context.Context) (healthy bool, body map[string]interface{}) {
-	checks := map[string]string{"database": "ok"}
-	if pingErr := s.db.PingContext(ctx); pingErr != nil {
-		checks["database"] = "unreachable: " + pingErr.Error()
-		return false, map[string]interface{}{"status": "degraded", "checks": checks}
+func (s *Service) Ready(ctx context.Context) Status {
+	start := time.Now()
+	st := Status{
+		Status: "ok",
+		Checks: make(map[string]CheckResult, len(s.checks)),
+		Ready:  true,
 	}
-	return true, map[string]interface{}{"status": "ok", "checks": checks}
+
+	for _, chk := range s.checks {
+		checkStart := time.Now()
+
+		probeCtx := ctx
+		var cancel context.CancelFunc
+		if chk.Timeout > 0 {
+			probeCtx, cancel = context.WithTimeout(ctx, chk.Timeout)
+		}
+
+		err := chk.Probe(probeCtx)
+
+		if cancel != nil {
+			cancel()
+		}
+
+		r := CheckResult{
+			OK:        err == nil,
+			LatencyMs: time.Since(checkStart).Milliseconds(),
+			Critical:  chk.Severity == "critical",
+		}
+		if err != nil {
+			r.Error = err.Error()
+		}
+
+		st.Checks[chk.Name] = r
+		if !r.OK && r.Critical {
+			st.Ready = false
+			st.Status = "degraded"
+		}
+	}
+
+	st.Latency = time.Since(start).Milliseconds()
+	return st
 }
