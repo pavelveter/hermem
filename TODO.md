@@ -45,8 +45,8 @@ P0 — CRITICAL ARCHITECTURE
 P0 — ENTITY MODEL REFACTOR
 ==================================================
 
-[ ] Audit current Entity structure
-[ ] Identify mixed responsibilities inside Entity
+[x] Audit current Entity structure
+[x] Identify mixed responsibilities inside Entity
 [x] Introduce Fact model
 [x] Introduce Evidence model
 [x] Introduce Episode model
