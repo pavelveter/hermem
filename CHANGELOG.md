@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **P0 — Architecture hardening**: completed all critical architecture tasks.
+  - **refactor(auth)**: `RequiredScopes` map made unexported (`requiredScopes`); added `RequiredScopesMap()` getter returning a safe copy to prevent external mutation.
+  - **ci**: added `Architecture Guardrails` CI job that greps for `ActiveSchema()` and exported `RequiredScopes` usage.
+  - **ci**: added `forbidigo` linter to `.golangci.yml` to catch `ActiveSchema()` at lint time.
+  - **docs**: added `docs/package-level-audit.md` — full audit of all package-level variables across `src/`, categorised as safe/mutable-fixed/by-design.
+  - **docs**: added `docs/service-dependencies.md` — complete dependency graph for all 12 domain services, HTTP shell wiring matrix, data flow diagram, and architectural properties.
+  - **test(auth)**: added tests for `ScopeForPath` and `RequiredScopesMap`.
+
 - **P0 — Retrieval explainability (ScoreBreakdown)**: full feature breakdown on every retrieved node and fact. `/query/explain` and any caller setting `opts.Explain=true` now get a `score_breakdown` object on each `GraphNode` and `RetrievedFact` carrying the seven canonical components (`vector_score`, `recency_score`, `temporal_score`, `centrality_score`, `path_score`, `depth_penalty`, `final_score`) so callers can understand *why* a node ranked where it did. Non-explain paths stay byte-compatible (breakdown omitted).
   - **feat(core)**: `core.ScoreBreakdown` struct + `ScoreBreakdown *ScoreBreakdown` field on `GraphNode` and `RetrievedFact` (omitempty).
   - **feat(retrieval)**: `ComputeScoreComponents` / `BuildScoreBreakdown` helpers in `retrieval/scoring.go` — single-pass feature arithmetic, NaN/Inf clamp preserved.

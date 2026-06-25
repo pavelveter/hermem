@@ -16,6 +16,8 @@ User Query ──> [Embedder] ──> [Vector Search] ──> Top-K Seeds ──
 
 The system stores knowledge as entities (nodes) connected by typed edges. Each `Entity` is a 19‑field umbrella persistence view that decomposes into 5 per-domain models on demand (`Fact` / `Evidence` / `Episode` / `Task` / `Belief`) plus a `Goal` view that re‑views `Task`’s shape with intent. New code prefers the per‑domain types; existing code continues to use `Entity` directly. See **[USAGE.md §15](USAGE.md#15-domain-models)** for the model map, Compose/Decompose helpers, and the Goal‑reduces‑through‑Task contract.
 
+All 12 domain services use constructor injection — no singletons, no global mutable state, no service locators. Schema is passed per-call so SIGHUP hot-reload swaps config atomically without reconstructing services. See **[docs/service-dependencies.md](docs/service-dependencies.md)** for the full dependency graph, HTTP shell wiring matrix, and data flow diagram.
+
 Each entity belongs to a category defined in `[schema]`:
 
 | Category (default) | Purpose |
@@ -61,6 +63,7 @@ Each entity belongs to a category defined in `[schema]`:
 - **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem memory re-embed [--batch-size N] [--model M]` CLI + `POST /admin/re-embed` HTTP
 - **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem memory quantize` (stdin) CLI
 - **Docker** — multi-stage build, non-root user
+- **Zero global mutable state** — all services use constructor injection; `ActiveSchema()` singleton removed; package-level variables audited and documented
 
 ## CLI Commands
 
