@@ -109,26 +109,40 @@ func sortByScoreDesc(ranked []rankedNode) {
 
 // --- scoring helpers used by walk.go + tests ---
 
-func recencyScore(updatedAt time.Time, halfLifeHours float32) float32 {
-	if updatedAt.IsZero() || halfLifeHours <= 0 {
-		return 1
+// expDecayHours is the single canonical implementation of the
+// exp(-hoursOld/halfLife) decay used by recencyScore and temporalScore.
+// Both functions used to inline the same formula (with subtle
+// differences only in their empty-input default) — keep them thin
+// wrappers over this helper so the math stays in lockstep.
+func expDecayHours(ts time.Time, halfLifeHours float32) float32 {
+	if ts.IsZero() || halfLifeHours <= 0 {
+		return 0
 	}
-	hoursOld := float32(time.Since(updatedAt.UTC()).Hours())
+	hoursOld := float32(time.Since(ts.UTC()).Hours())
 	if hoursOld <= 0 {
 		return 1
 	}
 	return float32(math.Exp(-float64(hoursOld) / float64(halfLifeHours)))
 }
 
+// recencyScore — exp-decay on UpdatedAt. Empty/zero UpdatedAt → 1
+// ("as fresh as possible"), the conventional recency default so a
+// never-touched node doesn't get punished by the ranker.
+func recencyScore(updatedAt time.Time, halfLifeHours float32) float32 {
+	if updatedAt.IsZero() || halfLifeHours <= 0 {
+		return 1
+	}
+	return expDecayHours(updatedAt, halfLifeHours)
+}
+
+// temporalScore — exp-decay on CreatedAt. Nil/zero CreatedAt → 0
+// ("no temporal signal"), distinct from recency's default because an
+// unknown creation time should not contribute to the temporal boost.
 func temporalScore(createdAt *time.Time, halfLifeHours float32) float32 {
 	if createdAt == nil || createdAt.IsZero() || halfLifeHours <= 0 {
 		return 0
 	}
-	hoursOld := float32(time.Since(createdAt.UTC()).Hours())
-	if hoursOld <= 0 {
-		return 1
-	}
-	return float32(math.Exp(-float64(hoursOld) / float64(halfLifeHours)))
+	return expDecayHours(*createdAt, halfLifeHours)
 }
 
 func centralityScore(degree int) float32 {
