@@ -93,7 +93,7 @@ P0 — RETRIEVAL EXPLAINABILITY
 P1 — EVALUATION FRAMEWORK
 ==================================================
 
-[ ] Create evaluation package
+[x] Create evaluation package
 [ ] Create retrieval benchmark dataset
 [ ] Create contradiction benchmark dataset
 [ ] Create memory benchmark dataset
