@@ -180,6 +180,8 @@ func (s *Server) mount() {
 	}
 	// PHASE 3.8: /metrics registered directly — AdminService dissolved.
 	mux.HandleFunc("/metrics", s.Metrics.MetricsHandler)
+	// Opt-in Go runtime profiling. Off by default — see RegisterPprof.
+	RegisterPprof(mux)
 	s.mux = mux
 }
 
