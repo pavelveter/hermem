@@ -113,6 +113,25 @@ func (s *Service) Verify(_ context.Context) ([]store.MigMismatch, error) {
 	return mismatches, nil
 }
 
+// DryRun returns the list of pending migrations (not yet applied)
+// with their SHA-256 checksums, without applying anything.
+func (s *Service) DryRun(_ context.Context) ([]store.MigStatus, error) {
+	status, err := store.MigrationStatus(s.db)
+	if err != nil {
+		return nil, fmt.Errorf("dry-run: %w", err)
+	}
+	var pending []store.MigStatus
+	for _, m := range status {
+		if !m.Applied {
+			pending = append(pending, m)
+		}
+	}
+	if pending == nil {
+		pending = []store.MigStatus{}
+	}
+	return pending, nil
+}
+
 // SchemaReport is the typed envelope returned by Schema. JSON tags
 // live here (transport concern) and not in the store schema. The
 // drift boolean derives from (stored != "") && (stored != current)
