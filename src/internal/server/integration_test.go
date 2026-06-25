@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/ai"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
@@ -19,11 +20,13 @@ import (
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
+	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
+	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -91,8 +94,15 @@ func newTestFixture(t *testing.T) *testFixture {
 	// /db/schema handler loads the live schema per request from refs.
 	migrDom := migrationdomain.NewService(db)
 	migrSvc := migrsrv.New(migrDom, metrics, refs)
+	// PHASE 3.3 fixture: retention HTTPService is constructed from a
+	// domain Service + metrics + refs + a RetentionPolicy. Default
+	// policy matches the production defaults so the lightweight
+	// archive sweep is benign on the integration test critical path.
+	retentionDom := retentiondomain.NewService(db, vi)
+	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
+	retentionShell := retsrv.New(retentionDom, metrics, refs, retentionPolicy)
 	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, graphSvc, migrSvc, adminSvc)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, graphSvc, migrSvc, retentionShell, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -546,8 +556,15 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// HTTPService wired in the NewServer call.
 	migrDom := migrationdomain.NewService(db)
 	migrSvc := migrsrv.New(migrDom, metrics, refs)
+	// PHASE 3.3 fixture: API-key auth fixture also needs the retention
+	// HTTPService threaded into NewServer to keep the call shape
+	// consistent with the production sign call site.
+	retentionDom := retentiondomain.NewService(db, vi)
+	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
-		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), graphSvc, migrSvc, NewAdminService(db, vi, embed, metrics, refs))
+		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), graphSvc, migrSvc,
+		retsrv.New(retentionDom, metrics, refs, retentionPolicy),
+		NewAdminService(db, vi, embed, metrics, refs))
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
