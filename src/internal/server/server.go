@@ -10,6 +10,12 @@
 //   - server/contradiction/ — GET /contradictions[?id=X]. Delegates to internal/contradiction.Service.
 //     Added in PHASE 2.3 (previously /contradictions lived in server/retrieval
 //     behind a temporary retrieval.Service.DB() reach-through).
+//   - server/ingest/        — /ingest, /ingest/jobs. Delegates to internal/ingest.Service.
+//     Added in PHASE 3.4 (the /ingest route previously lived on server/memory
+//     shell; lifted out following the PHASE 3.1–3.3 transport-extraction
+//     pattern. /ingest/jobs GET is NEW — synchronous ingest has no async
+//     job tracker; the route returns a canonical empty-list envelope
+//     until a future PHASE 3.x async-extraction lands).
 //   - server/graph/         — /connected-components, /communities, /graph/verify. Delegates
 //     to internal/graph.Service. Added in PHASE 3.1 (previously /connected-components
 //     and /communities lived on AdminService as a god-object).
@@ -45,6 +51,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/retention"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
+	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
@@ -53,18 +60,20 @@ import (
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
-// Server is the HTTP shell. It holds the 8 services + a mux + the atomic
+// Server is the HTTP shell. It holds the 9 services + a mux + the atomic
 // state holder. No domain fields (no DB / VI / Embedder directly —
 // memory's domain service lives in internal/memory, contradiction's in
-// internal/contradiction, task's in internal/task, graph's in
-// internal/graph, migration's in internal/migration, retention's in
-// internal/retention; each transport shell holds the domain Service
-// reference and threads it as a borrowed pointer).
+// internal/contradiction, task's in internal/task, ingest's in
+// internal/ingest (PHASE 3.4), graph's in internal/graph, migration's
+// in internal/migration, retention's in internal/retention; each
+// transport shell holds the domain Service reference and threads it
+// as a borrowed pointer).
 type Server struct {
 	Refs          *serverstate.Ref
 	Retrieval     *ret.HTTPService
 	Task          *tasksvc.HTTPService
 	Memory        *mem.HTTPService
+	Ingest        *ingsrv.HTTPService
 	Contradiction *cnd.HTTPService
 	Graph         *graphsrv.HTTPService
 	Migration     *migrsrv.HTTPService
@@ -73,7 +82,7 @@ type Server struct {
 	mux           *http.ServeMux
 }
 
-// NewServer wires the 8 services into a single mux. No HTTP server is started
+// NewServer wires the 9 services into a single mux. No HTTP server is started
 // — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
 //
 // PHASE 2.3 added the contradiction *HTTPService argument; PHASE 2.4
@@ -88,12 +97,16 @@ type Server struct {
 // algo.GarbageCollector goroutine inside Serve() with
 // retention.Service.Run, plus exposing POST /admin/retention/run (the
 // FIRST HTTP route for retention — no HTTP surface existed pre-PHASE-3.3).
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, admin *AdminService) *Server {
+// PHASE 3.4 inserts the ingest *HTTPService argument between memory
+// and contradiction, lifting /ingest out of the server/memory shell
+// (and exposing the NEW GET /ingest/jobs surface).
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
 		Task:          task,
 		Memory:        memory,
+		Ingest:        ingest,
 		Contradiction: contradiction,
 		Graph:         graph,
 		Migration:     migration,
@@ -115,6 +128,9 @@ func (s *Server) mount() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Memory.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Ingest.Routes() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Contradiction.Routes() {

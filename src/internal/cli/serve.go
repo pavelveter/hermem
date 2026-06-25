@@ -14,6 +14,7 @@ import (
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
+	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
@@ -21,6 +22,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/server"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
+	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
@@ -91,6 +93,14 @@ func runServe(env *clienv.Env, port string) error {
 	// request-time reads. The HTTP shell exposes 4 NEW routes that
 	// previously had no HTTP surface (only CLI subcommands).
 	migrSvc := migrationdomain.NewService(env.DB)
+	// PHASE 3.4: ingest domain Service owns the synchronous dialog
+	// pipeline orchestration (extraction -> embed -> dedup -> upsert
+	// -> edges). Constructs an IngestionWorker PER CALL inside
+	// Ingest() — preserves the pre-PHASE-2.1 SIGHUP-race-free invariant.
+	// The HTTP shell replaces the previously-on-server/memory-shell
+	// HandleIngest route; the URL stays at /ingest. /ingest/jobs GET
+	// endpoint is NEW.
+	ingestSvc := ingestdomain.NewService(env.DB, env.VI, env.Embedder, env.Extractor)
 	// PHASE 3.3: retention domain Service owns the archive sweep
 	// (RunOnce + Run loop). DefaultPolicy is captured at construction
 	// from cfg.Retention and passed to the HTTP shell; SIGHUP does not
@@ -110,6 +120,7 @@ func runServe(env *clienv.Env, port string) error {
 		ret.New(retSvc, env.Metrics, refs),
 		tasksvc.New(taskSvc, env.Metrics, refs),
 		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
+		ingsrv.New(ingestSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
 		cnd.New(cndSvc, env.Metrics),
 		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
 		migrsrv.New(migrSvc, env.Metrics, refs),

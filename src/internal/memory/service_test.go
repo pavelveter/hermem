@@ -148,44 +148,14 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 }
 
 // --- Ingest ---
-
-func TestMemoryService_Ingest_RejectsEmptyDialog(t *testing.T) {
-	f := newMemFixture(t)
-	err := f.svc.Ingest(context.Background(), "", 0.5, core.DefaultSchemaConfig(false))
-	if err == nil {
-		t.Fatal("expected empty-dialog error, got nil")
-	}
-	if !strings.Contains(err.Error(), "dialog required") {
-		t.Errorf("err=%v does not advertise dialog-required contract", err)
-	}
-}
-
-func TestMemoryService_Ingest_RejectsNilExtractor(t *testing.T) {
-	db, err := store.MemDB()
-	if err != nil {
-		t.Fatalf("memdb: %v", err)
-	}
-	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
-	svc := New(db, vi, stubEmbedder{}, nil) // nil extractor
-
-	err = svc.Ingest(context.Background(), "user: hi", 0.5, core.DefaultSchemaConfig(false))
-	if err == nil {
-		t.Fatal("expected nil-extractor error, got nil")
-	}
-	if !strings.Contains(err.Error(), "no extractor wired") {
-		t.Errorf("err=%v does not advertise no-extractor-wired contract", err)
-	}
-}
-
-func TestMemoryService_Ingest_OK_NoEntities(t *testing.T) {
-	// Empty ExtractionResult (stubExtractor) is a valid no-op pipeline
-	// pass — IngestionWorker iterates zero entities, returns nil.
-	f := newMemFixture(t)
-	if err := f.svc.Ingest(context.Background(), "user: hi", 0.5, core.DefaultSchemaConfig(false)); err != nil {
-		t.Fatalf("Ingest: %v", err)
-	}
-}
+//
+// PHASE 3.4: Ingest method lifted to src/internal/ingest.Service. The
+// three Ingest_* tests that used to live here have moved to
+// src/internal/ingest/service_test.go (TestService_Ingest_EmptyDialogReturnsError,
+// TestService_Ingest_NilExtractorReturnsError, TestService_Ingest_HappyPath_NoEntities,
+// TestService_Ingest_ExtractorErrorPropagates). The HTTP shell route
+// /ingest moved from server/memory to server/ingest — URL contract
+// unchanged.
 
 // --- AddEdge ---
 

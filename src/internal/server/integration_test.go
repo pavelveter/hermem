@@ -17,6 +17,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/httputil"
+	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
@@ -24,6 +25,7 @@ import (
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
+	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
@@ -82,6 +84,14 @@ func newTestFixture(t *testing.T) *testFixture {
 	taskSvc := tasksvc.New(taskDom, metrics, refs)
 	memDom := memdomain.New(db, vi, embed, nil) // nil extractor — ingest-only path verifies error envelope
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
+	// PHASE 3.4 fixture: ingest HTTPService is constructed from a domain
+	// Service + metrics + refs + DedupThreshold. The nil extractor on
+	// ingestDom forces the ingest domain layer to fail with
+	// "ingest: no extractor wired" — the integration /ingest route
+	// inherits the error envelope shape from the pre-PHASE-3.4
+	// server/memory shell (memo); the URL is identical.
+	ingestDom := ingestdomain.NewService(db, vi, embed, nil)
+	ingestSvc := ingsrv.New(ingestDom, metrics, refs, 0.88)
 	cndDom := contradictdomain.NewService(db)
 	cndSvc := cnd.New(cndDom, metrics)
 	// PHASE 3.1 fixture: graph HTTPService is constructed from a domain
@@ -102,7 +112,7 @@ func newTestFixture(t *testing.T) *testFixture {
 	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	retentionShell := retsrv.New(retentionDom, metrics, refs, retentionPolicy)
 	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, cndSvc, graphSvc, migrSvc, retentionShell, adminSvc)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -561,8 +571,13 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// consistent with the production sign call site.
 	retentionDom := retentiondomain.NewService(db, vi)
 	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
+	// PHASE 3.4: API-key auth fixture also needs the ingest HTTPService
+	// threaded into NewServer to keep the call shape consistent with
+	// the production sign call site.
+	ingestDom := ingestdomain.NewService(db, vi, embed, nil)
 	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
-		mem.New(memDom, metrics, refs, 0.88), cnd.New(cndDom, metrics), graphSvc, migrSvc,
+		mem.New(memDom, metrics, refs, 0.88), ingsrv.New(ingestDom, metrics, refs, 0.88),
+		cnd.New(cndDom, metrics), graphSvc, migrSvc,
 		retsrv.New(retentionDom, metrics, refs, retentionPolicy),
 		NewAdminService(db, vi, embed, metrics, refs))
 
