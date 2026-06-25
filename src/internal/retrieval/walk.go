@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -135,7 +136,58 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 			result.Observations = append(result.Observations, fact)
 		}
 	}
+	if opts.Explain {
+		logRetrievalExplanation(result, len(seedIDs), effDepth)
+	}
 	return result, nil
+}
+
+// logRetrievalExplanation emits a single structured INFO log per
+// retrieval call (when Explain=true) summarising the per-bucket counts
+// and the score breakdown of the top-ranked entry per bucket. One log
+// line per call — bounded, greppable by entity ID or FinalScore.
+func logRetrievalExplanation(r *core.RetrievalResult, seedCount, depth int) {
+	if r == nil {
+		return
+	}
+	slog.Info("retrieval.explain",
+		"event", "retrieval.explain",
+		"seeds", seedCount,
+		"depth", depth,
+		"seed_nodes", len(r.SeedNodes),
+		"world_facts", len(r.WorldFacts),
+		"opinions", len(r.Opinions),
+		"experiences", len(r.Experiences),
+		"observations", len(r.Observations),
+		"top_world", topBreakdownForLog(r.WorldFacts),
+		"top_opinion", topBreakdownForLog(r.Opinions),
+		"top_experience", topBreakdownForLog(r.Experiences),
+		"top_observation", topBreakdownForLog(r.Observations),
+	)
+}
+
+// topBreakdownForLog returns a compact map[string]float32 of the top
+// entry's breakdown so slog emits it as flat fields. Empty bucket → nil.
+func topBreakdownForLog(facts []core.RetrievedFact) map[string]float32 {
+	if len(facts) == 0 {
+		return nil
+	}
+	top := facts[0]
+	if top.ScoreBreakdown == nil {
+		return map[string]float32{
+			"content": 0,
+			"final":   top.RankingScore,
+		}
+	}
+	return map[string]float32{
+		"vector":     top.ScoreBreakdown.VectorScore,
+		"recency":    top.ScoreBreakdown.RecencyScore,
+		"temporal":   top.ScoreBreakdown.TemporalScore,
+		"centrality": top.ScoreBreakdown.CentralityScore,
+		"path":       top.ScoreBreakdown.PathScore,
+		"depth_pen":  top.ScoreBreakdown.DepthPenalty,
+		"final":      top.ScoreBreakdown.FinalScore,
+	}
 }
 
 // MultiHopRetrieveContext expands the seed set across multiple "hops" by
