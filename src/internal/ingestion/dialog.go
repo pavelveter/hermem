@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-sqlite3"
+	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -379,151 +380,15 @@ func isSQLiteBusyError(err error) bool {
 		strings.Contains(msg, "SQLITE_BUSY")
 }
 
-// IsIngestionContradiction guards dedup by negation heuristic: if an almost-identical
-// existing entity flips on any one of these common-enough negation tokens that the
-// incoming one doesn't (or vice versa), treat it as a contradiction rather than a
-// merge. Cheap, language-light, no LLM round-trip — good enough to flag for the
-// contradiction-resolution path in processOneItem.
-//
-// Round-7 § 7 + Round-9 § 7.1: the function runs TWO scans in series:
-//
-//  1. Original substring scan against a fixed negWords list (preserves
-//     the 14 English/Russian regression cases from round-7). Catches
-//     bare inflections and cross-verb antonyms in `ненавид-` / `люб-` /
-//     `разлюб-` / `не ненавид-` / `не + verb` (e.g. "Я не ненавижу
-//     это" vs "Я ненавижу это").
-//
-//  2. Stem-augmented scan (round-9 § 7.1). Both `a` and `b` are
-//     tokenized on whitespace, lower-cased, and each Cyrillic token is
-//     stripped of common verb endings (у/ю/ешь/ет/ем/ете/ут/ют/...
-//     л/ла/ло/ли/ть/ти/...) by stemRussian(). After stemming, the
-//     scan checks for `не + verb_lemma` presence differences — this
-//     catches inflected forms the substring list cannot: e.g.
-//     "Я любит море" vs "Я не любит море" (bare-particle flip on a
-//     verb lemma that the round-7 negWords list does NOT match
-//     verbatim because "не любит" is not in the negation set).
-//
-// The function returns true if EITHER scan reports a flip. The
-// substring scan continues to dominate the cross-verb antonym cases
-// it already covered (e.g. "люблю" vs "ненавижу"); the stem scan adds
-// the bare-particle-flip-on-verb-lemma cases. False positives on
-// ambiguous cases (e.g. substring-free stems that drop a "не"
-// particle) are accepted — the trade-off is preserved from round-7:
-// high recall on listed forms, narrow morphology surface area,
-// fall-through to embedding-similarity for the rest.
+// IsIngestionContradiction guards dedup by negation heuristic. Retained
+// as a free function so existing callers/tests stay green; the real
+// implementation now lives in contradiction.LexicalDetector.
 func IsIngestionContradiction(a, b string) bool {
-	al := strings.ToLower(a)
-	bl := strings.ToLower(b)
-	negWords := []string{
-		// English
-		"not", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "never", "no ", "hate", "dislike",
-		// Russian — see function godoc for the bare vs inflected rationale.
-		"разлюбил", "разлюбила", "разлюбили",
-		"ненавижу", "ненавидит", "ненавидел", "ненавидела",
-		"не ненавижу", "не ненавидит", "не ненавидел", "не ненавидела",
-		"не люблю", "не любит", "не любил", "не любила", "не любили",
-		"не хочу", "не хочет", "не хотел", "не хотела",
-	}
-	for _, n := range negWords {
-		if strings.Contains(al, n) != strings.Contains(bl, n) {
-			return true
-		}
-	}
-	sa, sb := stemPair(a, b)
-	// Bare-particle scan GUARDED by the stemmer actually matching
-	// something on at least one side. If sa == al AND sb == bl,
-	// neither Cyrillic verb lost a suffix — fall through with false,
-	// because the heuristic deliberately under-detects soft adverb
-	// negations like "не очень люблю" (see
-	// `russian_ne_ochen_falls_through` regression row).
-	//
-	// Round-9 § 7.1 followup note: an EARLIER round's intermediate
-	// fix removed this guard to always fire the bare-particle check.
-	// That changed a regression row from "want:false / got:false" to
-	// "want:false / got:true" — a real over-detection regression on
-	// partial adverb forms. The reintroduction of this guard is
-	// paired with the round-9 § 7.1 suffix-table additions (ил/ел/...
-	// below): for verbs with a stemmable past-m.sg. ending, the
-	// stemmer now matches and sa != al, so the bare-particle check
-	// correctly fires on inflected forms like `полюбил` vs `не полюбил`.
-	if sa == al && sb == bl {
-		return false
-	}
-	if strings.Contains(sa, " не") != strings.Contains(sb, " не") {
-		return true
-	}
-	return false
-}
-
-// russianSuffixes is the round-9 § 7.1 inline stripper's suffix
-// table. Order matters: longest matches first. The list covers the
-// inflected forms documented in TestIsIngestionContradiction's
-// round-9 rows (любит/любила/любили/полюбил). Nominal-case coverage
-// is intentionally absent — the stem-augmented scan is invoked only
-// after the substring scan fails, so nominal-flip false positives
-// stay bounded by the `не + verb_lemma` surface-form check below.
-var russianSuffixes = []string{
-	"ите", "ешь", "ете", "ем", "ет",
-	"ют", "ут", "ят", "ат",
-	"лась", "лось", "лись", "лся",
-	// Past-tense singular masculine (and small set of vowel-stem
-	// m.sg. variants). Added in round-9 § 7.1 so the stemmer strips
-	// "полюбил" → "полюби", "любил" → "люб", etc. Without these the
-	// bare-particle scan couldn't fire on past-m.sg. inflections
-	// (see `russian_stemmer_polubil_ne_polubil` regression row).
-	"ил", "ел", "ал", "ёл", "ол", "ул", "юл",
-	"ла", "ло", "ли",
-	"ть", "ти",
-	"ный", "ная", "ное", "ные", "ого", "ому", "ыми", "ая", "ое", "ые",
-}
-
-// stemRussian applies the minimal inline suffix-stripper to a single
-// Russian token. Returns the lower-cased token with the longest
-// matching suffix removed (provided the remaining stem is at least
-// 3 characters — never produce empty stems that would alias every
-// short preposition onto the same canonical form).
-func stemRussian(w string) string {
-	w = strings.ToLower(w)
-	for _, suf := range russianSuffixes {
-		if strings.HasSuffix(w, suf) && len(w)-len(suf) >= 3 {
-			return w[:len(w)-len(suf)]
-		}
-	}
-	return w
-}
-
-// isCyrillicToken is true iff the token contains at least one
-// Cyrillic codepoint (U+0400..U+04FF). Token-level test so English
-// surface forms pass through unchanged.
-func isCyrillicToken(s string) bool {
-	for _, r := range s {
-		if r >= 0x0400 && r <= 0x04FF {
-			return true
-		}
-	}
-	return false
-}
-
-// stemPair returns the joined-token strings of (a, b) after
-// per-token stem-strip. If neither side contains Cyrillic, the
-// function returns the input strings unchanged so the original
-// lowercase pass-through above retains its substring semantics
-// (and the function's "sa==al" early-return short-circuits the
-// stem-augmented scan).
-func stemPair(a, b string) (string, string) {
-	stem := func(s string) string {
-		parts := strings.Fields(strings.ToLower(s))
-		out := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if isCyrillicToken(p) {
-				out = append(out, stemRussian(p))
-			} else {
-				out = append(out, p)
-			}
-		}
-		return strings.Join(out, " ")
-	}
-	return stem(a), stem(b)
+	detected, _ := contradiction.NewLexicalDetector().Detect(
+		core.Entity{Content: a},
+		core.Entity{Content: b},
+	)
+	return detected
 }
 
 // MemoryWorker processes MemoryMessage channel items — legacy entry
