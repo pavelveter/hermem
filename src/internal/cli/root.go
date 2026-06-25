@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pavelveter/hermem/src/internal/cli/agent"
+	"github.com/pavelveter/hermem/src/internal/cli/adminops"
 	"github.com/pavelveter/hermem/src/internal/cli/db"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/cli/graph"
@@ -106,6 +107,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		db.NewCmd(env),
 		profile.NewCmd(env),
 	)
+	adminops.Register(root, env)
 	root.SetContext(env.Ctx)
 	return root
 }
