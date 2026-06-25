@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+_None yet._
+
+## [v0.3.0] - 2026-06-25
+
+Six production-ready groups land together: scoped multi-key auth,
+offline admin ops, OpenTelemetry tracing slice, opt-in pprof profiling,
+SHA-256 migration hardening, and an evaluation framework. The CLI
+surface gains `admin`, `adminops`, and `profile` groups; the HTTP API
+gains per-dependency health endpoints and admin-keys management.
+
 ### P1 — Auth hardening (multi-key scoped API keys, June 2026)
 
 Scoped multi-key authentication with admin CLI, middleware enforcement,
