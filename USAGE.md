@@ -565,7 +565,8 @@ paths). Pipe stderr to your log aggregator.
 |--------|------|------|---------|
 | GET | `/health` | — | `{"status":"ok"}` |
 | GET | `/health/live` | — | `{"status":"ok"}` |
-| GET | `/health/ready` | — | `{"status":"ok"}` or `{"status":"degraded","checks":{...}}` (503) |
+| GET | `/health/ready` | — | `{"status":"ok","latency_ms":12,"checks":{...}}` or `{"status":"degraded",...}` (503) |
+| GET | `/health/startup` | — | `{"status":"ok"}` |
 | GET | `/metrics` | — | expvar JSON |
 | POST | `/store` | `StoreRequest` | `{"status":"ok"}` |
 | POST | `/search` | `SearchRequest` | `[{"entity", "similarity"}]` |
@@ -615,13 +616,43 @@ curl -s http://localhost:8420/health/live
 
 ### `/health/ready`
 
-Readiness probe — pings the database. Returns 200 if the DB is reachable,
-503 with per-dependency status if degraded.
+Readiness probe — runs every registered dependency check (DB, vector index,
+embedder, LLM extractor, disk space) with individual timeouts and severity
+levels. Returns 200 if all **critical** checks pass (warning-level failures
+are tolerated), 503 when any critical check fails.
 
 ```bash
 curl -s http://localhost:8420/health/ready
-# → {"status":"ok"}                    (DB reachable)
-# → {"status":"degraded","checks":{"database":"unreachable"}}  (DB down, 503)
+# → {"status":"ok","latency_ms":12,"checks":{
+#     "database":     {"ok":true,"latency_ms":3,"critical":true},
+#     "vector_index": {"ok":true,"latency_ms":2,"critical":true},
+#     "embedder":     {"ok":true,"latency_ms":6,"critical":true},
+#     "extractor":    {"ok":true,"latency_ms":0,"critical":false},
+#     "disk_space":   {"ok":true,"latency_ms":1,"critical":true}
+#   }}
+
+# Degraded (503) — critical dependency down:
+# → {"status":"degraded","latency_ms":5,"checks":{
+#     "database":{"ok":false,"latency_ms":3,"error":"unreachable: ...","critical":true},
+#     ...
+#   }}
+```
+
+Use this as your Kubernetes `readinessProbe` target. The `/health/ready`
+endpoint replaces the old single-DB-ping shape with full per-dependency
+breakdown. Each check has a `critical` flag; only critical failures
+produce a 503 response.
+
+### `/health/startup`
+
+Startup probe — returns 200 as soon as the process binds to its port,
+before `/health/ready` becomes green. Does not check any dependency;
+use this as your Kubernetes `startupProbe` target so the pod is marked
+ready only after all critical probes pass.
+
+```bash
+curl -s http://localhost:8420/health/startup
+# → {"status":"ok"}
 ```
 
 ### `/store`
