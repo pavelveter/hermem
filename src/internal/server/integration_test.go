@@ -22,6 +22,7 @@ import (
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
+	reembeddomain "github.com/pavelveter/hermem/src/internal/reembed"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
@@ -30,6 +31,7 @@ import (
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
+	reembedsrv "github.com/pavelveter/hermem/src/internal/server/reembed"
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
@@ -126,8 +128,13 @@ func newTestFixture(t *testing.T) *testFixture {
 	retentionDom := retentiondomain.NewService(db, vi)
 	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	retentionShell := retsrv.New(retentionDom, metrics, refs, retentionPolicy)
-	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, adminSvc)
+	// PHASE 3.6 fixture: reembed HTTPService holds domain Service
+	// + metrics only (no Refs — reembed reads all entities directly
+	// from DB, no schema gates).
+	reembedDom := reembeddomain.New(db, vi, embed)
+	reembedShell := reembedsrv.New(reembedDom, metrics)
+	adminSvc := NewAdminService(db, metrics)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -586,6 +593,10 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// consistent with the production sign call site.
 	retentionDom := retentiondomain.NewService(db, vi)
 	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
+	// PHASE 3.6: API-key auth fixture also needs the reembed
+	// HTTPService threaded into NewServer.
+	reembedDom := reembeddomain.New(db, vi, embed)
+	reembedShell := reembedsrv.New(reembedDom, metrics)
 	// PHASE 3.4: API-key auth fixture also needs the ingest HTTPService
 	// threaded into NewServer to keep the call shape consistent with
 	// the production sign call site.
@@ -601,7 +612,8 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 		ingsrv.New(ingestDom, metrics, refs, 0.88),
 		cnd.New(cndDom, metrics), graphSvc, migrSvc,
 		retsrv.New(retentionDom, metrics, refs, retentionPolicy),
-		NewAdminService(db, vi, embed, metrics, refs))
+		reembedShell,
+		NewAdminService(db, metrics))
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
