@@ -45,10 +45,9 @@
 //     routes previously lived on AdminService; extracted following the
 //     PHASE 3.1–3.6 transport-extraction pattern. URL contracts
 //     byte-identical).
-//   - server/               — AdminService: /metrics only (Prometheus
-//     analytics routes were extracted in PHASE 3.1; retention is owned
-//     by server/retention now, the server.go Serve() method only hosts
-//     the lifecycle goroutine).
+//   - /metrics is registered by Server.mount() directly from the
+//     Metrics field — no separate admin shell. PHASE 3.8 dissolved
+//     the AdminService god-object's final route into the Server.
 //
 // Shared per-request configuration is read atomically via *serverstate.Ref —
 // concurrent SIGHUP-driven state swaps are safe with in-flight handlers.
@@ -67,6 +66,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
+	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retention"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
@@ -84,14 +84,13 @@ import (
 )
 
 // Server is the HTTP shell. It holds 12 domain HTTPService instances +
-// AdminService (metrics) + a mux + the atomic state holder. No domain
-// memory's domain service lives in internal/memory, edge's in
-// internal/edge (PHASE 3.5), timeline's in internal/timeline
-// (PHASE 3.5), contradiction's in internal/contradiction, task's in
-// internal/task, ingest's in internal/ingest (PHASE 3.4), graph's in
-// internal/graph, migration's in internal/migration, retention's in
-// internal/retention; each transport shell holds the domain Service
-// reference and threads it as a borrowed pointer).
+// a Metrics field for /metrics + a mux + the atomic state holder.
+// Each transport shell holds the domain Service reference and threads
+// it as a borrowed pointer.
+//
+// PHASE 3.8: AdminService dissolved — /metrics registered directly
+// from the Metrics field in mount(). The AdminService god-object,
+// dismantled across 5 phases, is now entirely gone.
 type Server struct {
 	Refs          *serverstate.Ref
 	Retrieval     *ret.HTTPService
@@ -106,41 +105,19 @@ type Server struct {
 	Retention     *retsrv.HTTPService
 	Reembed       *reembedsrv.HTTPService
 	Health        *healthsrv.HTTPService
-	Admin         *AdminService
+	Metrics       *metrics.Metrics
 	mux           *http.ServeMux
 }
 
-// NewServer wires the 12 domain services + Admin into a single mux. No
-// HTTP server is started — call (*Server).ServeHTTP separately
+// NewServer wires the 12 domain services + Metrics into a single mux.
+// No HTTP server is started — call (*Server).ServeHTTP separately
 // (e.g. via the convenience Run below).
 //
-// PHASE 2.3 added the contradiction *HTTPService argument; PHASE 2.4
-// renamed the task *Service argument to *HTTPService to mirror the
-// post-2.4 transport-shell shape (server/task.Service → server/task.HTTPService);
-// PHASE 3.1 inserts the graph *HTTPService argument between contradiction
-// and admin, lifting /connected-components + /communities out of the
-// god-object AdminService. PHASE 3.2 inserts the migration *HTTPService
-// argument between graph and admin, exposing 4 NEW routes that had no
-// HTTP surface previously. PHASE 3.3 inserts the retention *HTTPService
-// argument between migration and admin, replacing the raw
-// algo.GarbageCollector goroutine inside Serve() with
-// retention.Service.Run, plus exposing POST /admin/retention/run (the
-// FIRST HTTP route for retention — no HTTP surface existed pre-PHASE-3.3).
-// PHASE 3.4 inserts the ingest *HTTPService argument between memory
-// and contradiction, lifting /ingest out of the server/memory shell
-// (and exposing the NEW GET /ingest/jobs surface). PHASE 3.5 inserts
-// the edge + timeline *HTTPService arguments between memory and
-// ingest, lifting /edge and /timeline out of the server/memory shell.
-// The memory HTTP shell keeps only /store; URL contracts for /edge,
-// /timeline, /ingest are byte-identical so existing clients see no
-// drift. PHASE 3.6 inserts the reembed *HTTPService argument between
-// retention and admin, lifting /admin/re-embed out of the AdminService
-// god-object (the algo/reembed.go file was deleted entirely in this
-// phase). PHASE 3.7 inserts the health *HTTPService argument between
-// reembed and admin, lifting /health, /health/live, /health/ready
-// out of the AdminService. AdminService now owns only /metrics — a
-// one-route Prometheus wrapper.
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, reembed *reembedsrv.HTTPService, health *healthsrv.HTTPService, admin *AdminService) *Server {
+// PHASE 3.8: AdminService dissolved. The final `/metrics` route is
+// registered directly from the Metrics field. 5 phases of extraction
+// (3.1–3.5 initially from the god-object, then 3.6 reembed, 3.7 health,
+// 3.8 metrics) eliminate AdminService entirely.
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, reembed *reembedsrv.HTTPService, health *healthsrv.HTTPService, m *metrics.Metrics) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
@@ -155,7 +132,7 @@ func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.
 		Retention:     retention,
 		Reembed:       reembed,
 		Health:        health,
-		Admin:         admin,
+		Metrics:       m,
 	}
 	s.mount()
 	return s
@@ -201,9 +178,8 @@ func (s *Server) mount() {
 	for path, hf := range s.Health.Routes() {
 		mux.HandleFunc(path, hf)
 	}
-	for path, hf := range s.Admin.Routes() {
-		mux.HandleFunc(path, hf)
-	}
+	// PHASE 3.8: /metrics registered directly — AdminService dissolved.
+	mux.HandleFunc("/metrics", s.Metrics.MetricsHandler)
 	s.mux = mux
 }
 
