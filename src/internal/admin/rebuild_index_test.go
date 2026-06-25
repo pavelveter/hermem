@@ -24,10 +24,10 @@ func (m *mockEmbedder) Embed(_ context.Context, content string) ([]float32, erro
 }
 
 type mockVectorIndex struct {
-	storeCallCount int64
+	storeCallCount  int64
 	removeCallCount int64
-	storeErr       error
-	removeErr      error
+	storeErr        error
+	removeErr       error
 }
 
 func (m *mockVectorIndex) Store(_ context.Context, id string, vec []float32) error {

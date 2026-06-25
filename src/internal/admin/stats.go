@@ -9,10 +9,10 @@ import (
 )
 
 type StatsCollector struct {
-	db          *sql.DB
-	mu          sync.Mutex
-	lastRun     time.Time
-	lastResult  *Stats
+	db         *sql.DB
+	mu         sync.Mutex
+	lastRun    time.Time
+	lastResult *Stats
 }
 
 func NewStatsCollector(db *sql.DB) *StatsCollector {

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P1 — Auth hardening (multi-key scoped API keys, June 2026)
+
+Scoped multi-key authentication with admin CLI, middleware enforcement,
+and constant-time key comparison.
+
+- **feat(auth)**: `Scope`, `Key`, `Authenticator` interface — `Authorize(raw, required) (*Key, bool, error)`.
+- **feat(auth)**: `CanAccess` hierarchy (admin > write > read) + `ScopeForPath` URL-prefix routing; unmatched paths default to `ScopeWrite`.
+- **feat(auth)**: `StaticAuthenticator` — constant-time key lookup via `subtle.ConstantTimeCompare`.
+- **feat(config)**: `api_keys` INI parsing (`key:scope:label` comma-separated format); `api_key` single-key fallback with `ScopeAdmin`.
+- **feat(config)**: `AddKeyToFile`, `RemoveKeyFromFile`, `RotateKeyInFile` — raw INI text manipulation for admin CLI.
+- **feat(server)**: `AuthMiddleware()` — parameterless, health bypass, 401/403 JSON errors.
+- **feat(server)**: `Serve()` uses `AuthMiddleware()` instead of `APIKeyMiddleware(cfg.APIKey)`.
+- **feat(cli)**: `hermem admin keys {list,add,rotate,revoke}` with `GenerateKey` (32-byte CSPRNG → 64 hex).
+- **test(auth)**: 11 scope tests, 7 authenticator tests, 9 admin-cli tests, 8 middleware enforcement tests.
+- **docs**: USAGE §16 (API Authentication) documented key format, scopes, CLI, response codes, health bypass.
+- **fix(server)**: `ErrInsufficientScope` check moved before generic `!ok` fallback to correctly return 403 instead of 401.
+
+### P1 — Admin CLI (ops group, June 2026)
+
+Offline database diagnostics and maintenance via the `hermem ops` command group.
+
+- **feat(admin)**: `Stats`/`Issue`/`IntegrityReport` types for operational snapshots.
+- **feat(admin)**: `StatsCollector` — parallel count queries (entity/edge/contradiction/archived/embedding-coverage) with single-flight caching.
+- **feat(admin)**: `IntegrityChecker` — three checks: missing embeddings (critical ≥10), dangling edges (critical), and archived entities with stale vector-index entries (warning).
+- **feat(admin)**: `VacuumRunner` — SQLite VACUUM with progress callback and bytes-reclaimed report.
+- **feat(admin)**: `RebuildIndex` — selective vector-index rebuild with Category/Since/OnlyArchived/DryRun filters.
+- **feat(cli)**: `hermem ops {stats,integrity,vacuum,rebuild-index}` command group (registered as `ops` to avoid collision with auth key management).
+- **test(admin)**: 17 unit tests across admin package (Stats, Integrity, Vacuum, RebuildIndex).
+- **test(cli)**: 6 CLI integration tests for all ops subcommands.
+- **docs**: USAGE §18 documents all four commands, exit codes, issue codes, and examples.
+
 ### P1 — Observability (tracing slice, June 2026)
 
 OpenTelemetry tracing scaffold with noop fallback, OTLP exporter gate,

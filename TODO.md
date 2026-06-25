@@ -224,6 +224,38 @@ P3 — LONG TERM RESEARCH
 [ ] Design reasoning memory engine
 
 ==================================================
+P1 — AUTH HARDENING (multi-key scoped API keys)
+==================================================
+
+[x] Define Scope, Key, Authenticator interface in auth package
+[x] Implement Scope hierarchy (CanAccess, ScopeForPath)
+[x] Implement StaticAuthenticator with constant-time comparison
+[x] Add scope and authenticator tests
+[x] Add api_keys INI parsing (key:scope:label), legacy api_key fallback
+[x] Add INI file manipulation helpers (AddKeyToFile, RemoveKeyFromFile, RotateKeyInFile)
+[x] Create AuthMiddleware (parameterless, health bypass, 401/403 JSON)
+[x] Wire AuthMiddleware into Serve() replacing APIKeyMiddleware
+[x] Create admin CLI group (list/add/rotate/revoke) with GenerateKey/MaskKey
+[x] Add admin CLI unit tests
+[x] Add middleware integration tests (scope enforcement per-endpoint)
+[x] Document auth in USAGE.md §16
+[x] Update CHANGELOG.md
+
+=================================================
+P1 — ADMIN CLI (ops group)
+==================================================
+
+[x] Create admin package with Stats/Issue/IntegrityReport types
+[x] Implement StatsCollector with parallel count queries + tests
+[x] Implement IntegrityChecker (missing embeddings, dangling edges, archive consistency) + tests
+[x] Implement VacuumRunner with progress callback + tests
+[x] Implement RebuildIndex with category/since/archived/DryRun filters + tests
+[x] Create ops CLI command group (Register + 4 subcommands)
+[x] Wire ops commands into root CLI (root.go)
+[x] Add CLI unit tests for all subcommands
+[x] Document admin ops in USAGE §18, CHANGELOG, TODO
+
+==================================================
 P4 — CI/CD & ARTIFACT DISTRIBUTION
 ==================================================
 

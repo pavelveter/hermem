@@ -251,7 +251,7 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	handler = SafeBodyCloseMiddleware(handler)
 	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
 	handler = SlogMiddleware(handler)
-	handler = RequestIDMiddleware(APIKeyMiddleware(cfg.APIKey)(handler))
+	handler = RequestIDMiddleware(AuthMiddleware()(handler))
 	handler = TimeoutMiddleware(120 * time.Second)(handler)
 	handler = RecoveryMiddleware(handler)
 

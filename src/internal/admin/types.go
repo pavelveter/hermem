@@ -31,15 +31,15 @@ type RebuildReport struct {
 }
 
 type Stats struct {
-	NodeCount         int64     `json:"node_count"`
-	EdgeCount         int64     `json:"edge_count"`
-	ArchivedCount     int64     `json:"archived_count"`
-	ContradictionCount int64    `json:"contradiction_count"`
-	EmbeddingCoverage float64   `json:"embedding_coverage"`
-	LastGCRunAt       time.Time `json:"last_gc_run_at"`
-	LastGCArchived    int64     `json:"last_gc_archived"`
-	DBSizeBytes       int64     `json:"db_size_bytes"`
-	CapturedAt        time.Time `json:"captured_at"`
+	NodeCount          int64     `json:"node_count"`
+	EdgeCount          int64     `json:"edge_count"`
+	ArchivedCount      int64     `json:"archived_count"`
+	ContradictionCount int64     `json:"contradiction_count"`
+	EmbeddingCoverage  float64   `json:"embedding_coverage"`
+	LastGCRunAt        time.Time `json:"last_gc_run_at"`
+	LastGCArchived     int64     `json:"last_gc_archived"`
+	DBSizeBytes        int64     `json:"db_size_bytes"`
+	CapturedAt         time.Time `json:"captured_at"`
 }
 
 type IssueLevel string

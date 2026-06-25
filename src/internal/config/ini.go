@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"gopkg.in/ini.v1"
 
+	"github.com/pavelveter/hermem/src/internal/auth"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
@@ -123,6 +125,22 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if v, ok := getStr("server", "api_key"); ok {
 		cfg.APIKey = v
+	}
+	if rawList := getList("server", "api_keys"); len(rawList) > 0 {
+		keys := make([]auth.Key, 0, len(rawList))
+		for _, raw := range rawList {
+			key := ParseKeySpec(raw)
+			if key != nil {
+				keys = append(keys, *key)
+			}
+		}
+		if len(keys) > 0 {
+			if cfg.APIKey != "" {
+				slog.Warn("config: both api_key and api_keys present; api_key has priority, api_keys ignored")
+			} else {
+				cfg.APIKeys = keys
+			}
+		}
 	}
 
 	cfg.VectorDim = getInt("vector", "dim", cfg.VectorDim, 1)
@@ -371,6 +389,24 @@ func lookupKey(s *ini.Section, name string) *ini.Key {
 		}
 	}
 	return nil
+}
+
+func ParseKeySpec(s string) *auth.Key {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	parts := strings.SplitN(s, ":", 3)
+	key := &auth.Key{Value: parts[0], Scope: auth.ScopeAdmin}
+	if len(parts) >= 2 {
+		if scope := auth.ParseScope(parts[1]); scope != "" {
+			key.Scope = scope
+		}
+	}
+	if len(parts) >= 3 {
+		key.Label = parts[2]
+	}
+	return key
 }
 
 func sortStrings(xs []string) {
