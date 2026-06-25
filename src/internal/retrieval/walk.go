@@ -37,18 +37,58 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		scorer = defaultCompositeScorer(w)
 	}
 
-	nodes, err := expandGraph(db, seedIDs, opts, effDepth)
+	nodes, err := func() ([]scannedNode, error) {
+		span := startStageSpan(opts, "expand_graph")
+		defer span.End()
+		out, e := expandGraph(db, seedIDs, opts, effDepth)
+		if e != nil {
+			span.RecordError(e)
+		}
+		return out, e
+	}()
 	if err != nil {
 		return nil, err
 	}
 
-	ranked, seeds := scoreAndRank(nodes, opts, w, scorer)
-	sortByScoreDesc(ranked)
+	ranked, seeds := func() ([]rankedNode, []core.GraphNode) {
+		span := startStageSpan(opts, "score_and_rank")
+		defer span.End()
+		r, s := scoreAndRank(nodes, opts, w, scorer)
+		span.SetAttribute("ranked_count", len(r))
+		span.SetAttribute("seed_count", len(s))
+		return r, s
+	}()
 
-	result := bucketize(ranked, seeds, w, opts.Explain)
+	func() {
+		span := startStageSpan(opts, "rank_sort")
+		defer span.End()
+		sortByScoreDesc(ranked)
+		span.SetAttribute("sorted_count", len(ranked))
+	}()
 
-	if err := applyReranker(result, opts.Reranker, opts.Ctx, opts.QueryText); err != nil {
-		return nil, err
+	result := func() *core.RetrievalResult {
+		span := startStageSpan(opts, "bucketize")
+		defer span.End()
+		r := bucketize(ranked, seeds, w, opts.Explain)
+		span.SetAttribute("world_facts", len(r.WorldFacts))
+		span.SetAttribute("opinions", len(r.Opinions))
+		span.SetAttribute("experiences", len(r.Experiences))
+		span.SetAttribute("observations", len(r.Observations))
+		return r
+	}()
+
+	if opts.Reranker != nil {
+		if err := func() error {
+			span := startStageSpan(opts, "rerank")
+			defer span.End()
+			e := applyReranker(result, opts.Reranker, opts.Ctx, opts.QueryText)
+			if e != nil {
+				span.RecordError(e)
+			}
+			return e
+		}(); err != nil {
+			return nil, err
+		}
 	}
 
 	if opts.Explain {

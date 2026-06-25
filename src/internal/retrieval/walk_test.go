@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -852,6 +854,119 @@ func TestRetrieveContext_RerankerIsInvokedAfterBucketize(t *testing.T) {
 	}
 	if len(got.WorldFacts) >= 2 && got.WorldFacts[0].Content == got.WorldFacts[1].Content {
 		t.Fatalf("bucket contents: reranker output must replace bucket, got %+v", got.WorldFacts)
+	}
+}
+
+// --- tracing ---
+
+// stubTracer records every span name + whether End was called. Each
+// StartSpan returns a pointer to the appended stubSpan so subsequent
+// End / SetAttribute / RecordError mutate the same record.
+type stubTracer struct {
+	spans []*stubSpan
+}
+
+type stubSpan struct {
+	Name  string
+	Ended bool
+	Attrs map[string]any
+	Err   error
+}
+
+func (t *stubTracer) StartSpan(_ context.Context, name string) (context.Context, tracing.Span) {
+	s := &stubSpan{Name: name, Attrs: map[string]any{}}
+	t.spans = append(t.spans, s)
+	return context.Background(), s
+}
+func (s *stubSpan) End()                                { s.Ended = true }
+func (s *stubSpan) SetAttribute(k string, v any)        { s.Attrs[k] = v }
+func (s *stubSpan) RecordError(e error)                 { s.Err = e }
+
+func (t *stubTracer) spanNames() []string {
+	out := make([]string, len(t.spans))
+	for i, s := range t.spans {
+		out[i] = s.Name
+	}
+	return out
+}
+
+// TestRetrieveContext_TracesAllStages — when a Tracer is in opts.Ctx,
+// RetrieveContext must open a span per pipeline stage (expand_graph,
+// score_and_rank, rank_sort, bucketize) with the "retrieval."
+// prefix, end each one on stage exit, and skip the rerank span when
+// no Reranker is set.
+func TestRetrieveContext_TracesAllStages(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha-trace", []float32{1, 0, 0})
+
+	tracer := &stubTracer{}
+	ctx := tracing.WithTracer(context.Background(), tracer)
+
+	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth: 1,
+		Ctx:      ctx,
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	want := []string{
+		"retrieval.expand_graph",
+		"retrieval.score_and_rank",
+		"retrieval.rank_sort",
+		"retrieval.bucketize",
+	}
+	if got := tracer.spanNames(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("span names: want %v, got %v", want, got)
+	}
+	for _, s := range tracer.spans {
+		if !s.Ended {
+			t.Errorf("span %q: not ended", s.Name)
+		}
+	}
+}
+
+// TestRetrieveContext_TracesRerankWhenSet — opts.Reranker set → an
+// extra "retrieval.rerank" span appears between bucketize and the
+// explain log.
+func TestRetrieveContext_TracesRerankWhenSet(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha-rtrace", []float32{1, 0, 0})
+
+	tracer := &stubTracer{}
+	ctx := tracing.WithTracer(context.Background(), tracer)
+
+	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth: 1,
+		Ctx:      ctx,
+		Reranker: &stubReranker{},
+		QueryText: "q",
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	has := func(name string) bool {
+		for _, s := range tracer.spans {
+			if s.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("retrieval.rerank") {
+		t.Fatalf("retrieval.rerank span missing; spans=%v", tracer.spanNames())
+	}
+}
+
+// TestRetrieveContext_NoTracerUsesNoop — missing Tracer in ctx must
+// not panic and must not allocate real spans. We can't observe NoopSpan
+// directly, but the test pins down the safe-default behaviour.
+func TestRetrieveContext_NoTracerUsesNoop(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha-noop", []float32{1, 0, 0})
+
+	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth: 1, // no Ctx → NoopTracer via TracerFrom
+	}); err != nil {
+		t.Fatalf("err: %v", err)
 	}
 }
 
