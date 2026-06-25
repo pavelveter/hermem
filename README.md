@@ -14,7 +14,7 @@ A lightweight, single-binary graph memory system for LLM agents. Stores facts as
 User Query ──> [Embedder] ──> [Vector Search] ──> Top-K Seeds ──> [CTE Graph Walk] ──> Markdown Context
 ```
 
-The system stores knowledge as entities (nodes) connected by typed edges. Each `Entity` is a 19‑field umbrella persistence view that decomposes into 5 per-domain models on demand (`Fact` / `Evidence` / `Episode` / `Task` / `Belief`) plus a `Goal` view that re‑views `Task`’s shape with intent. New code prefers the per‑domain types; existing code continues to use `Entity` directly. See **[USAGE.md §15](USAGE.md#15-domain-models)** for the model map, Compose/Decompose helpers, and the Goal‑reduces‑through‑Task contract.
+The system stores knowledge as entities (nodes) connected by typed edges. Each `Entity` is a 19‑field umbrella persistence view that decomposes into 5 per-domain models on demand (`Fact` / `Evidence` / `Episode` / `Task` / `Belief`) plus a `Goal` view that re‑views `Task`’s shape with intent. New code prefers the per‑domain types; existing code continues to use `Entity` directly. See **[docs/USAGE.md §15](docs/USAGE.md#15-domain-models)** for the model map, Compose/Decompose helpers, and the Goal‑reduces‑through‑Task contract.
 
 All 12 domain services use constructor injection — no singletons, no global mutable state, no service locators. Schema is passed per-call so SIGHUP hot-reload swaps config atomically without reconstructing services. See **[docs/service-dependencies.md](docs/service-dependencies.md)** for the full dependency graph, HTTP shell wiring matrix, and data flow diagram.
 
@@ -178,7 +178,7 @@ echo '{"id":"hello","category":"world","content":"hello world"}' \
   | ./hermem memory store           # creates hermem.db on first store
 ```
 
-For one-shot CLI use without a server, see [USAGE.md §4.2](USAGE.md#4-cli-mode-runbook).
+For one-shot CLI use without a server, see [USAGE.md §4.2](docs/USAGE.md#4-cli-mode-runbook).
 
 ## Installation
 
@@ -247,7 +247,7 @@ All settings are read from `hermem.ini` **next to the binary executable**
 behaves the same regardless of the caller's working directory — a
 stray `hermem.db` no longer leaks into a transient CWD. INI format.
 If the file doesn't exist, defaults are used. The CLI is cobra-grouped;
-see [USAGE.md §4.1](USAGE.md#4-command-tree-cobra-grouped-grammar) for the
+see [USAGE.md §4.1](docs/USAGE.md#4-command-tree-cobra-grouped-grammar) for the
 full subcommand tree.
 
 ### hermem.ini — all settings
@@ -478,14 +478,15 @@ under 13 packages in `src/internal/`.
 ```
 hermem/
 ├── README.md                ← This file (high-level overview + quick start)
-├── USAGE.md                 ← Operator runbook (CLI + HTTP side-by-side,
-│                              payload reference, error model, DB schema,
-│                              embedding-model notes, operational runbook)
-├── CHANGELOG.md             ← Keep-a-Changelog format, semver
-├── skills/hermem/SKILL.md   ← Hermes Agent skill manifest (plugin metadata +
-│                              grouped-CLI grammar + procedure for agents)
-├── ROADMAP.md               ← (project planning docs)
-├── VISION.md
+├── docs/
+│   ├── USAGE.md             ← Operator runbook (CLI + HTTP side-by-side,
+│   │                          payload reference, error model, DB schema,
+│   │                          embedding-model notes, operational runbook)
+│   ├── CHANGELOG.md         ← Keep-a-Changelog format, semver
+│   ├── ROADMAP.md           ← (project planning docs)
+│   ├── VISION.md
+│   ├── SKILL.md             ← Hermes Agent skill manifest
+│   └── andrey-karpathy-skills.md
 ├── Dockerfile               ← Multi-stage build, non-root user
 ├── docker-compose.yml       ← Local stack orchestration
 ├── hermem.ini               ← Sample config (full key reference in §Configuration)
@@ -877,7 +878,7 @@ shape + `--help` rendering.
 For the full operator runbook — CLI mode and server mode side-by-side,
 request/response reference, the strict-decode error model, DB schema
 notes, embedding-model/dimension gotchas, and operational pitfalls —
-see **[USAGE.md](USAGE.md)**.
+see **[docs/USAGE.md](docs/USAGE.md)**.
 
 ## License
 

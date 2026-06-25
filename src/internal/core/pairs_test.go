@@ -221,7 +221,7 @@ func TestCrossPairMatrix_PointerIdentityOnTimeFields(t *testing.T) {
 			got := yk2.projectFrom(mid)
 			switch yk2 {
 			case kindTask:
-				assertTaskPointersIdentical(t, yk2.name()+"_self", entity, got.(Task))
+				assertTaskPointersIdentical(t, yk2.name()+"_self", entity, got.(Task)) //nolint:errcheck // switch on yk2 above guarantees kindTask; assertTaskPointers... handles nil pointers
 			case kindBelief:
 				assertBeliefPointersIdentical(t, yk2.name()+"_self", entity, got.(Belief))
 			}

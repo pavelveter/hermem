@@ -28,9 +28,9 @@ func writeBucket(sb *strings.Builder, heading string, facts []core.RetrievedFact
 	sb.WriteString("## " + heading + "\n")
 	for _, f := range facts {
 		if f.Depth > 0 && f.ParentID != "" {
-			sb.WriteString(fmt.Sprintf("- %s (via '%s' from %s)\n", f.Content, f.RelationType, f.ParentID))
+			fmt.Fprintf(sb, "- %s (via '%s' from %s)\n", f.Content, f.RelationType, f.ParentID)
 		} else {
-			sb.WriteString(fmt.Sprintf("- %s\n", f.Content))
+			fmt.Fprintf(sb, "- %s\n", f.Content)
 		}
 	}
 	sb.WriteString("\n")

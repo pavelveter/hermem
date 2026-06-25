@@ -286,7 +286,7 @@ func RenderTaskTree(nodes []*core.TreeNode, prefix string) string {
 		if node.Status != "" && node.Status != "pending" {
 			status = fmt.Sprintf(" (%s)", node.Status)
 		}
-		sb.WriteString(fmt.Sprintf("%s[%s] %s%s\n", prefix, node.ID, node.Content, status))
+		fmt.Fprintf(&sb, "%s[%s] %s%s\n", prefix, node.ID, node.Content, status)
 		for _, child := range node.Children {
 			childPrefix := prefix
 			if i == len(nodes)-1 {

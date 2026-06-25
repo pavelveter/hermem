@@ -170,12 +170,14 @@ func TestCompose_GoalBridgesViaTask(t *testing.T) {
 	f := Fact{ID: "g-1", Category: "goal", Content: "Ship v0.2.0"}
 
 	// Inline 4-field bridge: Goal's full lifecycle → Task.
-	bridged := Compose(f, Evidence{}, Episode{}, Task{
+	//nolint:staticcheck // by design: Compose never sees a Goal; the test invariant pins field-by-field
+	taskFromGoal := Task{
 		Status:    g.Status,
 		ValidFrom: g.ValidFrom,
 		ValidTo:   g.ValidTo,
 		Priority:  g.Priority,
-	}, Belief{})
+	}
+	bridged := Compose(f, Evidence{}, Episode{}, taskFromGoal, Belief{})
 
 	// Task band must reflect Goal fields exactly.
 	if bridged.Status != "in_progress" {

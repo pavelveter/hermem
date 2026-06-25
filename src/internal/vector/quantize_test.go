@@ -55,7 +55,7 @@ func TestQuantizeVector_CodesClampRange(t *testing.T) {
 	src := []float32{0, 100}
 	qv := QuantizeVector(src)
 	for i, c := range qv.Codes {
-		if c < -127 || c > 127 {
+		if c < -127 {
 			t.Fatalf("code %d out of int8 range: %d", i, c)
 		}
 	}

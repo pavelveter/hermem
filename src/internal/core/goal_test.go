@@ -190,6 +190,7 @@ func TestGoal_ReducesToTask(t *testing.T) {
 
 	projected := g.AsEntity().AsTask()
 
+	//nolint:staticcheck // by design: Goal→Task bridge kept inline — pins each field for the round-trip contract
 	expected := Task{
 		Status:    g.Status,
 		ValidFrom: g.ValidFrom,

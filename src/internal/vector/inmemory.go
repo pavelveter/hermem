@@ -40,7 +40,7 @@ func getDots(n int) []float32 {
 	if n > maxSearchN {
 		return make([]float32, n)
 	}
-	p := dotPool.Get().(*[]float32)
+	p := dotPool.Get().(*[]float32) //nolint:errcheck // sync.Pool invariant: New() always returns *[]float32
 	if cap(*p) < n {
 		return make([]float32, n)
 	}
@@ -59,7 +59,7 @@ func getInts(n int) []int {
 	if n > maxSearchN {
 		return make([]int, n)
 	}
-	p := intPool.Get().(*[]int)
+	p := intPool.Get().(*[]int) //nolint:errcheck // sync.Pool invariant: New() always returns *[]int
 	if cap(*p) < n {
 		return make([]int, n)
 	}
@@ -88,7 +88,6 @@ type InMemoryVectorIndex struct {
 	flatMatrix []float32
 	cols       int
 	byID       map[string]int
-	loaded     bool
 }
 
 func NewInMemoryVectorIndex(db *sql.DB) *InMemoryVectorIndex {

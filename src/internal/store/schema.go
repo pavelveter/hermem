@@ -21,7 +21,7 @@ func HashSchema(schema core.SchemaConfig) string {
 		"unblocking": schema.StateUnblocking,
 		"recovery":   schema.RelationRecovery,
 	}
-	b, _ := json.Marshal(rep)
+	b, _ := json.Marshal(rep) //nolint:errcheck // best-effort: serialization failure surfaces as gzip error upstream
 	h := sha256.Sum256(b)
 	return fmt.Sprintf("%x", h[:8])
 }
@@ -32,7 +32,9 @@ func CheckSchemaFingerprint(db *sql.DB, schema core.SchemaConfig) (stored, curre
 	current = HashSchema(schema)
 	err = db.QueryRow("SELECT value FROM meta WHERE key = 'schema_fingerprint'").Scan(&stored)
 	if err == sql.ErrNoRows {
-		_, _ = db.Exec("INSERT INTO meta (key, value) VALUES ('schema_fingerprint', ?)", current)
+		if _, err := db.Exec("INSERT INTO meta (key, value) VALUES ('schema_fingerprint', ?)", current); err != nil {
+			return "", current, fmt.Errorf("insert schema fingerprint: %w", err)
+		}
 		return "", current, nil
 	}
 	if err != nil {

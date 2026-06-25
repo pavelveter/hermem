@@ -47,7 +47,7 @@ func (s *StatsCollector) Collect(ctx context.Context) (*Stats, error) {
 		mu.Unlock()
 	}
 
-	_ = s.db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize)
+	_ = s.db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize) //nolint:errcheck // PRAGMA read; missing page_size falls back to 4096 below
 	if pageSize == 0 {
 		pageSize = 4096
 	}
@@ -57,32 +57,32 @@ func (s *StatsCollector) Collect(ctx context.Context) (*Stats, error) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities").Scan(&nodeCount))
+		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities").Scan(&nodeCount)) //nolint:errcheck // err propagates via setErr → firstErr
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM edges").Scan(&edgeCount))
+		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM edges").Scan(&edgeCount)) //nolint:errcheck // err propagates via setErr → firstErr
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE archived = 1").Scan(&archivedCount))
+		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE archived = 1").Scan(&archivedCount)) //nolint:errcheck // err propagates via setErr → firstErr
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM edges WHERE relation_type = 'contradicts'").Scan(&contradictionCount))
+		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM edges WHERE relation_type = 'contradicts'").Scan(&contradictionCount)) //nolint:errcheck // err propagates via setErr → firstErr
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE embedding IS NOT NULL AND length(embedding) > 0").Scan(&embedCount))
+		setErr(s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE embedding IS NOT NULL AND length(embedding) > 0").Scan(&embedCount)) //nolint:errcheck // err propagates via setErr → firstErr
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		setErr(s.db.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pageCount))
+		setErr(s.db.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pageCount)) //nolint:errcheck // err propagates via setErr → firstErr
 	}()
 
 	wg.Wait()
@@ -101,7 +101,7 @@ func (s *StatsCollector) Collect(ctx context.Context) (*Stats, error) {
 	}
 	stats.DBSizeBytes = pageCount * pageSize
 
-	_ = s.db.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'last_gc_run_at'").Scan(&stats.LastGCRunAt)
+	_ = s.db.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'last_gc_run_at'").Scan(&stats.LastGCRunAt) //nolint:errcheck // missing key is fine; LastGCRunAt stays zero
 	stats.LastGCArchived = 0
 
 	s.mu.Lock()
