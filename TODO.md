@@ -241,6 +241,20 @@ P1 — AUTH HARDENING (multi-key scoped API keys)
 [x] Document auth in USAGE.md §16
 [x] Update CHANGELOG.md
 
+=================================================
+P1 — ADMIN CLI (ops group)
+==================================================
+
+[x] Create admin package with Stats/Issue/IntegrityReport types
+[x] Implement StatsCollector with parallel count queries + tests
+[x] Implement IntegrityChecker (missing embeddings, dangling edges, archive consistency) + tests
+[x] Implement VacuumRunner with progress callback + tests
+[x] Implement RebuildIndex with category/since/archived/DryRun filters + tests
+[x] Create ops CLI command group (Register + 4 subcommands)
+[x] Wire ops commands into root CLI (root.go)
+[x] Add CLI unit tests for all subcommands
+[x] Document admin ops in USAGE §18, CHANGELOG, TODO
+
 ==================================================
 P4 — CI/CD & ARTIFACT DISTRIBUTION
 ==================================================

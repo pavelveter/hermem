@@ -24,6 +24,20 @@ and constant-time key comparison.
 - **docs**: USAGE §16 (API Authentication) documented key format, scopes, CLI, response codes, health bypass.
 - **fix(server)**: `ErrInsufficientScope` check moved before generic `!ok` fallback to correctly return 403 instead of 401.
 
+### P1 — Admin CLI (ops group, June 2026)
+
+Offline database diagnostics and maintenance via the `hermem ops` command group.
+
+- **feat(admin)**: `Stats`/`Issue`/`IntegrityReport` types for operational snapshots.
+- **feat(admin)**: `StatsCollector` — parallel count queries (entity/edge/contradiction/archived/embedding-coverage) with single-flight caching.
+- **feat(admin)**: `IntegrityChecker` — three checks: missing embeddings (critical ≥10), dangling edges (critical), and archived entities with stale vector-index entries (warning).
+- **feat(admin)**: `VacuumRunner` — SQLite VACUUM with progress callback and bytes-reclaimed report.
+- **feat(admin)**: `RebuildIndex` — selective vector-index rebuild with Category/Since/OnlyArchived/DryRun filters.
+- **feat(cli)**: `hermem ops {stats,integrity,vacuum,rebuild-index}` command group (registered as `ops` to avoid collision with auth key management).
+- **test(admin)**: 17 unit tests across admin package (Stats, Integrity, Vacuum, RebuildIndex).
+- **test(cli)**: 6 CLI integration tests for all ops subcommands.
+- **docs**: USAGE §18 documents all four commands, exit codes, issue codes, and examples.
+
 ### P1 — Observability (tracing slice, June 2026)
 
 OpenTelemetry tracing scaffold with noop fallback, OTLP exporter gate,
