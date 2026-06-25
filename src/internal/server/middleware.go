@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
@@ -77,11 +76,6 @@ func APIKeyMiddleware(apiKey string) func(http.Handler) http.Handler {
 	}
 }
 
-var (
-	authOnce     sync.Once
-	authInstance *auth.StaticAuthenticator
-)
-
 func AuthMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,21 +96,19 @@ func AuthMiddleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			authOnce.Do(func() {
-				keys := buildKeysFromCfg(env.Cfg)
-				authInstance = auth.NewStaticAuthenticator(keys)
-			})
+			keys := buildKeysFromCfg(env.Cfg)
+			authenticator := auth.NewStaticAuthenticator(keys)
 
 			raw := r.Header.Get("X-API-Key")
 			required := auth.ScopeForPath(path)
 
-			_, ok, err := authInstance.Authorize(raw, required)
-			if errors.Is(err, auth.ErrInvalidKey) || !ok {
-				writeAuthError(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
+			_, ok, err := authenticator.Authorize(raw, required)
 			if errors.Is(err, auth.ErrInsufficientScope) {
 				writeAuthError(w, http.StatusForbidden, "insufficient_scope")
+				return
+			}
+			if errors.Is(err, auth.ErrInvalidKey) || !ok {
+				writeAuthError(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 
