@@ -50,7 +50,7 @@ P0 — ENTITY MODEL REFACTOR
 [x] Introduce Fact model
 [x] Introduce Evidence model
 [x] Introduce Episode model
-[ ] Introduce Task model
+[x] Introduce Task model
 [ ] Introduce Goal model
 [ ] Introduce Belief model
 [ ] Keep backward compatibility layer
