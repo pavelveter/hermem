@@ -103,7 +103,7 @@ P1 — EVALUATION FRAMEWORK
 [x] Implement MRR metrics
 [x] Implement NDCG metrics
 [x] Implement benchmark runner
-[ ] Add benchmark reports
+[x] Add benchmark reports
 [ ] Add benchmark CI job
 
 ==================================================
