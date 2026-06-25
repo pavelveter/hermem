@@ -102,9 +102,13 @@ func InitMetricsDB(db *sql.DB) {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_metrics_access ON metrics_entity_access(entity_id, accessed_at)`)
 }
 
+// MetricsWorker is the package-level worker reference (set by main).
+var MetricsWorker *AsyncMetricsWorker
+
 // InitMetricsWorker creates and starts a metrics worker.
 func InitMetricsWorker(db *sql.DB) *AsyncMetricsWorker {
 	w := NewAsyncMetricsWorker(db, 5000, 100, 100*time.Millisecond)
 	w.Start()
+	MetricsWorker = w
 	return w
 }

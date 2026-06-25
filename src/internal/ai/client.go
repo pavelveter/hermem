@@ -10,22 +10,15 @@ import (
 	"time"
 )
 
-// defaultBackoffs is the exponential backoff ladder applied by
+// DefaultBackoffs is the exponential backoff ladder applied by
 // ResilientClient when Backoffs is left empty. 200ms / 500ms / 1s / 2s
 // matches the spec in TODO.md 5.4 — tight enough to fail fast in
 // interactive paths, long enough to ride out a model-load spike.
-var defaultBackoffs = []time.Duration{
+var DefaultBackoffs = []time.Duration{
 	200 * time.Millisecond,
 	500 * time.Millisecond,
 	1 * time.Second,
 	2 * time.Second,
-}
-
-// DefaultBackoffs returns a copy of the default backoff ladder.
-func DefaultBackoffs() []time.Duration {
-	dst := make([]time.Duration, len(defaultBackoffs))
-	copy(dst, defaultBackoffs)
-	return dst
 }
 
 // ResilientClient wraps an *http.Client with a configurable retry
@@ -66,7 +59,7 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 	}
 	backoffs := c.Backoffs
 	if len(backoffs) == 0 {
-		backoffs = DefaultBackoffs()
+		backoffs = DefaultBackoffs
 	}
 	attempts := c.Attempts
 	if attempts <= 0 {

@@ -39,7 +39,7 @@ func NewOllamaReranker(baseURL, model string, timeout time.Duration) *OllamaRera
 		BaseURL:   baseURL,
 		Model:     model,
 		client:    c,
-		resilient: NewResilientClient(c, 3, DefaultBackoffs()), // 1 + 2 retries; graceful-degrade after
+		resilient: NewResilientClient(c, 3, DefaultBackoffs), // 1 + 2 retries; graceful-degrade after
 	}
 }
 
@@ -113,7 +113,7 @@ func NewOpenAIReranker(baseURL, model, key string, timeout time.Duration) *OpenA
 		APIKey:    key,
 		Model:     model,
 		client:    c,
-		resilient: NewResilientClient(c, 3, DefaultBackoffs()),
+		resilient: NewResilientClient(c, 3, DefaultBackoffs),
 	}
 }
 

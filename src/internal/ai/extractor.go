@@ -40,7 +40,7 @@ func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout t
 		Model:       model,
 		Temperature: temperature,
 		client:      c,
-		resilient:   NewResilientClient(c, 4, DefaultBackoffs()),
+		resilient:   NewResilientClient(c, 4, DefaultBackoffs),
 	}
 }
 
@@ -131,7 +131,7 @@ func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, t
 		Model:       model,
 		Temperature: temperature,
 		client:      c,
-		resilient:   NewResilientClient(c, 4, DefaultBackoffs()),
+		resilient:   NewResilientClient(c, 4, DefaultBackoffs),
 	}
 }
 

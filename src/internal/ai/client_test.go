@@ -91,7 +91,7 @@ func TestResilientClient_AttemptsExhaustedReturnsLastErr(t *testing.T) {
 }
 
 func TestResilientClient_DefaultsKickInWhenZero(t *testing.T) {
-	if DefaultBackoffs() == nil || len(DefaultBackoffs()) == 0 {
+	if DefaultBackoffs == nil || len(DefaultBackoffs) == 0 {
 		t.Fatal("DefaultBackoffs must be populated so users get a sensible ladder by zero-value")
 	}
 	c := &ResilientClient{Inner: nil} // forces http.DefaultClient fallback
