@@ -17,6 +17,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
+	healthdomain "github.com/pavelveter/hermem/src/internal/health"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
@@ -28,6 +29,7 @@ import (
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
+	healthsrv "github.com/pavelveter/hermem/src/internal/server/health"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
@@ -133,8 +135,12 @@ func newTestFixture(t *testing.T) *testFixture {
 	// from DB, no schema gates).
 	reembedDom := reembeddomain.New(db, vi, embed)
 	reembedShell := reembedsrv.New(reembedDom, metrics)
-	adminSvc := NewAdminService(db, metrics)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, adminSvc)
+	// PHASE 3.7 fixture: health HTTPService wraps the health-probe
+	// domain Service (db-only — no VI, no embedder, no schema).
+	healthDom := healthdomain.New(db)
+	healthShell := healthsrv.New(healthDom)
+	adminSvc := NewAdminService(metrics)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, healthShell, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -597,6 +603,10 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// HTTPService threaded into NewServer.
 	reembedDom := reembeddomain.New(db, vi, embed)
 	reembedShell := reembedsrv.New(reembedDom, metrics)
+	// PHASE 3.7: API-key auth fixture also needs the health
+	// HTTPService threaded into NewServer.
+	healthDom := healthdomain.New(db)
+	healthShell := healthsrv.New(healthDom)
 	// PHASE 3.4: API-key auth fixture also needs the ingest HTTPService
 	// threaded into NewServer to keep the call shape consistent with
 	// the production sign call site.
@@ -612,8 +622,8 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 		ingsrv.New(ingestDom, metrics, refs, 0.88),
 		cnd.New(cndDom, metrics), graphSvc, migrSvc,
 		retsrv.New(retentionDom, metrics, refs, retentionPolicy),
-		reembedShell,
-		NewAdminService(db, metrics))
+		reembedShell, healthShell,
+		NewAdminService(metrics))
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))

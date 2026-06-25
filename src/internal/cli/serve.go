@@ -15,6 +15,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
+	healthdomain "github.com/pavelveter/hermem/src/internal/health"
 	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
@@ -25,6 +26,7 @@ import (
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
+	healthsrv "github.com/pavelveter/hermem/src/internal/server/health"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
@@ -85,6 +87,10 @@ func runServe(env *clienv.Env, port string) error {
 	// orchestrator moved from algo/reembed.go (deleted in this phase).
 	// The three deps (db, vi, embedder) are Service fields; per-call
 	// args (dim, batchSize, model) come from the request.
+	// PHASE 3.7: health domain Service owns the health-probe logic
+	// (Health, Live, Ready). DB-only — no VI, no embedder, no schema
+	// gates. The HTTP shell registers /health, /health/live, /health/ready.
+	healthSvc := healthdomain.New(env.DB)
 	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
 	// PHASE 2.2: same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.
@@ -149,7 +155,8 @@ func runServe(env *clienv.Env, port string) error {
 		migrsrv.New(migrSvc, env.Metrics, refs),
 		retsrv.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
 		reembedsrv.New(reembedSvc, env.Metrics),
-		server.NewAdminService(env.DB, env.Metrics),
+		healthsrv.New(healthSvc),
+		server.NewAdminService(env.Metrics),
 	)
 
 	// SIGHUP reload loop — separate from HTTP lifecycle so we can re-validate
