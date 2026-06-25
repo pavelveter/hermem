@@ -13,17 +13,24 @@ import (
 )
 
 // RetrieveContext performs a recursive CTE graph walk from seed IDs and returns re-ranked results.
+//
+// Pipeline (four stages; each is a named helper below):
+//
+//  1. expandGraph       — SQL CTE walk; returns raw []GraphNode rows.
+//  2. scoreAndRank      — applies the composite scorer (or ScoreComponents
+//                         on the Explain path) per row; collects depth-0
+//                         seeds; sorts by RankingScore DESC.
+//  3. bucketize         — content-level dedup + per-category fan-out.
+//  4. logRetrievalExplanation — one structured INFO per explain call.
+//
+// Behavior is unchanged from the pre-refactor inline implementation; the
+// stage split is for clarity and per-stage testability, not a semantic
+// shift.
 func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
 	if len(seedIDs) == 0 {
 		return &core.RetrievalResult{}, nil
 	}
-	effDepth := opts.MaxDepth
-	if effDepth <= 0 {
-		effDepth = 2
-	}
-	if opts.DepthCeiling > 0 && effDepth > opts.DepthCeiling {
-		effDepth = opts.DepthCeiling
-	}
+	effDepth := effectiveDepth(opts)
 
 	w := opts.RankingWeight.WithDefaults()
 	scorer := opts.CompositeScorer
@@ -31,6 +38,47 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		scorer = defaultCompositeScorer(w)
 	}
 
+	nodes, err := expandGraph(db, seedIDs, opts, effDepth)
+	if err != nil {
+		return nil, err
+	}
+
+	ranked, seeds := scoreAndRank(nodes, opts, w, scorer)
+	sortByScoreDesc(ranked)
+
+	result := bucketize(ranked, seeds, w, opts.Explain)
+
+	if opts.Explain {
+		logRetrievalExplanation(result, len(seedIDs), effDepth)
+	}
+	return result, nil
+}
+
+// effectiveDepth resolves the requested MaxDepth against the
+// DepthCeiling clamp, defaulting to 2 when unset. Pulled out so the
+// RetrieveContext orchestrator stays focused on pipeline composition.
+func effectiveDepth(opts core.RetrieveContextOptions) int {
+	d := opts.MaxDepth
+	if d <= 0 {
+		d = 2
+	}
+	if opts.DepthCeiling > 0 && d > opts.DepthCeiling {
+		d = opts.DepthCeiling
+	}
+	return d
+}
+
+// expandGraph — stage 1 of the retrieval pipeline. Executes the
+// recursive CTE that walks the graph from seed IDs up to effDepth,
+// returning one GraphNode per distinct entity reached (depth-0 seeds
+// included). Honors MaxRetrievedNodes as a soft cap. Applies
+// TimeFrom / TimeTo filters when set on opts.
+//
+// Stage output is unscored — scoreAndRank owns the scoring pass so
+// each row is decoded exactly once. The decoded embedding vector is
+// returned alongside the node so stage 2 can feed it into the scorer
+// without re-querying the row.
+func expandGraph(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions, effDepth int) ([]scannedNode, error) {
 	phs, args := store.InClauseArgs(seedIDs)
 	var timeFilter string
 	if !opts.TimeFrom.IsZero() {
@@ -62,18 +110,8 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 	}
 	defer rows.Close()
 
-	queryNorm := vector.VectorNorm(opts.QueryEmbedding)
-	result := &core.RetrievalResult{
-		SeedNodes:    []core.GraphNode{},
-		WorldFacts:   []core.RetrievedFact{},
-		Opinions:     []core.RetrievedFact{},
-		Experiences:  []core.RetrievedFact{},
-		Observations: []core.RetrievedFact{},
-	}
+	var nodes []scannedNode
 	seenIDs := make(map[string]bool)
-	seenContents := make(map[string]bool)
-	var ranked []rankedNode
-
 	for rows.Next() {
 		var node core.GraphNode
 		var embBlob []byte
@@ -87,18 +125,39 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		if opts.MaxRetrievedNodes > 0 && len(seenIDs) > opts.MaxRetrievedNodes {
 			break
 		}
+		vec, _ := store.DecodeVector(embBlob, len(opts.QueryEmbedding))
+		nodes = append(nodes, scannedNode{node: node, vec: vec})
+	}
+	return nodes, nil
+}
 
-		nodeVec, _ := store.DecodeVector(embBlob, len(opts.QueryEmbedding))
+// scannedNode is the internal handoff between expandGraph and
+// scoreAndRank — the GraphNode plus its decoded embedding. Kept
+// package-private; it is not part of any public contract.
+type scannedNode struct {
+	node core.GraphNode
+	vec  []float32
+}
+
+// scoreAndRank — stage 2. Walks the expanded nodes once, applies the
+// composite scorer, collects depth-0 entries into seeds, and returns
+// the ranked slice (unsorted — caller invokes sortByScoreDesc).
+//
+// Explain=true funnels through ComputeScoreComponents so sim / recency /
+// temporal / centrality / path are extracted exactly once and the
+// breakdown derives from the same intermediates as the final score.
+func scoreAndRank(items []scannedNode, opts core.RetrieveContextOptions, w core.RankingWeight, scorer core.CompositeScorer) ([]rankedNode, []core.GraphNode) {
+	queryNorm := vector.VectorNorm(opts.QueryEmbedding)
+	ranked := make([]rankedNode, 0, len(items))
+	var seeds []core.GraphNode
+	for _, it := range items {
+		node, nodeVec := it.node, it.vec
 		var (
-			score  float32
-			comps  ScoreComponents
+			score     float32
+			comps     ScoreComponents
 			haveComps bool
 		)
 		if opts.Explain {
-			// Compute components once on the Explain path so the
-			// breakdown, the ranked-node sim/recency fields, and the
-			// final score all derive from the same intermediate
-			// values — no double-extraction of raw features.
 			comps = ComputeScoreComponents(node, nodeVec, opts.QueryEmbedding, queryNorm, w)
 			score = comps.Final(w)
 			haveComps = true
@@ -114,29 +173,46 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		}
 		ranked = append(ranked, rn)
 		if node.Depth == 0 {
-			// Append rn.node (not node) so any ScoreBreakdown attached
-			// on the Explain path propagates into SeedNodes. The two
-			// are value-type copies — modifying rn.node leaves node
-			// stale.
-			result.SeedNodes = append(result.SeedNodes, rn.node)
+			// Append rn.node (not node) so any ScoreBreakdown
+			// attached on the Explain path propagates into SeedNodes.
+			// The two are value-type copies — modifying rn.node leaves
+			// node stale.
+			seeds = append(seeds, rn.node)
 		}
 	}
+	return ranked, seeds
+}
 
-	sortByScoreDesc(ranked)
-
+// bucketize — stage 3. Content-level dedup (first-write-wins on the
+// sorted ranked slice) plus per-category fan-out into the four
+// RetrievalResult buckets. Explain path also propagates the legacy
+// scalar VectorScore / RecencyScore / DepthPenalty / RankingScore on
+// each fact for backward compat with callers predating ScoreBreakdown.
+//
+// Returns the full RetrievalResult with SeedNodes already set from
+// stage 2.
+func bucketize(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight, explain bool) *core.RetrievalResult {
+	result := &core.RetrievalResult{
+		SeedNodes:    seeds,
+		WorldFacts:   []core.RetrievedFact{},
+		Opinions:     []core.RetrievedFact{},
+		Experiences:  []core.RetrievedFact{},
+		Observations: []core.RetrievedFact{},
+	}
+	seenContents := make(map[string]bool)
 	for _, rn := range ranked {
 		if seenContents[rn.node.Entity.Content] {
 			continue
 		}
 		seenContents[rn.node.Entity.Content] = true
 		fact := core.RetrievedFact{
-			Content:       rn.node.Entity.Content,
-			ParentID:      rn.node.ParentID,
-			RelationType:  rn.node.RelationType,
-			Depth:         rn.node.Depth,
+			Content:        rn.node.Entity.Content,
+			ParentID:       rn.node.ParentID,
+			RelationType:   rn.node.RelationType,
+			Depth:          rn.node.Depth,
 			ScoreBreakdown: rn.node.ScoreBreakdown,
 		}
-		if opts.Explain {
+		if explain {
 			fact.VectorScore = rn.sim
 			fact.RecencyScore = rn.recency
 			fact.DepthPenalty = w.DepthPenalty * rn.node.PathWeight
@@ -153,10 +229,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 			result.Observations = append(result.Observations, fact)
 		}
 	}
-	if opts.Explain {
-		logRetrievalExplanation(result, len(seedIDs), effDepth)
-	}
-	return result, nil
+	return result
 }
 
 // logRetrievalExplanation emits a single structured INFO log per
