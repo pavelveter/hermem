@@ -11,8 +11,14 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    - forbidigo
 
 linters-settings:
+  forbidigo:
+    forbid:
+      - pattern: ActiveSchema
+        msg: "ActiveSchema() is removed — use dependency injection via Env or Service constructor"
+        pkg: ^github\.com/pavelveter/hermem
   errcheck:
     check-blank: true
     check-type-assertions: true
