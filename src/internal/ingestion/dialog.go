@@ -202,7 +202,7 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 	// need the id both to fold the archive UPDATE INTO itemTx (atomic
 	// with the new entity write) and to populate the post-commit Remove.
 	var archiveID string
-	if existing != nil && IsIngestionContradiction(existing.Content, it.entity.Content) {
+	if existing != nil && w.detector.Detect(*existing, core.Entity{Content: it.entity.Content}).Detected {
 		existingConf := existing.Confidence
 		if existingConf == 0 {
 			existingConf = 1.0
@@ -414,7 +414,7 @@ func IsIngestionContradiction(a, b string) bool {
 // ProcessDialogWithProvenance and unwind themselves; the WaitGroup
 // barriers the function exit.
 func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ch <-chan core.MemoryMessage) {
-	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema)
+	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, contradiction.NewLexicalDetector())
 	const maxParallel = 8
 	sem := make(chan struct{}, maxParallel)
 	var wg sync.WaitGroup
@@ -465,7 +465,7 @@ func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extracto
 // Empty ckptPath / pendingPath skip the corresponding persistence step
 // — used by tests that don't need durable state.
 func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan core.MemoryMessage) {
-	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema)
+	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, contradiction.NewLexicalDetector())
 	if ckptPath == "" && pendingPath == "" {
 		slog.Warn("MemoryWorkerResilient: ckptPath and pendingPath both empty — no durability on cancel",
 			"worker_id", workerID)
