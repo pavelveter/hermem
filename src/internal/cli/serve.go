@@ -87,10 +87,13 @@ func runServe(env *clienv.Env, port string) error {
 	// orchestrator moved from algo/reembed.go (deleted in this phase).
 	// The three deps (db, vi, embedder) are Service fields; per-call
 	// args (dim, batchSize, model) come from the request.
-	// PHASE 3.7: health domain Service owns the health-probe logic
-	// (Health, Live, Ready). DB-only — no VI, no embedder, no schema
-	// gates. The HTTP shell registers /health, /health/live, /health/ready.
-	healthSvc := healthdomain.New(env.DB)
+	healthSvc := healthdomain.New(
+		healthdomain.DBProbe(env.DB),
+		healthdomain.VectorIndexProbe(env.VI, env.Cfg.VectorDim),
+		healthdomain.EmbedderProbe(env.Embedder),
+		healthdomain.ExtractorProbe(env.Extractor),
+		healthdomain.DiskSpaceProbe(env.Cfg.DBPath),
+	)
 	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
 	// PHASE 2.2: same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.
