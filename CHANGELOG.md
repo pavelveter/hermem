@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **test(retrieval)**: 9 new tests — breakdown field mapping, depth-penalty arithmetic, NaN clamp, non-explain backward compat, log emission / non-emission contracts.
   - **docs**: README, USAGE, TODO updated; CHANGELOG (this entry).
 
+- **P1 — Retrieval cleanup**: the retrieval subsystem is now organised around five named pipeline stages, each file-isolated, each tracing-spanned, each benchmark-able. The dead `core.Reranker` field is wired in; tracing emits per-stage spans; benchmarks let operators measure per-stage cost.
+  - **refactor(retrieval)**: `RetrieveContext` is now a 10-line orchestrator that calls `expandGraph` → `scoreAndRank` → `sortByScoreDesc` → `bucketize` → `applyReranker`. Behaviour-preserving.
+  - **refactor(retrieval)**: `defaultCompositeScorer` delegates to `ComputeScoreComponents`; raw feature extraction lives in exactly one place. `ScoreComponents.Final(w)` lets `walk.go` derive the final score from already-computed components.
+  - **refactor(retrieval)**: extracted `expDecayHours` helper so `recencyScore` and `temporalScore` share the decay math; temporal moved to its own file.
+  - **feat(retrieval)**: `applyReranker` stage invokes `opts.Reranker.Rerank` per non-empty bucket. `core.Reranker` was previously plumbed through config / env / serverstate but never called from `RetrieveContext`.
+  - **refactor(retrieval)**: graph expansion moved to its own file (`expand.go`) along with the internal `scannedNode` handoff type. Pipeline stages are now visible at the file level.
+  - **refactor(retrieval)**: temporal scoring isolated in `temporal.go` (the CreatedAt decay axis); recency stays in `scoring.go` as the primary ranker signal.
+  - **feat(retrieval)**: tracing spans per stage — `retrieval.expand_graph`, `retrieval.score_and_rank`, `retrieval.rank_sort`, `retrieval.bucketize`, `retrieval.rerank` (when `opts.Reranker` is set). `NoopTracer` zero-overhead contract preserved.
+  - **feat(retrieval)**: per-stage benchmarks — `BenchmarkRetrieveContext`, `BenchmarkExpandGraph`, `BenchmarkScoreAndRank`, `BenchmarkBucketize`; `go test -bench=. -benchmem ./src/internal/retrieval/`.
+  - **docs(retrieval)**: new `src/internal/retrieval/PIPELINE.md` — canonical pipeline reference (diagram, file layout, per-stage contract tables, observability, profiling, configuration knobs).
+  - **test(retrieval)**: 11 new tests covering stage refactor + rerank + tracing + backward compat.
+  - **test(retrieval)**: 6 new rerank unit tests + 3 tracing tests pin the per-stage observability contract.
+
 ## [v0.3.0] - 2026-06-25
 
 Six production-ready groups land together: scoped multi-key auth,

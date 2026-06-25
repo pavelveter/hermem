@@ -440,6 +440,16 @@ result, err := RetrieveContext(db, seedIDs, RetrieveContextOptions{MaxDepth: 2})
 markdown := FormatContextMarkdown(result)
 ```
 
+The retrieval pipeline is split into five named stages —
+`expand_graph` → `score_and_rank` → `rank_sort` → `bucketize` →
+`rerank` — each file-isolated under `src/internal/retrieval/`, each
+tracing-spanned (`retrieval.expand_graph`, `retrieval.score_and_rank`,
+`retrieval.rank_sort`, `retrieval.bucketize`, `retrieval.rerank`),
+and each benchmark-able via `go test -bench=. -benchmem
+./src/internal/retrieval/`. Per-stage contracts, span names, and
+failure modes live in
+[`src/internal/retrieval/PIPELINE.md`](src/internal/retrieval/PIPELINE.md).
+
 ### 4. Ingest dialog (background worker)
 
 ```go
