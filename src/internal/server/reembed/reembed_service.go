@@ -1,0 +1,86 @@
+// Package reembed_http exposes reembed.Service over HTTP.
+//
+// PHASE 3.6 — moves the /admin/re-embed route out of
+// src/internal/server/admin_service.go into this new shell
+// following the PHASE 3.1 + 3.2 + 3.3 + 3.4 + 3.5 transport-
+// extraction pattern. The AdminService HTTP shell no longer
+// owns /admin/re-embed — the reembed HTTP shell owns it
+// exclusively. The /admin/re-embed URL stays byte-identical
+// so existing clients see no drift between PHASE 3.5 and
+// PHASE 3.6.
+package reembed_http
+
+import (
+	"net/http"
+
+	"github.com/pavelveter/hermem/src/internal/httputil"
+	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/reembed"
+)
+
+// HTTPService is the transport shell for reembed.Service. Holds
+// the borrowed reembed.Service pointer + observability only — no
+// serverstate.Ref because re-embed read all entities directly
+// from the DB (no schema gates). Matching the PHASE 3.5
+// timeline shell shape: {Svc, Metrics}, the minimum HTTPService
+// dimension in the chain.
+type HTTPService struct {
+	Svc     *reembed.Service
+	Metrics *metrics.Metrics
+}
+
+// New constructs a reembed HTTPService. Svc is required; the
+// handler returns 500 if nil is dispatched (defensive against
+// future zero-value wiring).
+func New(svc *reembed.Service, m *metrics.Metrics) *HTTPService {
+	return &HTTPService{Svc: svc, Metrics: m}
+}
+
+// Routes returns the URL → handler mapping. Wired by Server in
+// src/internal/server/server.go via the per-service Routes()
+// protocol. /admin/re-embed moved here from AdminService in
+// PHASE 3.6.
+func (h *HTTPService) Routes() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"/admin/re-embed": h.HandleReEmbed,
+	}
+}
+
+// HandleReEmbed — POST /admin/re-embed. Re-embeds every entity
+// using the configured walk. Behaves identically to the
+// pre-PHASE-3.6 server.AdminService.HandleReEmbed; only the
+// underlying call changed from algo.ReEmbedAll to
+// reembed.Service.ReEmbedAll.
+func (h *HTTPService) HandleReEmbed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
+	var req struct {
+		BatchSize int    `json:"batch_size"`
+		Dim       int    `json:"dim"`
+		Model     string `json:"model"`
+	}
+	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
+		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		return
+	}
+	if req.BatchSize <= 0 {
+		req.BatchSize = 50
+	}
+	if req.Dim <= 0 {
+		httputil.WriteError(w, http.StatusBadRequest, "dim required")
+		return
+	}
+	// PHASE 3.6: ReEmbedAll now lives on reembed.Service. The three
+	// deps (db, vi, embedder) are Service fields; only per-call args
+	// are passed. Response shape unchanged.
+	result, err := h.Svc.ReEmbedAll(r.Context(), req.Dim, req.BatchSize, req.Model)
+	if err != nil {
+		h.Metrics.IncErr()
+		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, result)
+}
