@@ -136,9 +136,14 @@ func newTestFixture(t *testing.T) *testFixture {
 	reembedDom := reembeddomain.New(db, vi, embed)
 	reembedShell := reembedsrv.New(reembedDom, metrics)
 	// PHASE 3.7 fixture: health HTTPService wraps the health-probe
-	// domain Service (db-only — no VI, no embedder, no schema).
+	// domain Service with probe checks for every dependency.
 	// PHASE 3.8: /metrics registered directly from metrics — no AdminService arg.
-	healthDom := healthdomain.New(db)
+	healthDom := healthdomain.New(
+		healthdomain.DBProbe(db),
+		healthdomain.VectorIndexProbe(vi, testVectorDim),
+		healthdomain.EmbedderProbe(embed),
+		healthdomain.ExtractorProbe(nil),
+	)
 	healthShell := healthsrv.New(healthDom)
 	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, healthShell, metrics)
 
@@ -604,8 +609,14 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	reembedDom := reembeddomain.New(db, vi, embed)
 	reembedShell := reembedsrv.New(reembedDom, metrics)
 	// PHASE 3.7: API-key auth fixture also needs the health
-	// HTTPService threaded into NewServer.
-	healthDom := healthdomain.New(db)
+	// HTTPService threaded into NewServer. Use nil embedder
+	// to verify warning-level probe doesn't block startup.
+	healthDom := healthdomain.New(
+		healthdomain.DBProbe(db),
+		healthdomain.VectorIndexProbe(vi, testVectorDim),
+		healthdomain.EmbedderProbe(embed),
+		healthdomain.ExtractorProbe(nil),
+	)
 	healthShell := healthsrv.New(healthDom)
 	// PHASE 3.4: API-key auth fixture also needs the ingest HTTPService
 	// threaded into NewServer to keep the call shape consistent with
