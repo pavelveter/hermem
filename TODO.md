@@ -101,7 +101,7 @@ P1 — EVALUATION FRAMEWORK
 [x] Implement Recall@K metrics
 [x] Implement Precision@K metrics
 [x] Implement MRR metrics
-[ ] Implement NDCG metrics
+[x] Implement NDCG metrics
 [ ] Implement benchmark runner
 [ ] Add benchmark reports
 [ ] Add benchmark CI job
