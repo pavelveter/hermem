@@ -1145,6 +1145,45 @@ why each fact was pulled in. `seed_nodes` is `[]GraphNode` with full
 (Use `FormatContextMarkdown` server-side or the wrapper at
 `/query` to render to LLM-ready markdown.)
 
+#### `score_breakdown` — explainability payload
+
+When the retrieval is run in **explain mode** (CLI `hermem memory
+explain`, HTTP `POST /query/explain`, or any caller setting
+`opts.Explain=true` server-side), each `seed_nodes` entry and each
+per-bucket fact carries a `score_breakdown` object with the seven
+canonical ranking components:
+
+```json
+{
+  "score_breakdown": {
+    "vector_score":     0.9134,   // cosine similarity to query (0..1)
+    "recency_score":    0.7821,   // exp-decay on UpdatedAt, half-life = RecencyHalfLifeHours
+    "temporal_score":   0.6512,   // exp-decay on CreatedAt, half-life = TemporalHalfLifeHours
+    "centrality_score": 0.3010,   // log10(1 + Degree) graph centrality
+    "path_score":       1.0,      // cumulative edge weight from seed (path_weight)
+    "depth_penalty":    0.05,     // DepthPenaltyWeight × path_score, subtracted
+    "final_score":      0.9134    // composite final ranking score (== ranking_score)
+  }
+}
+```
+
+`final_score` always equals the existing scalar `ranking_score` on the
+same node/fact (parity between old and new explain fields). On the
+non-explain paths (`/retrieve`, `/query`) the `score_breakdown` field
+is **omitted** entirely — the JSON envelope stays byte-compatible for
+existing clients.
+
+Server-side, every explain call also emits one structured log line:
+
+```
+INFO retrieval.explain seeds=1 depth=1 seed_nodes=1 world_facts=2 \
+     opinions=0 experiences=0 observations=0 \
+     top_world={vector:0.91 recency:0.78 final:0.91 ...} ...
+```
+
+so operators can grep `retrieval.explain` for the per-bucket counts
+and top-ranked breakdown without re-running the query.
+
 ### `QueryResponse`
 
 ```json

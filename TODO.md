@@ -77,17 +77,17 @@ P0 — CONTRADICTION ENGINE 2.0
 P0 — RETRIEVAL EXPLAINABILITY
 ==================================================
 
-[ ] Create ScoreBreakdown structure
-[ ] Add VectorScore component
-[ ] Add RecencyScore component
-[ ] Add TemporalScore component
-[ ] Add CentralityScore component
-[ ] Add PathScore component
-[ ] Add DepthPenalty component
-[ ] Add FinalScore component
-[ ] Return score breakdown from retrieval API
-[ ] Log retrieval score explanations
-[ ] Add retrieval explanation tests
+[x] Create ScoreBreakdown structure
+[x] Add VectorScore component
+[x] Add RecencyScore component
+[x] Add TemporalScore component
+[x] Add CentralityScore component
+[x] Add PathScore component
+[x] Add DepthPenalty component
+[x] Add FinalScore component
+[x] Return score breakdown from retrieval API
+[x] Log retrieval score explanations
+[x] Add retrieval explanation tests
 
 ==================================================
 P1 — EVALUATION FRAMEWORK

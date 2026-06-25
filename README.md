@@ -44,7 +44,7 @@ Each entity belongs to a category defined in `[schema]`:
 - **Declarative schema** — categories, relation types, FSM rules defined in `hermem.ini` `[schema]`; no recompilation needed
 - **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
 - **Graph integrity verify** — `hermem graph verify` checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types (exit 1 on problems)
-- **Retrieval explainability** — `/query/explain` endpoint returns vector/recency/depth score breakdown per retrieved fact
+- **Retrieval explainability** — `/query/explain` endpoint returns a `score_breakdown` object per retrieved fact and seed node carrying the seven canonical ranking components (`vector_score`, `recency_score`, `temporal_score`, `centrality_score`, `path_score`, `depth_penalty`, `final_score`); non-explain paths omit the breakdown and stay byte-compatible
 - **Per-domain Entity decomposition** — 5 typed models (Fact, Evidence, Episode, Task, Belief) projected from the 19‑field umbrella `Entity`; `core.Compose(…)` reassembles; 64 contract tests lock orthogonal‑band semantics. Goal re‑views Task’s shape with no new field.
 - **Contradiction detection** — heuristic `isContradiction` detects conflicting statements at ingest; prevents merging, creates `contradicts` edges instead
 - **Temporal retrieval** — `/query/temporal` endpoint filters graph walk by time range (`time_from`/`time_to` RFC3339)
@@ -596,7 +596,7 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/retrieve` | POST | Graph walk from seed IDs |
 | `/ingest` | POST | Ingest dialog text |
 | `/query` | POST | Full pipeline: search + graph walk + markdown |
-| `/query/explain` | POST | Query with vector/recency/depth score breakdown |
+| `/query/explain` | POST | Query with full ScoreBreakdown (vector / recency / temporal / centrality / path / depth_penalty / final) per node and fact |
 | `/query/temporal` | POST | Query filtered by time range (time_from/time_to) |
 | `/task/status` | POST | Update task execution status |
 | `/task/executable` | POST | List executable tasks (CTE dependency walk) |
