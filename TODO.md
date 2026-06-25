@@ -61,14 +61,14 @@ P0 — ENTITY MODEL REFACTOR
 P0 — CONTRADICTION ENGINE 2.0
 ==================================================
 
-[ ] Extract contradiction detection behind interface
-[ ] Create ContradictionDetector interface
-[ ] Implement LexicalDetector
+[x] Extract contradiction detection behind interface
+[x] Create ContradictionDetector interface
+[x] Implement LexicalDetector
 [ ] Implement EmbeddingDetector
 [ ] Implement LLMDetector
-[ ] Add detector composition pipeline
-[ ] Add contradiction confidence scoring
-[ ] Add contradiction explanation output
+[x] Add detector composition pipeline
+[x] Add contradiction confidence scoring
+[x] Add contradiction explanation output
 [ ] Add contradiction benchmark dataset
 [ ] Add contradiction evaluation metrics
 [ ] Add contradiction regression tests
