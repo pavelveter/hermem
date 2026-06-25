@@ -181,16 +181,42 @@ type LLMExtractor interface {
 	ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error)
 }
 
+// ScoreBreakdown decomposes the ranking score into its constituent
+// components so callers can understand why a particular node was
+// retrieved. Field semantics mirror scoring.go's named contributions:
+//
+//	VectorScore     — cosine similarity to query (0..1)
+//	RecencyScore    — exponential decay on UpdatedAt, half-life = RecencyHalfLifeHours
+//	TemporalScore   — exponential decay on CreatedAt, half-life = TemporalHalfLifeHours
+//	CentralityScore — log10(1 + Degree) graph centrality
+//	PathScore       — cumulative edge weight from seed (path_weight)
+//	DepthPenalty    — PathScore × DepthPenalty weight, subtracted from sum
+//	FinalScore      — composite final ranking score (mirrors RankingScore)
+//
+// ScoreBreakdown is populated when RetrieveContextOptions.Explain is true
+// (or for /query/explain). Nil otherwise — the omitempty tag keeps the
+// /retrieve JSON envelope byte-compatible for non-explain callers.
+type ScoreBreakdown struct {
+	VectorScore     float32 `json:"vector_score"`
+	RecencyScore    float32 `json:"recency_score"`
+	TemporalScore   float32 `json:"temporal_score"`
+	CentralityScore float32 `json:"centrality_score"`
+	PathScore       float32 `json:"path_score"`
+	DepthPenalty    float32 `json:"depth_penalty"`
+	FinalScore      float32 `json:"final_score"`
+}
+
 // RetrievedFact is one re-ranked item in a category bucket.
 type RetrievedFact struct {
-	Content      string  `json:"content"`
-	ParentID     string  `json:"parent_id,omitempty"`
-	RelationType string  `json:"relation_type,omitempty"`
-	Depth        int     `json:"depth"`
-	VectorScore  float32 `json:"vector_score,omitempty"`
-	RecencyScore float32 `json:"recency_score,omitempty"`
-	DepthPenalty float32 `json:"depth_penalty,omitempty"`
-	RankingScore float32 `json:"ranking_score,omitempty"`
+	Content       string          `json:"content"`
+	ParentID      string          `json:"parent_id,omitempty"`
+	RelationType  string          `json:"relation_type,omitempty"`
+	Depth         int             `json:"depth"`
+	VectorScore   float32         `json:"vector_score,omitempty"`
+	RecencyScore  float32         `json:"recency_score,omitempty"`
+	DepthPenalty  float32         `json:"depth_penalty,omitempty"`
+	RankingScore  float32         `json:"ranking_score,omitempty"`
+	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
 }
 
 // Reranker reorders a list of facts based on relevance to a query.
@@ -200,13 +226,14 @@ type Reranker interface {
 
 // GraphNode is one node returned by the graph-walk CTE.
 type GraphNode struct {
-	Entity       Entity  `json:"entity"`
-	Relations    []Edge  `json:"relations,omitempty"`
-	Depth        int     `json:"depth"`
-	PathWeight   float32 `json:"path_weight,omitempty"`
-	ParentID     string  `json:"parent_id"`
-	RelationType string  `json:"relation_type,omitempty"`
-	RankingScore float32 `json:"ranking_score"`
+	Entity        Entity          `json:"entity"`
+	Relations     []Edge          `json:"relations,omitempty"`
+	Depth         int             `json:"depth"`
+	PathWeight    float32         `json:"path_weight,omitempty"`
+	ParentID      string          `json:"parent_id"`
+	RelationType  string          `json:"relation_type,omitempty"`
+	RankingScore  float32         `json:"ranking_score"`
+	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
 }
 
 // RetrievalResult is the output of a RetrieveContext call.
