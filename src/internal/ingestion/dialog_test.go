@@ -270,7 +270,7 @@ func newFreshEntityWorker(t *testing.T, embedVec []float32, searchToReturn []str
 	}
 	embed := &stubEmbedder{vec: embedVec}
 	schema := core.DefaultSchemaConfig(false)
-	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, schema)
+	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, schema, nil)
 	return db, spy, worker
 }
 
@@ -394,7 +394,7 @@ func TestProcessDialogWithProvenance_MergeComposesRemoveBeforeStore(t *testing.T
 		},
 	}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false))
+	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
 
 	if err := worker.ProcessDialogWithProvenance(context.Background(), "src/merge-test", core.Provenance{ExtractedFrom: "src/merge-test"}); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
@@ -476,7 +476,7 @@ func TestProcessDialogWithProvenance_LowConfContradictionArchivesAtomically(t *t
 		},
 	}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false))
+	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
 
 	if err := worker.ProcessDialogWithProvenance(context.Background(), "src/lc-test", core.Provenance{ExtractedFrom: "src/lc-test"}); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
@@ -550,7 +550,7 @@ func TestProcessDialogWithProvenance_RollbackSkipsVIOps(t *testing.T) {
 		},
 	}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false))
+	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
 
 	// § 3.1 invariant: per-item errors are LOGGED, not propagated.
 	// Discard err so linter doesn't complain; spy.callOrder empty
