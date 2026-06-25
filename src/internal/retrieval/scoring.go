@@ -18,16 +18,14 @@ type rankedNode struct {
 }
 
 // defaultCompositeScorer returns a Scorer implementing the canonical formula.
+// Implementation delegates to ComputeScoreComponents so the raw-feature
+// extraction lives in exactly one place; previously the scorer body and
+// ComputeScoreComponents both recomputed sim/recency/temporal/centrality
+// independently.
 func defaultCompositeScorer(w core.RankingWeight) core.CompositeScorer {
 	return func(node core.GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32) float32 {
-		var sim float32
-		if len(queryEmbedding) > 0 && len(nodeVec) > 0 {
-			sim = vector.CosineSimilarityWithNorm(nodeVec, queryEmbedding, queryNorm)
-		}
-		recency := recencyScore(node.Entity.UpdatedAt, w.RecencyHalfLifeHours)
-		temporal := temporalScore(node.Entity.CreatedAt, w.TemporalHalfLifeHours)
-		centrality := centralityScore(node.Entity.Degree)
-		return compositeScore(w, sim, recency, temporal, centrality, node.PathWeight)
+		comps := ComputeScoreComponents(node, nodeVec, queryEmbedding, queryNorm, w)
+		return compositeScore(w, comps.Sim, comps.Recency, comps.Temporal, comps.Centrality, comps.Path)
 	}
 }
 
@@ -45,16 +43,30 @@ func compositeScore(w core.RankingWeight, sim, recency, temporalBoost, centralit
 // explainability — keep the struct flat so call sites can populate it
 // from one set of intermediate computations.
 type ScoreComponents struct {
-	Sim       float32 // cosine similarity to query
-	Recency   float32 // exp-decay on UpdatedAt
-	Temporal  float32 // exp-decay on CreatedAt
+	Sim        float32 // cosine similarity to query
+	Recency    float32 // exp-decay on UpdatedAt
+	Temporal   float32 // exp-decay on CreatedAt
 	Centrality float32 // log10(1 + Degree)
-	Path      float32 // cumulative edge weight (path_weight)
+	Path       float32 // cumulative edge weight (path_weight)
+}
+
+// Final returns the composite ranking score for these components
+// using the provided weights. Lets call sites that already hold a
+// ScoreComponents derive the final score without re-running the
+// weighted sum themselves — used by walk.go on the Explain path so
+// sim/recency/temporal/centrality are computed exactly once per node.
+func (c ScoreComponents) Final(w core.RankingWeight) float32 {
+	return compositeScore(w, c.Sim, c.Recency, c.Temporal, c.Centrality, c.Path)
 }
 
 // ComputeScoreComponents builds the raw feature vector for a node in
 // one call. Empty query embeddings yield Sim=0 (no vector signal);
 // missing/zero timestamps yield their respective defaults.
+//
+// Single source of truth for raw-feature extraction — defaultCompositeScorer,
+// walk.go Explain path, and any future caller should funnel through here so
+// the per-node feature arithmetic stays in lockstep with ScoreBreakdown
+// semantics.
 func ComputeScoreComponents(node core.GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32, w core.RankingWeight) ScoreComponents {
 	var sim float32
 	if len(queryEmbedding) > 0 && len(nodeVec) > 0 {
