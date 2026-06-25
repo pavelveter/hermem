@@ -14,8 +14,33 @@ permissions:
 
 env:
   GO_VERSION: "1.26"
+  # Zig 0.16.0 (April 2026) — latest stable that ships `zig cc` for musl + windows-gnu targets.
+  # Last user-visible breakage was a pin to non-existent v2.12.2 (Zig 2.x has not shipped).
+  ZIG_VERSION: "0.16.0"
 
 jobs:
+  guardrails:
+    name: Architecture Guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Forbid ActiveSchema() usage
+        run: |
+          if grep -rn 'ActiveSchema()' src/ --include='*.go'; then
+            echo "::error::ActiveSchema() is removed — use dependency injection via Env or Service constructor"
+            exit 1
+          fi
+          echo "No ActiveSchema() usage found — OK"
+
+      - name: Forbid package-level mutable state in critical packages
+        run: |
+          if grep -rn 'var RequiredScopes' src/ --include='*.go'; then
+            echo "::error::RequiredScopes must remain unexported to prevent mutation"
+            exit 1
+          fi
+          echo "No exported mutable state violations — OK"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -92,7 +117,8 @@ jobs:
         if: matrix.goos != 'darwin'
         uses: mlugg/setup-zig@v2
         with:
-          version: v2.12.2
+          version: ${{ env.ZIG_VERSION }}
+          use-tool-cache: true
 
       - name: Determine extension
         id: ext

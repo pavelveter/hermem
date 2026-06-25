@@ -57,11 +57,17 @@ func newKeysAddCmd(env *clienv.Env) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("generate key: %w", err)
 			}
-			scope, _ := readLine(cmd, "Scope (read/write/admin) [admin]: ")
+			scope, sErr := readLine(cmd, "Scope (read/write/admin) [admin]: ")
+			if sErr != nil {
+				return fmt.Errorf("read scope: %w", sErr)
+			}
 			if scope == "" {
 				scope = "admin"
 			}
-			label, _ := readLine(cmd, "Label: ")
+			label, lErr := readLine(cmd, "Label: ")
+			if lErr != nil {
+				return fmt.Errorf("read label: %w", lErr)
+			}
 			path := resolveConfigPath()
 			if err := config.AddKeyToFile(path, key, scope, label); err != nil {
 				return fmt.Errorf("write config: %w", err)

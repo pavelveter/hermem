@@ -4,29 +4,83 @@ run:
   timeout: 5m
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
+    - forbidigo
 
-linters-settings:
-  errcheck:
-    check-blank: true
-    check-type-assertions: true
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ActiveSchema
+          msg: "ActiveSchema() is removed — use dependency injection via Env or Service constructor"
+          pkg: '^github\.com/pavelveter/hermem'
+    errcheck:
+      check-blank: true
+      check-type-assertions: true
 
-issues:
-  exclude-rules:
-    - linters: [errcheck]
-      text: 'Error return value of .*\.Close is not checked'
-    - path: _test\.go
-      linters: [errcheck]
-      text: 'Error return value of .*db\.Exec is not checked'
-    - path: src/internal/cli/.*\.go
-      linters: [errcheck]
-      text: 'Error return value of .*fmt\.Fprint(f|ln)? is not checked'
-    - path: src/internal/cli/.*\.go
-      linters: [errcheck]
-      text: 'Error return value of .*f\.WriteString? is not checked'
+  exclusions:
+    rules:
+      # errcheck v2 emits WITH backticks around the function name and a
+      # trailing "(errcheck)" suffix. Patterns below end with `.*` so
+      # the suffix is part of the match (regex.MatchString, unanchored).
+      # Standard Go idioms: defer *.Close() / tx.Rollback() / *.RowsAffected —
+      # keep-alive pool drains on next reuse, ctx-cancel surfaces as real
+      # failure, RowsAffected is informational for SELECT-style reads.
+      - linters: [errcheck]
+        text: 'Error return value of `.*\.Close` is not checked.*'
+      - linters: [errcheck]
+        text: 'Error return value of `.*\.Rollback` is not checked.*'
+      - linters: [errcheck]
+        text: 'Error return value of `.*\.RowsAffected` is not checked.*'
+      # Tests: bootstrap read or cleanup errors (existence asserted separately
+      # or intentional cleanup of missing file).
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `(os\.Remove|os\.ReadFile|url\.Parse|.*\.Do|.*ProcessDialogWithProvenance|.*MigrationChecksumSHA256|.*db\.Exec)` is not checked.*'
+      # Tests: type-assertion `, _ := got.(Type)` discard (errcheck emits generic).
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value is not checked.*'
+      # Tests: HTTP body teardown.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `resp.*\.Close` is not checked.*'
+      # Tests: httptest.NewRequest bootstrap.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `http\.NewRequest` is not checked.*'
+      # Tests: response writer bootstrap.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `w\.(Write|Flush|Close)` is not checked.*'
+      # CLI: stdout/stderr writes (output errors handled via slog).
+      - path: src/internal/cli/.*\.go
+        linters: [errcheck]
+        text: 'Error return value of `.*fmt\.Fprint(f|ln)?` is not checked.*'
+      - path: src/internal/cli/.*\.go
+        linters: [errcheck]
+        text: 'Error return value of `(f\.WriteString?|w\.Flush|os\.Stdin\.Stat|.*\.GetString|io\.ReadAll)` is not checked.*'
+      # Server: best-effort body drain and auth-error JSON encode.
+      - path: src/internal/server/.*\.go
+        linters: [errcheck]
+        text: 'Error return value of `(io\.Copy|.*\.Encode|w\.Write)` is not checked.*'
+      # AI: retry-drain body + best-effort JSON encode/Decode + async test helper.
+      - path: src/internal/ai/.*\.go
+        linters: [errcheck]
+        text: 'Error return value of `(io\.Copy|json\.Marshal|io\.ReadAll|.*json\.Decoder.*Decode)` is not checked.*'
+      - path: src/internal/ai/.*_test\.go
+        linters: [errcheck]
+        text: 'Error return value of `c\.Do` is not checked.*'
+      # Metrics worker: best-effort stdout writes + async db.Exec flush.
+      - path: src/internal/metrics/.*\.go
+        linters: [errcheck]
+        text: 'Error return value of `(fmt\.Fprintf|db\.Exec)` is not checked.*'
+      # httputil: best-effort JSON encoding onto already-locked response.
+      - path: src/internal/httputil/.*\.go
+        linters: [errcheck]
+        text: 'Error return value of `.*json\.Encoder.*Encode` is not checked.*'

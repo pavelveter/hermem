@@ -137,9 +137,9 @@ func (s *Service) Dep(_ context.Context, sourceID, targetID, relationType string
 		return fmt.Errorf("dep: source_id and target_id required")
 	}
 	if add {
-		_ = store.AddEdge(s.db, sourceID, targetID, relationType, 1.0)
+		_ = store.AddEdge(s.db, sourceID, targetID, relationType, 1.0) //nolint:errcheck // best-effort: edge adjacencies may be stale on store error
 	} else {
-		_ = store.DeleteEdge(s.db, sourceID, targetID, relationType)
+		_ = store.DeleteEdge(s.db, sourceID, targetID, relationType) //nolint:errcheck // cleanup is best-effort; on failure row stays for next sweep
 	}
 	return nil
 }
@@ -214,10 +214,10 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 	}
 	for _, cid := range contextIDs {
 		if cid != "" {
-			_ = store.AddEdge(s.db, id, cid, "related_to", 1.0)
+			_ = store.AddEdge(s.db, id, cid, "related_to", 1.0) //nolint:errcheck // best-effort: edge adjacencies may be stale on store error
 		}
 	}
-	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, id, emb)
+	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, id, emb) //nolint:errcheck // best-effort: shadow auto-link; not a Create failure
 	return id, nil
 }
 

@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -32,8 +31,8 @@ func DefaultBackoffs() []time.Duration {
 // policy and is the single retry entrypoint for every external call
 // site (embedder/extractor/reranker). Setting GetBody on the request so
 // the body can be replayed between attempts is the caller's
-// responsibility — http.NewRequest does NOT set it; see newRequestWithBody
-// for a small helper that does.
+// responsibility — http.NewRequest does NOT set it; callers wanting to
+// retry safely can attach a GetBody closure after construction.
 //
 // Thread-safe — ResilientClient is stateless after construction so a
 // single instance can be shared across goroutines.
@@ -77,10 +76,9 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		if i > 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
-			}
-			// Refresh the body before retrying. Without GetBody we
-			// can't replay a consumed Body, so document this in the
-			// type's godoc and provide newRequestWithBody.
+			}				// Refresh the body before retrying. Without GetBody we
+				// can't replay a consumed Body, so callers must supply
+				// a GetBody closure on their *http.Request.
 			if req.GetBody != nil {
 				body, err := req.GetBody()
 				if err != nil {
@@ -150,20 +148,3 @@ func backoffSleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// newRequestWithBody is a small helper that constructs a ctx-pinned
-// POST request with GetBody set, so retryDo/ResilientClient can replay
-// the body across attempts without the caller having to remember the
-// GetBody incantation.
-func newRequestWithBody(ctx context.Context, method, url string, body []byte) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	if body != nil {
-		captured := body
-		req.GetBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(captured)), nil
-		}
-	}
-	return req, nil
-}

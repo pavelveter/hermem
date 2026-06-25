@@ -88,19 +88,25 @@ func (s *Service) Verify(_ context.Context, schema core.SchemaConfig, vectorDim 
 	defer rows.Close()
 	for rows.Next() {
 		var src, dst, rel string
-		rows.Scan(&src, &dst, &rel)
+		rows.Scan(&src, &dst, &rel) //nolint:errcheck // iteration error surfaces via rows.Err() check below
 		report.Issues = append(report.Issues, fmt.Sprintf("orphan edge: %s -[%s]-> %s", src, rel, dst))
+	}
+	if err := rows.Err(); err != nil {
+		return report, fmt.Errorf("verify orphan edges: %w", err)
 	}
 	embRows, err := s.db.Query(`SELECT id, length(embedding) FROM entities WHERE archived = 0 AND embedding IS NOT NULL AND length(embedding) != ?`, vectorDim*4)
 	if err != nil {
 		return report, fmt.Errorf("verify dim: %w", err)
 	}
-	defer embRows.Close()
+	defer embRows.Close() //nolint:errcheck // standard Go idiom — keep-alive pool drains on next reuse
 	for embRows.Next() {
 		var id string
 		var l int
-		embRows.Scan(&id, &l)
+		embRows.Scan(&id, &l) //nolint:errcheck // iteration error surfaces via embRows.Err() check below
 		report.Issues = append(report.Issues, fmt.Sprintf("dimension mismatch: %s has %d bytes (want %d)", id, l, vectorDim*4))
+	}
+	if err := embRows.Err(); err != nil {
+		return report, fmt.Errorf("verify dim: %w", err)
 	}
 	return report, nil
 }

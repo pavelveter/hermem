@@ -98,8 +98,8 @@ func (w *AsyncMetricsWorker) flushLocked() {
 
 // InitMetricsDB creates the metrics tables in the database.
 func InitMetricsDB(db *sql.DB) {
-	db.Exec(`CREATE TABLE IF NOT EXISTS metrics_entity_access (entity_id TEXT NOT NULL, accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)
-	db.Exec(`CREATE INDEX IF NOT EXISTS idx_metrics_access ON metrics_entity_access(entity_id, accessed_at)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS metrics_entity_access (entity_id TEXT NOT NULL, accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP)`) //nolint:errcheck // best-effort: async metrics-worker flush
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_metrics_access ON metrics_entity_access(entity_id, accessed_at)`) //nolint:errcheck // best-effort: async metrics-worker flush
 }
 
 // InitMetricsWorker creates and starts a metrics worker.

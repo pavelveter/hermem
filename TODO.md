@@ -155,7 +155,7 @@ P1 — OBSERVABILITY
 
 [x] Add OpenTelemetry tracing
 [x] Add span propagation
-[ ] Add Prometheus metrics
+[x] Add Prometheus metrics
 [ ] Add ingestion metrics
 [ ] Add retrieval metrics
 [ ] Add contradiction metrics

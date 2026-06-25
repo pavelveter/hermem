@@ -19,6 +19,7 @@ func openTestDB(tb testing.TB) *sql.DB {
 }
 
 // seedEntity inserts a minimal entity row. (Reuses store schema.)
+//nolint:unused // reserved for future shared test fixture
 func seedEntity(tb testing.TB, db *sql.DB, id, category, content string) {
 	tb.Helper()
 	if _, err := db.Exec(

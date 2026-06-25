@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **ci**: Zig pin in `.github/workflows/{ci,release}.yml` repaired. `mlugg/setup-zig@v2` was pinned to `version: v2.12.2` (Zig 2.x has never shipped — every mirror responded 404) and `release.yml` used `version: latest` (silently drift-prone). Both files now pin to stable `0.16.0` via a shared `env.ZIG_VERSION` (mirrors the existing `env.GO_VERSION` precedent) and request `use-tool-cache: true` so the toolchain tarball is cached across matrix jobs. No code change; CI / release builds resume on the next push.
+- **cross-compile**: Windows build targets fixed. `src/internal/health/probes.go` referenced `syscall.Statfs_t` / `syscall.Statfs` (Unix-only — undefined on `GOOS=windows`), which broke `windows/amd64` and `windows/arm64` matrix builds. Split into per-OS files mirroring the existing `src/internal/vector/cosine{,_darwin}.go` convention: `disk_unix.go` (`//go:build !windows`) keeps the `syscall.Statfs` path; `disk_windows.go` (`//go:build windows`) returns `nil` with `Severity: "warning"` so `/health/ready` stays operational. No new dependency (verified `golang.org/x/sys` absence in `go.mod` / `go.sum`). Both Windows builds resume.
+
 ### Added
+
+- **P0 — Architecture hardening**: completed all critical architecture tasks.
+  - **refactor(auth)**: `RequiredScopes` map made unexported (`requiredScopes`); added `RequiredScopesMap()` getter returning a safe copy to prevent external mutation.
+  - **ci**: added `Architecture Guardrails` CI job that greps for `ActiveSchema()` and exported `RequiredScopes` usage.
+  - **ci**: added `forbidigo` linter to `.golangci.yml` to catch `ActiveSchema()` at lint time.
+  - **docs**: added `docs/package-level-audit.md` — full audit of all package-level variables across `src/`, categorised as safe/mutable-fixed/by-design.
+  - **docs**: added `docs/service-dependencies.md` — complete dependency graph for all 12 domain services, HTTP shell wiring matrix, data flow diagram, and architectural properties.
+  - **test(auth)**: added tests for `ScopeForPath` and `RequiredScopesMap`.
 
 - **P0 — Retrieval explainability (ScoreBreakdown)**: full feature breakdown on every retrieved node and fact. `/query/explain` and any caller setting `opts.Explain=true` now get a `score_breakdown` object on each `GraphNode` and `RetrievedFact` carrying the seven canonical components (`vector_score`, `recency_score`, `temporal_score`, `centrality_score`, `path_score`, `depth_penalty`, `final_score`) so callers can understand *why* a node ranked where it did. Non-explain paths stay byte-compatible (breakdown omitted).
   - **feat(core)**: `core.ScoreBreakdown` struct + `ScoreBreakdown *ScoreBreakdown` field on `GraphNode` and `RetrievedFact` (omitempty).

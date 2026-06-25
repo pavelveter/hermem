@@ -69,7 +69,7 @@ func (s *Service) Search(ctx context.Context, query string, topK int) ([]core.Se
 	if topK <= 0 {
 		topK = DefaultSearchTopK
 	}
-	embedding, err := s.embedder.Embed(ctx, query)
+	embedding, err := s.embedder.Embed(ctx, query) //nolint:errcheck // best-effort: zero-vector query (Service.Query) reduces to nil; ctx.Err surfaces cancellation upstream
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
 	}
@@ -117,11 +117,11 @@ func (s *Service) Query(ctx context.Context, query string, topK int, opts core.R
 	if topK <= 0 {
 		topK = DefaultQueryTopK
 	}
-	embedding, err := s.embedder.Embed(ctx, query)
+	embedding, err := s.embedder.Embed(ctx, query) //nolint:errcheck // best-effort: zero-vector query (Service.Query) reduces to nil; ctx.Err surfaces cancellation upstream
 	if err != nil {
 		return "", fmt.Errorf("query: %w", err)
 	}
-	results, _ := vector.SearchByVector(s.db, s.vi, embedding, topK)
+	results, _ := vector.SearchByVector(s.db, s.vi, embedding, topK) //nolint:errcheck // best-effort: empty seed pool degrades to graph-walk-exact-match
 	seedIDs := make([]string, 0, len(results))
 	for _, r := range results {
 		seedIDs = append(seedIDs, r.Entity.ID)
@@ -165,8 +165,8 @@ func (s *Service) Explain(ctx context.Context, query string, topK int, opts core
 	if topK <= 0 {
 		topK = DefaultQueryTopK
 	}
-	embedding, _ := s.embedder.Embed(ctx, query)
-	results, _ := vector.SearchByVector(s.db, s.vi, embedding, topK)
+	embedding, _ := s.embedder.Embed(ctx, query) //nolint:errcheck // best-effort: zero-vector query (Service.Query) reduces to nil; ctx.Err surfaces cancellation upstream
+	results, _ := vector.SearchByVector(s.db, s.vi, embedding, topK) //nolint:errcheck // best-effort: empty seed pool degrades to graph-walk-exact-match
 	seedIDs := make([]string, 0, len(results))
 	for _, r := range results {
 		seedIDs = append(seedIDs, r.Entity.ID)

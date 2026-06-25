@@ -71,7 +71,7 @@ func expandGraph(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions,
 		if opts.MaxRetrievedNodes > 0 && len(seenIDs) > opts.MaxRetrievedNodes {
 			break
 		}
-		vec, _ := store.DecodeVector(embBlob, len(opts.QueryEmbedding))
+		vec, _ := store.DecodeVector(embBlob, len(opts.QueryEmbedding)) //nolint:errcheck // load-bearing: empty vector falls back to sim=0; caller treats missing dimensions as no-match
 		nodes = append(nodes, scannedNode{node: node, vec: vec})
 	}
 	return nodes, nil

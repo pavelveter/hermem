@@ -74,7 +74,7 @@ func TestCompositeScore_DepthPenaltySubtractive(t *testing.T) {
 		DepthPenalty: 0.5,
 	}
 	got := compositeScore(w, 1.0, 0, 0, 0, 2.0)
-	if !floatNear(got, 1.0-1.0) {
+	if !floatNear(got, 0) {
 		t.Fatalf("depth penalty should reduce score by 1.0 for pathWeight=2: want 0, got %v", got)
 	}
 }

@@ -1833,4 +1833,30 @@ For local development without a collector, point `endpoint` to
 local-only OTLP receiver. PromQL/Grafana dashboards can then filter
 by `service.name=hermem` to see retrieval latency histograms,
 ingestion batch sizes, and dependency-failure counts.
+
+---
+
+## 20. Architecture & Dependency Injection
+
+All 12 domain services use **constructor injection** — no singletons,
+no global mutable state, no service locators. Dependencies are passed
+as parameters at construction time in `cli/serve.go`:
+
+```go
+memSvc    := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
+retSvc    := retdomain.NewService(env.DB, env.VI, env.Embedder)
+taskSvc   := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+cndSvc    := contradictdomain.NewService(env.DB)
+edgeSvc   := edgedomain.New(env.DB, env.VI, env.Embedder)
+// ... 7 more services
 ```
+
+**Key properties:**
+
+- **No circular dependencies** — each domain package imports only `core`, `store`, `vector`, and `config`.
+- **Schema per-call** — `SchemaConfig` is passed per call, not held as state. SIGHUP reload swaps `serverstate.Ref` atomically; handlers always see a consistent snapshot.
+- **No global mutable state** — `ActiveSchema()` singleton removed; `RequiredScopes` map made unexported; all package-level variables audited (see `docs/package-level-audit.md`).
+- **CI guardrails** — `forbidigo` linter + grep-based CI job prevent `ActiveSchema()` and exported mutable state regressions.
+
+For the full dependency graph, HTTP shell wiring matrix, and data flow
+diagram, see **[docs/service-dependencies.md](docs/service-dependencies.md)**.

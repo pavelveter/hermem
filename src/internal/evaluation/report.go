@@ -37,6 +37,6 @@ func (r Report) Format() string {
 
 // JSON returns the report as indented JSON bytes.
 func (r Report) JSON() []byte {
-	out, _ := json.MarshalIndent(r, "", "  ")
+	out, _ := json.MarshalIndent(r, "", "  ") //nolint:errcheck // JSON() is best-effort formatting; marshal failure strips JSON output but keeps the human-readable Format() path intact
 	return out
 }

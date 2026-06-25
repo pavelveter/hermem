@@ -140,7 +140,7 @@ func (s *Service) RunOnce(ctx context.Context, policy core.RetentionPolicy) (rep
 	// IMMEDIATE in that state. Issuing a no-op ROLLBACK first clears
 	// the broken state cheaply. Mirrors the pre-extraction algo/gc.go
 	// comment § 3.4 verbatim.
-	_, _ = s.db.ExecContext(ctx, "ROLLBACK")
+	_, _ = s.db.ExecContext(ctx, "ROLLBACK") //nolint:errcheck // defensive: clears broken state on conn reuse; err from ROLLBACK on a non-tx conn is benign
 	if berr := beginImmediate(ctx, s.db); berr != nil {
 		rep.Error = berr.Error()
 		err = fmt.Errorf("retention: begin immediate: %w", berr)
@@ -157,28 +157,35 @@ func (s *Service) RunOnce(ctx context.Context, policy core.RetentionPolicy) (rep
 	// by RunInterval — not catastrophic.
 	var errorOccurred bool
 	for _, id := range ids {
-		if _, uerr := s.db.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id = ?`, id); uerr != nil {
+		_, uerr := s.db.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id = ?`, id) //nolint:errcheck // Result (sql.Result) discarded; err captured into uerr below
+		if uerr != nil {
 			slog.Warn("retention archive", "id", id, "err", uerr)
 			errorOccurred = true
 		}
 	}
 	if errorOccurred {
 		rep.Error = "partial archive failure"
-		_ = rollbackCurrentTx(ctx, s.db)
+		_ = rollbackCurrentTx(ctx, s.db) //nolint:errcheck // defensive: clears broken connection state, err is benign since call site has the BEGIN IMMEDIATE guard
 		err = fmt.Errorf("retention: partial archive failure")
 		return
 	}
 	if cerr := commitCurrentTx(ctx, s.db); cerr != nil {
 		rep.Error = cerr.Error()
-		_ = rollbackCurrentTx(ctx, s.db)
+		_ = rollbackCurrentTx(ctx, s.db) //nolint:errcheck // defensive: clears broken connection state, err is benign since call site has the BEGIN IMMEDIATE guard
 		err = fmt.Errorf("retention: commit: %w", cerr)
 		return
 	}
 
 	// vi.Remove only AFTER successful COMMIT. If the COMMIT fails the
-	// row stays un-archived and is eligible again next sweep; no
-	// vector drift is possible because vi wasn't touched.
-	s.vi.Remove(ctx, ids)
+	// row stays un-archived and is eligible again next sweep; vi wasn't
+	// touched, so no vector drift from a failed commit. vi.Remove itself
+	// may still fail at runtime (e.g. memory pool exhaustion); we
+	// capture that into `verr` and log it, but we do NOT fail the sweep
+	// because the DB state is already committed. Ghost vectors from a
+	// failed removal persist until manual cleanup (no auto GC).
+	if verr := s.vi.Remove(ctx, ids); verr != nil {
+		slog.Warn("retention: vi.Remove post-commit fault", "count", len(ids), "err", verr)
+	}
 	rep.Swept = len(ids)
 	return
 }

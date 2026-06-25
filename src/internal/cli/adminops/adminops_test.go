@@ -120,7 +120,7 @@ func TestOpsIntegrity_WithMissingEmbedding(t *testing.T) {
 	env := testAdminEnv(t)
 	seedOpsTestDB(t, env)
 	// Add entity without embedding
-	env.DB.Exec("INSERT INTO entities (id, category, content) VALUES ('missing-emb', 'test', 'x')")
+	env.DB.Exec("INSERT INTO entities (id, category, content) VALUES ('missing-emb', 'test', 'x')") //nolint:errcheck // test bootstrap: subsequent Query surfaces failure
 
 	cmd := newIntegrityCmd(env)
 	out, err := executeCmd(cmd, []string{"--json"})

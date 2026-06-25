@@ -17,7 +17,7 @@ func TestGenerateKey(t *testing.T) {
 		t.Fatalf("want 64 hex chars, got %d: %q", len(key), key)
 	}
 	for _, c := range key {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Fatalf("non-hex char %c in key %q", c, key)
 		}
 	}

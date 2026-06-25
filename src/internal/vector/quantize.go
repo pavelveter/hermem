@@ -14,8 +14,15 @@ type QuantizedVector struct {
 	Codes []int8  `json:"codes"`
 }
 
+// quantCodePool stores pointers to slices so Put/Get exchange a pointer-
+// sized value instead of boxing a slice header into any (sync.Pool.Put
+// allocates per Put otherwise, which SA6002 flags as "argument should be
+// pointer-like to avoid allocations").
 var quantCodePool = sync.Pool{
-	New: func() interface{} { return make([]int8, 0, 256) },
+	New: func() interface{} {
+		s := make([]int8, 0, 256)
+		return &s
+	},
 }
 
 // QuantizeVector quantizes a float32 vector to int8 using the min-max scheme.
@@ -42,12 +49,13 @@ func QuantizeVector(v []float32) QuantizedVector {
 	// across pool reuse. The earlier 3-index `[:len(v):len(v)]` form
 	// reset cap back to len, defeating the whole point of the pool on
 	// hot paths with variable-length embeddings.
-	codes := quantCodePool.Get().([]int8)[:len(v)]
+	codesPtr := quantCodePool.Get().(*[]int8) //nolint:errcheck // sync.Pool.New() invariant returns *[]int8
+	codes := (*codesPtr)[:len(v)]
 	for i, x := range v {
 		codes[i] = int8((x - min) * scale)
 	}
 	q := QuantizedVector{Min: min, Max: max, Codes: codes}
-	quantCodePool.Put(codes)
+	quantCodePool.Put(codesPtr)
 	return q
 }
 

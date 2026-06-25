@@ -264,7 +264,10 @@ func MigrationStatus(db *sql.DB) ([]MigStatus, error) {
 			}
 		}
 	}
-	files, _ := PendingMigrations()
+	files, err := PendingMigrations()
+	if err != nil {
+		return nil, fmt.Errorf("list pending migrations: %w", err)
+	}
 	out := make([]MigStatus, 0, len(files))
 	for _, name := range files {
 		m := MigStatus{Name: name, Applied: applied[name], AppliedAt: appliedAt[name]}
@@ -297,8 +300,12 @@ func RollbackMigration(db *sql.DB, target string) (string, error) {
 		return "", fmt.Errorf("read last migration: %w", err)
 	}
 	if target == "" {
-		_, _ = db.Exec("DELETE FROM schema_migrations WHERE version = ?", name)
-		_, _ = db.Exec("DELETE FROM migration_checksums WHERE version = ?", name)
+		if _, err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", name); err != nil {
+			slog.Warn("rollback: delete schema_migrations row failed", "version", name, "err", err)
+		}
+		if _, err := db.Exec("DELETE FROM migration_checksums WHERE version = ?", name); err != nil {
+			slog.Warn("rollback: delete migration_checksums row failed", "version", name, "err", err)
+		}
 		slog.Info("migration rolled back", "migration", name)
 		return name, nil
 	}
@@ -366,14 +373,20 @@ func VerifyMigrationIntegrity(db *sql.DB) ([]MigMismatch, error) {
 			}
 		}
 	}
-	applied, _ := appliedMigrations(db)
+	applied, err := appliedMigrations(db)
+	if err != nil {
+		return nil, fmt.Errorf("list applied migrations: %w", err)
+	}
 	var mismatches []MigMismatch
 	for name := range applied {
 		st, ok := stored[name]
 		if !ok {
 			continue // pre-SHA-256 migration, skip
 		}
-		current, _ := MigrationChecksumSHA256(name)
+		current, err := MigrationChecksumSHA256(name)
+		if err != nil {
+			continue // unreadable migration checksum; skip rather than false-positive mismatch
+		}
 		if st != current {
 			mismatches = append(mismatches, MigMismatch{Name: name, StoredChecksum: st, CurrentChecksum: current})
 		}
