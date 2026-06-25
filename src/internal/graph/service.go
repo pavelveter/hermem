@@ -16,7 +16,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/pavelveter/hermem/src/internal/algo"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -78,10 +77,30 @@ func (s *Service) Communities(_ context.Context, maxIter int) ([]core.Community,
 // vector dimensionality — any entity whose BLOB length does not match
 // dim*4 bytes is flagged. Returns a VerifyReport whose Pass() method
 // controls CLI exit-1 semantics.
-func (s *Service) Verify(_ context.Context, schema core.SchemaConfig, dim int) (core.VerifyReport, error) {
-	report, err := algo.VerifyGraph(s.db, schema, dim)
+//
+// PHASE 3.9: inlined from algo.VerifyGraph (now deleted from algo/verify.go).
+func (s *Service) Verify(_ context.Context, schema core.SchemaConfig, vectorDim int) (core.VerifyReport, error) {
+	var report core.VerifyReport
+	rows, err := s.db.Query(`SELECT ed.source_id, ed.target_id, ed.relation_type FROM edges ed LEFT JOIN entities e1 ON ed.source_id = e1.id LEFT JOIN entities e2 ON ed.target_id = e2.id WHERE e1.id IS NULL OR e2.id IS NULL`)
 	if err != nil {
-		return core.VerifyReport{}, fmt.Errorf("verify: %w", err)
+		return report, fmt.Errorf("verify orphan edges: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var src, dst, rel string
+		rows.Scan(&src, &dst, &rel)
+		report.Issues = append(report.Issues, fmt.Sprintf("orphan edge: %s -[%s]-> %s", src, rel, dst))
+	}
+	embRows, err := s.db.Query(`SELECT id, length(embedding) FROM entities WHERE archived = 0 AND embedding IS NOT NULL AND length(embedding) != ?`, vectorDim*4)
+	if err != nil {
+		return report, fmt.Errorf("verify dim: %w", err)
+	}
+	defer embRows.Close()
+	for embRows.Next() {
+		var id string
+		var l int
+		embRows.Scan(&id, &l)
+		report.Issues = append(report.Issues, fmt.Sprintf("dimension mismatch: %s has %d bytes (want %d)", id, l, vectorDim*4))
 	}
 	return report, nil
 }

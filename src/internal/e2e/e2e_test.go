@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/algo"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
@@ -340,11 +340,13 @@ func TestE2E_GraphIntegrity(t *testing.T) {
 		t.Fatal("expected at least 1 community")
 	}
 
-	// Verify graph
-	report, err := algo.VerifyGraph(db, schema, 3)
-	_ = report
+	// Verify graph — PHASE 3.9: moved from algo.VerifyGraph into graph.Service.Verify
+	report, err := graph.NewService(db).Verify(context.Background(), schema, 3)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
+	}
+	if len(report.Issues) > 0 {
+		t.Logf("verify issues: %v", report.Issues)
 	}
 
 	// Cycle detection
