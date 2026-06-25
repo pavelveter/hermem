@@ -100,7 +100,7 @@ P1 — EVALUATION FRAMEWORK
 [ ] Create reranker benchmark dataset
 [x] Implement Recall@K metrics
 [x] Implement Precision@K metrics
-[ ] Implement MRR metrics
+[x] Implement MRR metrics
 [ ] Implement NDCG metrics
 [ ] Implement benchmark runner
 [ ] Add benchmark reports
