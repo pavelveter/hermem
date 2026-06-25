@@ -48,7 +48,7 @@ P0 — ENTITY MODEL REFACTOR
 [ ] Audit current Entity structure
 [ ] Identify mixed responsibilities inside Entity
 [x] Introduce Fact model
-[ ] Introduce Evidence model
+[x] Introduce Evidence model
 [ ] Introduce Episode model
 [ ] Introduce Task model
 [ ] Introduce Goal model
