@@ -156,7 +156,7 @@ func runServe(env *clienv.Env, port string) error {
 		retsrv.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
 		reembedsrv.New(reembedSvc, env.Metrics),
 		healthsrv.New(healthSvc),
-		server.NewAdminService(env.Metrics),
+		env.Metrics,
 	)
 
 	// SIGHUP reload loop — separate from HTTP lifecycle so we can re-validate

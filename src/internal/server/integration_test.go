@@ -137,10 +137,10 @@ func newTestFixture(t *testing.T) *testFixture {
 	reembedShell := reembedsrv.New(reembedDom, metrics)
 	// PHASE 3.7 fixture: health HTTPService wraps the health-probe
 	// domain Service (db-only — no VI, no embedder, no schema).
+	// PHASE 3.8: /metrics registered directly from metrics — no AdminService arg.
 	healthDom := healthdomain.New(db)
 	healthShell := healthsrv.New(healthDom)
-	adminSvc := NewAdminService(metrics)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, healthShell, adminSvc)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, healthShell, metrics)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -623,7 +623,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 		cnd.New(cndDom, metrics), graphSvc, migrSvc,
 		retsrv.New(retentionDom, metrics, refs, retentionPolicy),
 		reembedShell, healthShell,
-		NewAdminService(metrics))
+		metrics)
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
