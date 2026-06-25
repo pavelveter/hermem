@@ -11,6 +11,7 @@ package profile
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -79,7 +80,7 @@ func newCPUCmd() *cobra.Command {
 
 // captureCPUProfile starts the global CPU profiler, sleeps for d, then
 // stops it. Stdout receives the protobuf bytes.
-func captureCPUProfile(w *os.File, d time.Duration) error {
+func captureCPUProfile(w io.Writer, d time.Duration) error {
 	if d <= 0 {
 		return fmt.Errorf("duration must be positive (got %s)", d)
 	}
