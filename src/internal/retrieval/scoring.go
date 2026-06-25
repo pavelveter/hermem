@@ -40,6 +40,52 @@ func compositeScore(w core.RankingWeight, sim, recency, temporalBoost, centralit
 	return s
 }
 
+// ScoreComponents holds the raw feature values used by compositeScore.
+// These are the values that get packed into core.ScoreBreakdown for
+// explainability — keep the struct flat so call sites can populate it
+// from one set of intermediate computations.
+type ScoreComponents struct {
+	Sim       float32 // cosine similarity to query
+	Recency   float32 // exp-decay on UpdatedAt
+	Temporal  float32 // exp-decay on CreatedAt
+	Centrality float32 // log10(1 + Degree)
+	Path      float32 // cumulative edge weight (path_weight)
+}
+
+// ComputeScoreComponents builds the raw feature vector for a node in
+// one call. Empty query embeddings yield Sim=0 (no vector signal);
+// missing/zero timestamps yield their respective defaults.
+func ComputeScoreComponents(node core.GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32, w core.RankingWeight) ScoreComponents {
+	var sim float32
+	if len(queryEmbedding) > 0 && len(nodeVec) > 0 {
+		sim = vector.CosineSimilarityWithNorm(nodeVec, queryEmbedding, queryNorm)
+	}
+	return ScoreComponents{
+		Sim:        sim,
+		Recency:    recencyScore(node.Entity.UpdatedAt, w.RecencyHalfLifeHours),
+		Temporal:   temporalScore(node.Entity.CreatedAt, w.TemporalHalfLifeHours),
+		Centrality: centralityScore(node.Entity.Degree),
+		Path:       node.PathWeight,
+	}
+}
+
+// BuildScoreBreakdown converts raw ScoreComponents into the public
+// core.ScoreBreakdown shape (weights × features, depth penalty
+// subtracted, NaN/Inf clamped). Used by walk.go to populate the
+// explain fields on GraphNode / RetrievedFact when Explain=true.
+func BuildScoreBreakdown(c ScoreComponents, w core.RankingWeight) *core.ScoreBreakdown {
+	final := compositeScore(w, c.Sim, c.Recency, c.Temporal, c.Centrality, c.Path)
+	return &core.ScoreBreakdown{
+		VectorScore:     c.Sim,
+		RecencyScore:    c.Recency,
+		TemporalScore:   c.Temporal,
+		CentralityScore: c.Centrality,
+		PathScore:       c.Path,
+		DepthPenalty:    w.DepthPenalty * c.Path,
+		FinalScore:      final,
+	}
+}
+
 func sortByScoreDesc(ranked []rankedNode) {
 	for i := range ranked {
 		if math.IsNaN(float64(ranked[i].score)) || math.IsInf(float64(ranked[i].score), 0) {

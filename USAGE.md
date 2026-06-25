@@ -1627,6 +1627,46 @@ hermem admin keys revoke <label>        # remove key by label
 
 ---
 
+## 17. Runtime Profiling
+
+Profiling is opt-in and off by default — Hermem does not third-party sidecars
+by default. Two surfaces share the same `runtime/pprof` backend.
+
+**Server mode** — set `HERMEM_PPROF_ENABLED=1` to mount the stdlib
+profile endpoints behind the same `http.ServeMux`:
+
+```bash
+HERMEM_PPROF_ENABLED=1 hermem serve --port 8420
+curl http://localhost:8420/debug/pprof/             # human-readable index
+curl -o cpu.pprof http://localhost:8420/debug/pprof/profile?seconds=30
+go tool pprof cpu.pprof
+```
+
+The env-var match is exact (`"1"` only) — typos like `true`/`yes`/`on`
+fail to enable so a misconfiguration cannot accidentally expose process
+internals. Endpoints include `/debug/pprof/profile`, `/heap`,
+`/goroutine`, `/symbol`, `/cmdline`, and `/trace`.
+
+**CLI mode** — `hermem profile …` works against the running process or
+in a one-off CLI invocation. Default duration is 10 seconds; override
+with the positional arg or `--seconds`.
+
+```bash
+hermem profile cpu 30          | go tool pprof -      # 30 s CPU profile, protobuf
+hermem profile heap                            # → /tmp/hermem-heap.pprof
+hermem profile goroutine                       # text dump → stdout
+hermem profile trace 5                         # → /tmp/hermem-trace.out
+go tool trace /tmp/hermem-trace.out
+```
+
+Analyzing a heap snapshot:
+
+```bash
+hermem profile heap                            # text index written to /tmp/hermem-heap.pprof
+go tool pprof -alloc_objects /tmp/hermem-heap.pprof
+go tool pprof -top /tmp/hermem-heap.pprof
+```
+
 ## 18. Admin Operations
 
 The `hermem ops` group provides offline database diagnostics and
@@ -1687,4 +1727,45 @@ Run `hermem ops integrity` weekly to catch drift early:
 
 ```bash
 0 3 * * 1 cd /opt/hermem && hermem ops integrity --fail-on-warning
+
+## 19. Observability — OpenTelemetry Tracing
+
+Hermem v0.3.0 ships a tracing slice in `src/internal/tracing` —
+transport-agnostic instrumentation for retrieval, ingestion, and
+memory-store pipelines. By default Hermem is invisible: no exporters
+attached, no SDK import side-effects, no spans emitted.
+
+```bash
+TRACING_EXPORTER=otlp hermem serve --port 8420    # enable OTLP/gRPC export
+unset TRACING_EXPORTER && hermem memory query ...   # noop fallback, zero overhead
+```
+
+When `TRACING_EXPORTER=otlp` is set, Hermem uses the OpenTelemetry
+gRPC OTLP exporter and reads `[tracing]` from `hermem.ini` for the
+endpoint, headers, and protocol knobs:
+
+```ini
+[tracing]
+endpoint = http://localhost:4317   # OTLP gRPC collector
+; headers = x-api-key=secret       # comma-separated `key=value` pairs
+; sample_ratio = 1.0               # 0.0–1.0; default 1.0 (always-on when enabled)
+```
+
+The tracing SDK is gated at `main.go` startup: if the SDK is unavailable
+in the build (e.g. CGO_ENABLED=0 build dropped it), Hermem falls back to
+`NoopTracer` and logs a single warning — the rest of the request flow
+runs unchanged. Spans are propagated through context via
+`tracing.WithSpan` / `tracing.SpanFrom`, so handlers, services, and
+SQL-layer code all pick the right parent.
+
+```bash
+hermes agent --request-id abc123 …  # any caller setting X-Request-ID joins into the same trace
+curl -H 'X-Request-ID: my-trace' http://localhost:8420/store …
+```
+
+For local development without a collector, point `endpoint` to
+[otel-desktop](https://github.com/SigNoz/otel-desktop) or any
+local-only OTLP receiver. PromQL/Grafana dashboards can then filter
+by `service.name=hermem` to see retrieval latency histograms,
+ingestion batch sizes, and dependency-failure counts.
 ```
