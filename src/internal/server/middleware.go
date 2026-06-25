@@ -2,20 +2,22 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
+	"github.com/pavelveter/hermem/src/internal/config"
+
+	"github.com/pavelveter/hermem/src/internal/auth"
 )
 
-// TimeoutMiddleware caps each request handler run at d. Inner of
-// RecoveryMiddleware (a panic in a timeout-stalled handler still
-// produces 500), outer of all per-request business work. The handler
-// observes the derived ctx via r.Context() and downstream helpers that
-// respect ctx.Done() will unwind cleanly.
 func TimeoutMiddleware(d time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -26,16 +28,6 @@ func TimeoutMiddleware(d time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
-// SafeBodyCloseMiddleware drains and closes r.Body on every exit path
-// (success, error, panic — the panic path is recovered by Recovery but
-// r.Body would otherwise leak into CLOSE_WAIT). Composes with
-// MaxBytesMiddleware; safeBodyClose reads whatever's left after the
-// handler pulled what it needed and signals EOF to MaxBytesReader so
-// subsequent Close is a no-op drain.
-//
-// Callers that read from r.Body (httputil.DecodeStrict, etc.) MUST
-// still drain any sub-stream they consume; this middleware only
-// guards the outer envelope.
 func SafeBodyCloseMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil {
@@ -48,7 +40,6 @@ func SafeBodyCloseMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// RecoveryMiddleware catches panics and converts them to 500 errors.
 func RecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -61,7 +52,6 @@ func RecoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// RequestIDMiddleware echoes X-Request-ID or generates one and adds it to the response.
 func RequestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqID := r.Header.Get("X-Request-ID")
@@ -73,7 +63,6 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// APIKeyMiddleware validates X-API-Key against apiKey. Empty apiKey disables auth.
 func APIKeyMiddleware(apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,8 +77,74 @@ func APIKeyMiddleware(apiKey string) func(http.Handler) http.Handler {
 	}
 }
 
-// MaxBytesMiddleware caps request bodies locally to protect against OOM DoS.
-// Composes with httputil.DecodeStrict which already enforces strict JSON.
+var (
+	authOnce     sync.Once
+	authInstance *auth.StaticAuthenticator
+)
+
+func AuthMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			env := GetRuntime(r.Context())
+			if env == nil || env.Cfg == nil {
+				writeAuthError(w, http.StatusInternalServerError, "internal_error")
+				return
+			}
+
+			if !authEnabled(env.Cfg) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			path := strings.TrimPrefix(r.URL.Path, "/")
+			if strings.HasPrefix(path, "health") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			authOnce.Do(func() {
+				keys := buildKeysFromCfg(env.Cfg)
+				authInstance = auth.NewStaticAuthenticator(keys)
+			})
+
+			raw := r.Header.Get("X-API-Key")
+			required := auth.ScopeForPath(path)
+
+			_, ok, err := authInstance.Authorize(raw, required)
+			if errors.Is(err, auth.ErrInvalidKey) || !ok {
+				writeAuthError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			if errors.Is(err, auth.ErrInsufficientScope) {
+				writeAuthError(w, http.StatusForbidden, "insufficient_scope")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func authEnabled(cfg *config.Config) bool {
+	return cfg.APIKey != "" || len(cfg.APIKeys) > 0
+}
+
+func buildKeysFromCfg(cfg *config.Config) []auth.Key {
+	if len(cfg.APIKeys) > 0 {
+		return cfg.APIKeys
+	}
+	if cfg.APIKey != "" {
+		return []auth.Key{{Value: cfg.APIKey, Scope: auth.ScopeAdmin}}
+	}
+	return nil
+}
+
+func writeAuthError(w http.ResponseWriter, status int, reason string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": reason})
+}
+
 func MaxBytesMiddleware(limit int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +156,6 @@ func MaxBytesMiddleware(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
-// SlogMiddleware logs every request after it completes.
 func SlogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -117,35 +171,8 @@ func SlogMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// envKey is the unexported context key under which RuntimeMiddleware
-// stores the *clienv.Env snapshot captured at request entry. Using a
-// private struct type guarantees no collision with other packages'
-// context keys (Go's idiom for typed context keys: each package defines
-// its own private type so context.Value can't be spoofed from outside).
 type envKey struct{}
 
-// RuntimeMiddleware binds an atomic *clienv.Env snapshot from mgr into
-// r.Context() so handlers read the SAME generation they entered with,
-// even when a Reload fires mid-request.
-//
-// Why bind at the middleware layer: the obvious alternative
-// (`current := mgr.Get()` inside each handler) races with a concurrent
-// Reload — a 50ms handler can span a SIGHUP boundary and read state from
-// the new generation on its second poll, producing impossible-to-debug
-// shape mismatches (DB schema vs VI schema). The middleware snapshot
-// captures the pointer ONCE at handler entry; concurrent Reloads swap
-// the manager's value but DO NOT retroactively change this request's
-// snapshot stored in the request context.
-//
-// Use GetRuntime(r.Context()) inside any handler that wants the
-// generation-aware Env. Handlers that already read raw *sql.DB / VI
-// handles captured at server startup still work — this middleware is
-// additive, doesn't replace the existing constructor-wired services.
-//
-// Edge case — manager empty: returns 500 once and logs; an admin can
-// recover by SIGHUP / restart (the underlying issue is that Reload
-// never fired). This matches the out.txt contract: an empty manager is
-// a misconfiguration, not a transient one.
 func RuntimeMiddleware(mgr *clienv.EnvManager, logger *slog.Logger) func(http.Handler) http.Handler {
 	if mgr == nil {
 		panic("server: RuntimeMiddleware called with nil EnvManager (config wiring bug)")
@@ -168,11 +195,6 @@ func RuntimeMiddleware(mgr *clienv.EnvManager, logger *slog.Logger) func(http.Ha
 	}
 }
 
-// GetRuntime extracts the *clienv.Env snapshot that RuntimeMiddleware
-// bound into the request context. Returns nil if the request did not
-// pass through RuntimeMiddleware (e.g. an internal test handler). Callers
-// should branch on the nil return rather than panic so a missing key
-// surfaces as a 500 in user-facing paths.
 func GetRuntime(ctx context.Context) *clienv.Env {
 	if e, ok := ctx.Value(envKey{}).(*clienv.Env); ok {
 		return e

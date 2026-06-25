@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pavelveter/hermem/src/internal/auth"
+
 	"github.com/pavelveter/hermem/src/internal/ai"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -30,6 +32,7 @@ type Config struct {
 	VectorBackend      string
 	VectorDim          int
 	APIKey             string
+	APIKeys            []auth.Key
 	EmbedderTimeout    time.Duration
 	ExtractTimeout     time.Duration
 	ExtraCategories    []string
