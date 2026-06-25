@@ -7,29 +7,32 @@ import (
 )
 
 // stubDetector is a ContradictionDetector that returns a canned
-// (detected, reason) pair. Use it to drive CompositeDetector's
+// DetectionResult. Use it to drive CompositeDetector's
 // short-circuit logic without coupling tests to the lexical
 // heuristic.
 type stubDetector struct {
-	detected bool
-	reason   string
-	calls    int
+	detected   bool
+	reason     string
+	confidence float32
+	calls      int
 }
 
-func (s *stubDetector) Detect(_, _ core.Entity) (bool, string) {
+func (s *stubDetector) Detect(_, _ core.Entity) DetectionResult {
 	s.calls++
-	return s.detected, s.reason
+	return DetectionResult{Detected: s.detected, Reason: s.reason, Confidence: s.confidence}
 }
 
 // TestCompositeDetector locks the pipeline semantics: ordered,
-// short-circuiting, defensive on empty input and nil entries.
+// short-circuiting, defensive on empty input and nil entries, and
+// propagating the first hit's full DetectionResult verbatim
+// (including Confidence).
 //
 // The cases below map 1:1 to the plan's table:
 //
-//   - Empty pipeline → (false, "") — defensive, no panic.
-//   - Single non-firing detector → (false, "") — propagated miss.
-//   - Single firing detector → propagates (true, reason) — first hit wins.
-//   - Two detectors, second fires → second's reason.
+//   - Empty pipeline → zero-value DetectionResult — defensive, no panic.
+//   - Single non-firing detector → zero-value DetectionResult — propagated miss.
+//   - Single firing detector → propagates the detector's full result.
+//   - Two detectors, second fires → second's full result (confidence included).
 //   - Two detectors, first fires → first wins (order matters; second
 //     must NOT be called — proves short-circuit, not just propagation).
 //   - Three-detector chain, middle fires → middle's result, third
@@ -37,40 +40,40 @@ func (s *stubDetector) Detect(_, _ core.Entity) (bool, string) {
 func TestCompositeDetector(t *testing.T) {
 	t.Run("empty_pipeline_returns_miss", func(t *testing.T) {
 		c := NewCompositeDetector()
-		got, reason := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
-		if got || reason != "" {
-			t.Fatalf("empty pipeline must return (false, \"\"); got (%v, %q)", got, reason)
+		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
+		if result.Detected || result.Reason != "" || result.Confidence != 0 {
+			t.Fatalf("empty pipeline must return zero-value DetectionResult; got %+v", result)
 		}
 	})
 
 	t.Run("single_non_firing_returns_miss", func(t *testing.T) {
-		miss := &stubDetector{detected: false}
+		miss := &stubDetector{}
 		c := NewCompositeDetector(miss)
-		got, reason := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
-		if got || reason != "" {
-			t.Fatalf("single non-firing detector must return (false, \"\"); got (%v, %q)", got, reason)
+		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
+		if result.Detected || result.Reason != "" || result.Confidence != 0 {
+			t.Fatalf("single non-firing detector must return zero-value DetectionResult; got %+v", result)
 		}
 		if miss.calls != 1 {
 			t.Fatalf("want miss detector called exactly once; got %d", miss.calls)
 		}
 	})
 
-	t.Run("single_firing_propagates_reason", func(t *testing.T) {
-		hit := &stubDetector{detected: true, reason: "stub:hit"}
+	t.Run("single_firing_propagates_result", func(t *testing.T) {
+		hit := &stubDetector{detected: true, reason: "stub:hit", confidence: 0.42}
 		c := NewCompositeDetector(hit)
-		got, reason := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
-		if !got || reason != "stub:hit" {
-			t.Fatalf("want (true, %q); got (%v, %q)", "stub:hit", got, reason)
+		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
+		if !result.Detected || result.Reason != "stub:hit" || result.Confidence != 0.42 {
+			t.Fatalf("want DetectionResult{true, \"stub:hit\", 0.42}; got %+v", result)
 		}
 	})
 
 	t.Run("second_fires_when_first_misses", func(t *testing.T) {
-		miss := &stubDetector{detected: false}
-		hit := &stubDetector{detected: true, reason: "stub:second"}
+		miss := &stubDetector{}
+		hit := &stubDetector{detected: true, reason: "stub:second", confidence: 0.6}
 		c := NewCompositeDetector(miss, hit)
-		got, reason := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
-		if !got || reason != "stub:second" {
-			t.Fatalf("want (true, %q); got (%v, %q)", "stub:second", got, reason)
+		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
+		if !result.Detected || result.Reason != "stub:second" || result.Confidence != 0.6 {
+			t.Fatalf("want DetectionResult{true, \"stub:second\", 0.6}; got %+v", result)
 		}
 		if miss.calls != 1 || hit.calls != 1 {
 			t.Fatalf("want each detector called exactly once; got miss=%d hit=%d", miss.calls, hit.calls)
@@ -78,12 +81,12 @@ func TestCompositeDetector(t *testing.T) {
 	})
 
 	t.Run("first_fires_second_not_called", func(t *testing.T) {
-		first := &stubDetector{detected: true, reason: "stub:first"}
-		second := &stubDetector{detected: true, reason: "stub:second"}
+		first := &stubDetector{detected: true, reason: "stub:first", confidence: 0.9}
+		second := &stubDetector{detected: true, reason: "stub:second", confidence: 0.5}
 		c := NewCompositeDetector(first, second)
-		got, reason := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
-		if !got || reason != "stub:first" {
-			t.Fatalf("want (true, %q); got (%v, %q)", "stub:first", got, reason)
+		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
+		if !result.Detected || result.Reason != "stub:first" || result.Confidence != 0.9 {
+			t.Fatalf("want first's DetectionResult propagated; got %+v", result)
 		}
 		if second.calls != 0 {
 			t.Fatalf("want second NOT called (short-circuit); got calls=%d", second.calls)
@@ -94,13 +97,13 @@ func TestCompositeDetector(t *testing.T) {
 	})
 
 	t.Run("middle_fires_third_not_called", func(t *testing.T) {
-		first := &stubDetector{detected: false}
-		middle := &stubDetector{detected: true, reason: "stub:middle"}
-		third := &stubDetector{detected: true, reason: "stub:third"}
+		first := &stubDetector{}
+		middle := &stubDetector{detected: true, reason: "stub:middle", confidence: 0.7}
+		third := &stubDetector{detected: true, reason: "stub:third", confidence: 0.3}
 		c := NewCompositeDetector(first, middle, third)
-		got, reason := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
-		if !got || reason != "stub:middle" {
-			t.Fatalf("want (true, %q); got (%v, %q)", "stub:middle", got, reason)
+		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
+		if !result.Detected || result.Reason != "stub:middle" || result.Confidence != 0.7 {
+			t.Fatalf("want middle's DetectionResult propagated; got %+v", result)
 		}
 		if third.calls != 0 {
 			t.Fatalf("want third NOT called (short-circuit); got calls=%d", third.calls)
@@ -115,11 +118,11 @@ func TestCompositeDetector(t *testing.T) {
 		// is skipped and the next detector is consulted. This
 		// prevents a misconfigured pipeline (e.g. an unset
 		// detector slot) from blowing up the whole ingest path.
-		hit := &stubDetector{detected: true, reason: "stub:after_nil"}
+		hit := &stubDetector{detected: true, reason: "stub:after_nil", confidence: 1.0}
 		c := NewCompositeDetector(nil, hit)
-		got, reason := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
-		if !got || reason != "stub:after_nil" {
-			t.Fatalf("want (true, %q); got (%v, %q)", "stub:after_nil", got, reason)
+		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})
+		if !result.Detected || result.Reason != "stub:after_nil" || result.Confidence != 1.0 {
+			t.Fatalf("want DetectionResult after nil skip; got %+v", result)
 		}
 	})
 }

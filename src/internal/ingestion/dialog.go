@@ -384,11 +384,10 @@ func isSQLiteBusyError(err error) bool {
 // as a free function so existing callers/tests stay green; the real
 // implementation now lives in contradiction.LexicalDetector.
 func IsIngestionContradiction(a, b string) bool {
-	detected, _ := contradiction.NewLexicalDetector().Detect(
+	return contradiction.NewLexicalDetector().Detect(
 		core.Entity{Content: a},
 		core.Entity{Content: b},
-	)
-	return detected
+	).Detected
 }
 
 // MemoryWorker processes MemoryMessage channel items — legacy entry
