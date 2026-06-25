@@ -13,6 +13,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/config"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
+	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
@@ -21,6 +22,7 @@ import (
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
+	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
@@ -28,9 +30,11 @@ import (
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
+	tlsrv "github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
+	timelinedomain "github.com/pavelveter/hermem/src/internal/timeline"
 	"github.com/pavelveter/hermem/src/internal/util/safego"
 )
 
@@ -60,11 +64,21 @@ func runServe(env *clienv.Env, port string) error {
 
 	refs := serverstate.NewRef(buildState(env.Cfg, env.Reranker))
 	// PHASE 2.1: build the memory domain Service once and hand the HTTP shell
-	// (server/memory) a borrowed pointer. IngestionWorker is created
-	// inside Mem.Ingest per call — no long-lived worker race against
-	// SIGHUP mid-call schema mutation. Embedder/Extractor live inside
-	// memdomain.Service exclusively; no transport-level duplication.
+	// (server/memory) a borrowed pointer. IngestionWorker was created
+	// inside Mem.Ingest per call pre-PHASE-3.4 (now constructed inside
+	// ingest.Service.Ingest). Embedder lives inside memdomain.Service;
+	// Extractor remains in memdomain for any future memory-write hook
+	// though unused since PHASE 3.4.
 	memSvc := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
+	// PHASE 3.5: edge domain Service owns the relation-edge write API
+	// (AddEdge + auto-create dispatch). vi + embedder are held so the
+	// auto-create path can call vector.AddEdgeWithAutoCreate without
+	// constructor branching on each invocation.
+	edgeSvc := edgedomain.New(env.DB, env.VI, env.Embedder)
+	// PHASE 3.5: timeline domain Service owns the read-only time-ordered
+	// entity projection. db-only — no embedder, no vector index, no
+	// schema gates (read surface, not write surface).
+	timelineSvc := timelinedomain.New(env.DB)
 	// PHASE 2.2: same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.
 	retSvc := retdomain.NewService(env.DB, env.VI, env.Embedder)
@@ -120,6 +134,8 @@ func runServe(env *clienv.Env, port string) error {
 		ret.New(retSvc, env.Metrics, refs),
 		tasksvc.New(taskSvc, env.Metrics, refs),
 		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
+		edgesrv.New(edgeSvc, env.Metrics, refs),
+		tlsrv.New(timelineSvc, env.Metrics),
 		ingsrv.New(ingestSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
 		cnd.New(cndSvc, env.Metrics),
 		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),

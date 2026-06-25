@@ -59,18 +59,10 @@ func newMemFixture(t *testing.T) *memFixture {
 	return &memFixture{svc: svc, db: db, vi: vi}
 }
 
-// seedEntity inserts a row directly so AddEdge / Timeline tests can
-// reference pre-existing IDs without depending on Service.Store.
-func (f *memFixture) seedEntity(t *testing.T, id, category, content string) {
-	t.Helper()
-	_, err := f.db.Exec(
-		`INSERT INTO entities (id, category, content, embedding, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		id, category, content, []byte{},
-	)
-	if err != nil {
-		t.Fatalf("seed entity %q: %v", id, err)
-	}
-}
+// PHASE 3.5: seedEntity was previously used by AddEdge + Timeline tests
+// (now migrated to edge/ + timeline/ pkgs). No remaining tests in this
+// file need it. Helper removed to avoid an unused-symbol lint flag;
+// future tests that need raw-row seeding should inline the insert.
 
 // --- New ---
 
@@ -158,110 +150,29 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 // unchanged.
 
 // --- AddEdge ---
-
-func TestMemoryService_AddEdge_OK(t *testing.T) {
-	f := newMemFixture(t)
-	f.seedEntity(t, "src-ae", "world", "src")
-	f.seedEntity(t, "tgt-ae", "world", "tgt")
-	req := core.EdgeRequest{SourceID: "src-ae", TargetID: "tgt-ae", RelationType: "related_to", Weight: 1.0}
-	if err := f.svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false)); err != nil {
-		t.Fatalf("AddEdge: %v", err)
-	}
-	var n int
-	if err := f.db.QueryRow(`SELECT COUNT(*) FROM edges WHERE source_id = ? AND target_id = ?`, "src-ae", "tgt-ae").Scan(&n); err != nil {
-		t.Fatalf("count: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("want 1 edge row, got %d", n)
-	}
-}
-
-func TestMemoryService_AddEdge_AutoCreate_OK(t *testing.T) {
-	f := newMemFixture(t)
-	f.seedEntity(t, "src-ac", "world", "src")
-	f.seedEntity(t, "tgt-ac", "world", "tgt")
-	req := core.EdgeRequest{SourceID: "src-ac", TargetID: "tgt-ac", RelationType: "related_to", AutoCreate: true}
-	if err := f.svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false)); err != nil {
-		t.Fatalf("AddEdge: %v", err)
-	}
-}
-
-func TestMemoryService_AddEdge_RejectsUnknownRelation(t *testing.T) {
-	f := newMemFixture(t)
-	f.seedEntity(t, "src-r", "world", "src")
-	f.seedEntity(t, "tgt-r", "world", "tgt")
-	req := core.EdgeRequest{SourceID: "src-r", TargetID: "tgt-r", RelationType: "nonexistent"}
-	err := f.svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false))
-	if err == nil {
-		t.Fatal("expected ErrInvalidSchema, got nil")
-	}
-	var ise *ErrInvalidSchema
-	if !errors.As(err, &ise) {
-		t.Fatalf("want ErrInvalidSchema, got %T: %v", err, err)
-	}
-	if ise.Field != "relation_type" || ise.Value != "nonexistent" {
-		t.Fatalf("want {relation_type, nonexistent}, got {%s, %s}", ise.Field, ise.Value)
-	}
-}
-
-func TestMemoryService_AddEdge_RejectsMissingFields(t *testing.T) {
-	f := newMemFixture(t)
-	cases := []core.EdgeRequest{
-		{SourceID: "", TargetID: "t", RelationType: "related_to"},
-		{SourceID: "s", TargetID: "", RelationType: "related_to"},
-		{SourceID: "s", TargetID: "t", RelationType: ""},
-	}
-	for _, req := range cases {
-		err := f.svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false))
-		if err == nil {
-			t.Fatalf("want error for missing fields, got nil for %+v", req)
-		}
-		if !strings.Contains(err.Error(), "source_id, target_id, relation_type required") {
-			t.Errorf("err=%v does not advertise missing-field contract", err)
-		}
-	}
-}
+//
+// PHASE 3.5: AddEdge method lifted to src/internal/edge.Service. The
+// four AddEdge_* tests (OK, AutoCreate_OK, RejectsUnknownRelation,
+// RejectsMissingFields) that used to live here have moved to
+// src/internal/edge/service_test.go. The HTTP shell route /edge moved
+// from server/memory to server/edge — URL contract unchanged.
+// memory.Service.ErrInvalidSchema is RETAINED here for the Store
+// category-validation path; edge pkg has its own edge.ErrInvalidSchema
+// for the relation_type-validation path.
 
 // --- Timeline ---
-
-func TestMemoryService_Timeline_EmptyDB(t *testing.T) {
-	f := newMemFixture(t)
-	entries, err := f.svc.Timeline(context.Background(), 50)
-	if err != nil {
-		t.Fatalf("Timeline: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("want 0 entries, got %d", len(entries))
-	}
-}
-
-func TestMemoryService_Timeline_WithLimitAndOrder(t *testing.T) {
-	f := newMemFixture(t)
-	f.seedEntity(t, "tl-1", "world", "one")
-	f.seedEntity(t, "tl-2", "world", "two")
-	f.seedEntity(t, "tl-3", "world", "three")
-	entries, err := f.svc.Timeline(context.Background(), 2)
-	if err != nil {
-		t.Fatalf("Timeline: %v", err)
-	}
-	if len(entries) != 2 {
-		t.Fatalf("want 2 entries, got %d", len(entries))
-	}
-	for _, e := range entries {
-		if e.CreatedAt == nil {
-			t.Errorf("entry %s missing created_at", e.ID)
-		}
-		if !strings.HasPrefix(e.ID, "tl-") {
-			t.Errorf("entry %s not a seeded tl- row", e.ID)
-		}
-	}
-}
+//
+// PHASE 3.5: Timeline method + TimelineEntry type lifted to
+// src/internal/timeline.Service. The two Timeline_* tests
+// (EmptyDB, WithLimitAndOrder) that used to live here have moved to
+// src/internal/timeline/service_test.go. The HTTP shell route /timeline
+// moved from server/memory to server/timeline — URL contract unchanged.
 
 // --- ErrInvalidSchema ---
-
-func TestErrInvalidSchema_Error(t *testing.T) {
-	e := &ErrInvalidSchema{Field: "category", Value: "bogus"}
-	if got := e.Error(); got != "invalid category: bogus" {
-		t.Fatalf("want 'invalid category: bogus', got %q", got)
-	}
-}
+//
+// PHASE 3.5: TestErrInvalidSchema_Error was removed from here because
+// the relation_type field case moved to edge.ErrInvalidSchema. The
+// category field case is exercised by the Store tests above (see
+// TestMemoryService_Store_RejectsUnknownCategory) so the Error() string
+// is implicitly covered. If a future refactor reintroduces a category
+// field here, add the test back.
