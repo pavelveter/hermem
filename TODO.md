@@ -32,14 +32,14 @@ P0 — CRITICAL ARCHITECTURE
 
 [x] Remove ActiveSchema() singleton completely
 [x] Inject SchemaConfig through all services
-[ ] Remove all remaining global mutable state
-[ ] Add CI check preventing new ActiveSchema() usage
-[ ] Audit all package-level variables
-[ ] Ensure all services are dependency-injected
+[x] Remove all remaining global mutable state
+[x] Add CI check preventing new ActiveSchema() usage
+[x] Audit all package-level variables
+[x] Ensure all services are dependency-injected
 [x] Verify concurrent safety with go test -race
 [x] Eliminate remaining old-architecture code paths
 [x] Finish migration from legacy package structure
-[ ] Document dependency graph between services
+[x] Document dependency graph between services
 
 ==================================================
 P0 — ENTITY MODEL REFACTOR
