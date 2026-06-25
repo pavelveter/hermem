@@ -43,12 +43,18 @@ func NewLexicalDetector() *LexicalDetector {
 
 // Detect reports whether existing.Content and incoming.Content
 // disagree on a negation token (the round-7 / round-9 heuristic).
-// Returns (true, lexicalReasonHit) on hit, (false, "") on miss.
-func (d *LexicalDetector) Detect(existing, incoming core.Entity) (bool, string) {
+// Returns a hit result with Confidence=1.0 on flip, or a zero-value
+// result on miss.
+//
+// Confidence is fixed at 1.0 on hit because the substring scan is
+// deterministic — it either matches a negWord or it does not. A real
+// semantic detector (future commit) would return a calibrated score
+// in (0, 1); the lexical rule is binary.
+func (d *LexicalDetector) Detect(existing, incoming core.Entity) DetectionResult {
 	if lexicalNegationFlip(existing.Content, incoming.Content) {
-		return true, lexicalReasonHit
+		return DetectionResult{Detected: true, Reason: lexicalReasonHit, Confidence: 1.0}
 	}
-	return false, ""
+	return DetectionResult{}
 }
 
 // lexicalNegationFlip runs the round-7 / round-9 dual-scan

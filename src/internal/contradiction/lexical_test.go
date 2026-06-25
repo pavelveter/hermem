@@ -10,7 +10,8 @@ import (
 // regression rows at the ContradictionDetector interface boundary.
 // Each case exercises the same dual-scan heuristic through
 // detector.Detect, and additionally asserts that the reason string
-// is non-empty on hits (per the ContradictionDetector contract).
+// is non-empty on hits and the confidence score matches the
+// deterministic 1.0-on-hit / 0-on-miss contract.
 //
 // Reason-content assertion is intentionally loose — exact string
 // matching would couple tests to the human-readable label, which
@@ -52,15 +53,21 @@ func TestLexicalDetector(t *testing.T) {
 	detector := NewLexicalDetector()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, reason := detector.Detect(core.Entity{Content: c.a}, core.Entity{Content: c.b})
-			if got != c.want {
-				t.Errorf("Detect(%q, %q) detected=%v, want %v", c.a, c.b, got, c.want)
+			result := detector.Detect(core.Entity{Content: c.a}, core.Entity{Content: c.b})
+			if result.Detected != c.want {
+				t.Errorf("Detect(%q, %q) detected=%v, want %v", c.a, c.b, result.Detected, c.want)
 			}
-			if got && reason == "" {
+			if result.Detected && result.Reason == "" {
 				t.Errorf("Detect(%q, %q) hit but reason empty — contract requires non-empty reason on Detected=true", c.a, c.b)
 			}
-			if !got && reason != "" {
-				t.Errorf("Detect(%q, %q) miss but reason non-empty (%q) — contract requires empty reason on Detected=false", c.a, c.b, reason)
+			if !result.Detected && result.Reason != "" {
+				t.Errorf("Detect(%q, %q) miss but reason non-empty (%q) — contract requires empty reason on Detected=false", c.a, c.b, result.Reason)
+			}
+			if result.Detected && result.Confidence != 1.0 {
+				t.Errorf("Detect(%q, %q) hit but confidence=%v; want 1.0 (deterministic lexical scan)", c.a, c.b, result.Confidence)
+			}
+			if !result.Detected && result.Confidence != 0 {
+				t.Errorf("Detect(%q, %q) miss but confidence=%v; want 0", c.a, c.b, result.Confidence)
 			}
 		})
 	}

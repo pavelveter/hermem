@@ -28,17 +28,20 @@ func NewCompositeDetector(detectors ...ContradictionDetector) *CompositeDetector
 }
 
 // Detect runs the pipeline in order and returns the first hit's
-// (Detected=true, reason). If no detector fires — including the
-// empty-pipeline case — returns (false, "") so callers never have to
-// guard against a misconfigured pipeline panicking on len()==0.
-func (c *CompositeDetector) Detect(existing, incoming core.Entity) (bool, string) {
+// full DetectionResult verbatim (so a downstream lexical hit at
+// Confidence=1.0 propagates with the same confidence, and a future
+// semantic hit at Confidence=0.6 also propagates verbatim). If no
+// detector fires — including the empty-pipeline case — returns the
+// zero-value DetectionResult so callers never have to guard against
+// a misconfigured pipeline panicking on len()==0.
+func (c *CompositeDetector) Detect(existing, incoming core.Entity) DetectionResult {
 	for _, d := range c.detectors {
 		if d == nil {
 			continue
 		}
-		if detected, reason := d.Detect(existing, incoming); detected {
-			return true, reason
+		if result := d.Detect(existing, incoming); result.Detected {
+			return result
 		}
 	}
-	return false, ""
+	return DetectionResult{}
 }
