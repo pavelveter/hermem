@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P1 — Migration system hardening (June 2026)
+
+Eight-task migration hardening sprint adding SHA-256 checksums, dry-run,
+extended rollback with `--target=N`, per-migration checksum display in
+`migrate` status, enhanced `verify` output, integrity and recovery tests,
+and documented workflow.
+
+- **feat(migration)**: add SHA-256 migration checksums (`MigrationChecksumSHA256`,
+  `checksum_sha256` column in `migration_checksums`, verify compares SHA-256).
+- **feat(db)**: `hermem db migrate` shows per-migration SHA-256 and match/mismatch status.
+- **feat(db)**: `hermem db dry-run` — lists pending migrations without applying.
+- **feat(db)**: `hermem db rollback --target=N` — roll back all migrations after version N.
+- **feat(db)**: `hermem db verify` — per-mismatch breakdown with stored/current checksums.
+- **test(migration)**: 4 integrity tests (deterministic hash, tamper detection, null backfill).
+- **test(migration)**: 3 recovery tests (empty-DB rollback, partial-apply recovery, target rollback).
+- **docs**: `docs/migration-workflow.md` documents the hardened migration workflow.
+
 ### PHASE 3.1–3.10 — God-object dissolution + flat-domain-pkg refactoring (June 2026)
 
 Ten-phase architectural refactoring that dismantled the AdminService god-object,
