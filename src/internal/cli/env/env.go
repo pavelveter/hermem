@@ -30,6 +30,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -57,6 +58,7 @@ type Env struct {
 	Reranker  core.Reranker
 	Metrics   *metrics.Metrics
 	Worker    *metrics.AsyncMetricsWorker
+	Tracer    tracing.Tracer
 	Build     BuildInfo
 
 	// KeepDBOpen disables auto-closing the database in

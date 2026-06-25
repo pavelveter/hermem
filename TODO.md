@@ -153,8 +153,8 @@ P1 — SERVICE LAYER
 P1 — OBSERVABILITY
 ==================================================
 
-[ ] Add OpenTelemetry tracing
-[ ] Add span propagation
+[x] Add OpenTelemetry tracing
+[x] Add span propagation
 [ ] Add Prometheus metrics
 [ ] Add ingestion metrics
 [ ] Add retrieval metrics
