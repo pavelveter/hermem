@@ -35,7 +35,17 @@
 //     shell; lifted out following the PHASE 3.1–3.4 transport-extraction
 //     pattern. URL contract byte-identical; wire-shape preserved verbatim
 //     so existing /timeline consumers see no drift).
-//   - server/               — AdminService: health, metrics, admin/re-embed (graph
+//   - server/reembed/       — POST /admin/re-embed. Delegates to internal/reembed.Service.
+//     Added in PHASE 3.6 (the re-embed orchestrator previously lived in
+//     src/internal/algo/reembed.go, which was deleted; the HTTP route
+//     was extracted from AdminService following the PHASE 3.3 retention
+//     precedent. URL contract byte-identical).
+//   - server/health/         — /health, /health/live, /health/ready. Delegates to
+//     internal/health.Service. Added in PHASE 3.7 (the three health-probe
+//     routes previously lived on AdminService; extracted following the
+//     PHASE 3.1–3.6 transport-extraction pattern. URL contracts
+//     byte-identical).
+//   - server/               — AdminService: /metrics only (Prometheus
 //     analytics routes were extracted in PHASE 3.1; retention is owned
 //     by server/retention now, the server.go Serve() method only hosts
 //     the lifecycle goroutine).
@@ -61,6 +71,7 @@ import (
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
+	healthsrv "github.com/pavelveter/hermem/src/internal/server/health"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
@@ -72,8 +83,8 @@ import (
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
-// Server is the HTTP shell. It holds the 11 services + a mux + the atomic
-// state holder. No domain fields (no DB / VI / Embedder directly —
+// Server is the HTTP shell. It holds 12 domain HTTPService instances +
+// AdminService (metrics) + a mux + the atomic state holder. No domain
 // memory's domain service lives in internal/memory, edge's in
 // internal/edge (PHASE 3.5), timeline's in internal/timeline
 // (PHASE 3.5), contradiction's in internal/contradiction, task's in
@@ -94,12 +105,14 @@ type Server struct {
 	Migration     *migrsrv.HTTPService
 	Retention     *retsrv.HTTPService
 	Reembed       *reembedsrv.HTTPService
+	Health        *healthsrv.HTTPService
 	Admin         *AdminService
 	mux           *http.ServeMux
 }
 
-// NewServer wires the 11 services into a single mux. No HTTP server is started
-// — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
+// NewServer wires the 12 domain services + Admin into a single mux. No
+// HTTP server is started — call (*Server).ServeHTTP separately
+// (e.g. via the convenience Run below).
 //
 // PHASE 2.3 added the contradiction *HTTPService argument; PHASE 2.4
 // renamed the task *Service argument to *HTTPService to mirror the
@@ -120,8 +133,14 @@ type Server struct {
 // ingest, lifting /edge and /timeline out of the server/memory shell.
 // The memory HTTP shell keeps only /store; URL contracts for /edge,
 // /timeline, /ingest are byte-identical so existing clients see no
-// drift.
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, reembed *reembedsrv.HTTPService, admin *AdminService) *Server {
+// drift. PHASE 3.6 inserts the reembed *HTTPService argument between
+// retention and admin, lifting /admin/re-embed out of the AdminService
+// god-object (the algo/reembed.go file was deleted entirely in this
+// phase). PHASE 3.7 inserts the health *HTTPService argument between
+// reembed and admin, lifting /health, /health/live, /health/ready
+// out of the AdminService. AdminService now owns only /metrics — a
+// one-route Prometheus wrapper.
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, reembed *reembedsrv.HTTPService, health *healthsrv.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
@@ -135,6 +154,7 @@ func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.
 		Migration:     migration,
 		Retention:     retention,
 		Reembed:       reembed,
+		Health:        health,
 		Admin:         admin,
 	}
 	s.mount()
@@ -176,6 +196,9 @@ func (s *Server) mount() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Reembed.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Health.Routes() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Admin.Routes() {
