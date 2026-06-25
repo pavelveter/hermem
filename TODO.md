@@ -93,17 +93,17 @@ P0 — RETRIEVAL EXPLAINABILITY
 P1 — EVALUATION FRAMEWORK
 ==================================================
 
-[ ] Create evaluation package
+[x] Create evaluation package
 [ ] Create retrieval benchmark dataset
 [ ] Create contradiction benchmark dataset
 [ ] Create memory benchmark dataset
 [ ] Create reranker benchmark dataset
-[ ] Implement Recall@K metrics
-[ ] Implement Precision@K metrics
-[ ] Implement MRR metrics
-[ ] Implement NDCG metrics
-[ ] Implement benchmark runner
-[ ] Add benchmark reports
+[x] Implement Recall@K metrics
+[x] Implement Precision@K metrics
+[x] Implement MRR metrics
+[x] Implement NDCG metrics
+[x] Implement benchmark runner
+[x] Add benchmark reports
 [ ] Add benchmark CI job
 
 ==================================================
