@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P1 — Observability (tracing slice, June 2026)
+
+OpenTelemetry tracing scaffold with noop fallback, OTLP exporter gate,
+context propagation, and instrumentation wrappers for retrieval, ingestion,
+and memory pipelines.
+
+- **feat(tracing)**: define `Tracer`/`Span` interfaces + `NoopTracer`/`NoopSpan` defaults.
+- **feat(tracing)**: `NewTracerFromEnv()` — OTLP/gRPC exporter behind `TRACING_EXPORTER=otlp` env, falls back to `NoopTracer` when SDK unavailable.
+- **feat(tracing)**: `WithSpan` / `SpanFrom` / `WithRequestID` / `WithTracer` / `TracerFrom` context helpers.
+- **refactor(retrieval)**: `tracing.go` — `tracerFromOpts` helper via `core.RetrieveContextOptions.Ctx`.
+- **refactor(ingestion)**: `tracing.go` — `ProcessDialogWithTracing` / `ProcessDialogWithProvenanceWithTracing` wrappers.
+- **refactor(memory)**: `store_tracing.go` — `StoreWithTracing` / `StoreAndLinkWithTracing` wrappers.
+- **feat(runtime)**: `Env.Tracer` field + `main.go` initialization from `TRACING_EXPORTER`.
+- **test(tracing)**: 8 interface-compliance + round-trip tests.
+- **smoke**: `TRACING_EXPORTER=otlp hermem version` logs and gracefully degrades; unset runs clean.
+
 ### P1 — Migration system hardening (June 2026)
 
 Eight-task migration hardening sprint adding SHA-256 checksums, dry-run,
