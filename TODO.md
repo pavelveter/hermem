@@ -45,8 +45,8 @@ P0 — CRITICAL ARCHITECTURE
 P0 — ENTITY MODEL REFACTOR
 ==================================================
 
-[ ] Audit current Entity structure
-[ ] Identify mixed responsibilities inside Entity
+[x] Audit current Entity structure
+[x] Identify mixed responsibilities inside Entity
 [x] Introduce Fact model
 [x] Introduce Evidence model
 [x] Introduce Episode model
@@ -54,8 +54,8 @@ P0 — ENTITY MODEL REFACTOR
 [x] Introduce Goal model
 [x] Introduce Belief model
 [x] Keep backward compatibility layer
-[ ] Add tests for all model conversions
-[ ] Document domain model boundaries
+[x] Add tests for all model conversions
+[x] Document domain model boundaries
 
 ==================================================
 P0 — CONTRADICTION ENGINE 2.0

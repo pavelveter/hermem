@@ -33,7 +33,7 @@ func NewOllamaEmbedder(baseURL, model string, timeout time.Duration) *OllamaEmbe
 		BaseURL:   baseURL,
 		Model:     model,
 		client:    c,
-		resilient: NewResilientClient(c, 4, DefaultBackoffs), // 1 initial + 3 retries
+		resilient: NewResilientClient(c, 4, DefaultBackoffs()), // 1 initial + 3 retries
 	}
 }
 
@@ -103,7 +103,7 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string, timeout time.Duration) *Op
 		APIKey:    apiKey,
 		Model:     model,
 		client:    c,
-		resilient: NewResilientClient(c, 4, DefaultBackoffs),
+		resilient: NewResilientClient(c, 4, DefaultBackoffs()),
 	}
 }
 

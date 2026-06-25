@@ -168,3 +168,41 @@ func TestEntityGoal_RoundTrip_Lossy(t *testing.T) {
 		t.Errorf("Episode field not zero: ConversationID=%q", roundTripped.ConversationID)
 	}
 }
+
+// TestGoal_ReducesToTask locks the Goal-is-Task-shape invariant
+// from item #7: Goal → Entity → Task recovers the Goal's 4
+// lifecycle fields exactly (Status / ValidFrom / ValidTo /
+// Priority) and preserves *time.Time pointer identity on both
+// ValidFrom and ValidTo.
+//
+// This is the Goal-side counterpart to the cross-pair projection
+// matrix (item #10): any caller can reduce Goal → Entity → Task
+// safely, without Goal needing its own AsTask() bridge method.
+func TestGoal_ReducesToTask(t *testing.T) {
+	now := time.Now()
+	later := now.Add(7 * 24 * time.Hour)
+	g := Goal{
+		Status:    "in_progress",
+		ValidFrom: &now,
+		ValidTo:   &later,
+		Priority:  5,
+	}
+
+	projected := g.AsEntity().AsTask()
+
+	expected := Task{
+		Status:    g.Status,
+		ValidFrom: g.ValidFrom,
+		ValidTo:   g.ValidTo,
+		Priority:  g.Priority,
+	}
+	if !reflect.DeepEqual(projected, expected) {
+		t.Fatalf("Goal→Entity→Task drifted:\n  want %+v\n  got  %+v", expected, projected)
+	}
+	if projected.ValidFrom != g.ValidFrom {
+		t.Errorf("ValidFrom pointer lost: want %p, got %p", g.ValidFrom, projected.ValidFrom)
+	}
+	if projected.ValidTo != g.ValidTo {
+		t.Errorf("ValidTo pointer lost: want %p, got %p", g.ValidTo, projected.ValidTo)
+	}
+}
