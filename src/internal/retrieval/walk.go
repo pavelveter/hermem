@@ -89,15 +89,28 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		}
 
 		nodeVec, _ := store.DecodeVector(embBlob, len(opts.QueryEmbedding))
-		score := scorer(node, nodeVec, opts.QueryEmbedding, queryNorm)
+		var (
+			score  float32
+			comps  ScoreComponents
+			haveComps bool
+		)
+		if opts.Explain {
+			// Compute components once on the Explain path so the
+			// breakdown, the ranked-node sim/recency fields, and the
+			// final score all derive from the same intermediate
+			// values — no double-extraction of raw features.
+			comps = ComputeScoreComponents(node, nodeVec, opts.QueryEmbedding, queryNorm, w)
+			score = comps.Final(w)
+			haveComps = true
+		} else {
+			score = scorer(node, nodeVec, opts.QueryEmbedding, queryNorm)
+		}
 		node.RankingScore = score
 		rn := rankedNode{node: node, score: score}
-		if opts.Explain {
-			comps := ComputeScoreComponents(node, nodeVec, opts.QueryEmbedding, queryNorm, w)
+		if haveComps {
 			rn.sim = comps.Sim
 			rn.recency = comps.Recency
-			bd := BuildScoreBreakdown(comps, w)
-			rn.node.ScoreBreakdown = bd
+			rn.node.ScoreBreakdown = BuildScoreBreakdown(comps, w)
 		}
 		ranked = append(ranked, rn)
 		if node.Depth == 0 {
