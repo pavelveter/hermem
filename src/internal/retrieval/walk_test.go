@@ -700,6 +700,161 @@ func attrsMap(r *slog.Record) map[string]string {
 	return out
 }
 
+// --- rerank stage ---
+
+// stubReranker records every Rerank call and reverses the input slice
+// so tests can assert bucket contents change after the stage runs.
+type stubReranker struct {
+	calls   []stubRerankerCall
+	failOn  string // bucket name to error on; "" = never
+	reversed bool
+}
+
+type stubRerankerCall struct {
+	Query string
+	Count int
+}
+
+func (s *stubReranker) Rerank(_ context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
+	s.calls = append(s.calls, stubRerankerCall{Query: query, Count: len(facts)})
+	if s.failOn != "" {
+		// Pick the first fact's category as the trigger — tests use
+		// distinct categories per bucket so this maps cleanly.
+		if len(facts) > 0 && facts[0].Content == s.failOn {
+			return nil, errors.New("stub-reranker-fail")
+		}
+	}
+	if !s.reversed {
+		return facts, nil
+	}
+	out := make([]core.RetrievedFact, len(facts))
+	for i, f := range facts {
+		out[len(facts)-1-i] = f
+	}
+	return out, nil
+}
+
+func TestApplyReranker_NilRerankerIsNoOp(t *testing.T) {
+	r := &core.RetrievalResult{
+		WorldFacts:   []core.RetrievedFact{{Content: "alpha"}},
+		Opinions:     []core.RetrievedFact{{Content: "beta"}},
+		Experiences:  []core.RetrievedFact{{Content: "gamma"}},
+		Observations: []core.RetrievedFact{{Content: "delta"}},
+	}
+	if err := applyReranker(r, nil, context.Background(), "q"); err != nil {
+		t.Fatalf("nil reranker: want nil err, got %v", err)
+	}
+	// Contents preserved.
+	if r.WorldFacts[0].Content != "alpha" || r.Opinions[0].Content != "beta" {
+		t.Fatalf("nil reranker must not mutate buckets: %+v", r)
+	}
+}
+
+func TestApplyReranker_NilResultIsNoOp(t *testing.T) {
+	stub := &stubReranker{}
+	if err := applyReranker(nil, stub, context.Background(), "q"); err != nil {
+		t.Fatalf("nil result: want nil err, got %v", err)
+	}
+	if len(stub.calls) != 0 {
+		t.Fatalf("nil result: want 0 calls, got %d", len(stub.calls))
+	}
+}
+
+func TestApplyReranker_ReverseBucketContents(t *testing.T) {
+	r := &core.RetrievalResult{
+		WorldFacts: []core.RetrievedFact{
+			{Content: "w1"}, {Content: "w2"}, {Content: "w3"},
+		},
+		Opinions:    []core.RetrievedFact{}, // empty — must not invoke
+		Experiences: []core.RetrievedFact{{Content: "e1"}},
+	}
+	stub := &stubReranker{reversed: true}
+	if err := applyReranker(r, stub, context.Background(), "q"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// World reversed.
+	if got := r.WorldFacts[0].Content; got != "w3" {
+		t.Fatalf("world[0] after reverse: want w3, got %v", got)
+	}
+	if got := r.WorldFacts[2].Content; got != "w1" {
+		t.Fatalf("world[2] after reverse: want w1, got %v", got)
+	}
+	// Experiences reversed (single element → unchanged but called).
+	if got := r.Experiences[0].Content; got != "e1" {
+		t.Fatalf("experience[0]: want e1, got %v", got)
+	}
+	// Empty bucket (Opinions) must NOT be in the calls list.
+	for _, c := range stub.calls {
+		if c.Count == 0 {
+			t.Fatalf("empty bucket must not be invoked; calls=%+v", stub.calls)
+		}
+	}
+	// Two calls — one per non-empty bucket.
+	if len(stub.calls) != 2 {
+		t.Fatalf("calls: want 2 (world, experience), got %d: %+v", len(stub.calls), stub.calls)
+	}
+	if stub.calls[0].Query != "q" || stub.calls[0].Count != 3 {
+		t.Fatalf("calls[0]: want {q,3}, got %+v", stub.calls[0])
+	}
+	if stub.calls[1].Query != "q" || stub.calls[1].Count != 1 {
+		t.Fatalf("calls[1]: want {q,1}, got %+v", stub.calls[1])
+	}
+}
+
+func TestApplyReranker_ErrorPropagates(t *testing.T) {
+	r := &core.RetrievalResult{
+		WorldFacts:  []core.RetrievedFact{{Content: "trigger"}},
+		Opinions:    []core.RetrievedFact{{Content: "after"}},
+	}
+	stub := &stubReranker{failOn: "trigger"}
+	err := applyReranker(r, stub, context.Background(), "q")
+	if err == nil {
+		t.Fatal("want error from failing bucket, got nil")
+	}
+	if !strings.Contains(err.Error(), "rerank world") {
+		t.Fatalf("err must name the failing bucket, got: %v", err)
+	}
+}
+
+func TestApplyReranker_NilContextDefaultsToBackground(t *testing.T) {
+	r := &core.RetrievalResult{
+		WorldFacts: []core.RetrievedFact{{Content: "w1"}},
+	}
+	stub := &stubReranker{}
+	if err := applyReranker(r, stub, nil, "q"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(stub.calls) != 1 {
+		t.Fatalf("want 1 call with nil ctx, got %d", len(stub.calls))
+	}
+}
+
+// Integration: RetrieveContext invokes the Reranker when opts.Reranker
+// is set, after bucketize, and the reranker's output replaces the
+// bucket contents.
+func TestRetrieveContext_RerankerIsInvokedAfterBucketize(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha-r", []float32{1, 0, 0})
+	seedEntityWithEmbedding(t, db, "b", "world", "beta-r", []float32{0, 1, 0})
+	seedEdge(t, db, "a", "b", "uses")
+
+	stub := &stubReranker{reversed: true}
+	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth: 1,
+		Reranker: stub,
+		QueryText: "any",
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(stub.calls) == 0 {
+		t.Fatal("RetrieveContext: want Reranker.Rerank to be called, got 0 calls")
+	}
+	if len(got.WorldFacts) >= 2 && got.WorldFacts[0].Content == got.WorldFacts[1].Content {
+		t.Fatalf("bucket contents: reranker output must replace bucket, got %+v", got.WorldFacts)
+	}
+}
+
 // --- helpers ---
 
 func seedNodeIDs(r *core.RetrievalResult) []string {

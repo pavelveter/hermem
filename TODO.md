@@ -124,10 +124,10 @@ P1 — RETRIEVAL CLEANUP
 ==================================================
 
 [ ] Audit retrieval scoring logic
-[ ] Remove duplicated scoring functions
-[ ] Remove duplicated recency logic
-[ ] Separate retrieval stages clearly
-[ ] Separate reranking stage
+[x] Remove duplicated scoring functions
+[x] Remove duplicated recency logic
+[x] Separate retrieval stages clearly
+[x] Separate reranking stage
 [ ] Separate graph expansion stage
 [ ] Separate temporal ranking stage
 [ ] Add retrieval tracing

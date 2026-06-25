@@ -48,6 +48,10 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 
 	result := bucketize(ranked, seeds, w, opts.Explain)
 
+	if err := applyReranker(result, opts.Reranker, opts.Ctx, opts.QueryText); err != nil {
+		return nil, err
+	}
+
 	if opts.Explain {
 		logRetrievalExplanation(result, len(seedIDs), effDepth)
 	}
@@ -230,6 +234,47 @@ func bucketize(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight
 		}
 	}
 	return result
+}
+
+// applyReranker — stage 4. Invokes the optional core.Reranker on
+// each non-empty bucket and replaces the bucket contents in place.
+// nil Reranker is a no-op pass-through so the pipeline composition
+// stays uniform across callers. Cancellation propagates through ctx
+// (opts.Ctx) so a cancelled retrieval also cancels the reranker
+// round-trip.
+//
+// Per-bucket invocation (rather than cross-bucket) keeps each
+// bucket's category semantics intact — the Reranker only re-orders
+// facts within their category.
+func applyReranker(result *core.RetrievalResult, r core.Reranker, ctx context.Context, query string) error {
+	if result == nil || r == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	buckets := []struct {
+		name  string
+		facts *[]core.RetrievedFact
+	}{
+		{"world", &result.WorldFacts},
+		{"opinion", &result.Opinions},
+		{"experience", &result.Experiences},
+		{"observation", &result.Observations},
+	}
+	for _, b := range buckets {
+		if len(*b.facts) == 0 {
+			continue
+		}
+		reranked, err := r.Rerank(ctx, query, *b.facts)
+		if err != nil {
+			return fmt.Errorf("rerank %s: %w", b.name, err)
+		}
+		if reranked != nil {
+			*b.facts = reranked
+		}
+	}
+	return nil
 }
 
 // logRetrievalExplanation emits a single structured INFO log per
