@@ -1392,10 +1392,11 @@ silently produce wrong cosine scores.
 | VectorIndex interface, search backends (InMemory / SqliteVec) | `src/internal/vector/index.go` (interface) + `src/internal/vector/inmemory.go` + `src/internal/vector/quantize.go` |
 | Graph walk, ranking, formatting | `src/internal/retrieval/{walk,scoring,formatting,response,tasks}.go` |
 | Background worker, dedup, edges | `src/internal/ingestion/worker.go` (IngestionWorker) + `src/internal/ingestion/dialog.go` (ProcessDialog) |
-| Contradiction detection        | `src/internal/store/graph.go::GetContradictions` |
+| Contradiction detection        | `src/internal/contradiction/` (domain Service) + HTTP shell in `src/internal/server/contradiction/` |
 | Community detection (Louvain)  | `src/internal/store/community.go` |
-| Background re-embedding        | `src/internal/algo/reembed.go::ReEmbedAll` |
-| LRU embedding cache             | `src/internal/algo/cache.go` + `src/internal/vector/index.go::storeLocked` |
+| Background re-embedding        | `src/internal/reembed/` (domain Service) + HTTP shell in `src/internal/server/reembed/` |
+| Graph verify (integrity check) | `src/internal/graph/service.go::Verify` |
+| Agent loop + execution plan    | `src/internal/orchestrator/service.go::AgentLoop` + `::ExecutionPlan` |
 | Ollama / OpenAI HTTP (ResilientClient-wrapped) | `src/internal/ai/{client,embedder,extractor,reranker}.go` |
 | HTTP handlers, strict decoder   | `src/internal/server/server.go` (mux shell) + `src/internal/server/middleware.go` + `src/internal/httputil/httputil.go::DecodeStrict` |
 | Config state, hot reload        | `src/internal/serverstate/state.go` (`atomic.Pointer[State]`) + `src/internal/cli/env/env.go::EnvManager` |
@@ -1404,7 +1405,8 @@ silently produce wrong cosine scores.
 | CLI subcommand groups          | `src/internal/cli/{memory,task,graph,time,agent,db}/<sub>.go` |
 | Top-level CLI (`serve`, `health`, `metrics`, `version`) | `src/internal/cli/{serve,health,metrics,version}.go` |
 | Binary entry-point              | `src/main.go`                     |
-| Retention GC loop               | `src/internal/algo/gc.go::GarbageCollector` |
+| Retention GC loop               | `src/internal/retention/` (domain Service) + `src/internal/server/retention/` (HTTP) |
+| Health probes                   | `src/internal/health/` (domain Service) + `src/internal/server/health/` (HTTP) |
 | Accelerate SIMD cosine (darwin) | `src/internal/vector/cosine_darwin.go` (build-tag `darwin && cgo`) |
 | Pure-Go cosine fallback         | `src/internal/vector/cosine.go`   (build-tag `!darwin || !cgo`) |
 | Coch-Granger cyclic-task safe scheduler   | `src/internal/store/task.go::BuildNode` (iterative work-stack DFS) |
