@@ -29,7 +29,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.12.2
           working-directory: .
           args: --timeout=5m
 
@@ -92,7 +92,7 @@ jobs:
         if: matrix.goos != 'darwin'
         uses: mlugg/setup-zig@v2
         with:
-          version: latest
+          version: v2.12.2
 
       - name: Determine extension
         id: ext
