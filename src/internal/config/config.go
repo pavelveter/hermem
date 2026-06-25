@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pavelveter/hermem/src/internal/auth"
+
 	"github.com/pavelveter/hermem/src/internal/ai"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -30,6 +32,7 @@ type Config struct {
 	VectorBackend      string
 	VectorDim          int
 	APIKey             string
+	APIKeys            []auth.Key
 	EmbedderTimeout    time.Duration
 	ExtractTimeout     time.Duration
 	ExtraCategories    []string
@@ -110,6 +113,14 @@ func ResolveDBPath(p string) string {
 		slog.Debug("db_path_symlink_resolved", "raw", rawDir, "resolved", resolvedDir, "db_path", filepath.Join(resolvedDir, p))
 	}
 	return filepath.Join(resolvedDir, p)
+}
+
+func DefaultConfigPath() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "hermem.ini"
+	}
+	return filepath.Join(filepath.Dir(exePath), "hermem.ini")
 }
 
 // LoadConfigFromBinaryDir resolves hermem.ini relative to the running binary.

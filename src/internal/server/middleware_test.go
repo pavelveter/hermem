@@ -12,6 +12,8 @@ import (
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
+
+	"github.com/pavelveter/hermem/src/internal/auth"
 )
 
 // TestRecoveryMiddleware_PanicConvertsTo500 — a handler that panics must
@@ -263,6 +265,150 @@ func TestRuntimeMiddleware_NilManagerPanics(t *testing.T) {
 // tests. io.Discard + silent handler keeps test output clean even
 // when assertions intentionally exercise error paths.
 var silentLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+// --- AuthMiddleware ---
+
+func TestAuthMiddleware_NoAuthEnabled_Passes(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/search", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200 (no auth), got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAuthMiddleware_HealthBypass(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{APIKey: "secret"},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/health", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("health bypass: want 200, got %d", rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/health/ready", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("health/ready bypass: want 200, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddleware_ValidKey_ReadScope(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{
+			APIKeys: []auth.Key{{Value: "key-a", Scope: auth.ScopeRead}},
+		},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/search", nil)
+	r.Header.Set("X-API-Key", "key-a")
+	h.ServeHTTP(rr, r)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("valid key read scope: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAuthMiddleware_InsufficientScope_Returns403(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{
+			APIKeys: []auth.Key{{Value: "key-read", Scope: auth.ScopeRead}},
+		},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/ingest", nil)
+	r.Header.Set("X-API-Key", "key-read")
+	h.ServeHTTP(rr, r)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("insufficient scope: want 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "insufficient_scope") {
+		t.Fatalf("body: want insufficient_scope, got %q", rr.Body.String())
+	}
+}
+
+func TestAuthMiddleware_AdminCanAccessAll(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{
+			APIKeys: []auth.Key{{Value: "key-admin", Scope: auth.ScopeAdmin}},
+		},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	for _, path := range []string{"/search", "/ingest", "/admin/re-embed"} {
+		rr := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("X-API-Key", "key-admin")
+		h.ServeHTTP(rr, r)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("admin on %s: want 200, got %d", path, rr.Code)
+		}
+	}
+}
+
+func TestAuthMiddleware_MissingKey_Returns401(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{
+			APIKeys: []auth.Key{{Value: "secret", Scope: auth.ScopeAdmin}},
+		},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/ingest", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("missing key: want 401, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddleware_WriteScopeCanRead(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{
+			APIKeys: []auth.Key{{Value: "key-write", Scope: auth.ScopeWrite}},
+		},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/search", nil)
+	r.Header.Set("X-API-Key", "key-write")
+	h.ServeHTTP(rr, r)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("write scope on read endpoint: want 200, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddleware_LegacySingleKey_ScopeAdmin(t *testing.T) {
+	mgr := clienv.NewEnvManager(&clienv.Env{
+		Ctx: context.Background(),
+		Cfg: &config.Config{APIKey: "legacy-secret"},
+	})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RuntimeMiddleware(mgr, silentLogger)(AuthMiddleware()(inner))
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/admin/re-embed", nil)
+	r.Header.Set("X-API-Key", "legacy-secret")
+	h.ServeHTTP(rr, r)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("legacy key admin: want 200, got %d", rr.Code)
+	}
+}
 
 // TestRuntimeMiddleware_NilSnapshotReturns500 — manager was empty (no
 // NewEnvManager initial value, no Reload yet). Reject the request

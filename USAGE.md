@@ -1542,3 +1542,85 @@ orthogonal-band invariant: every ordered pair (X, Y) yields equal
 band values regardless of which X was round-tripped through.
 Pointer identity is preserved on `*time.Time` fields for self-pairs
 (`X == Y`) and lost (zeroed) for cross-pairs (`X != Y`).
+
+---
+
+## 16. API Authentication
+
+Hermem supports **scoped multi-key authentication** for the HTTP server.
+Each key carries one of three scopes that control which endpoints it can
+access.
+
+### Scopes (most → least permissive)
+
+| Scope    | Access                                                          |
+|----------|-----------------------------------------------------------------|
+| `admin`  | All endpoints, including `/admin/*`                             |
+| `write`  | Read + write endpoints (`/ingest`, `/store`, etc.)              |
+| `read`   | Read-only endpoints (`/search`, `/retrieve`, `/query`)          |
+
+Unmatched URL paths default to `ScopeWrite`.
+
+### Configuration
+
+In `hermem.ini`, under the `[server]` section:
+
+```ini
+[server]
+api_keys = hermes-key-abc123:admin:ci-bot, hermes-key-def456:write, hermes-key-789ghi:read:readonly-app
+```
+
+Format: comma-separated entries of `key:scope:label` (label is optional).
+
+#### Legacy single-key (backward-compatible)
+
+```ini
+[server]
+api_key = hermes-key-abc123
+```
+
+A lone `api_key` gets `ScopeAdmin`. If both `api_key` and `api_keys`
+are present, `api_key` wins with a startup warning.
+
+### Usage
+
+All authenticated requests must include the `X-API-Key` header:
+
+```bash
+curl -H "X-API-Key: hermes-key-abc123" http://localhost:8420/search
+```
+
+### Response codes
+
+| Code | Meaning                                  |
+|------|------------------------------------------|
+| 401  | Missing, invalid, or revoked key         |
+| 403  | Key is valid but scope is insufficient   |
+| 200  | Allowed                                  |
+
+### Health endpoints bypass auth
+
+`/health`, `/health/live`, `/health/ready`, `/health/startup` — no
+`X-API-Key` required.
+
+### Admin CLI
+
+```bash
+hermem admin keys list                  # show all keys (masked)
+hermem admin keys add --scope write     # generate + add new key
+hermem admin keys rotate <label>        # replace key value, keep scope+label
+hermem admin keys revoke <label>        # remove key by label
+```
+
+`add` creates a 32-byte cryptographically random key, hex-encoded
+(64 characters), and writes it to `hermem.ini` on the `api_keys` line.
+
+### Key architecture
+
+- `src/internal/auth/auth.go` — Scope type, Key struct, Authenticator interface
+- `src/internal/auth/scope.go` — CanAccess hierarchy, ScopeForPath, RequiredScopes
+- `src/internal/auth/static.go` — StaticAuthenticator (constant-time comparison)
+- `src/internal/server/middleware.go` — AuthMiddleware (parameterless, health bypass)
+- `src/internal/config/ini.go` — api_keys parsing (key:scope:label)
+- `src/internal/config/update.go` — AddKeyToFile, RemoveKeyFromFile, RotateKeyInFile
+- `src/internal/cli/admin/keys.go` — CLI subcommands, GenerateKey, MaskKey
