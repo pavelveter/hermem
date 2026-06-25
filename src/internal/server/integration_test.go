@@ -15,6 +15,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/ai"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
+	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
@@ -24,6 +25,7 @@ import (
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
+	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
@@ -31,9 +33,11 @@ import (
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
+	tlsrv "github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
+	timelinedomain "github.com/pavelveter/hermem/src/internal/timeline"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -84,6 +88,17 @@ func newTestFixture(t *testing.T) *testFixture {
 	taskSvc := tasksvc.New(taskDom, metrics, refs)
 	memDom := memdomain.New(db, vi, embed, nil) // nil extractor — ingest-only path verifies error envelope
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
+	// PHASE 3.5 fixture: edge HTTPService is constructed from a domain
+	// Service + metrics + refs (no DedupThreshold — edge has no extractor
+	// or LLM hook). nil embedder is fine here because the fixture's
+	// /edge tests use AutoCreate=false (no embedder path).
+	edgeDom := edgedomain.New(db, vi, embed)
+	edgeSvc := edgesrv.New(edgeDom, metrics, refs)
+	// PHASE 3.5 fixture: timeline HTTPService is constructed from a
+	// domain Service + metrics only (no Refs — timeline is read-only
+	// with no SIGHUP-raced mutation).
+	timelineDom := timelinedomain.New(db)
+	timelineSvc := tlsrv.New(timelineDom, metrics)
 	// PHASE 3.4 fixture: ingest HTTPService is constructed from a domain
 	// Service + metrics + refs + DedupThreshold. The nil extractor on
 	// ingestDom forces the ingest domain layer to fail with
@@ -112,7 +127,7 @@ func newTestFixture(t *testing.T) *testFixture {
 	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	retentionShell := retsrv.New(retentionDom, metrics, refs, retentionPolicy)
 	adminSvc := NewAdminService(db, vi, embed, metrics, refs)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, adminSvc)
+	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, adminSvc)
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -575,8 +590,15 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// threaded into NewServer to keep the call shape consistent with
 	// the production sign call site.
 	ingestDom := ingestdomain.NewService(db, vi, embed, nil)
+	// PHASE 3.5: API-key auth fixture also needs the edge + timeline
+	// HTTPService threaded into NewServer to keep the call shape
+	// consistent with the production serve(cmd) call site.
+	edgeDom := edgedomain.New(db, vi, embed)
+	timelineDom := timelinedomain.New(db)
 	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
-		mem.New(memDom, metrics, refs, 0.88), ingsrv.New(ingestDom, metrics, refs, 0.88),
+		mem.New(memDom, metrics, refs, 0.88),
+		edgesrv.New(edgeDom, metrics, refs), tlsrv.New(timelineDom, metrics),
+		ingsrv.New(ingestDom, metrics, refs, 0.88),
 		cnd.New(cndDom, metrics), graphSvc, migrSvc,
 		retsrv.New(retentionDom, metrics, refs, retentionPolicy),
 		NewAdminService(db, vi, embed, metrics, refs))

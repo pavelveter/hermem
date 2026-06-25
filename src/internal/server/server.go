@@ -10,6 +10,10 @@
 //   - server/contradiction/ — GET /contradictions[?id=X]. Delegates to internal/contradiction.Service.
 //     Added in PHASE 2.3 (previously /contradictions lived in server/retrieval
 //     behind a temporary retrieval.Service.DB() reach-through).
+//   - server/edge/          — POST /edge. Delegates to internal/edge.Service.
+//     Added in PHASE 3.5 (the /edge route previously lived on server/memory
+//     shell; lifted out following the PHASE 3.1–3.4 transport-extraction
+//     pattern. URL contract byte-identical).
 //   - server/ingest/        — /ingest, /ingest/jobs. Delegates to internal/ingest.Service.
 //     Added in PHASE 3.4 (the /ingest route previously lived on server/memory
 //     shell; lifted out following the PHASE 3.1–3.3 transport-extraction
@@ -26,6 +30,11 @@
 //     internal/retention.Service. Added in PHASE 3.3 (the retention
 //     goroutine previously lived in server/server.go Serve as a raw
 //     algo.GarbageCollector call; no HTTP surface existed pre-PHASE-3.3).
+//   - server/timeline/      — GET /timeline. Delegates to internal/timeline.Service.
+//     Added in PHASE 3.5 (the /timeline route previously lived on server/memory
+//     shell; lifted out following the PHASE 3.1–3.4 transport-extraction
+//     pattern. URL contract byte-identical; wire-shape preserved verbatim
+//     so existing /timeline consumers see no drift).
 //   - server/               — AdminService: health, metrics, admin/re-embed (graph
 //     analytics routes were extracted in PHASE 3.1; retention is owned
 //     by server/retention now, the server.go Serve() method only hosts
@@ -50,6 +59,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/retention"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
+	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
@@ -57,22 +67,26 @@ import (
 	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
+	tlsrv "github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
-// Server is the HTTP shell. It holds the 9 services + a mux + the atomic
+// Server is the HTTP shell. It holds the 11 services + a mux + the atomic
 // state holder. No domain fields (no DB / VI / Embedder directly —
-// memory's domain service lives in internal/memory, contradiction's in
-// internal/contradiction, task's in internal/task, ingest's in
-// internal/ingest (PHASE 3.4), graph's in internal/graph, migration's
-// in internal/migration, retention's in internal/retention; each
-// transport shell holds the domain Service reference and threads it
-// as a borrowed pointer).
+// memory's domain service lives in internal/memory, edge's in
+// internal/edge (PHASE 3.5), timeline's in internal/timeline
+// (PHASE 3.5), contradiction's in internal/contradiction, task's in
+// internal/task, ingest's in internal/ingest (PHASE 3.4), graph's in
+// internal/graph, migration's in internal/migration, retention's in
+// internal/retention; each transport shell holds the domain Service
+// reference and threads it as a borrowed pointer).
 type Server struct {
 	Refs          *serverstate.Ref
 	Retrieval     *ret.HTTPService
 	Task          *tasksvc.HTTPService
 	Memory        *mem.HTTPService
+	Edge          *edgesrv.HTTPService
+	Timeline      *tlsrv.HTTPService
 	Ingest        *ingsrv.HTTPService
 	Contradiction *cnd.HTTPService
 	Graph         *graphsrv.HTTPService
@@ -82,7 +96,7 @@ type Server struct {
 	mux           *http.ServeMux
 }
 
-// NewServer wires the 9 services into a single mux. No HTTP server is started
+// NewServer wires the 11 services into a single mux. No HTTP server is started
 // — call (*Server).ServeHTTP separately (e.g. via the convenience Run below).
 //
 // PHASE 2.3 added the contradiction *HTTPService argument; PHASE 2.4
@@ -99,13 +113,20 @@ type Server struct {
 // FIRST HTTP route for retention — no HTTP surface existed pre-PHASE-3.3).
 // PHASE 3.4 inserts the ingest *HTTPService argument between memory
 // and contradiction, lifting /ingest out of the server/memory shell
-// (and exposing the NEW GET /ingest/jobs surface).
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, admin *AdminService) *Server {
+// (and exposing the NEW GET /ingest/jobs surface). PHASE 3.5 inserts
+// the edge + timeline *HTTPService arguments between memory and
+// ingest, lifting /edge and /timeline out of the server/memory shell.
+// The memory HTTP shell keeps only /store; URL contracts for /edge,
+// /timeline, /ingest are byte-identical so existing clients see no
+// drift.
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, admin *AdminService) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
 		Task:          task,
 		Memory:        memory,
+		Edge:          edge,
+		Timeline:      timeline,
 		Ingest:        ingest,
 		Contradiction: contradiction,
 		Graph:         graph,
@@ -128,6 +149,12 @@ func (s *Server) mount() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Memory.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Edge.Routes() {
+		mux.HandleFunc(path, hf)
+	}
+	for path, hf := range s.Timeline.Routes() {
 		mux.HandleFunc(path, hf)
 	}
 	for path, hf := range s.Ingest.Routes() {
