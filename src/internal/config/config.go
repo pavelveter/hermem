@@ -115,6 +115,14 @@ func ResolveDBPath(p string) string {
 	return filepath.Join(resolvedDir, p)
 }
 
+func DefaultConfigPath() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "hermem.ini"
+	}
+	return filepath.Join(filepath.Dir(exePath), "hermem.ini")
+}
+
 // LoadConfigFromBinaryDir resolves hermem.ini relative to the running binary.
 func LoadConfigFromBinaryDir() (*Config, error) {
 	exePath, err := os.Executable()
