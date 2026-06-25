@@ -138,15 +138,15 @@ P1 — RETRIEVAL CLEANUP
 P1 — SERVICE LAYER
 ==================================================
 
-[ ] Create MemoryService
-[ ] Create RetrievalService
-[ ] Create ContradictionService
-[ ] Create TaskService
+[x] Create MemoryService
+[x] Create RetrievalService
+[x] Create ContradictionService
+[x] Create TaskService
 [ ] Create EpisodeService
 [ ] Create GoalService
-[ ] Remove business logic from HTTP handlers
-[ ] Remove business logic from CLI commands
-[ ] Add service-level tests
+[x] Remove business logic from HTTP handlers
+[x] Remove business logic from CLI commands
+[x] Add service-level tests
 [ ] Document service boundaries
 
 ==================================================
