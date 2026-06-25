@@ -1,6 +1,34 @@
 package admin
 
-import "time"
+import (
+	"context"
+	"time"
+)
+
+// VectorIndex is the subset of core.VectorIndex needed by RebuildIndex.
+type VectorIndex interface {
+	Store(ctx context.Context, id string, vec []float32) error
+	Remove(ctx context.Context, ids []string) error
+}
+
+// Embedder is the subset of core.Embedder needed by RebuildIndex.
+type Embedder interface {
+	Embed(ctx context.Context, content string) ([]float32, error)
+}
+
+type RebuildOpts struct {
+	Category     string
+	Since        time.Time
+	OnlyArchived bool
+	DryRun       bool
+}
+
+type RebuildReport struct {
+	Processed  int64    `json:"processed"`
+	Reembedded int64    `json:"reembedded"`
+	Failed     int64    `json:"failed"`
+	Errors     []string `json:"errors,omitempty"`
+}
 
 type Stats struct {
 	NodeCount         int64     `json:"node_count"`
