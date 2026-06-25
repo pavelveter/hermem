@@ -98,7 +98,7 @@ P1 — EVALUATION FRAMEWORK
 [ ] Create contradiction benchmark dataset
 [ ] Create memory benchmark dataset
 [ ] Create reranker benchmark dataset
-[ ] Implement Recall@K metrics
+[x] Implement Recall@K metrics
 [ ] Implement Precision@K metrics
 [ ] Implement MRR metrics
 [ ] Implement NDCG metrics
