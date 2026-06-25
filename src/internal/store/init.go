@@ -115,8 +115,18 @@ func CheckMeta(db *sql.DB, dim int) error {
 }
 
 func ensureMigrationChecksumsTable(db *sql.DB) error {
-	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS migration_checksums (version TEXT PRIMARY KEY, checksum TEXT NOT NULL)`)
-	return err
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS migration_checksums (version TEXT PRIMARY KEY, checksum TEXT NOT NULL, checksum_sha256 TEXT)`)
+	if err != nil {
+		return err
+	}
+	// PHASE 3.11: backfill checksum_sha256 for DBs created before the
+	// column was added to the CREATE TABLE. Idempotent: ignores
+	// "duplicate column name" if the column already exists.
+	_, err = db.Exec(`ALTER TABLE migration_checksums ADD COLUMN checksum_sha256 TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return err
+	}
+	return nil
 }
 
 // migrateEntitiesFlexibleSchema is a permanent no-op as of 2026-06-24.

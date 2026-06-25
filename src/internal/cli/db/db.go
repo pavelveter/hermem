@@ -20,6 +20,7 @@ func NewCmd(env *cli.Env) *cobra.Command {
 		newRollbackCmd(env),
 		newVerifyCmd(env),
 		newSchemaCmd(env),
+		newDryRunCmd(env),
 	)
 	return cmd
 }

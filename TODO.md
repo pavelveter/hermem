@@ -93,31 +93,31 @@ P0 — RETRIEVAL EXPLAINABILITY
 P1 — EVALUATION FRAMEWORK
 ==================================================
 
-[ ] Create evaluation package
+[x] Create evaluation package
 [ ] Create retrieval benchmark dataset
 [ ] Create contradiction benchmark dataset
 [ ] Create memory benchmark dataset
 [ ] Create reranker benchmark dataset
-[ ] Implement Recall@K metrics
-[ ] Implement Precision@K metrics
-[ ] Implement MRR metrics
-[ ] Implement NDCG metrics
-[ ] Implement benchmark runner
-[ ] Add benchmark reports
+[x] Implement Recall@K metrics
+[x] Implement Precision@K metrics
+[x] Implement MRR metrics
+[x] Implement NDCG metrics
+[x] Implement benchmark runner
+[x] Add benchmark reports
 [ ] Add benchmark CI job
 
 ==================================================
 P1 — MIGRATION SYSTEM HARDENING
 ==================================================
 
-[ ] Add migration checksums
-[ ] Add migration verification command
-[ ] Add migration status command
-[ ] Add migration rollback command
-[ ] Add migration dry-run command
-[ ] Add migration integrity tests
-[ ] Add migration failure recovery tests
-[ ] Document migration workflow
+[x] Add migration checksums
+[x] Add migration verification command
+[x] Add migration status command
+[x] Add migration rollback command
+[x] Add migration dry-run command
+[x] Add migration integrity tests
+[x] Add migration failure recovery tests
+[x] Document migration workflow
 
 ==================================================
 P1 — RETRIEVAL CLEANUP
