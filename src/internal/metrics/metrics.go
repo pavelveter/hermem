@@ -45,6 +45,7 @@ type Metrics struct {
 	taskRollbackCount   atomic.Int64
 	taskTreeCount       atomic.Int64
 	taskCreateCount     atomic.Int64
+	retentionRunCount   atomic.Int64
 }
 
 // New returns a fresh Metrics instance with all counters zero-initialised.
@@ -87,6 +88,15 @@ func (m *Metrics) IncTaskRollback()   { m.taskRollbackCount.Add(1) }
 func (m *Metrics) IncTaskTree()       { m.taskTreeCount.Add(1) }
 func (m *Metrics) IncTaskCreate()     { m.taskCreateCount.Add(1) }
 
+// IncRetentionRun counts POST /admin/retention/run requests that
+// reached retention.Service.RunOnce, regardless of HTTP 200 vs 500
+// outcome — operators verify the sweep via the GCReport envelope on
+// the body. Pre-PHASE-3.3 there was no HTTP route for retention, so
+// the counter starts at 0 historically; PHASE 3.3 introduces it
+// alongside the existing 16 task + server counters so per-handler
+// observability stays symmetric across every HTTP shell.
+func (m *Metrics) IncRetentionRun() { m.retentionRunCount.Add(1) }
+
 // WriteExposition writes Prometheus exposition-format metrics to w.
 // Used by both the HTTP handler (`MetricsHandler`) and the
 // `hermem metrics` CLI command — kept as one source of truth so
@@ -106,6 +116,7 @@ func (m *Metrics) WriteExposition(w io.Writer) {
 	fmt.Fprintf(w, "# HELP hermem_edge_total Total edge operations\n# TYPE hermem_edge_total counter\nhermem_edge_total %d\n", m.edgeCount.Load())
 	fmt.Fprintf(w, "# HELP hermem_errors_total Total errors\n# TYPE hermem_errors_total counter\nhermem_errors_total %d\n", m.errorCount.Load())
 	fmt.Fprintf(w, "# HELP hermem_schema_conflict_total 409 Schema-Conflict responses from cross-state tx guard\n# TYPE hermem_schema_conflict_total counter\nhermem_schema_conflict_total %d\n", m.schemaConflictCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_retention_run_total POST /admin/retention/run dispatches that reached retention.Service.RunOnce\n# TYPE hermem_retention_run_total counter\nhermem_retention_run_total %d\n", m.retentionRunCount.Load())
 }
 
 // MetricsHandler serves Prometheus-format metrics over HTTP.

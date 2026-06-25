@@ -16,12 +16,14 @@ import (
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
+	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
+	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -89,6 +91,19 @@ func runServe(env *clienv.Env, port string) error {
 	// request-time reads. The HTTP shell exposes 4 NEW routes that
 	// previously had no HTTP surface (only CLI subcommands).
 	migrSvc := migrationdomain.NewService(env.DB)
+	// PHASE 3.3: retention domain Service owns the archive sweep
+	// (RunOnce + Run loop). DefaultPolicy is captured at construction
+	// from cfg.Retention and passed to the HTTP shell; SIGHUP does not
+	// propagate policy changes (matches pre-PHASE-3.3 closure-capture
+	// behaviour inside server.Server.Serve). The long-lived Run
+	// goroutine is wired by server.Server.Serve directly — cli/serve.go
+	// is only responsible for constructing the domain Service + HTTP
+	// shell here.
+	// NOTE: variable name `retentionSvc` (NOT `retSvc`) to avoid a
+	// name collision with the retrieval domain Service declared
+	// further up; both have the type prefix `*Service` so a single
+	// short name would shadow.
+	retentionSvc := retentiondomain.NewService(env.DB, env.VI)
 
 	srv := server.NewServer(
 		refs,
@@ -98,6 +113,7 @@ func runServe(env *clienv.Env, port string) error {
 		cnd.New(cndSvc, env.Metrics),
 		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
 		migrsrv.New(migrSvc, env.Metrics, refs),
+		retsrv.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
 		server.NewAdminService(env.DB, env.VI, env.Embedder, env.Metrics, refs),
 	)
 
