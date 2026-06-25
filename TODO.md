@@ -49,7 +49,7 @@ P0 — ENTITY MODEL REFACTOR
 [ ] Identify mixed responsibilities inside Entity
 [x] Introduce Fact model
 [x] Introduce Evidence model
-[ ] Introduce Episode model
+[x] Introduce Episode model
 [ ] Introduce Task model
 [ ] Introduce Goal model
 [ ] Introduce Belief model
