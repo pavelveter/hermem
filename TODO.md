@@ -30,15 +30,15 @@ test(migrations): add rollback coverage
 P0 — CRITICAL ARCHITECTURE
 ==================================================
 
-[ ] Remove ActiveSchema() singleton completely
-[ ] Inject SchemaConfig through all services
+[x] Remove ActiveSchema() singleton completely
+[x] Inject SchemaConfig through all services
 [ ] Remove all remaining global mutable state
 [ ] Add CI check preventing new ActiveSchema() usage
 [ ] Audit all package-level variables
 [ ] Ensure all services are dependency-injected
-[ ] Verify concurrent safety with go test -race
-[ ] Eliminate remaining old-architecture code paths
-[ ] Finish migration from legacy package structure
+[x] Verify concurrent safety with go test -race
+[x] Eliminate remaining old-architecture code paths
+[x] Finish migration from legacy package structure
 [ ] Document dependency graph between services
 
 ==================================================
