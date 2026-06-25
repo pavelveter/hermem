@@ -92,8 +92,11 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		node.RankingScore = score
 		rn := rankedNode{node: node, score: score}
 		if opts.Explain {
-			rn.sim = vector.CosineSimilarityWithNorm(nodeVec, opts.QueryEmbedding, queryNorm)
-			rn.recency = recencyScore(node.Entity.UpdatedAt, w.RecencyHalfLifeHours)
+			comps := ComputeScoreComponents(node, nodeVec, opts.QueryEmbedding, queryNorm, w)
+			rn.sim = comps.Sim
+			rn.recency = comps.Recency
+			bd := BuildScoreBreakdown(comps, w)
+			rn.node.ScoreBreakdown = bd
 		}
 		ranked = append(ranked, rn)
 		if node.Depth == 0 {
@@ -109,10 +112,11 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		}
 		seenContents[rn.node.Entity.Content] = true
 		fact := core.RetrievedFact{
-			Content:      rn.node.Entity.Content,
-			ParentID:     rn.node.ParentID,
-			RelationType: rn.node.RelationType,
-			Depth:        rn.node.Depth,
+			Content:       rn.node.Entity.Content,
+			ParentID:      rn.node.ParentID,
+			RelationType:  rn.node.RelationType,
+			Depth:         rn.node.Depth,
+			ScoreBreakdown: rn.node.ScoreBreakdown,
 		}
 		if opts.Explain {
 			fact.VectorScore = rn.sim
