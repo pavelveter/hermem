@@ -39,7 +39,7 @@ hermem memory query         < req.json   embed → search → walk → markdown
 hermem memory response      < req.json   Full pipeline + LLM response
 hermem memory edge          < req.json   Add typed edge (opt body.auto_create)
 hermem memory ingest        < req.json   LLM-extract + dedup-merge
-hermem memory explain       < req.json   Retrieval with score breakdown
+hermem memory explain       < req.json   Retrieval with per-node/per-fact score_breakdown (7 components: vector / recency / temporal / centrality / path / depth_penalty / final)
 hermem memory re-embed      [--batch-size N] [--model M]   Batch re-embed all
 hermem memory quantize      < req.json   Scalar int8 roundtrip + stats
 

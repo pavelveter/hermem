@@ -1184,6 +1184,32 @@ INFO retrieval.explain seeds=1 depth=1 seed_nodes=1 world_facts=2 \
 so operators can grep `retrieval.explain` for the per-bucket counts
 and top-ranked breakdown without re-running the query.
 
+#### Retrieval pipeline — stages and observability
+
+`RetrieveContext` is split into five named stages, each file-
+isolated under `src/internal/retrieval/`, each tracing-spanned,
+each benchmark-able:
+
+| Stage | File | Span | Benchmark |
+|-------|------|------|-----------|
+| `expand_graph` | `expand.go` | `retrieval.expand_graph` | `BenchmarkExpandGraph` |
+| `score_and_rank` | `walk.go` | `retrieval.score_and_rank` | `BenchmarkScoreAndRank` |
+| `rank_sort` | `scoring.go:sortByScoreDesc` | `retrieval.rank_sort` | (covered by `BenchmarkRetrieveContext`) |
+| `bucketize` | `walk.go:bucketize` | `retrieval.bucketize` | `BenchmarkBucketize` |
+| `rerank` | `walk.go:applyReranker` | `retrieval.rerank` (only when `opts.Reranker` is set) | n/a |
+
+Run the per-stage benchmarks with:
+
+```
+go test -bench=. -benchmem ./src/internal/retrieval/
+```
+
+With no `Tracer` in `opts.Ctx` the pipeline uses `NoopTracer`
+through `tracing.TracerFrom`, so the per-stage spans add zero
+overhead when tracing is off. Canonical reference (per-stage
+contracts, failure modes, configuration knobs table) lives in
+[`src/internal/retrieval/PIPELINE.md`](src/internal/retrieval/PIPELINE.md).
+
 ### `QueryResponse`
 
 ```json
