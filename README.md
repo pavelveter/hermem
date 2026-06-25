@@ -80,6 +80,26 @@ hermem health                           DB ping (mirrors /health/ready, exit 1 o
 hermem metrics                          Prometheus exposition
 hermem version                          ldflags build metadata
 
+# API-key management (auth v2 — multi-key, scoped)
+hermem admin keys list                   List API keys (masked) + scopes/labels
+hermem admin keys add [--scope S]        Generate a new key (32-byte CSPRNG → 64 hex)
+hermem admin keys rotate <id>            Issue a new value, retain label/scope
+hermem admin keys revoke <id>            Remove a key from hermem.ini
+hermem admin keys show <header>          Decode in-flight X-API-Key → label/scope
+
+# Offline ops (admin maintenance — registered as `adminops`)
+hermem adminops stats                    Node/edge counts, embedding coverage, last GC
+hermem adminops integrity [--fix-hint]   Exit 1 on integrity issues
+hermem adminops vacuum                   VACUUM with progress + bytes-reclaimed report
+hermem adminops rebuild-index            [--category C] [--since D] [--only-archived] [--dry-run]
+
+# Opt-in runtime profiling (off by default)
+hermem profile cpu      [N]              CPU profile (default 10s) → protobuf via stdout
+hermem profile heap                      Heap snapshot → /tmp/hermem-heap.pprof
+hermem profile goroutine                 Goroutine dump (text) → stdout
+hermem profile trace    [N]              Execution trace (default 10s) → /tmp/hermem-trace.out
+# Server-side: set HERMEM_PPROF_ENABLED=1 to expose /debug/pprof/*
+
 # Memory CRUD + retrieval
 hermem memory store        < req.json   Upsert entity (id/category/content + opt embedding)
 hermem memory search       < req.json   Top-K cosine neighbours (default top_k=5)
@@ -120,9 +140,10 @@ hermem time timeline                    Recent 50 entities by created_at DESC
 hermem agent loop           < req.json  algo.AgentLoop on a goal_id (yields each task)
 
 # Database ops
-hermem db migrate                       Migration status (applied / pending)
-hermem db rollback                      Roll back most-recent applied migration
-hermem db verify                        Checksum integrity check (exit 1 on mismatch)
+hermem db migrate                       Migration status (applied / pending, per-row SHA-256)
+hermem db dry-run                       List pending migrations without applying
+hermem db rollback [--target N]          Roll back recent (or up to a target version)
+hermem db verify                        Checksum integrity check (per-mismatch breakdown)
 hermem db schema                        Stored vs current schema fingerprint
 ```
 
