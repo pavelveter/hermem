@@ -110,14 +110,14 @@ P1 — EVALUATION FRAMEWORK
 P1 — MIGRATION SYSTEM HARDENING
 ==================================================
 
-[ ] Add migration checksums
-[ ] Add migration verification command
-[ ] Add migration status command
-[ ] Add migration rollback command
-[ ] Add migration dry-run command
-[ ] Add migration integrity tests
-[ ] Add migration failure recovery tests
-[ ] Document migration workflow
+[x] Add migration checksums
+[x] Add migration verification command
+[x] Add migration status command
+[x] Add migration rollback command
+[x] Add migration dry-run command
+[x] Add migration integrity tests
+[x] Add migration failure recovery tests
+[x] Document migration workflow
 
 ==================================================
 P1 — RETRIEVAL CLEANUP

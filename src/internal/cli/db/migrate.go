@@ -32,6 +32,13 @@ func newMigrateCmd(env *cli.Env) *cobra.Command {
 				if m.AppliedAt != "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "  (%s)", m.AppliedAt)
 				}
+				if m.ChecksumSHA256 != "" {
+					match := "ok"
+					if m.ChecksumMatch != nil && !*m.ChecksumMatch {
+						match = "MISMATCH"
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "  sha256:%s [%s]", m.ChecksumSHA256[:12], match)
+				}
 				fmt.Fprintln(cmd.OutOrStdout())
 			}
 			return nil
