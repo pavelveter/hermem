@@ -1542,3 +1542,67 @@ orthogonal-band invariant: every ordered pair (X, Y) yields equal
 band values regardless of which X was round-tripped through.
 Pointer identity is preserved on `*time.Time` fields for self-pairs
 (`X == Y`) and lost (zeroed) for cross-pairs (`X != Y`).
+
+---
+
+## 18. Admin Operations
+
+The `hermem ops` group provides offline database diagnostics and
+maintenance — no HTTP server required.
+
+### Commands
+
+| Command             | Description                                         |
+|---------------------|-----------------------------------------------------|
+| `hermem ops stats`  | Print entity/edge/contradiction counts + embedding coverage |
+| `hermem ops integrity` | Run integrity checks: missing embeddings, dangling edges, archive consistency |
+| `hermem ops vacuum` | Reclaim disk space via SQLite VACUUM               |
+| `hermem ops rebuild-index` | Re-generate embeddings and re-index entities |
+
+### Examples
+
+```bash
+# Statistics
+hermem ops stats                    # tabular output
+hermem ops stats --json             # machine-readable JSON
+
+# Integrity checks
+hermem ops integrity                # exit 0 (OK), 1 (critical issue)
+hermem ops integrity --json         # machine-readable JSON
+hermem ops integrity --fail-on-warning  # exit 2 on warnings
+
+# Vacuum (SQLite VACUUM)
+hermem ops vacuum                   # with progress bar
+hermem ops vacuum --no-progress     # silent mode
+
+# Rebuild vector index
+hermem ops rebuild-index --dry-run                          # preview only
+hermem ops rebuild-index --category fact                    # by entity category
+hermem ops rebuild-index --since 2026-01-01                 # recent only
+hermem ops rebuild-index --only-archived                    # archived entities only
+```
+
+### Integrity issue codes
+
+| Code                  | Level    | Meaning                                         |
+|-----------------------|----------|-------------------------------------------------|
+| `MISSING_EMBEDDING`   | warning  | Few entities without embeddings (<10)            |
+| `MISSING_EMBEDDING`   | critical | ≥10 entities without embeddings                 |
+| `DANGLING_EDGE`       | critical | Edge references a non-existent entity           |
+| `ARCHIVE_CONSISTENCY` | warning  | Archived entity still has embedding in vector index |
+
+### Exit codes
+
+| Code | Meaning                          |
+|------|----------------------------------|
+| 0    | OK (no critical issues)          |
+| 1    | Critical integrity issue found   |
+| 2    | Warning-level issue (--fail-on-warning) |
+
+### Cron recommendation
+
+Run `hermem ops integrity` weekly to catch drift early:
+
+```bash
+0 3 * * 1 cd /opt/hermem && hermem ops integrity --fail-on-warning
+```
