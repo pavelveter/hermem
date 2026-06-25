@@ -47,8 +47,13 @@ func (s *HTTPService) HandleHealthLive(w http.ResponseWriter, _ *http.Request) {
 }
 
 // HandleHealthReady — GET /health/ready. Pings the DB; returns
-// 503 if unreachable.
+// 503 if unreachable. Maps the domain-layer healthy bool to HTTP
+// status: true→200, false→503.
 func (s *HTTPService) HandleHealthReady(w http.ResponseWriter, r *http.Request) {
-	code, body := s.Svc.Ready(r.Context())
+	healthy, body := s.Svc.Ready(r.Context())
+	code := http.StatusOK
+	if !healthy {
+		code = http.StatusServiceUnavailable
+	}
 	httputil.WriteJSON(w, code, body)
 }
