@@ -77,17 +77,17 @@ P0 — CONTRADICTION ENGINE 2.0
 P0 — RETRIEVAL EXPLAINABILITY
 ==================================================
 
-[ ] Create ScoreBreakdown structure
-[ ] Add VectorScore component
-[ ] Add RecencyScore component
-[ ] Add TemporalScore component
-[ ] Add CentralityScore component
-[ ] Add PathScore component
-[ ] Add DepthPenalty component
-[ ] Add FinalScore component
-[ ] Return score breakdown from retrieval API
-[ ] Log retrieval score explanations
-[ ] Add retrieval explanation tests
+[x] Create ScoreBreakdown structure
+[x] Add VectorScore component
+[x] Add RecencyScore component
+[x] Add TemporalScore component
+[x] Add CentralityScore component
+[x] Add PathScore component
+[x] Add DepthPenalty component
+[x] Add FinalScore component
+[x] Return score breakdown from retrieval API
+[x] Log retrieval score explanations
+[x] Add retrieval explanation tests
 
 ==================================================
 P1 — EVALUATION FRAMEWORK
@@ -259,19 +259,19 @@ P1 — ADMIN CLI (ops group)
 P4 — CI/CD & ARTIFACT DISTRIBUTION
 ==================================================
 
-[ ] Create GitHub Actions core workflow definition
-[ ] Configure Matrix builds for target platforms (Darwin, Linux, Windows)
-[ ] Configure Matrix builds for target architectures (amd64, arm64)
-[ ] Set up deterministic CGO cross-compilation environment (zig cc / xgo)
-[ ] Inject Git tags, commit SHAs, and build timestamps into BuildInfo via ldflags
-[ ] Implement automated semantic versioning extraction from tags
-[ ] Add automated linting stage (golangci-lint) with strict configuration
-[ ] Add automated testing stage with race detector enabled (go test -race)
-[ ] Implement build artifact caching (Go module cache & Build cache)
-[ ] Implement build reproducibility and checksum verification (sha256sum)
-[ ] Configure automated GitHub Release creation on tag push
-[ ] Automate binary asset stripping and signing/notarization setup for macOS
-[ ] Document CI/CD infrastructure and release process
+[x] Create GitHub Actions core workflow definition
+[x] Configure Matrix builds for target platforms (Darwin, Linux, Windows)
+[x] Configure Matrix builds for target architectures (amd64, arm64)
+[x] Set up deterministic CGO cross-compilation environment (zig cc / xgo)
+[x] Inject Git tags, commit SHAs, and build timestamps into BuildInfo via ldflags
+[x] Implement automated semantic versioning extraction from tags
+[x] Add automated linting stage (golangci-lint) with strict configuration
+[x] Add automated testing stage with race detector enabled (go test -race)
+[x] Implement build artifact caching (Go module cache & Build cache)
+[x] Implement build reproducibility and checksum verification (sha256sum)
+[x] Configure automated GitHub Release creation on tag push
+[x] Automate binary asset stripping and signing/notarization setup for macOS
+[x] Document CI/CD infrastructure and release process
 
 ==================================================
 DONE CRITERIA

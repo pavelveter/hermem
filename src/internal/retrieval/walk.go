@@ -101,7 +101,11 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		}
 		ranked = append(ranked, rn)
 		if node.Depth == 0 {
-			result.SeedNodes = append(result.SeedNodes, node)
+			// Append rn.node (not node) so any ScoreBreakdown attached
+			// on the Explain path propagates into SeedNodes. The two
+			// are value-type copies — modifying rn.node leaves node
+			// stale.
+			result.SeedNodes = append(result.SeedNodes, rn.node)
 		}
 	}
 

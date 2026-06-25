@@ -3,6 +3,7 @@ package retrieval
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -477,6 +478,226 @@ func TestRetrieveContext_ExplainPopulatesFactScores(t *testing.T) {
 	if f.DepthPenalty < 0 {
 		t.Fatalf("DepthPenalty: want ≥0 for depth 0, got %v", f.DepthPenalty)
 	}
+}
+
+// TestRetrieveContext_ExplainPopulatesScoreBreakdown — the new
+// explainability contract: when Explain=true, every fact AND every
+// SeedNode carry a non-nil ScoreBreakdown with all seven components
+// populated, and the breakdown's FinalScore matches the scalar
+// RankingScore on the fact (parity between old/new explain fields).
+func TestRetrieveContext_ExplainPopulatesScoreBreakdown(t *testing.T) {
+	db := openTestDB(t)
+	emb := []float32{1, 0, 0}
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha-bd", []float32{1, 0, 0})
+	seedEntityWithEmbedding(t, db, "b", "world", "beta-bd", emb)
+	seedEdge(t, db, "a", "b", "uses")
+
+	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth: 1, Explain: true, QueryEmbedding: emb,
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// SeedNodes: 'a' must carry a breakdown.
+	if len(got.SeedNodes) == 0 {
+		t.Fatal("expected at least one SeedNode")
+	}
+	for i, sn := range got.SeedNodes {
+		if sn.ScoreBreakdown == nil {
+			t.Fatalf("SeedNode[%d] (%s): ScoreBreakdown is nil", i, sn.Entity.ID)
+		}
+		bd := sn.ScoreBreakdown
+		// Identical vectors → VectorScore near 1.
+		if bd.VectorScore < 0.99 {
+			t.Fatalf("SeedNode[%d].VectorScore: want ≈1, got %v", i, bd.VectorScore)
+		}
+		// RecencyScore / TemporalScore / CentralityScore must be in [0,1].
+		if bd.RecencyScore < 0 || bd.RecencyScore > 1 {
+			t.Fatalf("SeedNode[%d].RecencyScore out of [0,1]: %v", i, bd.RecencyScore)
+		}
+		if bd.TemporalScore < 0 || bd.TemporalScore > 1 {
+			t.Fatalf("SeedNode[%d].TemporalScore out of [0,1]: %v", i, bd.TemporalScore)
+		}
+		if bd.CentralityScore < 0 {
+			t.Fatalf("SeedNode[%d].CentralityScore negative: %v", i, bd.CentralityScore)
+		}
+		// PathScore is depth-0 → 0.
+		if bd.PathScore != 0 {
+			t.Fatalf("SeedNode[%d].PathScore: want 0 for depth-0, got %v", i, bd.PathScore)
+		}
+		// DepthPenalty is weight * path → 0 at depth 0.
+		if bd.DepthPenalty != 0 {
+			t.Fatalf("SeedNode[%d].DepthPenalty: want 0 at depth 0, got %v", i, bd.DepthPenalty)
+		}
+		// FinalScore must equal scalar RankingScore (parity).
+		if bd.FinalScore != sn.RankingScore {
+			t.Fatalf("SeedNode[%d].FinalScore=%v != RankingScore=%v", i, bd.FinalScore, sn.RankingScore)
+		}
+	}
+	// WorldFacts: at least one must carry a breakdown with the expected
+	// depth-penalty behaviour — depth-1 'beta-bd' should have PathScore > 0.
+	var foundDepth1 bool
+	for _, f := range got.WorldFacts {
+		if f.ScoreBreakdown == nil {
+			t.Fatalf("WorldFact (%s): ScoreBreakdown is nil", f.Content)
+		}
+		if f.ScoreBreakdown.FinalScore != f.RankingScore {
+			t.Fatalf("WorldFact (%s): FinalScore=%v != RankingScore=%v", f.Content, f.ScoreBreakdown.FinalScore, f.RankingScore)
+		}
+		if f.Depth >= 1 && f.ScoreBreakdown.PathScore > 0 {
+			foundDepth1 = true
+		}
+	}
+	if !foundDepth1 {
+		t.Fatal("expected at least one depth-1 fact with non-zero PathScore")
+	}
+}
+
+// TestRetrieveContext_NonExplainOmitsBreakdown — the backward-compat
+// guarantee: when Explain=false (default /retrieve, /query), no
+// breakdown is attached to SeedNodes or facts. omitempty keeps the
+// JSON envelope byte-compatible for non-explain callers.
+func TestRetrieveContext_NonExplainOmitsBreakdown(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "a", "world", "alpha-noexplain", []float32{1, 0, 0})
+	seedEntityWithEmbedding(t, db, "b", "world", "beta-noexplain", []float32{0, 1, 0})
+	seedEdge(t, db, "a", "b", "uses")
+
+	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+		MaxDepth: 1,
+		// Explain intentionally left false.
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	for i, sn := range got.SeedNodes {
+		if sn.ScoreBreakdown != nil {
+			t.Fatalf("SeedNode[%d] (%s): want nil ScoreBreakdown when Explain=false, got %+v", i, sn.Entity.ID, sn.ScoreBreakdown)
+		}
+	}
+	for _, bucket := range [][]core.RetrievedFact{
+		got.WorldFacts, got.Opinions, got.Experiences, got.Observations,
+	} {
+		for _, f := range bucket {
+			if f.ScoreBreakdown != nil {
+				t.Fatalf("fact %q: want nil ScoreBreakdown when Explain=false, got %+v", f.Content, f.ScoreBreakdown)
+			}
+		}
+	}
+}
+
+// TestRetrieveContext_ExplainLogsStructuredSummary — the log contract:
+// one slog.INFO record with message "retrieval.explain" carrying the
+// per-bucket counts and the top-ranked breakdown per bucket, emitted
+// only when Explain=true.
+//
+// INTENTIONALLY NOT t.Parallel — this test swaps slog.Default() for a
+// buffered handler. The defer restores the prior handler so a sibling
+// test (parallel or sequential) sees the right default at its own
+// slog.Default() call.
+func TestRetrieveContext_ExplainLogsStructuredSummary(t *testing.T) {
+	db := openTestDB(t)
+	emb := []float32{1, 0, 0}
+	seedEntityWithEmbedding(t, db, "la", "world", "log-alpha", emb)
+	seedEntityWithEmbedding(t, db, "lb", "world", "log-beta", []float32{0, 1, 0})
+	seedEdge(t, db, "la", "lb", "uses")
+
+	buf := &logBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(buf))
+	defer slog.SetDefault(prev)
+
+	if _, err := RetrieveContext(db, []string{"la"}, core.RetrieveContextOptions{
+		MaxDepth: 1, Explain: true, QueryEmbedding: emb,
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	rec := buf.findByMessage("retrieval.explain")
+	if rec == nil {
+		t.Fatalf("expected slog.Info(\"retrieval.explain\"); got %d records: %v", len(buf.records), buf.recordMessages())
+	}
+	attrs := attrsMap(rec)
+	if got := attrs["seeds"]; got != "1" {
+		t.Errorf("seeds: want 1, got %v", got)
+	}
+	if got := attrs["world_facts"]; got != "2" && got != "1" {
+		// 2 unique contents → either 1 or 2 depending on dedup path; both
+		// are valid given the dual-bucket seed behaviour. The test
+		// only fails if NO world facts landed (zero bucket).
+		t.Errorf("world_facts: want non-zero, got %v", got)
+	}
+	// top_world must carry a final field — proves the breakdown map
+	// made it through slog as a structured value.
+	topWorld := attrs["top_world"]
+	if topWorld == "" {
+		t.Error("top_world: want non-empty structured field, got empty")
+	}
+}
+
+// TestRetrieveContext_NonExplainDoesNotLog — /retrieve default path
+// emits no explain log. Operators relying on log volume stays flat
+// for the common case.
+func TestRetrieveContext_NonExplainDoesNotLog(t *testing.T) {
+	db := openTestDB(t)
+	seedEntityWithEmbedding(t, db, "na", "world", "no-log-alpha", []float32{1, 0, 0})
+
+	buf := &logBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(buf))
+	defer slog.SetDefault(prev)
+
+	if _, err := RetrieveContext(db, []string{"na"}, core.RetrieveContextOptions{
+		MaxDepth: 1, // Explain=false
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if rec := buf.findByMessage("retrieval.explain"); rec != nil {
+		t.Fatalf("Explain=false: want no retrieval.explain log, got record: %v", attrsMap(rec))
+	}
+}
+
+// --- log capture helpers (in-package so slog swap is local) ---
+
+type logBuffer struct {
+	records []slog.Record
+}
+
+func (h *logBuffer) Enabled(_ context.Context, _ slog.Level) bool { return true }
+func (h *logBuffer) Handle(_ context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	return nil
+}
+func (h *logBuffer) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *logBuffer) WithGroup(_ string) slog.Handler      { return h }
+
+func (h *logBuffer) findByMessage(msg string) *slog.Record {
+	for i := range h.records {
+		if h.records[i].Message == msg {
+			return &h.records[i]
+		}
+	}
+	return nil
+}
+
+func (h *logBuffer) recordMessages() []string {
+	out := make([]string, len(h.records))
+	for i, r := range h.records {
+		out[i] = r.Message
+	}
+	return out
+}
+
+func attrsMap(r *slog.Record) map[string]string {
+	out := map[string]string{}
+	if r == nil {
+		return out
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		out[a.Key] = a.Value.String()
+		return true
+	})
+	return out
 }
 
 // --- helpers ---

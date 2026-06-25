@@ -1,6 +1,7 @@
 package retrieval
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -189,4 +190,131 @@ func floatNear(a, b float32) bool {
 		diff = -diff
 	}
 	return diff < tol
+}
+
+// --- ScoreBreakdown helpers ---
+
+func TestComputeScoreComponents_PopulatesAllFields(t *testing.T) {
+	now := time.Now()
+	created := now.Add(-48 * time.Hour)
+	node := core.GraphNode{
+		Entity: core.Entity{
+			ID:        "x",
+			UpdatedAt: now,
+			CreatedAt: &created,
+			Degree:    9,
+		},
+		PathWeight: 1.5,
+	}
+	w := core.RankingWeight{
+		RecencyHalfLifeHours:  720,
+		TemporalHalfLifeHours: 720,
+	}.WithDefaults()
+	nodeVec := []float32{1, 0, 0}
+	query := []float32{1, 0, 0}
+	c := ComputeScoreComponents(node, nodeVec, query, vector.VectorNorm(query), w)
+	// Identical vectors → sim ≈ 1
+	if c.Sim < 0.99 {
+		t.Fatalf("Sim: want ≈1, got %v", c.Sim)
+	}
+	// Fresh updated_at → recency ≈ 1
+	if c.Recency < 0.99 {
+		t.Fatalf("Recency: want ≈1, got %v", c.Recency)
+	}
+	// 48h old created → small temporal decay (≈ 0.95 with half-life 720)
+	if c.Temporal <= 0 || c.Temporal >= 1 {
+		t.Fatalf("Temporal: want in (0,1) for 48h old, got %v", c.Temporal)
+	}
+	// centrality = log10(1 + 9) ≈ 1.0
+	if c.Centrality < 0.95 || c.Centrality > 1.05 {
+		t.Fatalf("Centrality: want ≈1.0, got %v", c.Centrality)
+	}
+	// Path is the raw path_weight, untouched.
+	if c.Path != 1.5 {
+		t.Fatalf("Path: want 1.5, got %v", c.Path)
+	}
+}
+
+func TestComputeScoreComponents_EmptyQueryYieldsZeroSim(t *testing.T) {
+	node := core.GraphNode{Entity: core.Entity{ID: "x"}}
+	w := core.RankingWeight{}.WithDefaults()
+	c := ComputeScoreComponents(node, []float32{1, 0, 0}, nil, 0, w)
+	if c.Sim != 0 {
+		t.Fatalf("Sim with nil query: want 0, got %v", c.Sim)
+	}
+}
+
+func TestBuildScoreBreakdown_FinalMatchesCompositeScore(t *testing.T) {
+	w := core.RankingWeight{
+		VectorWeight:     0.5,
+		RecencyWeight:    0.3,
+		TemporalWeight:   0.1,
+		CentralityWeight: 0.05,
+		DepthPenalty:     0.05,
+	}.WithDefaults()
+	c := ScoreComponents{
+		Sim: 1.0, Recency: 1.0, Temporal: 1.0, Centrality: 1.0, Path: 1.0,
+	}
+	bd := BuildScoreBreakdown(c, w)
+	if bd == nil {
+		t.Fatal("BuildScoreBreakdown returned nil")
+	}
+	wantFinal := compositeScore(w, c.Sim, c.Recency, c.Temporal, c.Centrality, c.Path)
+	if !floatNear(bd.FinalScore, wantFinal) {
+		t.Fatalf("FinalScore %v != compositeScore %v", bd.FinalScore, wantFinal)
+	}
+	// Per-field mapping: VectorScore==Sim, DepthPenalty==DepthPenaltyWeight*Path
+	if bd.VectorScore != c.Sim {
+		t.Fatalf("VectorScore=%v want %v", bd.VectorScore, c.Sim)
+	}
+	if bd.RecencyScore != c.Recency {
+		t.Fatalf("RecencyScore=%v want %v", bd.RecencyScore, c.Recency)
+	}
+	if bd.TemporalScore != c.Temporal {
+		t.Fatalf("TemporalScore=%v want %v", bd.TemporalScore, c.Temporal)
+	}
+	if bd.CentralityScore != c.Centrality {
+		t.Fatalf("CentralityScore=%v want %v", bd.CentralityScore, c.Centrality)
+	}
+	if bd.PathScore != c.Path {
+		t.Fatalf("PathScore=%v want %v", bd.PathScore, c.Path)
+	}
+	if !floatNear(bd.DepthPenalty, w.DepthPenalty*c.Path) {
+		t.Fatalf("DepthPenalty=%v want %v", bd.DepthPenalty, w.DepthPenalty*c.Path)
+	}
+}
+
+func TestBuildScoreBreakdown_DepthPenaltySubtractsFromFinal(t *testing.T) {
+	// Build a breakdown with high features and a non-zero path;
+	// FinalScore should equal weighted_sum - DepthPenalty.
+	w := core.RankingWeight{
+		VectorWeight: 1.0,
+	}.WithDefaults()
+	c := ScoreComponents{
+		Sim: 0.8, Path: 2.0,
+	}
+	bd := BuildScoreBreakdown(c, w)
+	want := float32(0.8 - w.DepthPenalty*2.0)
+	if !floatNear(bd.FinalScore, want) {
+		t.Fatalf("FinalScore %v != expected %v (VectorScore*sim - DepthPenalty*path)", bd.FinalScore, want)
+	}
+}
+
+func TestBuildScoreBreakdown_NaNInfFinalClampedToZero(t *testing.T) {
+	// Sim=+Inf drives FinalScore to +Inf through compositeScore; clamp
+	// must bring it back to 0 so downstream sort doesn't propagate NaN.
+	w := core.RankingWeight{
+		VectorWeight: 1.0,
+	}.WithDefaults()
+	c := ScoreComponents{
+		Sim:        float32(math.Inf(1)),
+		Recency:    0,
+		Temporal:   0,
+		Centrality: 0,
+		Path:       0,
+	}
+	bd := BuildScoreBreakdown(c, w)
+	if bd.FinalScore != 0 {
+		t.Fatalf("+Inf FinalScore: want clamp to 0, got %v", bd.FinalScore)
+	}
 }
