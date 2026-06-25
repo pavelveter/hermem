@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### PHASE 3.1–3.10 — God-object dissolution + flat-domain-pkg refactoring (June 2026)
+
+Ten-phase architectural refactoring that dismantled the AdminService god-object,
+dissolved the `algo/` package, and established a flat per-domain package
+structure with a paired transport shell pattern.
+
+**AdminService god-object dismantled across 5 phases of route extraction:**
+
+- **PHASE 3.1** (`graph`): `/connected-components` + `/communities` + NEW `/graph/verify` → `graph.Service` + `server/graph/` HTTP shell.
+- **PHASE 3.2** (`migration`): `/db/migrate`, `/db/rollback`, `/db/verify`, `/db/schema` → `migration.Service` + `server/migration/` HTTP shell (4 NEW routes, previously CLI-only).
+- **PHASE 3.3** (`retention`): POST `/admin/retention/run` + `GarbageCollector` loop → `retention.Service` + `server/retention/` HTTP shell (NEW HTTP route, previously only a background goroutine).
+- **PHASE 3.4** (`ingest`): `/ingest` + NEW GET `/ingest/jobs` → `ingest.Service` + `server/ingest/` HTTP shell (extracted from `server/memory` shell).
+- **PHASE 3.5** (`edge` + `timeline`): `/edge`, `/timeline` → `edge.Service` + `timeline.Service` + `server/edge/` + `server/timeline/` HTTP shells (extracted from `server/memory` shell; memory keeps only `/store`).
+- **PHASE 3.6** (`reembed`): `/admin/re-embed` → `reembed.Service` + `server/reembed/` HTTP shell (`algo/reembed.go` deleted).
+- **PHASE 3.7** (`health`): `/health`, `/health/live`, `/health/ready` → `health.Service` + `server/health/` HTTP shell. AdminService slimmed to `/metrics` only (one route, one field, one constructor arg).
+  - Follow-up: `health.Service.Ready()` refactored to return `(bool, map)` (transport-agnostic); HTTP shell maps bool → 200/503.
+- **PHASE 3.8**: AdminService dissolved entirely — `/metrics` registered directly on `Server.mount()` via `Metrics *metrics.Metrics` field. `admin_service.go` deleted. The god-object is gone.
+
+**`algo/` package dissolved across 3 phases:**
+
+- **PHASE 3.9**: `VerifyGraph` inlined into `graph.Service.Verify()`; `algo/cache.go` deleted (EmbeddingCache, zero callers — dead code).
+- **PHASE 3.10**: `AgentLoop` + `ExecutionPlan` + `resolveExecutableTasks` extracted into new `orchestrator.Service{db}` (CLI-only, no HTTP shell). `algo/verify.go` deleted; `algo/` directory removed. The pkg is entirely gone.
+
+**Structural result:**
+
+- 12 flat domain packages: `contradiction`, `edge`, `graph`, `health`, `ingest`, `memory`, `migration`, `orchestrator`, `reembed`, `retention`, `retrieval`, `task`, `timeline`.
+- 12 per-domain HTTP shells under `server/`, each a thin `{Svc, Metrics, Refs}` struct with `Routes() map[string]http.HandlerFunc`.
+- `Server` struct holds 12 `*HTTPService` fields + `Metrics`; `NewServer` 14-arg.
+- `algo/` pkg deleted (`cache.go` dead code → `verify.go` VerifyGraph → `graph.Service` → `verify.go` AgentLoop → `orchestrator.Service` → empty → rmdir'd).
+- Zero import cycles, zero god-objects, every domain service is transport-agnostic.
+
 ### Round-9 § 3 batch — atomicity, dedup safety, single-row archive, recoverable shutdown
 
 - **§ 3.1 IngestBatch atomicity refactor** — `ProcessDialogWithProvenance` in `src/internal/ingestion/dialog.go` removes the legacy `BulkStore` pre-store path. Every per-entity `vi.Store` / `vi.Remove` now queues as a `viOp{store|remove, id, vec}` slice built during the decision phase (before BeginTx) and drained only AFTER `itemTx.Commit()` returns nil. The contradiction-archive UPDATE is folded INTO the same itemTx so it commits / roll-backs atomically with the new entity write. `applyVIOps` is a free function (not a method) depending only on `core.VectorIndex`. 5 regression tests in `dialog_test.go` lock all four doctrine branches (NEW / MERGE / LOW-CONF / ROLLBACK) plus the post-commit vi-failure surface contract.

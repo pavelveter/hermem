@@ -56,7 +56,6 @@ The system stores knowledge as entities (nodes) connected by typed edges. Each e
 - **Graph clustering** — `FindConnectedComponents` BFS-based connected components; `GET /connected-components?min_size=N`
 - **Community detection** — Louvain one-pass modularity optimisation; `hermem graph communities` CLI + `GET /communities` HTTP
 - **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem memory re-embed [--batch-size N] [--model M]` CLI + `POST /admin/re-embed` HTTP
-- **Embedding cache** — `EmbeddingCache` LRU (map + doubly-linked list) wired into vector index for hot-path speedup
 - **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem memory quantize` (stdin) CLI
 - **Docker** — multi-stage build, non-root user
 
@@ -463,14 +462,10 @@ hermem/
     │                         Extractor + Reranker + BuildInfo, constructs
     │                         cli.Env, calls cli.NewRootCommand(env).Execute().
     │                         Builds SIGHUP reload loop on prod. server (hermem serve).
-    └── internal/            ← 13 packages
+    └── internal/            ← Flat domain packages + CLI + server shells
         ├── ai/              ← LLM client helpers (Ollama + OpenAI), extractor
         │                      base, retrieval prompts (operator-facing
         │                      construction in config.NewEmbedder/NewExtractor)
-        ├── algo/            ← Graph algorithms (no LLM / SQL):
-        │                      VerifyGraph, ExecutionPlan, CriticalPath,
-        │                      FindConnectedComponents, DetectCommunities,
-        │                      AgentLoop, ReEmbedAll
         ├── cli/             ← Cobra command tree (~44 files; see CLI Commands
         │                      section above for the user-visible layout)
         │   ├── root.go      ← NewRootCommand wires top-level + 6 groups
@@ -488,28 +483,40 @@ hermem/
         │   └── db/          ← 4 subs: migrate/rollback/verify/schema
         ├── config/          ← INI loader (gopkg.in/ini.v1), Config.Validate,
         │                      schema fingerprinting, Reranker factory
+        ├── contradiction/   ← PHASE 3.1: contradiction detection domain Service
         ├── core/            ← Public types: Entity, Edge, request/response
         │                      structs, SchemaConfig, RetrieveContextOptions
+        ├── edge/            ← PHASE 3.5: relation-edge domain Service
+        ├── graph/           ← PHASE 3.1: graph analytics domain Service
+        ├── health/          ← PHASE 3.7: health-probe domain Service (DB ping)
         ├── httputil/        ← HTTP strict-decode helpers (DecodeStrict,
         │                      WriteJSON, WriteError, MaxBodyBytes)
-        ├── ingestion/       ← Background extraction worker
-        │   ├── worker.go    ← NewIngestionWorker factory + lifecycle
-        │   └── dialog.go    ← ProcessDialog (LLM extract + dedup-merge)
+        ├── ingest/          ← PHASE 3.4: synchronous dialog ingestion Service
+        ├── memory/          ← Memory CRUD domain Service (Store, edge, ingest)
         ├── metrics/         ← AsyncMetricsWorker + Prometheus exposition
-        │                      + InitMetricsDB / InitMetricsWorker lifecycle
+        ├── migration/       ← PHASE 3.2: schema migration domain Service
+        ├── orchestrator/    ← PHASE 3.10: AgentLoop + ExecutionPlan (CLI-only)
+        ├── reembed/         ← PHASE 3.6: background re-embedding Service
+        ├── retention/       ← PHASE 3.3: GC archival domain Service
         ├── retrieval/       ← Recursive CTE graph walk, ranking pipeline,
         │                      FormatContextMarkdown, contradiction helpers
-        ├── server/          ← HTTP API server, split into 4 sub-services
+        ├── server/          ← HTTP API server, split into per-domain sub-services
         │   ├── server.go    ← Slim shell: route registration, ReloadState
         │   │                  (atomic.Pointer swap), graceful shutdown
-        │   ├── admin_service.go ← /health* + /admin/* + /schema
-        │   ├── middleware.go ← X-API-Key, request-id, slog, recover
-        │   ├── requests.go  ← Shared request structs (StoreRequest, etc.)
-        │   ├── memory/      ← POST /store, /ingest, /edge (write) +
-        │   │                  owns the IngestionWorker
+        │   ├── middleware.go ← X-API-Key, request-id, slog, recover, max-body
+        │   ├── contradiction/← GET /contradictions
+        │   ├── edge/        ← POST /edge
+        │   ├── graph/       ← /connected-components, /communities, /graph/verify
+        │   ├── health/      ← /health, /health/live, /health/ready
+        │   ├── ingest/      ← POST /ingest, GET /ingest/jobs
+        │   ├── memory/      ← POST /store
+        │   ├── migration/   ← /db/migrate, /db/rollback, /db/verify, /db/schema
+        │   ├── reembed/     ← POST /admin/re-embed
+        │   ├── retention/   ← POST /admin/retention/run
         │   ├── retrieval/   ← POST /search, /query, /retrieve, /explain,
         │   │                  /response, /query/temporal (read)
-        │   └── task/        ← POST /task/* + /verify
+        │   ├── task/        ← POST /task/*
+        │   └── timeline/    ← GET /timeline
         ├── serverstate/     ← atomic.Pointer[State] for SIGHUP-safe config
         │                      reload across all handlers
         ├── store/           ← SQL access + migration runner (init, codec,
@@ -527,11 +534,13 @@ hermem/
         │       ├── 005_centrality.sql
         │       ├── 006_weighted_edges.sql
         │       └── 007_task_priorities.sql
-        └── vector/          ← VectorIndex + backends + cosine + quant + cache
+        ├── task/            ← Task lifecycle domain Service
+        ├── timeline/        ← PHASE 3.5: time-ordered entity projection
+        └── vector/          ← VectorIndex + backends + cosine + quant
             ├── index.go     ← VectorIndex interface, embedding serialisation,
             │                  NormalizeVector at ingest
             ├── inmemory.go  ← InMemoryVectorIndex: flatMatrix + cblas_sgemv
-            │                  (or pure-Go loop), LRU cache, BatchDotProducts
+            │                  (or pure-Go loop), BatchDotProducts
             ├── cosine.go    ← Pure-Go fallback (build tag: !darwin || !cgo)
             ├── cosine_darwin.go ← Apple Accelerate (cblas) AMX fast path
             │                  (build tag: darwin && cgo)
@@ -541,9 +550,7 @@ hermem/
 ```
 
 All `*_test.go` files together amount to ~12 test files across the
-`internal/` tree (`store` has the most, `retrieval` and `vector` come
-next). Each file typically holds 5-15 tests; total test function count
-is in the 100-200 range, growing as features land.
+`internal/` tree. Each file typically holds 5-15 tests.
 
 ## HTTP API Server
 
@@ -586,6 +593,7 @@ Run Hermem as an HTTP service for integration with Hermes Agent or other systems
 | `/connected-components` | GET | Graph connected components (`?min_size=N`) |
 | `/communities` | GET | Louvain community detection (`?min_size=N&max_iterations=N`) |
 | `/admin/re-embed` | POST | Trigger background re-embedding (`{"dim": 768, "batch_size": 50}`) |
+| `/graph/verify` | GET | Graph integrity check (entities, edges, embedding dims) |
 
 ### Examples
 
