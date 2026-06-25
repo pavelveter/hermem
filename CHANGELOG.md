@@ -23,6 +23,18 @@ and memory pipelines.
 - **test(tracing)**: 8 interface-compliance + round-trip tests.
 - **smoke**: `TRACING_EXPORTER=otlp hermem version` logs and gracefully degrades; unset runs clean.
 
+### P1 — Profiling suite (June 2026)
+
+Opt-in runtime profiling without third-party sidecars. Two surfaces
+share the same `runtime/pprof` backend, both off by default — zero
+production-surface change unless the operator flips an env flag or
+invokes the new CLI group.
+
+- **`HERMEM_PPROF_ENABLED=1` mounts `/debug/pprof/*`** — `server.RegisterPprof(mux)` wires the stdlib handlers (Index, Cmdline, Profile, Symbol, Trace) when the env var is exactly `"1"`. Exact-match so a typo (`true`, `yes`, `on`, `TRUE`, `enabled`) cannot accidentally expose process internals. Off by default → endpoints return 404. Wired in `Server.mount()`.
+- **`hermem profile {cpu,heap,goroutine,trace}`** — new top-level CLI group. CPU profile (seconds, protobuf → stdout), heap snapshot (→ `/tmp/hermem-heap.pprof`), goroutine dump (text → stdout), execution trace (seconds → `/tmp/hermem-trace.out`). Default duration 10s, overridable via positional arg or `--seconds`.
+- **Tests** — `pprof_test.go` covers the env gate (disabled default, wrong-value rejection, enabled smoke) and a gated integration check that verifies the rendered `/debug/pprof/` index lists all eight profile names.
+- **Docs** — `docs/profiling.md` documents both surfaces, the security model, and the `go tool pprof` / `go tool trace` analysis workflow.
+
 ### P1 — Migration system hardening (June 2026)
 
 Eight-task migration hardening sprint adding SHA-256 checksums, dry-run,
