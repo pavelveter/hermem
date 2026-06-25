@@ -7,6 +7,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/pavelveter/hermem/src/internal/cli/admin"
 	"github.com/pavelveter/hermem/src/internal/cli/agent"
 	"github.com/pavelveter/hermem/src/internal/cli/db"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
@@ -98,6 +99,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		newHealthCmd(env),
 		newMetricsCmd(env),
 		newVersionCmd(env),
+		admin.NewCmd(env),
 		memory.NewCmd(env),
 		task.NewCmd(env),
 		graph.NewCmd(env),
