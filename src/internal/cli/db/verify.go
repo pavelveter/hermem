@@ -30,7 +30,12 @@ func newVerifyCmd(env *cli.Env) *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), "All migration checksums intact.")
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%d mismatch(es)\n", len(mismatches))
+			fmt.Fprintf(cmd.OutOrStdout(), "%d checksum mismatch(es):\n", len(mismatches))
+			for _, mm := range mismatches {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", mm.Name)
+				fmt.Fprintf(cmd.OutOrStdout(), "    stored:   %s\n", mm.StoredChecksum)
+				fmt.Fprintf(cmd.OutOrStdout(), "    current:  %s\n", mm.CurrentChecksum)
+			}
 			fmt.Fprintln(os.Stderr, "db verify: integrity mismatch")
 			return fmt.Errorf("migration integrity mismatch: %d", len(mismatches))
 		},
