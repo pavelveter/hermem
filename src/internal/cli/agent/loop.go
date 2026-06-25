@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pavelveter/hermem/src/internal/algo"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/orchestrator"
 )
 
 func newLoopCmd(env *cli.Env) *cobra.Command {
@@ -28,7 +28,8 @@ func newLoopCmd(env *cli.Env) *cobra.Command {
 				return fmt.Errorf("goal_id required")
 			}
 			slog.Info("agent loop started", "goal_id", req.GoalID)
-			err := algo.AgentLoop(env.Ctx, env.DB, env.Cfg.Schema, req.GoalID,
+			svc := orchestrator.New(env.DB)
+			err := svc.AgentLoop(env.Ctx, env.Cfg.Schema, req.GoalID,
 				func(_ context.Context, task core.Entity) error {
 					fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s  [%s]\n",
 						task.ID, task.Content, task.Category)

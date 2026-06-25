@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pavelveter/hermem/src/internal/algo"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
+	"github.com/pavelveter/hermem/src/internal/orchestrator"
 )
 
 func newPlanCmd(env *cli.Env) *cobra.Command {
@@ -24,7 +24,8 @@ func newPlanCmd(env *cli.Env) *cobra.Command {
 			if req.GoalID == "" {
 				return fmt.Errorf("goal_id required")
 			}
-			tasks, err := algo.ExecutionPlan(env.Ctx, env.DB, env.Cfg.Schema, req.GoalID)
+			svc := orchestrator.New(env.DB)
+			tasks, err := svc.ExecutionPlan(env.Ctx, env.Cfg.Schema, req.GoalID)
 			if err != nil {
 				return fmt.Errorf("plan: %w", err)
 			}
