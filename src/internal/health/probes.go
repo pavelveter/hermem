@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -79,14 +80,15 @@ func ExtractorProbe(ex core.LLMExtractor) Check {
 }
 
 func DiskSpaceProbe(path string) Check {
-	if path == "" {
-		path = "."
+	dir := filepath.Dir(path)
+	if dir == "" {
+		dir = "."
 	}
 	return Check{
 		Name: "disk_space",
 		Probe: func(ctx context.Context) error {
 			var stat syscall.Statfs_t
-			if err := syscall.Statfs(path, &stat); err != nil {
+			if err := syscall.Statfs(dir, &stat); err != nil {
 				return fmt.Errorf("statfs: %w", err)
 			}
 			freeBytes := stat.Bavail * uint64(stat.Bsize)
