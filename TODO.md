@@ -53,7 +53,7 @@ P0 — ENTITY MODEL REFACTOR
 [x] Introduce Task model
 [x] Introduce Goal model
 [x] Introduce Belief model
-[ ] Keep backward compatibility layer
+[x] Keep backward compatibility layer
 [ ] Add tests for all model conversions
 [ ] Document domain model boundaries
 
