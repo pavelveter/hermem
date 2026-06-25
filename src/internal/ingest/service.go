@@ -25,6 +25,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingestion"
 )
@@ -77,7 +78,10 @@ func (s *Service) Ingest(ctx context.Context, dialog string, dedupThreshold floa
 	if s.extractor == nil {
 		return fmt.Errorf("ingest: no extractor wired")
 	}
-	w := ingestion.NewIngestionWorker(s.db, s.vi, s.extractor, s.embedder, dedupThreshold, schema)
+	// Pass an explicit lexical detector so future wiring can substitute a
+	// contradiction.NewCompositeDetector(NewLexicalDetector(), NewSemanticDetector())
+	// at this single call site without changing the worker contract.
+	w := ingestion.NewIngestionWorker(s.db, s.vi, s.extractor, s.embedder, dedupThreshold, schema, contradiction.NewLexicalDetector())
 	if err := w.ProcessDialog(ctx, dialog); err != nil {
 		return fmt.Errorf("ingest: %w", err)
 	}

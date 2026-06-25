@@ -61,14 +61,14 @@ P0 — ENTITY MODEL REFACTOR
 P0 — CONTRADICTION ENGINE 2.0
 ==================================================
 
-[ ] Extract contradiction detection behind interface
-[ ] Create ContradictionDetector interface
-[ ] Implement LexicalDetector
+[x] Extract contradiction detection behind interface
+[x] Create ContradictionDetector interface
+[x] Implement LexicalDetector
 [ ] Implement EmbeddingDetector
 [ ] Implement LLMDetector
-[ ] Add detector composition pipeline
-[ ] Add contradiction confidence scoring
-[ ] Add contradiction explanation output
+[x] Add detector composition pipeline
+[x] Add contradiction confidence scoring
+[x] Add contradiction explanation output
 [ ] Add contradiction benchmark dataset
 [ ] Add contradiction evaluation metrics
 [ ] Add contradiction regression tests
@@ -222,6 +222,24 @@ P3 — LONG TERM RESEARCH
 [ ] Design memory-driven reasoning
 [ ] Design autonomous memory evolution
 [ ] Design reasoning memory engine
+
+==================================================
+P1 — AUTH HARDENING (multi-key scoped API keys)
+==================================================
+
+[x] Define Scope, Key, Authenticator interface in auth package
+[x] Implement Scope hierarchy (CanAccess, ScopeForPath)
+[x] Implement StaticAuthenticator with constant-time comparison
+[x] Add scope and authenticator tests
+[x] Add api_keys INI parsing (key:scope:label), legacy api_key fallback
+[x] Add INI file manipulation helpers (AddKeyToFile, RemoveKeyFromFile, RotateKeyInFile)
+[x] Create AuthMiddleware (parameterless, health bypass, 401/403 JSON)
+[x] Wire AuthMiddleware into Serve() replacing APIKeyMiddleware
+[x] Create admin CLI group (list/add/rotate/revoke) with GenerateKey/MaskKey
+[x] Add admin CLI unit tests
+[x] Add middleware integration tests (scope enforcement per-endpoint)
+[x] Document auth in USAGE.md §16
+[x] Update CHANGELOG.md
 
 ==================================================
 P4 — CI/CD & ARTIFACT DISTRIBUTION
