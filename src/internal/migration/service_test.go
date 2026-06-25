@@ -67,7 +67,7 @@ func TestService_Rollback_NoError(t *testing.T) {
 	// should observe a non-empty name (the most-recent applied
 	// migration). Either outcome is acceptable for this test — the
 	// contract is "no error, returns the name or empty".
-	name, err := svc.Rollback(context.Background())
+	name, err := svc.Rollback(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}

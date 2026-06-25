@@ -82,15 +82,13 @@ func (s *Service) Status(_ context.Context) ([]store.MigStatus, error) {
 	return status, nil
 }
 
-// Rollback removes the last-applied migration (no actual schema
-// reverse — the row is DELETEd from `schema_migrations` and the
-// checksum row from `migration_checksums`; the SQL schema itself
-// is NOT reversed). Returns the rolled-back name, or "" if no
-// migrations exist. Matches pre-PHASE-3.2 cli/db/rollback
-// semantics 1:1: the CLI prints "No migrations." on empty
-// result, and the HTTP shell emits `{rolled_back: ""}`.
-func (s *Service) Rollback(_ context.Context) (string, error) {
-	name, err := store.RollbackMigration(s.db)
+// Rollback removes the last-applied migration. When target is
+// non-empty, rolls back every migration applied after (and not
+// including) the target version. No actual schema reverse — rows
+// are DELETEd from `schema_migrations` and `migration_checksums`;
+// the SQL schema itself is NOT reversed.
+func (s *Service) Rollback(_ context.Context, target string) (string, error) {
+	name, err := store.RollbackMigration(s.db, target)
 	if err != nil {
 		return "", fmt.Errorf("migration rollback: %w", err)
 	}

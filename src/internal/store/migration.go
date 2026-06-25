@@ -285,7 +285,9 @@ func PendingMigrations() ([]string, error) {
 }
 
 // RollbackMigration removes the last-applied migration.
-func RollbackMigration(db *sql.DB) (string, error) {
+// When target is non-empty, rolls back every migration applied after
+// (and not including) the target version.
+func RollbackMigration(db *sql.DB, target string) (string, error) {
 	var name string
 	err := db.QueryRow("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").Scan(&name)
 	if err == sql.ErrNoRows {
@@ -294,10 +296,23 @@ func RollbackMigration(db *sql.DB) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read last migration: %w", err)
 	}
-	_, _ = db.Exec("DELETE FROM schema_migrations WHERE version = ?", name)
-	_, _ = db.Exec("DELETE FROM migration_checksums WHERE version = ?", name)
-	slog.Info("migration rolled back", "migration", name)
-	return name, nil
+	if target == "" {
+		_, _ = db.Exec("DELETE FROM schema_migrations WHERE version = ?", name)
+		_, _ = db.Exec("DELETE FROM migration_checksums WHERE version = ?", name)
+		slog.Info("migration rolled back", "migration", name)
+		return name, nil
+	}
+	// Target-based rollback: remove everything after target.
+	_, err = db.Exec(`DELETE FROM schema_migrations WHERE version > ?`, target)
+	if err != nil {
+		return "", fmt.Errorf("rollback to %s: %w", target, err)
+	}
+	_, err = db.Exec(`DELETE FROM migration_checksums WHERE version > ?`, target)
+	if err != nil {
+		return "", fmt.Errorf("rollback checksums to %s: %w", target, err)
+	}
+	slog.Info("migration rolled back to target", "target", target)
+	return target, nil
 }
 
 // MigrationChecksum returns a hex-encoded FNV-1a hash of the migration file contents.
