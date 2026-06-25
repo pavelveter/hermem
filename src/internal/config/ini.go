@@ -129,7 +129,7 @@ func LoadConfig(path string) (*Config, error) {
 	if rawList := getList("server", "api_keys"); len(rawList) > 0 {
 		keys := make([]auth.Key, 0, len(rawList))
 		for _, raw := range rawList {
-			key := parseKeySpec(raw)
+			key := ParseKeySpec(raw)
 			if key != nil {
 				keys = append(keys, *key)
 			}
@@ -391,7 +391,7 @@ func lookupKey(s *ini.Section, name string) *ini.Key {
 	return nil
 }
 
-func parseKeySpec(s string) *auth.Key {
+func ParseKeySpec(s string) *auth.Key {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil
