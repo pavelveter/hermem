@@ -4,13 +4,6 @@
 // rendering, recovery-plan suggestion, and task creation with the
 // embed+store+link side effect.
 //
-// Before PHASE 2.4 the orchestration lived in two places: src/internal/
-// retrieval/tasks.go (GetExecutableTasks + 2 helpers) and src/internal/
-// server/task/task_service.go's inline Handle* methods. PHASE 2.4
-// consolidates task domain logic into one Service struct so the HTTP
-// shell in server/task can be a thin shell — same pattern as
-// PHASE 2.1 (memory), 2.2 (retrieval), 2.3 (contradiction).
-//
 // The embedded `vector.AutoLinkEdges` call inside Create is the only
 // reason this Service holds vi + embedder. All other handlers operate
 // purely on the relational schema and the task DAG via store.* funcs.
@@ -83,9 +76,6 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 // pending state with no unfinished blocker via the blocked_by +
 // relation-blocking paths in the schema. Returns `[]Entity{}` (not
 // nil) on empty result so the HTTP envelope emits `[]` not `null`.
-//
-// Pre-PHASE-2.4 this lived in retrieval/tasks.go as retrieval.
-// GetExecutableTasks. PHASE 2.4 owns it firmly in the task pkg.
 func (s *Service) Executable(_ context.Context, goalID string, schema core.SchemaConfig) ([]core.Entity, error) {
 	tasks, err := getExecutable(s.db, schema, goalID)
 	if err != nil {
@@ -128,9 +118,8 @@ func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (
 // Dep adds or removes a dependency edge between two tasks. The HTTP
 // shell does relation-type pre-validation against state.ValidRelationTypes;
 // the domain treats relationType as opaque and just passes through to
-// store.AddEdge / store.DeleteEdge. Both branches ignore the underlying
-// error (matches pre-PHASE-2.4 semantics: a missing edge on delete
-// is non-fatal, a duplicate edge on add is non-fatal).
+// store.AddEdge / store.DeleteEdge. A missing edge on delete is
+// non-fatal, a duplicate edge on add is non-fatal.
 func (s *Service) Dep(_ context.Context, sourceID, targetID, relationType string, add bool) error {
 	if sourceID == "" || targetID == "" {
 		return fmt.Errorf("dep: source_id and target_id required")
@@ -159,8 +148,7 @@ func (s *Service) Rollback(_ context.Context, id string, schema core.SchemaConfi
 
 // Tree returns the rendered ASCII task tree for the given root goalID.
 // Empty goalID = "render every root task tree". Returns the
-// store.RenderTaskTree'd string verbatim so the existing CLI / HTTP
-// wire shape (raw string response) stays identical.
+// store.RenderTaskTree'd string verbatim.
 func (s *Service) Tree(_ context.Context, goalID string, schema core.SchemaConfig) (string, error) {
 	nodes, err := store.GetTaskTree(s.db, schema, goalID)
 	if err != nil {

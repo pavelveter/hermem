@@ -20,16 +20,13 @@ func newEdgeCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
-			// Pre-validation kept at CLI for verbatim message parity.
 			if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
 				return fmt.Errorf("source_id, target_id, relation_type required")
 			}
 			if err := env.Cfg.ValidateRelation(req.RelationType); err != nil {
 				return fmt.Errorf("invalid: %w", err)
 			}
-			// PHASE 3.5: AddEdge moved from memory.Service to edge.Service.
-			// Construction shape follows the PHASE 3.4 ingest-cli migration
-			// precedent: build the new domain Service inline per call (cheap
+			// Build the new domain Service inline per call (cheap
 			// six-pointer assignment) so the CLI plugin doesn't need a new
 			// field on cli.Env. Extractor is no longer required (the edge
 			// domain has no LLM hook).

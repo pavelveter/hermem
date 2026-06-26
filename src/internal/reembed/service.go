@@ -1,17 +1,8 @@
 // Package reembed owns the transport-agnostic re-embedding orchestrator.
 //
-// lifts ReEmbedAll out of src/internal/algo/reembed.go (which
-// is deleted in this phase) into its own flat pkg following the
-// PHASE 2.x + precedent: flat pkg,
-// stateless Service, per-call args for things that change request-time
-// (configuredDim, batchSize, modelName), no HTTP / CLI coupling. The
-// HTTP shell lives in src/internal/server/reembed/.
-//
-// The algo/reembed.go internal helpers (embedWork, processReEmbedBatch,
-// NeedsReEmbed) are lifted here as private funcs — mirrors the PHASE
-// 3.3 retention precedent where algo/gc.go was deleted entirely and
-// its helpers (beginImmediate/commitCurrentTx/rollbackCurrentTx) moved
-// to the new retention pkg.
+// Flat pkg, stateless Service, per-call args for things that change
+// request-time (configuredDim, batchSize, modelName), no HTTP / CLI
+// coupling. The HTTP shell lives in src/internal/server/reembed/.
 package reembed
 
 import (
@@ -26,17 +17,14 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// embedWork is a work item for ReEmbedAll. Moved from algo/reembed.go
-// in ; stays private — only ReEmbedAll constructs it.
+// embedWork is a work item for ReEmbedAll. Only ReEmbedAll constructs it.
 type embedWork struct {
 	id, content string
 }
 
 // Service is the transport-agnostic re-embedding orchestrator.
-// Holds db, vi, embedder — the same three deps ReEmbedAll used to
-// take as params. Batch size + model name are per-call args because
-// they change with every re-embed invocation (model swaps, operator
-// batch tuning).
+// Holds db, vi, embedder. Batch size + model name are per-call args
+// because they change with every re-embed invocation.
 type Service struct {
 	db       *sql.DB
 	vi       core.VectorIndex
@@ -51,8 +39,6 @@ func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
 }
 
 // NeedsReEmbed checks if dimension drift requires re-embedding.
-// Moved from algo/reembed.go in ; no changes — the SQL
-// query reads the meta table exactly as before.
 func (s *Service) NeedsReEmbed(ctx context.Context, configuredDim int) (needs bool, oldDim int, err error) {
 	var old sql.NullInt64
 	qerr := s.db.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'embedding_dim'").Scan(&old)
@@ -67,9 +53,8 @@ func (s *Service) NeedsReEmbed(ctx context.Context, configuredDim int) (needs bo
 }
 
 // ReEmbedAll re-embeds all entities with the current embedder.
-// Moved from algo/reembed.go in . The function signature
-// drops db, vi, embedder (now Service fields) and keeps only the
-// per-call args: configuredDim, batchSize, modelName.
+// The function signature takes per-call args: configuredDim,
+// batchSize, modelName.
 func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize int, modelName string) (core.ReEmbedResult, error) {
 	start := time.Now()
 	result := core.ReEmbedResult{NewDim: configuredDim}
@@ -120,9 +105,8 @@ func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize i
 	return result, nil
 }
 
-// processReEmbedBatch is the per-batch worker lifted from
-// algo/reembed.go in . Stays as a private method because
-// the only caller is ReEmbedAll.
+// processReEmbedBatch is the private per-batch worker.
+// The only caller is ReEmbedAll.
 func (s *Service) processReEmbedBatch(ctx context.Context, items []embedWork, dim int, result *core.ReEmbedResult) error {
 	result.Batches++
 	for _, item := range items {

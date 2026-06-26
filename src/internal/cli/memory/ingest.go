@@ -20,13 +20,9 @@ func newIngestCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
-			// Pre-validation kept at CLI for verbatim message parity.
 			if req.Dialog == "" {
 				return fmt.Errorf("dialog required")
 			}
-			// PHASE 3.4: ingest orchestration moved to ingest.Service.Ingest;
-			// memory.Service.Ingest removed in PHASE 3.4. The dialog pipeline
-			// body is unchanged — only the domain Service constructor pointer.
 			ingestSvc := ingestdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
 			if err := ingestSvc.Ingest(env.Ctx, req.Dialog, env.Cfg.DedupThreshold, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("ingest: %w", err)

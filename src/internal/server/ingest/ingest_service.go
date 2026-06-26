@@ -30,9 +30,7 @@ type HTTPService struct {
 }
 
 // New constructs an HTTPService. DedupThreshold is captured at boot
-// from cfg.DedupThreshold; SIGHUP does NOT propagate dedup changes
-// (matches pre-PHASE-3.4 memory_service shell behaviour — the per-shell
-// DedupThreshold is a config snapshot, not a state ref).
+// from cfg.DedupThreshold; SIGHUP does NOT propagate dedup changes.
 func New(svc *ingest.Service, m *metrics.Metrics, refs *serverstate.Ref, dedupThreshold float32) *HTTPService {
 	return &HTTPService{
 		Svc:            svc,
@@ -47,11 +45,10 @@ func New(svc *ingest.Service, m *metrics.Metrics, refs *serverstate.Ref, dedupTh
 // Routes returns the URL → handler mapping. Wired by Server in
 // src/internal/server/server.go via the per-service Routes() protocol.
 //
-//	/ingest        POST — moved from memory shell (PHASE 3.4)
-//	/ingest/jobs   GET  — NEW (PHASE 3.4). Synchronous ingest has no
-//	                       async job tracker; returns empty list +
-//	                       canonical "no jobs tracked" envelope until
-//	                       a future PHASE 3.x async-extraction lands.
+//	/ingest        POST
+//	/ingest/jobs   GET  — synchronous ingest has no async job tracker;
+//	                       returns empty list + canonical "no jobs
+//	                       tracked" envelope.
 func (h *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"/ingest":      h.Wrap(h.HandleIngest),
@@ -60,9 +57,7 @@ func (h *HTTPService) Routes() map[string]http.HandlerFunc {
 }
 
 // HandleIngest — POST /ingest. Drains a dialog through the LLM
-// extractor and ingests all extracted entities + relations. Behaves
-// identically to the pre-PHASE-3.4 server/memory HandleIngest; only
-// the underlying domain Service pointer changed (memory → ingest).
+// extractor and ingests all extracted entities + relations.
 //
 // §3.2 — error-returning handler. Transport-level rejections
 // (405, missing dialog) WriteError + return nil; domain errors
@@ -98,10 +93,8 @@ type jobsResponse struct {
 	Message string `json:"message"`
 }
 
-// Job is the per-entry shape (kept here in the transport shell for
-// forward-compat with the eventual async-extraction land; the
-// current empty-list return satisfies the type without surfacing
-// any optional fields).
+// Job is the per-entry shape (the current empty-list return
+// satisfies the type without surfacing any optional fields).
 type Job struct {
 	ID         string `json:"id"`
 	Status     string `json:"status"`
@@ -110,8 +103,7 @@ type Job struct {
 }
 
 // HandleJobs — GET /ingest/jobs. Returns the canonical empty-list
-// envelope. Future PHASE 3.x async-extraction work will populate the
-// ring buffer from ingestion.MemoryWorkerResilient's channel state.
+// envelope.
 //
 // §3.2 — error-returning shape, but no domain-error path; only the
 // 405 method check may return err. Always-nil routes the response

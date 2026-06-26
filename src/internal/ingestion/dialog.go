@@ -18,21 +18,17 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// ProcessDialog is the backward-compatible entry point.
+// ProcessDialog is the entry point for dialogs without provenance.
 func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) error {
 	return w.ProcessDialogWithProvenance(ctx, dialog, core.Provenance{ExtractedFrom: dialog})
 }
 
 // ProcessDialogWithProvenance loads, embeds, and stores entities from one dialog.
 //
-// § 3.1 atomicity (round-9 refactor): every per-item vi (vector-index)
-// operation runs ONLY AFTER w.db.BeginTx → itemTx.Commit() succeeds.
-// BulkStore was REMOVED from this function — it used to write every
-// extracted ID up-front, before any per-item tx, so a single tx
-// failure could orphan vec entries for the still-unprocessed IDs in
-// this dialog. The replacement path normalizes each embedding here
-// (idempotent, fast) and lets processOneItemOnce write the vec entry
-// after its own tx commits.
+// § 3.1 atomicity: every per-item vi (vector-index) operation runs ONLY
+// AFTER w.db.BeginTx → itemTx.Commit() succeeds. The replacement path
+// normalizes each embedding here (idempotent, fast) and lets
+// processOneItemOnce write the vec entry after its own tx commits.
 func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialog string, prov core.Provenance) error {
 	result, err := w.extractor.ExtractEntities(ctx, dialog)
 	if err != nil {
@@ -166,19 +162,13 @@ func applyVIOps(ctx context.Context, vi core.VectorIndex, ops []viOp) {
 // processOneItemOnce is the unwrapped tx body. Do not call directly;
 // always call processOneItem which retries on busy.
 //
-// § 3.1 atomicity contract (round-9 refactor):
+// § 3.1 atomicity contract:
 //
 //   - Every vi operation runs ONLY after itemTx.Commit() returns nil.
-//   - The contradiction-archive UPDATE is folded INTO itemTx (was a
-//     separate db.ExecContext outside the tx in the OLD code — that
-//     ordering could leave the vec index with the archived entry
-//     removed while the DB row stayed archived=0, i.e. SEARCH DRIFT).
-//   - Rollback-on-BeginTx-err / write-err / Commit-err no longer calls
-//     any vi operation: with BulkStore gone and vi.Store only ever
-//     firing on successful commit, no vec mutation has occurred yet.
-//     The previous vi.Remove(rollbackID) calls were no-ops that added
-//     noise and could mislead a future reader about the atomicity
-//     guarantee.
+//   - The contradiction-archive UPDATE is folded INTO itemTx.
+//   - Rollback-on-BeginTx-err / write-err / Commit-err calls no vi
+//     operation: vi.Store only ever fires on successful commit, so no
+//     vec mutation has occurred yet.
 //
 // viOps composition by decision branch:
 //
@@ -250,19 +240,16 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 		}
 		// Merge-prep: defensive post-commit Remove drops any stale vec
 		// entry for it.entity.ID from a prior aborted ingest; post-commit
-		// Store writes the merged embedding. The OLD code did
-		// vi.Remove(it.entity.ID) BEFORE BeginTx, which violated
-		// atomicity — that Remove succeeded even when this tx rolled
-		// back, leaving an orphan vec index entry.
+		// Store writes the merged embedding.
 		viOps = append(viOps,
 			viOp{kind: viOpRemove, id: it.entity.ID},
 			viOp{kind: viOpStore, id: mergeEntity.ID, vec: mergeEntity.Embedding},
 		)
 	} else {
-		// Fresh entity: BulkStore is gone (§ 3.1), so the per-item
-		// post-commit Store is the ONLY way the new ID lands in the
-		// vec index. Without it, the new row would be invisible to
-		// the next SearchBatch.
+		// Fresh entity: § 3.1 atomicity — the per-item post-commit
+		// Store is the ONLY way the new ID lands in the vec index.
+		// Without it, the new row would be invisible to the next
+		// SearchBatch.
 		viOps = append(viOps, viOp{kind: viOpStore, id: it.entity.ID, vec: it.embedding})
 	}
 
@@ -380,9 +367,8 @@ func isSQLiteBusyError(err error) bool {
 		strings.Contains(msg, "SQLITE_BUSY")
 }
 
-// IsIngestionContradiction guards dedup by negation heuristic. Retained
-// as a free function so existing callers/tests stay green; the real
-// implementation now lives in contradiction.LexicalDetector.
+// IsIngestionContradiction guards dedup by negation heuristic.
+// The real implementation lives in contradiction.LexicalDetector.
 func IsIngestionContradiction(a, b string) bool {
 	return contradiction.NewLexicalDetector().Detect(
 		core.Entity{Content: a},
@@ -390,20 +376,9 @@ func IsIngestionContradiction(a, b string) bool {
 	).Detected
 }
 
-// MemoryWorker processes MemoryMessage channel items — legacy entry
-// point, retained for back-compat with any external consumer that
-// wired the parameter list before MemoryWorkerResilient shipped.
+// MemoryWorker processes MemoryMessage channel items.
 // Does NOT checkpoint work in-flight AND does NOT drain the channel
 // buffer — use MemoryWorkerResilient for production ingest batches.
-//
-// Status as of round-8 (TODO § 4 closure): both MemoryWorker AND
-// MemoryWorkerResilient have ZERO in-tree callers. Verify with:
-// `grep -rnF MemoryWorker src/internal/ | grep -v _test.go`
-// — expected hits are exactly the two `^func` definitions in
-// this file. The DEADCODE reservation that motivated the previous
-// annotation is now satisfied — both functions ship side-by-side
-// so a future caller can pick the right shape without a forced
-// migration.
 //
 // Concurrency is bounded by a semaphore so a flooding producer
 // cannot drive the worker into OOM or starve the SQLite
