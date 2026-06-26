@@ -875,7 +875,7 @@ are mapped in one place. Testing error paths becomes `errors.Is(err, core.ErrNot
 
 ---
 
-### [ ] 12.3 Clear domain / application / infrastructure separation
+### [x] 12.3 Clear domain / application / infrastructure separation
 
 **Status: ⚠️ IMPLICIT — needs explicit layer boundaries.**
 

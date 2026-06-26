@@ -1,14 +1,6 @@
 // Package graph hosts the transport-agnostic graph analytics domain
 // service — connected components, community detection, and integrity
-// verification. extracts these out of:
-// - src/internal/server/admin_service.go (god-object: /connected-
-// components + /communities HTTP routes)
-// - src/internal/cli/graph/{components,communities,verify}.go
-// (CLI handlers hitting store.* / algo.* directly)
-//
-// Mirrors the PHASE 2.x shape: flat pkg + transport-agnostic Service
-// with per-call args for runtime-varying config (schema, dim) so the
-// service stays free of long-lived state coupling.
+// verification.
 package graph
 
 import (
@@ -34,7 +26,7 @@ type Service struct {
 	db *sql.DB
 }
 
-// NewService constructs a Service. db is required.
+// New constructs a Service. db is required.
 func New(db *sql.DB) *Service {
 	return &Service{db: db}
 }
@@ -71,36 +63,24 @@ func (s *Service) Communities(_ context.Context, maxIter int) ([]core.Community,
 // vector dimensionality — any entity whose BLOB length does not match
 // dim*4 bytes is flagged. Returns a VerifyReport whose Pass() method
 // controls CLI exit-1 semantics.
-//
-// : inlined from algo.VerifyGraph (now deleted from algo/verify.go).
-func (s *Service) Verify(_ context.Context, schema core.SchemaConfig, vectorDim int) (core.VerifyReport, error) {
+func (s *Service) Verify(ctx context.Context, schema core.SchemaConfig, vectorDim int) (core.VerifyReport, error) {
 	var report core.VerifyReport
-	rows, err := s.db.Query(`SELECT ed.source_id, ed.target_id, ed.relation_type FROM edges ed LEFT JOIN entities e1 ON ed.source_id = e1.id LEFT JOIN entities e2 ON ed.target_id = e2.id WHERE e1.id IS NULL OR e2.id IS NULL`)
+
+	orphanEdges, err := store.VerifyOrphanEdges(ctx, s.db)
 	if err != nil {
-		return report, fmt.Errorf("verify orphan edges: %w", err)
+		return report, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var src, dst, rel string
-		rows.Scan(&src, &dst, &rel) //nolint:errcheck // iteration error surfaces via rows.Err() check below
-		report.Issues = append(report.Issues, fmt.Sprintf("orphan edge: %s -[%s]-> %s", src, rel, dst))
+	for _, e := range orphanEdges {
+		report.Issues = append(report.Issues, fmt.Sprintf("orphan edge: %s -[%s]-> %s", e.Source, e.Relation, e.Target))
 	}
-	if err := rows.Err(); err != nil {
-		return report, fmt.Errorf("verify orphan edges: %w", err)
-	}
-	embRows, err := s.db.Query(`SELECT id, length(embedding) FROM entities WHERE archived = 0 AND embedding IS NOT NULL AND length(embedding) != ?`, vectorDim*4)
+
+	dimMismatches, err := store.VerifyDimensionMismatches(ctx, s.db, vectorDim)
 	if err != nil {
-		return report, fmt.Errorf("verify dim: %w", err)
+		return report, err
 	}
-	defer embRows.Close() //nolint:errcheck // standard Go idiom — keep-alive pool drains on next reuse
-	for embRows.Next() {
-		var id string
-		var l int
-		embRows.Scan(&id, &l) //nolint:errcheck // iteration error surfaces via embRows.Err() check below
-		report.Issues = append(report.Issues, fmt.Sprintf("dimension mismatch: %s has %d bytes (want %d)", id, l, vectorDim*4))
+	for _, m := range dimMismatches {
+		report.Issues = append(report.Issues, fmt.Sprintf("dimension mismatch: %s has %d bytes (want %d)", m.ID, m.Bytes, vectorDim*4))
 	}
-	if err := embRows.Err(); err != nil {
-		return report, fmt.Errorf("verify dim: %w", err)
-	}
+
 	return report, nil
 }
