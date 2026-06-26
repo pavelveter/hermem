@@ -95,3 +95,46 @@ func ParseIntParam(r *http.Request, name string, def int) int {
 	}
 	return def
 }
+
+// MapError converts a domain error to (HTTP status code, message).
+// It unwraps *core.DomainError to map machine-readable error codes
+// to HTTP statuses. Non-DomainError values default to 500.
+//
+// Note: §3.2 fixed the CodeInvalidInput mapping from 400 → 422.
+// Pre-§3.2 this mapper incorrectly sent invalid input to 400, while
+// every inline handler check (e.g., task.HandleTaskCreate) was sending
+// the same error to 422. The centralisation in server.BaseHTTPService.
+// Wrap + server.mapStatus adopts the 422 semantic universally; this
+// helper is kept here as the public API for any non-Wrap caller (CLI
+// commands outside src/internal/cli/*, integration tests, custom
+// embeds). Both rewires land the same status; callers that use
+// httputil.MapError directly get the corrected 422.
+func MapError(err error) (int, string) {
+	if err == nil {
+		return http.StatusOK, ""
+	}
+	if errors.Is(err, core.ErrInvalidInput) {
+		return http.StatusUnprocessableEntity, err.Error()
+	}
+	if errors.Is(err, core.ErrSchemaConflict) {
+		return http.StatusConflict, err.Error()
+	}
+	var de *core.DomainError
+	if errors.As(err, &de) {
+		switch de.Code {
+		case core.CodeNotFound:
+			return http.StatusBadRequest, de.Message
+		case core.CodeInvalidInput:
+			return http.StatusUnprocessableEntity, de.Message
+		case core.CodeSchemaConflict:
+			return http.StatusConflict, de.Message
+		case core.CodeInvalidSchema:
+			return http.StatusUnprocessableEntity, de.Message
+		case core.CodeUnauthorized:
+			return http.StatusUnauthorized, de.Message
+		default:
+			return http.StatusInternalServerError, de.Message
+		}
+	}
+	return http.StatusInternalServerError, err.Error()
+}
