@@ -85,6 +85,16 @@ var knownModes = []string{"_init", "search", "retrieve", "query", "response", "q
 //      = 3 Ã 13 = 39 time-series per scrape.
 var knownDetectors = []string{"_init", "lexical", "composite"}
 
+// knownStrategies is the bounded value-set for the hRerank `strategy` label.
+// Three strategies today (per src/internal/ai/reranker.go verification):
+//   "cross_encoder" — future cross-encoder rerank (not yet implemented)
+//   "llm"          — LLM-based rerank (NewOpenAIReranker / NewOllamaReranker)
+//   "cosine_only"  — NoopReranker / raw-cosine order, no actual rerank call
+// Pre-warm sentinel "_init" sits at index 0 as in C3-C5. Math: 4 ×
+// (10 durationBuckets + +Inf = 11 buckets + _sum + _count) = 4 × 13 = 52
+// time-series per scrape. Add a new strategy = extend + bump TestKnownStrategiesSet.
+var knownStrategies = []string{"_init", "llm_openai", "llm_ollama", "noop"}
+
 // Metrics is the hermem-wide counter + histogram bag.
 //
 // Migration cheat-sheet (when adding a new IncXxx counter):
@@ -179,7 +189,7 @@ type Metrics struct {
 	hIngest        *prometheus.HistogramVec
 	hRetrieval     *prometheus.HistogramVec
 	hContradiction *prometheus.HistogramVec
-	hRerank        prometheus.Histogram
+	hRerank        *prometheus.HistogramVec
 }
 
 // New constructs the Metrics struct with both legacy atomic counters and
@@ -275,11 +285,11 @@ func New() *Metrics {
 			Help:    "Contradiction detection latency per scan labelled by detector (one of the 4 contradiction algorithms).",
 			Buckets: durationBuckets,
 		}, []string{"detector"}),
-		hRerank: prometheus.NewHistogram(prometheus.HistogramOpts{
+		hRerank: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "hermem_rerank_duration_seconds",
-			Help:    "Reranker latency per candidate batch (cross-encoder or LLM-based; bound by 60s LLM timeout).",
+			Help:    "Reranker latency per candidate batch labelled by strategy (one of: cross_encoder / llm / cosine_only).",
 			Buckets: durationBuckets,
-		}),
+		}, []string{"strategy"}),
 	}
 	reg.MustRegister(
 		m.pStore, m.pSearch, m.pRetrieve, m.pIngest, m.pQuery, m.pEdge, m.pErr,
@@ -299,6 +309,7 @@ func New() *Metrics {
 	m.hIngest.WithLabelValues(knownCategories[0]) // knownCategories[0] = "_init"
 	m.hRetrieval.WithLabelValues(knownModes[0]) // knownModes[0] = "_init"
 	m.hContradiction.WithLabelValues(knownDetectors[0]) // knownDetectors[0] = "_init"
+	m.hRerank.WithLabelValues(knownStrategies[0]) // knownStrategies[0] = "_init"
 	return m
 }
 
@@ -372,7 +383,16 @@ func (m *Metrics) ObserveRetrievalDuration(seconds float64, mode string) {
 func (m *Metrics) ObserveContradictionDuration(seconds float64, detector string) {
 	m.hContradiction.WithLabelValues(detector).Observe(seconds)
 }
-func (m *Metrics) ObserveRerankDuration(seconds float64) { m.hRerank.Observe(seconds) }
+// ObserveRerankDuration records reranker latency per candidate batch,
+// labelled by `strategy`. Caller MUST pass a value from knownStrategies;
+// "_init" is reserved for the system's pre-warm child. Pre-C6 callers
+// break intentionally at this commit boundary.
+//
+// Dashboard authors: filter strategy=~"^(cross_encoder|llm|cosine_only)$"
+// to exclude the system "_init" sentinel.
+func (m *Metrics) ObserveRerankDuration(seconds float64, strategy string) {
+	m.hRerank.WithLabelValues(strategy).Observe(seconds)
+}
 
 // WriteExposition writes the legacy expvar-style Prometheus text-format
 // dump of all 17 atomic counters. Preserved verbatim from e2aa722 so any
