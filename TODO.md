@@ -286,3 +286,4 @@ A task is considered completed only if:
 [ ] CI passes
 [ ] Separate commit created
 [ ] Commit pushed
+<!-- sub-agent-2: 5/5 evaluation-framework sub-points complete in feat/evaluation-framework -->
