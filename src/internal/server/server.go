@@ -10,16 +10,16 @@ package server
 import (
 	"context"
 	"database/sql"
-	"log"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
+	"github.com/pavelveter/hermem/src/internal/lifecycle"
+	"github.com/pavelveter/hermem/src/internal/lifecycle/components"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
@@ -174,16 +174,6 @@ func (s *Server) Serve(cfg ServeConfig) error {
 		cfg.Port = "8420"
 	}
 
-	gcCtx, gcCancel := context.WithCancel(context.Background())
-	gcDone := make(chan struct{})
-	// PHASE 3.3: replace the raw algo.GarbageCollector call with the
-	// transport-agnostic retention.Service.Run loop. The closure
-	// captures cfg.Retention at boot — by design, SIGHUP does NOT
-	// propagate retention policy changes. The retention.Service is
-	// constructed fresh inside the goroutine because nothing about
-	// its state needs to persist beyond a single Run loop.
-	go func() { svc := retentiondomain.New(cfg.DB, cfg.VI); svc.Run(gcCtx, cfg.Retention); close(gcDone) }()
-
 	// Canonical middleware order (outer → inner; each line wraps the
 	// previous, so the LAST wrap is the OUTERMOST):
 	//   Recovery                — catches panics from any inner layer
@@ -214,24 +204,31 @@ func (s *Server) Serve(cfg ServeConfig) error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		slog.Info("server ready", "port", cfg.Port)
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server: %v", err)
-		}
-	}()
+	// Build lifecycle manager with HTTP + GC components.
+	mgr := lifecycle.NewManager()
+	mgr.Register(components.NewHTTPComponent(httpSrv))
+	gcSvc := retentiondomain.New(cfg.DB, cfg.VI)
+	mgr.Register(components.NewGCComponent(gcSvc, cfg.Retention))
 
-	<-quit
-	slog.Info("shutting down...")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("http shutdown", "err", err)
+	// Block until SIGINT/SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := mgr.Start(ctx); err != nil {
+		return err
 	}
-	shutdownCancel()
-	gcCancel()
-	<-gcDone
+
+	slog.Info("server ready", "port", cfg.Port)
+	<-ctx.Done()
+	slog.Info("shutting down...")
+
+	// Graceful shutdown: stop components in reverse order.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := mgr.Stop(shutdownCtx); err != nil {
+		slog.Error("shutdown", "err", err)
+	}
+
 	slog.Info("server stopped")
 	return nil
 }

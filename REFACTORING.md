@@ -995,7 +995,7 @@ incrementally — the global `slog` still works during the transition.
 
 ---
 
-### [ ] 12.6 Unified component lifecycle (`Start(ctx)`, `Stop(ctx)`)
+### [x] 12.6 Unified component lifecycle (`Start(ctx)`, `Stop(ctx)`)
 
 **Status: ❌ NOT DONE.**
 
