@@ -1,7 +1,6 @@
 // Package orchestrator manages task execution — agent loop and execution
-// planning. PHASE 3.10 extracts these from algo/verify.go (deleted) into
-// a flat, transport-agnostic domain service. No transport shell —
-// programmatic invocation only (tests, embedded callers).
+// planning. Transport-agnostic domain service; no HTTP or CLI shell.
+// Programmatic invocation only (tests, embedded callers).
 package orchestrator
 
 import (
