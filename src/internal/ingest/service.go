@@ -25,9 +25,9 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingestion"
+	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
 )
 
 // Service is the transport-agnostic ingest orchestrator.
@@ -79,9 +79,9 @@ func (s *Service) Ingest(ctx context.Context, dialog string, dedupThreshold floa
 		return fmt.Errorf("ingest: no extractor wired")
 	}
 	// Pass an explicit lexical detector so future wiring can substitute a
-	// contradiction.NewCompositeDetector(NewLexicalDetector(), NewSemanticDetector())
+	// detectors.NewCompositeDetector(detectors.NewLexicalDetector(), detectors.NewSemanticDetector())
 	// at this single call site without changing the worker contract.
-	w := ingestion.NewIngestionWorker(s.db, s.vi, s.extractor, s.embedder, dedupThreshold, schema, contradiction.NewLexicalDetector())
+	w := ingestion.NewIngestionWorker(s.db, s.vi, s.extractor, s.embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	if err := w.ProcessDialog(ctx, dialog); err != nil {
 		return fmt.Errorf("ingest: %w", err)
 	}

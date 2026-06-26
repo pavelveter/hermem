@@ -1,8 +1,6 @@
 // Package orchestrator manages task execution — agent loop and execution
-// planning. PHASE 3.10 extracts these from algo/verify.go (deleted) into
-// a flat, transport-agnostic domain service. This is the first CLI-only
-// extraction — no HTTP shell; callers are cli/agent/loop.go and
-// cli/graph/plan.go.
+// planning. Transport-agnostic domain service; no HTTP or CLI shell.
+// Programmatic invocation only (tests, embedded callers).
 package orchestrator
 
 import (
@@ -52,7 +50,7 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 						slog.Error("agent loop: exec panic", "task_id", task.ID, "recover", rec)
 					}
 				}()
-				if err := execFunc(ctx, core.Compose(task.Fact, core.Evidence{}, core.Episode{}, task, core.Belief{})); err != nil {
+				if err := execFunc(ctx, core.ComposeFromTask(task)); err != nil {
 					slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
 				}
 			}()
