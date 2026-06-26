@@ -98,6 +98,31 @@ func (b *BaseHTTPService) Wrap(fn func(w http.ResponseWriter, r *http.Request) e
 				b.Metrics.IncErr()
 			}
 			status, msg := mapStatus(err)
+			// When err carries a *core.DomainError, route through
+			// WriteErrorWithCode so the wire envelope carries the
+			// `code` + `field` JSON attributes that pre-§10 inline
+			// handlers emitted via the same call. Without this routing
+			// path the §10 generic DecodeJSON[T] lossily flattens to
+			// WriteError's `{"error":"msg (field)"}` shape, breaking
+			// every client that parses the structured attributes.
+			// Non-DomainError paths (network errors, context-cancelled,
+			// plain fmt.Errorf) keep falling through to WriteError
+			// because no structured detail is available.
+			var de *core.DomainError
+			if errors.As(err, &de) {
+				// Use err.Error() (verbatim) so the wire envelope
+				// carries the same text pre-§10 inline handlers emitted
+				// via WriteErrorWithCode — including fmt.Errorf wrap
+				// prefixes like "failed to parse payload:" that operator
+				// logs grep on, and DomainError's "msg (field)"
+				// inline-parenthesised rendering for the field attr.
+				// Pre-§10 inline handlers did the same WriteErrorWithCode
+				// call with err.Error() as the msg argument, so option
+				// (a) preserves wire bytes byte-for-byte rather than
+				// silently dropping wrap-chain context.
+				httputil.WriteErrorWithCode(w, status, err.Error(), de.Code, de.Field)
+				return
+			}
 			httputil.WriteError(w, status, msg)
 		}
 	}
