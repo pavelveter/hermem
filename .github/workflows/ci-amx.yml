@@ -1,0 +1,62 @@
+name: CI - AMX/Accelerate Guard
+
+# §11 CI guard for Apple AMX / Accelerate (cblas_sgemv) runtime path.
+#
+# The existing ci.yml runs on ubuntu-latest where the darwin+cgo
+# build tag in src/internal/vector/cosine_amx_guard_test.go is
+# simply absent — the test is never compiled, never run. This
+# dedicated macos-latest job is the only place the AMX guard
+# (TestBatchDot_AMXGuard) gets exercised. Failing this job means
+# the Apple Silicon fast path is silently degraded and the
+# 5-15× speedup claim in cosine_darwin.go is no longer holding.
+#
+# Threshold rationale (TestBatchDot_AMXGuard): 2ms per call for
+# 1024×768 batched dot. AMX achieves ~0.2-0.5ms; pure-Go
+# achieves ~5-15ms. 2ms sits in the comfortable gap with 4-10×
+# CI-load headroom above the AMX-fast range and 2.5-7.5× safety
+# margin below the pure-Go range.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'src/internal/vector/**'
+      - '.github/workflows/ci-amx.yml'
+
+jobs:
+  amx-guard:
+    name: Apple AMX/Accelerate runtime guard
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: AMX runtime guard (wall-time assertion)
+        # TestBatchDot_AMXGuard fails CI if Accelerate is silently
+        # degraded. The build tag `darwin && cgo` ensures this only
+        # compiles on macos-latest with CGO_ENABLED=1.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -count=1 -timeout 5m -run TestBatchDot_AMXGuard -v ./src/internal/vector/...
+
+      - name: AMX benchmark (performance tracking — informational)
+        # BenchmarkBatchDot_AMX does not fail CI; it reports
+        # ns/op + a custom `dot/sec` metric for trend dashboards.
+        # Compare consecutive runs to spot gradual AMX degradation
+        # before the wall-time guard would trip.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -bench=BenchmarkBatchDot_AMX -benchtime=2s -benchmem -run=^$ ./src/internal/vector/... | tee bench-amx.txt
+
+      - name: Upload AMX benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-amx
+          path: bench-amx.txt
