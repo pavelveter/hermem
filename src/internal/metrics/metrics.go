@@ -149,6 +149,9 @@ type Metrics struct {
 	taskTreeCount       atomic.Int64
 	taskCreateCount     atomic.Int64
 	retentionRunCount   atomic.Int64
+	graphComponentsCount  atomic.Int64
+	graphCommunitiesCount atomic.Int64
+	graphVerifyCount      atomic.Int64
 
 	// Prometheus counters (OBSERVABILITY commit 1/8).
 	promReg         *prometheus.Registry
@@ -169,6 +172,9 @@ type Metrics struct {
 	pTaskTree       prometheus.Counter
 	pTaskCreate     prometheus.Counter
 	pRetentionRun   prometheus.Counter
+	pGraphComponents   prometheus.Counter
+	pGraphCommunities  prometheus.Counter
+	pGraphVerify       prometheus.Counter
 
 	// Prometheus histograms (OBSERVABILITY commits 2-3/8). hIngest was
 	// promoted to *HistogramVec at C3; hRetrieval / hContradiction / hRerank
@@ -190,6 +196,7 @@ type Metrics struct {
 	hRetrieval     *prometheus.HistogramVec
 	hContradiction *prometheus.HistogramVec
 	hRerank        *prometheus.HistogramVec
+	hGraphCommunities prometheus.Histogram
 }
 
 // New constructs the Metrics struct with both legacy atomic counters and
@@ -266,6 +273,18 @@ func New() *Metrics {
 			Name: "hermem_retention_run_total",
 			Help: "Total retention GarbageCollector cycle runs counted.",
 		}),
+		pGraphComponents: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "hermem_graph_components_total",
+			Help: "Total /connected-components calls counted.",
+		}),
+		pGraphCommunities: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "hermem_graph_communities_total",
+			Help: "Total /communities calls counted.",
+		}),
+		pGraphVerify: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "hermem_graph_verify_total",
+			Help: "Total /graph/verify calls counted.",
+		}),
 
 		// hIngest as *HistogramVec (commit 3/8). Single label `category`.
 		hIngest: prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -290,6 +309,12 @@ func New() *Metrics {
 			Help:    "Reranker latency per candidate batch labelled by strategy (one of: cross_encoder / llm / cosine_only).",
 			Buckets: durationBuckets,
 		}, []string{"strategy"}),
+
+		hGraphCommunities: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "hermem_graph_communities_duration_seconds",
+			Help:    "Louvain community-detection latency. Long-tail — large graphs can take seconds.",
+			Buckets: durationBuckets,
+		}),
 	}
 	reg.MustRegister(
 		m.pStore, m.pSearch, m.pRetrieve, m.pIngest, m.pQuery, m.pEdge, m.pErr,
@@ -297,9 +322,11 @@ func New() *Metrics {
 		m.pTaskStatus, m.pTaskExec, m.pTaskList, m.pTaskShow, m.pTaskDep,
 		m.pTaskRollback, m.pTaskTree, m.pTaskCreate,
 		m.pRetentionRun,
+		m.pGraphComponents, m.pGraphCommunities, m.pGraphVerify,
 	)
 	reg.MustRegister(
 		m.hIngest, m.hRetrieval, m.hContradiction, m.hRerank,
+		m.hGraphCommunities,
 	)
 	// Pre-warm hIngest: HistogramVec only surfaces in Gather() once at least
 	// one labelled child is materialized via WithLabelValues. The "_init"
@@ -347,6 +374,9 @@ func (m *Metrics) IncTaskRollback()   { m.taskRollbackCount.Add(1); m.pTaskRollb
 func (m *Metrics) IncTaskTree()       { m.taskTreeCount.Add(1); m.pTaskTree.Inc() }
 func (m *Metrics) IncTaskCreate()     { m.taskCreateCount.Add(1); m.pTaskCreate.Inc() }
 func (m *Metrics) IncRetentionRun()   { m.retentionRunCount.Add(1); m.pRetentionRun.Inc() }
+func (m *Metrics) IncGraphComponents()  { m.graphComponentsCount.Add(1); m.pGraphComponents.Inc() }
+func (m *Metrics) IncGraphCommunities() { m.graphCommunitiesCount.Add(1); m.pGraphCommunities.Inc() }
+func (m *Metrics) IncGraphVerify()      { m.graphVerifyCount.Add(1); m.pGraphVerify.Inc() }
 
 // ObserveIngestDuration records end-to-end ingestion latency in seconds,
 // labelled by `category`. The label MUST be one of the values in
@@ -392,6 +422,12 @@ func (m *Metrics) ObserveContradictionDuration(seconds float64, detector string)
 // to exclude the system "_init" sentinel.
 func (m *Metrics) ObserveRerankDuration(seconds float64, strategy string) {
 	m.hRerank.WithLabelValues(strategy).Observe(seconds)
+}
+
+// ObserveGraphCommunitiesDuration records Louvain community-detection
+// latency in seconds.
+func (m *Metrics) ObserveGraphCommunitiesDuration(seconds float64) {
+	m.hGraphCommunities.Observe(seconds)
 }
 
 // WriteExposition writes the legacy expvar-style Prometheus text-format
@@ -467,6 +503,18 @@ func (m *Metrics) WriteExposition(w io.Writer) error {
 		return err
 	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_retention_run_total Total retention GarbageCollector runs\n# TYPE hermem_retention_run_total counter\nhermem_retention_run_total %d\n", m.retentionRunCount.Load())
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "# HELP hermem_graph_components_total Total /connected-components calls\n# TYPE hermem_graph_components_total counter\nhermem_graph_components_total %d\n", m.graphComponentsCount.Load())
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "# HELP hermem_graph_communities_total Total /communities calls\n# TYPE hermem_graph_communities_total counter\nhermem_graph_communities_total %d\n", m.graphCommunitiesCount.Load())
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "# HELP hermem_graph_verify_total Total /graph/verify calls\n# TYPE hermem_graph_verify_total counter\nhermem_graph_verify_total %d\n", m.graphVerifyCount.Load())
 	return err
 }
 

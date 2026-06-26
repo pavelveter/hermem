@@ -94,17 +94,17 @@ P1 — EVALUATION FRAMEWORK
 ==================================================
 
 [x] Create evaluation package
-[ ] Create retrieval benchmark dataset
-[ ] Create contradiction benchmark dataset
-[ ] Create memory benchmark dataset
-[ ] Create reranker benchmark dataset
+[x] Create retrieval benchmark dataset
+[x] Create contradiction benchmark dataset
+[x] Create memory benchmark dataset
+[x] Create reranker benchmark dataset
 [x] Implement Recall@K metrics
 [x] Implement Precision@K metrics
 [x] Implement MRR metrics
 [x] Implement NDCG metrics
 [x] Implement benchmark runner
 [x] Add benchmark reports
-[ ] Add benchmark CI job
+[x] Add benchmark CI job
 
 ==================================================
 P1 — MIGRATION SYSTEM HARDENING
@@ -164,7 +164,7 @@ P1 — OBSERVABILITY
 [x] Add hermem diagnose CLI for self-diagnostics
 
 Phase 2 follow-ups (out of scope for C1–C6 of OBSERVABILITY sprint, feat/observability-prometheus → main @ a75bfc0):
-[ ] Add graph metrics
+[x] Add graph metrics
 [x] Add Grafana dashboard
 [x] Add alert recommendations
 
@@ -318,3 +318,4 @@ A task is considered completed only if:
 <!-- sub-agent-11 -->
 <!-- sub-agent-12 -->
 <!-- sub-agent-13: P1 SERVICE LAYER — EpisodeService + GoalService + service boundaries docs -->
+<!-- sub-agent-14: P1 EVALUATION FRAMEWORK — 4 benchmark datasets + CI smoke test -->

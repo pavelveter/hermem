@@ -43,6 +43,9 @@ func TestAll17IncMethodsBumpBothCounters(t *testing.T) {
 	m.IncTaskTree()
 	m.IncTaskCreate()
 	m.IncRetentionRun()
+	m.IncGraphComponents()
+	m.IncGraphCommunities()
+	m.IncGraphVerify()
 
 	cases := []struct {
 		name string
@@ -65,6 +68,9 @@ func TestAll17IncMethodsBumpBothCounters(t *testing.T) {
 		{"IncTaskTree", m.taskTreeCount.Load()},
 		{"IncTaskCreate", m.taskCreateCount.Load()},
 		{"IncRetentionRun", m.retentionRunCount.Load()},
+		{"IncGraphComponents", m.graphComponentsCount.Load()},
+		{"IncGraphCommunities", m.graphCommunitiesCount.Load()},
+		{"IncGraphVerify", m.graphVerifyCount.Load()},
 	}
 	for _, c := range cases {
 		if c.got != 1 {
@@ -89,6 +95,8 @@ func TestAll17IncMethodsBumpBothCounters(t *testing.T) {
 		"hermem_task_status_total", "hermem_task_exec_total", "hermem_task_list_total",
 		"hermem_task_show_total", "hermem_task_dep_total", "hermem_task_rollback_total",
 		"hermem_task_tree_total", "hermem_task_create_total", "hermem_retention_run_total",
+		"hermem_graph_components_total", "hermem_graph_communities_total",
+		"hermem_graph_verify_total",
 	}
 	for _, name := range wantProm {
 		if !seen[name] {
@@ -136,6 +144,7 @@ func TestHermemPrefixContract_AllHermemMetricsPresent(t *testing.T) {
 		"hermem_task_tree_total", "hermem_task_create_total", "hermem_retention_run_total",
 		"hermem_ingest_duration_seconds", "hermem_retrieval_duration_seconds",
 		"hermem_contradiction_duration_seconds", "hermem_rerank_duration_seconds",
+		"hermem_graph_communities_duration_seconds",
 	}
 	seen := map[string]bool{}
 	for _, mf := range mfs {
@@ -185,6 +194,10 @@ func TestHermemPrefixContract_CorrectCollectorTypes(t *testing.T) {
 		"hermem_retrieval_duration_seconds": dto.MetricType_HISTOGRAM,
 		"hermem_contradiction_duration_seconds": dto.MetricType_HISTOGRAM,
 		"hermem_rerank_duration_seconds": dto.MetricType_HISTOGRAM,
+		"hermem_graph_components_total": dto.MetricType_COUNTER,
+		"hermem_graph_communities_total": dto.MetricType_COUNTER,
+		"hermem_graph_verify_total": dto.MetricType_COUNTER,
+		"hermem_graph_communities_duration_seconds": dto.MetricType_HISTOGRAM,
 	}
 	for _, mf := range mfs {
 		wantType, tracked := want[mf.GetName()]
