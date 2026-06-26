@@ -286,3 +286,5 @@ A task is considered completed only if:
 [ ] CI passes
 [ ] Separate commit created
 [ ] Commit pushed
+
+<!-- sub-agent-1: 5/5 contradiction-engine sub-points complete in feat/contradiction-engine-2.0 -->
