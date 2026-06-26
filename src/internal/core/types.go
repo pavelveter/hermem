@@ -57,6 +57,7 @@ type SchemaConfig struct {
 func DefaultSchemaConfig(stateful bool) SchemaConfig {
 	cats := map[string]bool{
 		"world": true, "opinion": true, "experience": true, "observation": true,
+		"summary": true,
 	}
 	rels := map[string]bool{
 		"prefers": true, "uses": true, "mentions": true, "related_to": true,
