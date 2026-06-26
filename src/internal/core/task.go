@@ -45,3 +45,13 @@ func (e Entity) AsTask() Task {
 	}
 }
 
+// ComposeFromTask reassembles a Task into a fat Entity at non-wire
+// boundaries that need the full Entity shape (e.g. orchestrator's
+// internal execFunc callback). The other 4 bands are zero-valued, so
+// this is NOT safe for HTTP wire serialization — that path uses the
+// slim Task directly per the §8.1 Task-shell design intent.
+// Inline copy keeps the band-zeroing explicit at each call site
+// instead of duplicating `core.Compose(t.Fact, …, t, …)` everywhere.
+func ComposeFromTask(t Task) Entity {
+	return Compose(t.Fact, Evidence{}, Episode{}, t, Belief{})
+}

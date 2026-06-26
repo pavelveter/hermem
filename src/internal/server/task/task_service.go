@@ -71,6 +71,7 @@ func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 // §3.2 DELIBERATE EXCEPTION to s.Wrap. Pre-§3.2 contract:
 //   - ErrNotFound (or *DomainError{Code: CodeNotFound}) → 400 (client mistake)
 //   - Any other error → 422 (semantic: unknown state value)
+//
 // The "else → 422" branch is non-standard (all other shells use 500).
 // server.mapStatus falls through to 500 for unknown-typed errors, so
 // HandleTaskStatus stays inline and Routes() registers it WITHOUT
@@ -285,7 +286,9 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 
 // HandleRecoveryPlan — GET /recovery-plan[?id=X].
 //
-// §3.2 — error-returning handler.
+// §3.2 — error-returning handler. §8.1: wire shape is the slim Task
+// JSON (8 fields) — same as /task/list + /task/executable. Clients
+// consuming /recovery-plan should switch to the slim Task schema.
 func (s *HTTPService) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) error {
 	id := r.URL.Query().Get("id")
 	if id == "" {
