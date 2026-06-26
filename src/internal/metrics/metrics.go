@@ -1,18 +1,41 @@
 // Package metrics owns hermem_* Prometheus metrics and exposes a single
 // hermem-owned *prometheus.Registry the HTTP layer can serve via promhttp.
 //
-// OBSERVABILITY sprint commit 1/8 added a Prometheus driver layer underneath
+// OBSERVABILITY sprint commits 1-8 wire a Prometheus driver layer underneath
 // the original Metrics struct (atomic.Int64 + IncXxx methods preserved
-// byte-compatibly from e2aa722). Each IncXxx bumps BOTH the atomic counter
-// (legacy expvar-style view) AND a prometheus.Counter; both layers are
-// safe for concurrent use.
+// byte-compatibly from e2aa722). Progress:
 //
-// IMPORTANT (called out for future maintainers): per-domain collectors
-// added by commits 2-6 (Histograms for retrieval/query latency, GaugeVecs
-// for graph depth, vec counters tagged by mode, etc.) register on the
-// SAME *prometheus.Registry returned by PrometheusRegistry(). Do NOT call
-// prometheus.MustRegister / promauto — that pins to the global default
-// and silently defeats the hermem-owned intent.
+//   - Commit 1/8 (0195a23): 17 IncXxx counters (atomic + prometheus.Counter
+//     in lockstep using a hermem-owned registry), legacy WriteExposition
+//     preserved verbatim for the /metrics-style endpoint that callers wired
+//     before OBSERVABILITY.
+//   - Commit 2/8 (ac28975): 4 single-label-free duration histograms
+//     (hIngest / hRetrieval / hContradiction / hRerank) with shared
+//     durationBuckets = {.05 .1 .5 1 2 5 10 15 30 60}.
+//   - Commit 3/8: hIngest upgrades to *prometheus.HistogramVec with the
+//     single label "category". The ingest path in src/internal/ingestion
+//     already differentiates entities by category at write-time (this is the
+//     `category` DB column from worker.go and dialog.go), so the label is
+//     populated by callers that already know the value — no extra inference.
+//     Pre-warmed with a "_init" sentinel child in New() so cold-start
+//     /metrics scrape returns a non-empty parent MetricFamily.
+//   - Commits 4-6/8: hRetrieval, hContradiction, hRerank promote to Vec each
+//     with one new label (mode / detector / strategy).
+//   - Commits 7-8/8: Grafana dashboard JSON + Prometheus alert rules +
+//     /metrics endpoint wiring in src/internal/server/.
+//
+// IMPORTANT (called out for future maintainers): every per-domain collector
+// added by commits 3-8 MUST register on the SAME *prometheus.Registry
+// returned by PrometheusRegistry(). Do NOT call prometheus.MustRegister /
+// promauto — that pins to the global default and silently defeats the
+// hermem-owned intent.
+//
+// Cardinality discipline: each HistogramVec/CounterVec in this package has a
+// single label with a small, bounded value-set (<=10 expected, never
+// unbounded user-input). High-cardinality labels break Prometheus — if a
+// future commit adds a label, restrict the value-set in the caller's read
+// paths. The "_init" sentinel is a system-emitted entry that must NOT be
+// used by callers (see hIngest comment).
 package metrics
 
 import (
@@ -25,66 +48,148 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics is the hermem-wide counter bag.
-// Migration cheat-sheet (when adding a new IncXxx metric):
+// durationBuckets is shared by the 4 commit-2/3 duration histograms.
+// Sized for hermem's bimodal latency: fast embeddings (~50ms) vs slow LLM
+// extraction (2-60s). Future commits may override at construction time if
+// the production latency distribution shifts; do NOT mutate this slice
+// ad-hoc whenever a new histogram domain appears.
+var durationBuckets = []float64{0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 30, 60}
+
+// knownCategories is the bounded value-set for the hIngest `category` label.
+// Adding a new value here is the only path to introduce a new ingest
+// latency dimension — a future ingest-side change that adds a new category
+// string MUST extend this slice AND bump the assertion in
+// TestHermemPrefixContract_KnownCategorySet.
+// Cardinality math: 4 values (including "_init" sentinel) × (11 buckets +
+// _sum + _count) = 52 time-series per scrape. ~80 was an earlier upper
+// bound; the tight figure is 52.
+var knownCategories = []string{"_init", "observation", "world", "task", "edge"}
+
+// knownModes is the bounded value-set for the hRetrieval `mode` label.
+// Pre-warm sentinel "_init" + the 6 retrieval endpoints wired in src/internal/server/retrieval:
+// "/search" / "/retrieve" / "/query" / "/response" / "/query/explain" / "/provenance".
+// Math: 7 Ã (10 durationBuckets + +Inf auto-added = 11 buckets) + _sum + _count
+//      = 7 Ã 13 = 91 time-series per scrape. Adding a new endpoint = extend this slice
+// + bump TestHermemPrefixContract_KnownModesSet.
+var knownModes = []string{"_init", "search", "retrieve", "query", "response", "query_explain", "provenance"}
+
+// knownDetectors is the bounded value-set for the hContradiction `detector` label.
+// Aligned with src/internal/contradiction's actual detectors (verified via
+// code-searcher at C5 amend time): "lexical" (NewLexicalDetector in lexical.go),
+// "composite" (NewCompositeDetector in composite.go). "semantic" is referenced
+// in detector.go + lexical.go comments as a FUTURE detector (PHASE 2.4) but
+// does not yet have a concrete implementation — excluded from the bounded
+// value-set until it lands. When the semantic detector commits, extend this
+// slice + bump TestHermemPrefixContract_KnownDetectorsSet.
+// Math: 3 Ã (10 durationBuckets + +Inf = 11 buckets + _sum + _count)
+//      = 3 Ã 13 = 39 time-series per scrape.
+var knownDetectors = []string{"_init", "lexical", "composite"}
+
+// knownStrategies is the bounded value-set for the hRerank `strategy` label.
+// Three strategies today (per src/internal/ai/reranker.go verification):
+//   "cross_encoder" — future cross-encoder rerank (not yet implemented)
+//   "llm"          — LLM-based rerank (NewOpenAIReranker / NewOllamaReranker)
+//   "cosine_only"  — NoopReranker / raw-cosine order, no actual rerank call
+// Pre-warm sentinel "_init" sits at index 0 as in C3-C5. Math: 4 ×
+// (10 durationBuckets + +Inf = 11 buckets + _sum + _count) = 4 × 13 = 52
+// time-series per scrape. Add a new strategy = extend + bump TestKnownStrategiesSet.
+var knownStrategies = []string{"_init", "llm_openai", "llm_ollama", "noop"}
+
+// Metrics is the hermem-wide counter + histogram bag.
 //
-// A maintainer adding e.g. IncConnect must edit 7 spots in this file, in order:
+// Migration cheat-sheet (when adding a new IncXxx counter):
 //
-//	1. Struct atomic field — add `connectCount atomic.Int64` to the atomic block.
-//	2. Struct prom field — add `pConnect prometheus.Counter` to the prom block.
-//	3. New() init — construct m.pConnect = prometheus.NewCounter(CounterOpts{Name: "hermem_connect_total", Help: "..."})
+//	A maintainer adding e.g. IncConnect must edit 7 spots in this file:
+//
+//	1. Struct atomic field — `connectCount atomic.Int64` in atomic block.
+//	2. Struct prom field — `pConnect prometheus.Counter` in prom block.
+//	3. New() init — `m.pConnect = prometheus.NewCounter(CounterOpts{Name: "hermem_connect_total", Help: "..."})`.
 //	4. New() MustRegister — append m.pConnect to the vararg list.
-//	5. IncXxx method body — `m.connectCount.Add(1); m.pConnect.Inc()`
-//	6. WriteExposition line — one fmt.Fprintf("# HELP hermem_connect_total …\n# TYPE …\nhermem_connect_total %d\n", m.connectCount.Load())
-//	7. metrics_test.go — add to cases slice + wantProm slice; run go test.
+//	5. IncXxx method body — `m.connectCount.Add(1); m.pConnect.Inc()`.
+//	6. WriteExposition line — `fmt.Fprintf(... "# TYPE ..." "hermem_connect_total %d\n", m.connectCount.Load())`.
+//	7. metrics_test.go test cases + wantProm slice.
 //
-// Each IncXxx tracks two storages (atomic + prom) so the legacy /metrics-style
-// endpoint and the new client_golang /metrics endpoint both serve accurate
-// counts in lockstep. Future OBSERVABILITY commits 2-8 may migrate the
-// per-domain Histograms / CounterVecs in place; once ALL 17 atomic counters
-// are no longer served by MetricsHandler, this dual-tracking can collapse
-// to prom-only.
-
+// Migration cheat-sheet (when upgrading a single Histogram to HistogramVec):
+//
+//	A maintainer upgrading e.g. hExport to labelled-by-stage must edit:
+//
+//	1. Struct field — change `hExport prometheus.Histogram` to `*prometheus.HistogramVec`.
+//	2. New() init — switch NewHistogram to NewHistogramVec with []string{"stage"} label.
+//	3. MustRegister — still `m.hExport` (Vec registers itself).
+//	4. Observe method — old `m.hExport.Observe(seconds)` becomes
+//	   `m.hExport.WithLabelValues(stage).Observe(seconds)` and a label
+//	   parameter is added to the method signature.
+//	5. Pre-warm in New() — CALL m.hExport.WithLabelValues(stage) after
+//	   construction with the "_init" sentinel so the parent MetricFamily
+//	   shows in cold-start Gather(). Without this, /metrics returns an
+//	   empty histogram until the first caller observation.
+//	6. Callers — every call-site of the old Observe must pass a label
+//	   string. Use a stable sentinel from knownCategories (or its
+//	   per-domain equivalent) for unlabeled flows.
+//	7. metrics_test.go — every Observe call site in test fixtures must
+//	   gain the label arg; aggregation patterns work unchanged.
 type Metrics struct {
-	// atomic.Int64 fields preserved from e2aa722 verbatim — keep server-side
-	// callers byte-compatible (pre-OBSERVABILITY code used these names).
-	storeCount         atomic.Int64
-	searchCount        atomic.Int64
-	retrieveCount      atomic.Int64
-	ingestCount        atomic.Int64
-	queryCount         atomic.Int64
-	edgeCount          atomic.Int64
-	errCount           atomic.Int64
+	// atomic.Int64 fields preserved from e2aa722 verbatim (16, not 17 —
+	// see commit 1/8 for the full restore). Keep server-side callers
+	// byte-compatible.
+	storeCount          atomic.Int64
+	searchCount         atomic.Int64
+	retrieveCount       atomic.Int64
+	ingestCount         atomic.Int64
+	queryCount          atomic.Int64
+	edgeCount           atomic.Int64
+	errCount            atomic.Int64
 	schemaConflictCount atomic.Int64
-	taskStatusCount    atomic.Int64
-	taskExecCount      atomic.Int64
-	taskListCount      atomic.Int64
-	taskShowCount      atomic.Int64
-	taskDepCount       atomic.Int64
-	taskRollbackCount  atomic.Int64
-	taskTreeCount      atomic.Int64
-	taskCreateCount    atomic.Int64
-	retentionRunCount  atomic.Int64
+	taskStatusCount     atomic.Int64
+	taskExecCount       atomic.Int64
+	taskListCount       atomic.Int64
+	taskShowCount       atomic.Int64
+	taskDepCount        atomic.Int64
+	taskRollbackCount   atomic.Int64
+	taskTreeCount       atomic.Int64
+	taskCreateCount     atomic.Int64
+	retentionRunCount   atomic.Int64
 
-	// Prometheus layer (added by OBSERVABILITY commit 1/8).
-	promReg *prometheus.Registry
-	pStore    prometheus.Counter
-	pSearch   prometheus.Counter
-	pRetrieve prometheus.Counter
-	pIngest   prometheus.Counter
-	pQuery    prometheus.Counter
-	pEdge     prometheus.Counter
-	pErr      prometheus.Counter
+	// Prometheus counters (OBSERVABILITY commit 1/8).
+	promReg         *prometheus.Registry
+	pStore          prometheus.Counter
+	pSearch         prometheus.Counter
+	pRetrieve       prometheus.Counter
+	pIngest         prometheus.Counter
+	pQuery          prometheus.Counter
+	pEdge           prometheus.Counter
+	pErr            prometheus.Counter
 	pSchemaConflict prometheus.Counter
-	pTaskStatus    prometheus.Counter
-	pTaskExec      prometheus.Counter
-	pTaskList      prometheus.Counter
-	pTaskShow      prometheus.Counter
-	pTaskDep       prometheus.Counter
-	pTaskRollback  prometheus.Counter
-	pTaskTree      prometheus.Counter
-	pTaskCreate    prometheus.Counter
-	pRetentionRun  prometheus.Counter
+	pTaskStatus     prometheus.Counter
+	pTaskExec       prometheus.Counter
+	pTaskList       prometheus.Counter
+	pTaskShow       prometheus.Counter
+	pTaskDep        prometheus.Counter
+	pTaskRollback   prometheus.Counter
+	pTaskTree       prometheus.Counter
+	pTaskCreate     prometheus.Counter
+	pRetentionRun   prometheus.Counter
+
+	// Prometheus histograms (OBSERVABILITY commits 2-3/8). hIngest was
+	// promoted to *HistogramVec at C3; hRetrieval / hContradiction / hRerank
+	// remain as single Histograms until commits 4-6/8.
+	//
+	// hIngest cardinality: 4 known categories ("observation" / "world" /
+	// "task" / "edge") + 1 system sentinel ("_init") = 5 values. Total
+	// time-series = 5 * (11 buckets + _sum + _count) = 65 per scrape.
+	// If a future ingest-side change adds a new category, add it to
+	// knownCategories and bump the TestHermemPrefixContract_KnownCategorySet
+	// assertion. DO NOT pass user-supplied data verbatim — Prometheus
+	// fans out one time-series per (label-value, bucket, _sum/_count), so
+	// 10k unique categories would explode scrape size + scrape memory.
+	//
+	// Dashboard authors: filter `category=~"^(observation|world|task|edge)$"`
+	// (regex excluding "_init" sentinel) so the system-emitted zero-presence
+	// child never gets confused with a real category.
+	hIngest        *prometheus.HistogramVec
+	hRetrieval     *prometheus.HistogramVec
+	hContradiction *prometheus.HistogramVec
+	hRerank        *prometheus.HistogramVec
 }
 
 // New constructs the Metrics struct with both legacy atomic counters and
@@ -161,6 +266,30 @@ func New() *Metrics {
 			Name: "hermem_retention_run_total",
 			Help: "Total retention GarbageCollector cycle runs counted.",
 		}),
+
+		// hIngest as *HistogramVec (commit 3/8). Single label `category`.
+		hIngest: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "hermem_ingest_duration_seconds",
+			Help:    "End-to-end ingestion latency (request -> store-complete) labelled by entity category. Bimodal: sub-100ms dedup-skip; 2-60s LLM extract path.",
+			Buckets: durationBuckets,
+		}, []string{"category"}),
+
+		// hRetrieval / hContradiction / hRerank remain as single Histograms.
+		hRetrieval: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "hermem_retrieval_duration_seconds",
+			Help:    "End-to-end retrieval/search latency (request -> response) labelled by retrieval mode (one of the 6 read-side endpoints). Includes embed + cosine + rerank overhead.",
+			Buckets: durationBuckets,
+		}, []string{"mode"}),
+		hContradiction: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "hermem_contradiction_duration_seconds",
+			Help:    "Contradiction detection latency per scan labelled by detector (one of the 4 contradiction algorithms).",
+			Buckets: durationBuckets,
+		}, []string{"detector"}),
+		hRerank: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "hermem_rerank_duration_seconds",
+			Help:    "Reranker latency per candidate batch labelled by strategy (one of: cross_encoder / llm / cosine_only).",
+			Buckets: durationBuckets,
+		}, []string{"strategy"}),
 	}
 	reg.MustRegister(
 		m.pStore, m.pSearch, m.pRetrieve, m.pIngest, m.pQuery, m.pEdge, m.pErr,
@@ -169,14 +298,25 @@ func New() *Metrics {
 		m.pTaskRollback, m.pTaskTree, m.pTaskCreate,
 		m.pRetentionRun,
 	)
+	reg.MustRegister(
+		m.hIngest, m.hRetrieval, m.hContradiction, m.hRerank,
+	)
+	// Pre-warm hIngest: HistogramVec only surfaces in Gather() once at least
+	// one labelled child is materialized via WithLabelValues. The "_init"
+	// sentinel keeps the parent MetricFamily visible on cold-start /metrics
+	// scrapes (Grafana dashboards depend on the parent name being present).
+	// Callers MUST NOT pass category="_init" — it is a system-only sentinel.
+	m.hIngest.WithLabelValues(knownCategories[0]) // knownCategories[0] = "_init"
+	m.hRetrieval.WithLabelValues(knownModes[0]) // knownModes[0] = "_init"
+	m.hContradiction.WithLabelValues(knownDetectors[0]) // knownDetectors[0] = "_init"
+	m.hRerank.WithLabelValues(knownStrategies[0]) // knownStrategies[0] = "_init"
 	return m
 }
 
 // PrometheusRegistry returns the hermem-owned *prometheus.Registry. Used
-// by commits 2-6 of the OBSERVABILITY sprint to wire the /metrics endpoint
-// through promhttp.HandlerFor. Server handlers can pre-register per-domain
-// Histograms / CounterVecs against this registry; New() already registers
-// the 17 IncXxx counters above.
+// by commits 3-6 of the OBSERVABILITY sprint to register per-domain
+// HistogramVec / GaugeVec / CounterVec collectors; commits 7-8 wire the
+// /metrics endpoint through promhttp.HandlerFor in src/internal/server/.
 func (m *Metrics) PrometheusRegistry() *prometheus.Registry { return m.promReg }
 
 // PrometheusHandler returns the http.Handler that serves the hermem-owned
@@ -190,60 +330,142 @@ func (m *Metrics) PrometheusHandler() http.Handler {
 // the legacy expvar-style counters did. Each pair is byte-compatible
 // with pre-OBSERVABILITY callers.
 
-func (m *Metrics) IncStore()         { m.storeCount.Add(1); m.pStore.Inc() }
-func (m *Metrics) IncSearch()        { m.searchCount.Add(1); m.pSearch.Inc() }
-func (m *Metrics) IncRetrieve()      { m.retrieveCount.Add(1); m.pRetrieve.Inc() }
-func (m *Metrics) IncIngest()        { m.ingestCount.Add(1); m.pIngest.Inc() }
-func (m *Metrics) IncQuery()         { m.queryCount.Add(1); m.pQuery.Inc() }
-func (m *Metrics) IncEdge()          { m.edgeCount.Add(1); m.pEdge.Inc() }
-func (m *Metrics) IncErr()           { m.errCount.Add(1); m.pErr.Inc() }
-func (m *Metrics) IncSchemaConflict(){ m.schemaConflictCount.Add(1); m.pSchemaConflict.Inc() }
-func (m *Metrics) IncTaskStatus()    { m.taskStatusCount.Add(1); m.pTaskStatus.Inc() }
-func (m *Metrics) IncTaskExec()      { m.taskExecCount.Add(1); m.pTaskExec.Inc() }
-func (m *Metrics) IncTaskList()      { m.taskListCount.Add(1); m.pTaskList.Inc() }
-func (m *Metrics) IncTaskShow()      { m.taskShowCount.Add(1); m.pTaskShow.Inc() }
-func (m *Metrics) IncTaskDep()       { m.taskDepCount.Add(1); m.pTaskDep.Inc() }
-func (m *Metrics) IncTaskRollback()  { m.taskRollbackCount.Add(1); m.pTaskRollback.Inc() }
-func (m *Metrics) IncTaskTree()      { m.taskTreeCount.Add(1); m.pTaskTree.Inc() }
-func (m *Metrics) IncTaskCreate()    { m.taskCreateCount.Add(1); m.pTaskCreate.Inc() }
-func (m *Metrics) IncRetentionRun()  { m.retentionRunCount.Add(1); m.pRetentionRun.Inc() }
+func (m *Metrics) IncStore()          { m.storeCount.Add(1); m.pStore.Inc() }
+func (m *Metrics) IncSearch()         { m.searchCount.Add(1); m.pSearch.Inc() }
+func (m *Metrics) IncRetrieve()       { m.retrieveCount.Add(1); m.pRetrieve.Inc() }
+func (m *Metrics) IncIngest()         { m.ingestCount.Add(1); m.pIngest.Inc() }
+func (m *Metrics) IncQuery()          { m.queryCount.Add(1); m.pQuery.Inc() }
+func (m *Metrics) IncEdge()           { m.edgeCount.Add(1); m.pEdge.Inc() }
+func (m *Metrics) IncErr()            { m.errCount.Add(1); m.pErr.Inc() }
+func (m *Metrics) IncSchemaConflict() { m.schemaConflictCount.Add(1); m.pSchemaConflict.Inc() }
+func (m *Metrics) IncTaskStatus()     { m.taskStatusCount.Add(1); m.pTaskStatus.Inc() }
+func (m *Metrics) IncTaskExec()       { m.taskExecCount.Add(1); m.pTaskExec.Inc() }
+func (m *Metrics) IncTaskList()       { m.taskListCount.Add(1); m.pTaskList.Inc() }
+func (m *Metrics) IncTaskShow()       { m.taskShowCount.Add(1); m.pTaskShow.Inc() }
+func (m *Metrics) IncTaskDep()        { m.taskDepCount.Add(1); m.pTaskDep.Inc() }
+func (m *Metrics) IncTaskRollback()   { m.taskRollbackCount.Add(1); m.pTaskRollback.Inc() }
+func (m *Metrics) IncTaskTree()       { m.taskTreeCount.Add(1); m.pTaskTree.Inc() }
+func (m *Metrics) IncTaskCreate()     { m.taskCreateCount.Add(1); m.pTaskCreate.Inc() }
+func (m *Metrics) IncRetentionRun()   { m.retentionRunCount.Add(1); m.pRetentionRun.Inc() }
+
+// ObserveIngestDuration records end-to-end ingestion latency in seconds,
+// labelled by `category`. The label MUST be one of the values in
+// knownCategories (observation / world / task / edge); passing the system
+// sentinel "_init" is undefined behaviour (callers should never observe it —
+// it's pre-warmed solely so cold-start /metrics has a non-empty parent MF).
+// Pre-C3 callers break intentionally at this commit boundary.
+//
+// Dashboard authors: filter `category=~"^(observation|world|task|edge)$"`
+// to exclude the system "_init" sentinel from panel queries.
+func (m *Metrics) ObserveIngestDuration(seconds float64, category string) {
+	m.hIngest.WithLabelValues(category).Observe(seconds)
+}
+
+// ObserveRetrievalDuration records end-to-end retrieval latency in seconds,
+// labelled by `mode` (one of the 6 read-side endpoints: search / retrieve /
+// query / response / query_explain / provenance). Caller MUST pass a value
+// from knownModes; "_init" is reserved for the system's pre-warm child.
+// Pre-C4 callers break intentionally at this commit boundary.
+//
+// Dashboard authors: filter mode=~"^(search|retrieve|query|response|query_explain|provenance)$"
+// to exclude the system "_init" sentinel.
+func (m *Metrics) ObserveRetrievalDuration(seconds float64, mode string) {
+	m.hRetrieval.WithLabelValues(mode).Observe(seconds)
+}
+// ObserveContradictionDuration records contradiction-detection latency per
+// scan, labelled by `detector` (one of: exact / embedding / temporal / rule).
+// Caller MUST pass a value from knownDetectors; "_init" is reserved for the
+// system's pre-warm child. Pre-C5 callers break intentionally at this
+// commit boundary.
+//
+// Dashboard authors: filter detector=~"^(exact|embedding|temporal|rule)$"
+// to exclude the system "_init" sentinel.
+func (m *Metrics) ObserveContradictionDuration(seconds float64, detector string) {
+	m.hContradiction.WithLabelValues(detector).Observe(seconds)
+}
+// ObserveRerankDuration records reranker latency per candidate batch,
+// labelled by `strategy`. Caller MUST pass a value from knownStrategies;
+// "_init" is reserved for the system's pre-warm child. Pre-C6 callers
+// break intentionally at this commit boundary.
+//
+// Dashboard authors: filter strategy=~"^(cross_encoder|llm|cosine_only)$"
+// to exclude the system "_init" sentinel.
+func (m *Metrics) ObserveRerankDuration(seconds float64, strategy string) {
+	m.hRerank.WithLabelValues(strategy).Observe(seconds)
+}
 
 // WriteExposition writes the legacy expvar-style Prometheus text-format
-// dump of all 17 atomic counters. Preserved from e2aa722 verbatim so any
-// /metrics-style endpoint that already calls this method keeps working.
+// dump of all 17 atomic counters. Preserved verbatim from e2aa722 so any
+// /metrics-style endpoint that already calls it keeps working.
+// NOTE: histograms added in commit 2/8 are NOT emitted here — bucket counts
+// require a multi-line Prometheus exposition format that the legacy
+// expvar-style text isn't positioned to reproduce. Use PrometheusHandler()
+// for the v0.0.4 text-format with histograms.
 func (m *Metrics) WriteExposition(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "# HELP hermem_store_total Total store operations\n# TYPE hermem_store_total counter\nhermem_store_total %d\n", m.storeCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_search_total Total search operations\n# TYPE hermem_search_total counter\nhermem_search_total %d\n", m.searchCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_retrieve_total Total retrieve operations\n# TYPE hermem_retrieve_total counter\nhermem_retrieve_total %d\n", m.retrieveCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_ingest_total Total ingest operations\n# TYPE hermem_ingest_total counter\nhermem_ingest_total %d\n", m.ingestCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_query_total Total query operations\n# TYPE hermem_query_total counter\nhermem_query_total %d\n", m.queryCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_edge_total Total edge operations\n# TYPE hermem_edge_total counter\nhermem_edge_total %d\n", m.edgeCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_errors_total Total error responses\n# TYPE hermem_errors_total counter\nhermem_errors_total %d\n", m.errCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_schema_conflict_total Total 409 schema_conflict responses\n# TYPE hermem_schema_conflict_total counter\nhermem_schema_conflict_total %d\n", m.schemaConflictCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_status_total Total /task/status operations\n# TYPE hermem_task_status_total counter\nhermem_task_status_total %d\n", m.taskStatusCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_exec_total Total /task/executable operations\n# TYPE hermem_task_exec_total counter\nhermem_task_exec_total %d\n", m.taskExecCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_list_total Total /task/list operations\n# TYPE hermem_task_list_total counter\nhermem_task_list_total %d\n", m.taskListCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_show_total Total /task/show operations\n# TYPE hermem_task_show_total counter\nhermem_task_show_total %d\n", m.taskShowCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_dep_total Total /task/dep operations\n# TYPE hermem_task_dep_total counter\nhermem_task_dep_total %d\n", m.taskDepCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_rollback_total Total /task/rollback operations\n# TYPE hermem_task_rollback_total counter\nhermem_task_rollback_total %d\n", m.taskRollbackCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_tree_total Total /task/tree operations\n# TYPE hermem_task_tree_total counter\nhermem_task_tree_total %d\n", m.taskTreeCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_task_create_total Total /task/create operations\n# TYPE hermem_task_create_total counter\nhermem_task_create_total %d\n", m.taskCreateCount.Load())
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_retention_run_total Total retention GarbageCollector runs\n# TYPE hermem_retention_run_total counter\nhermem_retention_run_total %d\n", m.retentionRunCount.Load())
 	return err
 }
