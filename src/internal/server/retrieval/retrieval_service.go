@@ -94,11 +94,9 @@ func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) error
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.SearchRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.SearchRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.Query == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "query required")
@@ -121,11 +119,9 @@ func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.RetrieveRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.RetrieveRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if len(req.SeedIDs) == 0 {
 		// Defense-in-depth duplicate of domain validation. Pre-PHASE-2.2
@@ -157,11 +153,9 @@ func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) error 
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.SearchRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.SearchRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.Query == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "query required")
@@ -188,14 +182,12 @@ func (s *HTTPService) HandleResponse(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req struct {
+	req, err := httputil.DecodeJSON[struct {
 		Query    string `json:"query"`
 		MaxDepth int    `json:"max_depth,omitempty"`
-	}
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	}](w, r)
+	if err != nil {
+		return err
 	}
 	if req.Query == "" {
 		httputil.WriteError(w, http.StatusUnprocessableEntity, "query is required")
@@ -225,11 +217,9 @@ func (s *HTTPService) HandleQueryExplain(w http.ResponseWriter, r *http.Request)
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.SearchRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.SearchRequest](w, r)
+	if err != nil {
+		return err
 	}
 	opts := s.optsFromState()
 	opts.QueryText = req.Query
