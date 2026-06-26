@@ -55,7 +55,7 @@ func TestEvidenceToEntity_ZerosUnrelated(t *testing.T) {
 		Source:     "import",
 		SourceType: "document",
 	}
-	e := ev.AsEntity()
+	e := Compose(Fact{}, ev, Episode{}, Task{}, Belief{})
 
 	// Evidence fields preserved.
 	if e.Confidence != ev.Confidence || e.Source != ev.Source || e.SourceType != ev.SourceType {
@@ -94,7 +94,7 @@ func TestEvidence_RoundTrip_Exact(t *testing.T) {
 		Source:     "operator-input",
 		SourceType: "manual",
 	}
-	got := original.AsEntity().AsEvidence()
+	got := Compose(Fact{}, original, Episode{}, Task{}, Belief{}).AsEvidence()
 	if !reflect.DeepEqual(original, got) {
 		t.Fatalf("evidence round-trip shifted fields: want %+v, got %+v", original, got)
 	}
@@ -127,7 +127,7 @@ func TestEntityEvidence_RoundTrip_Lossy(t *testing.T) {
 		MessageID:      "msg-1",
 		ExtractedFrom:  "msg-1",
 	}
-	roundTripped := original.AsEvidence().AsEntity()
+	roundTripped := Compose(Fact{}, original.AsEvidence(), Episode{}, Task{}, Belief{})
 
 	// Evidence fields preserved.
 	if roundTripped.Confidence != original.Confidence ||

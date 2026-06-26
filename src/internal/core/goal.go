@@ -5,11 +5,13 @@ import "time"
 // Goal captures the lifecycle state of a goal — a goal IS A Task in
 // this schema, distinguished only by Entity.Category == "goal" at
 // the parent row. The struct mirrors Task's field shape exactly so
-// callers can use Goal vs Task interchangeably (e.g. Goal.AsTask() /
-// Task.AsGoal()) without losing any field. Identity (ID + Content +
-// Category + Embedding) is supplied by the embedded Fact so
-// /goal/list + /goal/show can serialise Goal directly without going
-// through fat Entity (see §8 of REFACTORING.md).
+// callers can use Goal vs Task interchangeably via inline 4-field
+// copy of Status/ValidFrom/ValidTo/Priority (per compose.go's
+// documented Goal bridge pattern — no Goal.AsTask() or
+// Task.AsGoal() bridge methods exist by design). Identity (ID +
+// Content + Category + Embedding) is supplied by the embedded Fact
+// so /goal/list + /goal/show can serialise Goal directly without
+// going through fat Entity (see §8 of REFACTORING.md).
 //
 // Subgoal hierarchy is NOT modeled here: it lives in the graph via
 // blocked_by edges. ProgressPercent is NOT modeled here: it is
@@ -42,21 +44,3 @@ func (e Entity) AsGoal() Goal {
 	}
 }
 
-// AsEntity lifts the 4 goal fields back into an Entity. The 15
-// non-goal fields are zeroed / nil. Callers that need them back
-// must merge from a domain-specific source (Fact for content,
-// Evidence for quality, Episode for provenance, etc.).
-//
-// §8 NOTE: drops embedded Fact identity (ID/Category/Content/Embedding)
-// silently. Until §8 Phase 2 (read-path switchover) lands, callers
-// that round-trip through AsEntity lose identity — prefer consuming
-// the slim type directly when both identity and domain-specific
-// fields are needed.
-func (g Goal) AsEntity() Entity {
-	return Entity{
-		Status:    g.Status,
-		ValidFrom: g.ValidFrom,
-		ValidTo:   g.ValidTo,
-		Priority:  g.Priority,
-	}
-}

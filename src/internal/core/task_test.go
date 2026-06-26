@@ -60,7 +60,7 @@ func TestTaskToEntity_ZerosUnrelated(t *testing.T) {
 		ValidTo:   &later,
 		Priority:  5,
 	}
-	e := tk.AsEntity()
+	e := Compose(Fact{}, Evidence{}, Episode{}, tk, Belief{})
 
 	// Task fields preserved (pointer identity must match).
 	if e.Status != tk.Status {
@@ -106,7 +106,7 @@ func TestTask_RoundTrip_Exact(t *testing.T) {
 		ValidTo:   &later,
 		Priority:  2,
 	}
-	got := original.AsEntity().AsTask()
+	got := Compose(Fact{}, Evidence{}, Episode{}, original, Belief{}).AsTask()
 	if !reflect.DeepEqual(original, got) {
 		t.Fatalf("task round-trip shifted fields: want %+v, got %+v", original, got)
 	}
@@ -139,7 +139,7 @@ func TestEntityTask_RoundTrip_Lossy(t *testing.T) {
 		MessageID:      "msg-1",
 		ExtractedFrom:  "msg-1",
 	}
-	roundTripped := original.AsTask().AsEntity()
+	roundTripped := Compose(Fact{}, Evidence{}, Episode{}, original.AsTask(), Belief{})
 
 	// Task fields preserved.
 	if roundTripped.Status != original.Status {

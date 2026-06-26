@@ -65,7 +65,12 @@ func TestGoalToEntity_ZerosUnrelated(t *testing.T) {
 		ValidTo:   &later,
 		Priority:  5,
 	}
-	e := g.AsEntity()
+	e := Compose(Fact{}, Evidence{}, Episode{}, Task{
+		Status:    g.Status,
+		ValidFrom: g.ValidFrom,
+		ValidTo:   g.ValidTo,
+		Priority:  g.Priority,
+	}, Belief{})
 
 	// Goal fields preserved (pointer-identity must match).
 	if e.Status != g.Status {
@@ -111,7 +116,12 @@ func TestGoal_RoundTrip_Exact(t *testing.T) {
 		ValidTo:   &later,
 		Priority:  2,
 	}
-	got := original.AsEntity().AsGoal()
+	got := Compose(Fact{}, Evidence{}, Episode{}, Task{
+		Status:    original.Status,
+		ValidFrom: original.ValidFrom,
+		ValidTo:   original.ValidTo,
+		Priority:  original.Priority,
+	}, Belief{}).AsGoal()
 	if !reflect.DeepEqual(original, got) {
 		t.Fatalf("goal round-trip shifted fields: want %+v, got %+v", original, got)
 	}
@@ -144,7 +154,13 @@ func TestEntityGoal_RoundTrip_Lossy(t *testing.T) {
 		MessageID:      "msg-1",
 		ExtractedFrom:  "msg-1",
 	}
-	roundTripped := original.AsGoal().AsEntity()
+	g := original.AsGoal()
+	roundTripped := Compose(Fact{}, Evidence{}, Episode{}, Task{
+		Status:    g.Status,
+		ValidFrom: g.ValidFrom,
+		ValidTo:   g.ValidTo,
+		Priority:  g.Priority,
+	}, Belief{})
 
 	// Goal fields preserved.
 	if roundTripped.Status != original.Status {
@@ -188,7 +204,12 @@ func TestGoal_ReducesToTask(t *testing.T) {
 		Priority:  5,
 	}
 
-	projected := g.AsEntity().AsTask()
+	projected := Compose(Fact{}, Evidence{}, Episode{}, Task{
+		Status:    g.Status,
+		ValidFrom: g.ValidFrom,
+		ValidTo:   g.ValidTo,
+		Priority:  g.Priority,
+	}, Belief{}).AsTask()
 
 	//nolint:staticcheck // by design: Goal→Task bridge kept inline — pins each field for the round-trip contract
 	expected := Task{

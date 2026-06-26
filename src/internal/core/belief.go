@@ -31,9 +31,9 @@ import "time"
 //
 // Pattern matches: minimal surface, identity via embedded Fact,
 // persistence mechanics as the explicit struct fields. The AsBelief()
-// conversion keeps working for callers that prefer the per-domain-model
-// API; the projection becomes dead code once all consumers use slim
-// types directly (§8 Phase 4).
+// down-direction projection (Entity → slim type) is the canonical
+// API; the inverse Belief.AsEntity() (lossy on embedded-Fact
+// identity) was removed in §8.4.
 type Belief struct {
 	Fact
 	CreatedAt      *time.Time `json:"created_at,omitempty"`
@@ -56,21 +56,3 @@ func (e Entity) AsBelief() Belief {
 	}
 }
 
-// AsEntity lifts the 5 belief fields back into an Entity. The 14
-// non-belief fields are zeroed / nil. Callers that need them back
-// must merge from a domain-specific source (Fact/Evidence/Episode/Task).
-//
-// §8 NOTE: drops embedded Fact identity (ID/Category/Content/Embedding)
-// silently. Until §8 Phase 2 (read-path switchover) lands, callers
-// that round-trip through AsEntity lose identity — prefer consuming
-// the slim type directly when both identity and domain-specific
-// fields are needed.
-func (b Belief) AsEntity() Entity {
-	return Entity{
-		CreatedAt:      b.CreatedAt,
-		UpdatedAt:      b.UpdatedAt,
-		LastAccessedAt: b.LastAccessedAt,
-		Archived:       b.Archived,
-		Degree:         b.Degree,
-	}
-}

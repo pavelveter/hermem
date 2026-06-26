@@ -413,14 +413,14 @@ However, the `store/` and `retrieval/` packages still use the fat `Entity`
 everywhere. Every new domain type requires an `AsEntity()` converter that copies
 a subset of fields into the 19-field struct. These converters are duplicated
 across 7 files:
-- `core/goal.go:46` — `Goal.AsEntity()`
-- `core/task.go:41` — `Task.AsEntity()`
-- `core/fact.go:39` — `Fact.AsEntity()`
-- `core/belief.go:56` — `Belief.AsEntity()`
-- `core/evidence.go:38` — `Evidence.AsEntity()`
-- `core/episode.go:36` — `Episode.AsEntity()`
-- `compression/types.go:22` — `SummaryNode.AsEntity()`
+- `core/fact.go:39` — `Fact.AsEntity()` (lossless: preserves ID/Category/Content/Embedding)
+- `compression/types.go:22` — `SummaryNode.AsEntity()` (lossless: preserves ID/Category/Content)
 - `compression/types.go:31` — `EntityAsSummaryNode()` (reverse direction)
+
+The 5 unsafe `X.AsEntity()` bridges (Task/Goal/Episode/Evidence/Belief) that previously
+lived in `core/{task,goal,episode,evidence,belief}.go` were deleted in §8.4 — they
+silently dropped the embedded-Fact identity and have been replaced by `core.Compose(...)`
+as the canonical slim→Entity reassembly path.
 
 **Fix strategy:**
 
@@ -437,7 +437,25 @@ across 7 files:
    respectively. The HTTP/CLI shells serialize the slim types directly.
 
 4. **Phase 4: Remove `AsEntity()` converters** — After all consumers use slim types,
-   the 7 `AsEntity()` methods become dead code and are removed.
+   the 5 unsafe `X.AsEntity()` bridges (Task/Goal/Episode/Evidence/Belief) become
+   dead code and are deleted. The 2 lossless bridges (`Fact.AsEntity` and
+   `SummaryNode.AsEntity`) stay because they preserve identity.
+
+### [x] 8.4 Remove unsafe `AsEntity()` bridges (this commit)
+
+**Status (this commit):** 5 unsafe `X.AsEntity()` methods deleted from
+`core/{task,goal,episode,evidence,belief}.go` (~85 LOC). The deleted bridges
+silently dropped the embedded-Fact identity (ID/Category/Content/Embedding) —
+the §8 risk that motivated this refactor. `core.Fact.AsEntity()` and
+`compression.SummaryNode.AsEntity()` are kept (they preserve identity and are
+the only safe direct mappings). 21 test asserts rewritten across 6 test files
+to use `core.Compose(...)` instead of the deleted bridges (Goal uses inline
+4-field copy to Task per the documented contract in `core/compose.go`). 7 godoc
+updates land the §8.4 annotation consistently across the 5 model files +
+`compose.go` + the `goal.go` struct godoc (the latter had a stale reference to
+non-existent `Goal.AsTask()` / `Task.AsGoal()` methods — now corrected).
+`go vet`, `go build`, `go test -race` clean on `core/`, `server/`,
+`compression/`.
 
 **Benefits:**
 - `store/*` functions gain type safety: `GetTaskByID` returns `Task`, not `Entity`
@@ -684,7 +702,7 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 | **✅ DONE** | §2.1: Drop `_http` package suffix | Medium | ✅ DONE — all 4 `_http` suffixes dropped; 4 import aliases removed from server.go |
 | **HIGH** | §2.2-2.3: Naming conventions | Low | ✅ DONE — BOTH complete |
 | **HIGH** | §3.1-3.2: RouteProvider + BaseHTTPService | High | ✅ §3.1+§3.2 DONE — 12 for-loops collapsed + ~250 LOC via Wrap + mapStatus |
-| **HIGH** | §8: Entity decomposition | High | 🟡 PARTIAL DONE — §8.1+§8.2 Type-Prep landed (5 slim types embed `core.Fact`; `core/slim_types_test.go` pins new wire shape; vet/build/race clean). ✅ §8.3 read-path switchover DONE — audit confirmed zero non-test production callers of the `X.AsEntity().ID|Category|Content|Embedding` roundtrip pattern (4-grep sweep across `src/`); the §8 NOTE/TODO godocs on Task/Goal/Episode/Evidence/Belief were dead-code warnings, now resolved. §8.4 `AsEntity()` removal still pending. Caller **note** (until §8.4): producers needing a slim→Entity reassembly should use `core.Compose(f.AsFact(), ev.AsEvidence(), ep.AsEpisode(), t.AsTask(), b.AsBelief())` rather than calling the unsafe `X.AsEntity()` bridges directly (which silently drops the 4-fact-band identity fields). |
+| **HIGH** | §8: Entity decomposition | High | ✅ DONE — §8.1+§8.2 Type-Prep + §8.3 read-path switchover + §8.4 AsEntity() removal all landed. The 5 unsafe `X.AsEntity()` bridges (Task/Goal/Episode/Evidence/Belief) are deleted; `core.Fact.AsEntity()` and `compression.SummaryNode.AsEntity()` stay (lossless on identity). Producers needing slim→Entity reassembly use `core.Compose(f.AsFact(), ev.AsEvidence(), ep.AsEpisode(), t.AsTask(), b.AsBelief())` — the 4-field inline-copy pattern is the documented Goal→Task bridge. 21 test asserts migrated to `core.Compose` across 6 test files; 7 godoc updates land the §8.4 annotation consistently. vet/build/race on `core/` + `server/` + `compression/` clean. |
 | **✅ DONE** | §9: AI client unification | Medium | ✅ DONE — 6 clients collapsed to httpClient.doPOST; ~23 net LOC after helper + 215 LOC of test coverage |
 | **✅ DONE** | §10: HTTP handler boilerplate | Medium | ✅ DONE — httputil.DecodeJSON[T] + RespondJSON + §3.2 Wrap routes *core.DomainError through WriteErrorWithCode; 15 POST handlers across 6 shells collapsed; 1 new end-to-end 422 wire-contract test (TestStore_MalformedJSONReturns422WithCodeField) pins {error, code:"invalid_input"} envelope; 2 stale-test fixes (TestTaskDep missing-field test data + TestStore_RejectsLargeBody status assertion widened 400→422 per §3.2+§10 wire evolution) |
 | **HIGH** | §11: AMX CGo verification | Low | No code change, CI guard only |
@@ -729,7 +747,7 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 8. ~~**§3.2** — `BaseHTTPService` with `Wrap` pattern~~ ✅ DONE
    (depends on §10 for the handler simplification) — 11 shells + ~250 LOC eliminated, 9 shared tests pin regression coverage including the silent-bug CodeInvalidInput 400→422 fix.
 
-9. **§8** — Entity decomposition (switch `store/` to slim types) ✅ §8.1+§8.2 (Type-Prep) DONE — anon-embed `core.Fact` in 5 slim types + new wire-shape regression test in `core/slim_types_test.go`. ✅ §8.3 (read-path switchover) DONE — audit confirmed zero non-test callers of the `X.AsEntity()` roundtrip pattern (4-grep sweep across `src/`); the §8 NOTE/TODO godocs were dead-code warnings, now resolved. 🟡 PENDING: §8.4 `AsEntity()` removal — the 5 unsafe bridges (Task / Goal / Episode / Evidence / Belief) can now be deleted in confidence (Fact.AsEntity() stays lossless; compression/SummaryNode bridge stays). Caller **note** (pre-§8.4): slim→Entity reassembly should use `core.Compose(f.AsFact(), ev.AsEvidence(), ep.AsEpisode(), t.AsTask(), b.AsBelief())` rather than calling `t.AsEntity()` directly.
+9. **§8** — Entity decomposition (switch `store/` to slim types) ✅ §8.1+§8.2 (Type-Prep) DONE — anon-embed `core.Fact` in 5 slim types + new wire-shape regression test in `core/slim_types_test.go`. ✅ §8.3 (read-path switchover) DONE — audit confirmed zero non-test callers of the `X.AsEntity()` roundtrip pattern. ✅ §8.4 (AsEntity() removal) DONE — the 5 unsafe `X.AsEntity()` bridges (Task/Goal/Episode/Evidence/Belief) deleted; `core.Fact.AsEntity()` and `compression.SummaryNode.AsEntity()` preserved (lossless on identity); 21 test asserts migrated to `core.Compose` across 6 test files; 7 godoc updates land the §8.4 annotation; `goal.go` struct godoc updated to remove the fictional `Goal.AsTask()` / `Task.AsGoal()` method references. Slim→Entity reassembly is now exclusively via `core.Compose(…)`.
    (high effort but high payoff, structural change)
 
 10. **§4.1** ✅ — Comment cleanup (server-side pkg-doc trim landed; see spec-body + matrix row) | **§4.2** 🟡 PENDING — Comment cleanup (inline archaeology; defer to followup)
@@ -1085,7 +1103,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 | **✅ DONE** | §2.1: Drop `_http` package suffix | Medium | ✅ DONE — all 4 `_http` suffixes dropped; 4 import aliases removed from server.go |
 | **HIGH** | §2.2-2.3: Naming conventions | Low | ✅ DONE — BOTH complete |
 | **HIGH** | §3.1-3.2: RouteProvider + BaseHTTPService | High | ✅ §3.1+§3.2 DONE — 12 for-loops collapsed + ~250 LOC via Wrap + mapStatus |
-| **HIGH** | §8: Entity decomposition | High | 🟡 PARTIAL DONE — §8.1+§8.2 Type-Prep landed (5 slim types embed `core.Fact`; `core/slim_types_test.go` pins new wire shape; vet/build/race clean). ✅ §8.3 read-path switchover DONE — audit confirmed zero non-test production callers of the `X.AsEntity().ID|Category|Content|Embedding` roundtrip pattern (4-grep sweep across `src/`); the §8 NOTE/TODO godocs on Task/Goal/Episode/Evidence/Belief were dead-code warnings, now resolved. §8.4 `AsEntity()` removal still pending. Caller **note** (until §8.4): producers needing a slim→Entity reassembly should use `core.Compose(f.AsFact(), ev.AsEvidence(), ep.AsEpisode(), t.AsTask(), b.AsBelief())` rather than calling the unsafe `X.AsEntity()` bridges directly (which silently drops the 4-fact-band identity fields). |
+| **HIGH** | §8: Entity decomposition | High | ✅ DONE — §8.1+§8.2 Type-Prep + §8.3 read-path switchover + §8.4 AsEntity() removal all landed. The 5 unsafe `X.AsEntity()` bridges (Task/Goal/Episode/Evidence/Belief) are deleted; `core.Fact.AsEntity()` and `compression.SummaryNode.AsEntity()` stay (lossless on identity). Producers needing slim→Entity reassembly use `core.Compose(f.AsFact(), ev.AsEvidence(), ep.AsEpisode(), t.AsTask(), b.AsBelief())` — the 4-field inline-copy pattern is the documented Goal→Task bridge. 21 test asserts migrated to `core.Compose` across 6 test files; 7 godoc updates land the §8.4 annotation consistently. vet/build/race on `core/` + `server/` + `compression/` clean. |
 | **✅ DONE** | §9: AI client unification | Medium | ✅ DONE — 6 clients collapsed to httpClient.doPOST; ~23 net LOC after helper + 215 LOC of test coverage |
 | **✅ DONE** | §10: HTTP handler boilerplate | Medium | ✅ DONE — httputil.DecodeJSON[T] + RespondJSON + §3.2 Wrap routes *core.DomainError through WriteErrorWithCode; 15 POST handlers across 6 shells collapsed; 1 new end-to-end 422 wire-contract test (TestStore_MalformedJSONReturns422WithCodeField) pins {error, code:"invalid_input"} envelope; 2 stale-test fixes (TestTaskDep missing-field test data + TestStore_RejectsLargeBody status assertion widened 400→422 per §3.2+§10 wire evolution) |
 | **HIGH** | §11: AMX CGo verification | Low | No code change, CI guard only |
@@ -1132,7 +1150,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 
 12. **§12.3** — Explicit layer markers + extract SQL from domain services
 
-13. **§8** — Entity decomposition (switch `store/` to slim types) ✅ §8.1+§8.2 (Type-Prep) DONE — anon-embed `core.Fact` in 5 slim types + new wire-shape regression test in `core/slim_types_test.go`. ✅ §8.3 (read-path switchover) DONE — audit confirmed zero non-test callers of the `X.AsEntity()` roundtrip pattern (4-grep sweep across `src/`); the §8 NOTE/TODO godocs were dead-code warnings, now resolved. 🟡 PENDING: §8.4 `AsEntity()` removal — the 5 unsafe bridges (Task / Goal / Episode / Evidence / Belief) can now be deleted in confidence (Fact.AsEntity() stays lossless; compression/SummaryNode bridge stays). Caller **note** (pre-§8.4): slim→Entity reassembly should use `core.Compose(f.AsFact(), ev.AsEvidence(), ep.AsEpisode(), t.AsTask(), b.AsBelief())` rather than calling `t.AsEntity()` directly.
+13. **§8** — Entity decomposition (switch `store/` to slim types) ✅ §8.1+§8.2 (Type-Prep) DONE — anon-embed `core.Fact` in 5 slim types + new wire-shape regression test in `core/slim_types_test.go`. ✅ §8.3 (read-path switchover) DONE — audit confirmed zero non-test callers of the `X.AsEntity()` roundtrip pattern. ✅ §8.4 (AsEntity() removal) DONE — the 5 unsafe `X.AsEntity()` bridges (Task/Goal/Episode/Evidence/Belief) deleted; `core.Fact.AsEntity()` and `compression.SummaryNode.AsEntity()` preserved (lossless on identity); 21 test asserts migrated to `core.Compose` across 6 test files; 7 godoc updates land the §8.4 annotation; `goal.go` struct godoc updated to remove the fictional `Goal.AsTask()` / `Task.AsGoal()` method references. Slim→Entity reassembly is now exclusively via `core.Compose(…)`.
 
 14. **§6** — `serve.go` wiring simplification (builder pattern)
 

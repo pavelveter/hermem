@@ -1,10 +1,14 @@
 package core
 
 // Compose reassembles a full Entity from the 5 per-domain model
-// projections. Together with the existing AsFact / AsEvidence /
-// AsEpisode / AsTask / AsBelief projections and their inverse
-// X.AsEntity() methods, this completes the backward-compatibility
-// layer (P0 ENTITY MODEL REFACTOR item #9).
+// projections. This is the canonical path for producers needing a
+// slim→Entity reassembly — the inverse X.AsEntity() bridges (Task,
+// Goal, Episode, Evidence, Belief) that previously handled this
+// were removed in §8.4 because they silently dropped the embedded
+// Fact identity. The only remaining AsEntity() bridges are
+// Fact.AsEntity and compression.SummaryNode.AsEntity, both of
+// which preserve identity and remain the safe direct mappings.
+// (P0 ENTITY MODEL REFACTOR item #9)
 //
 // Usage:
 //
