@@ -24,7 +24,7 @@ func TestEntityToEpisode_DropsUnrelated(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       true,
 		ValidFrom:      &now,
@@ -78,7 +78,7 @@ func TestEpisodeToEntity_ZerosUnrelated(t *testing.T) {
 	if e.ValidFrom != nil || e.ValidTo != nil {
 		t.Errorf("validity window not nil: %+v %+v", e.ValidFrom, e.ValidTo)
 	}
-	if e.CreatedAt != nil || e.UpdatedAt != (time.Time{}) || e.LastAccessedAt != nil {
+	if e.CreatedAt != nil || e.UpdatedAt != nil || e.LastAccessedAt != nil {
 		t.Errorf("timestamp fields not zero/nil: %+v %+v %+v", e.CreatedAt, e.UpdatedAt, e.LastAccessedAt)
 	}
 	if e.Archived || e.Degree != 0 || e.Priority != 0 {
@@ -115,7 +115,7 @@ func TestEntityEpisode_RoundTrip_Lossy(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       true,
 		ValidFrom:      &now,

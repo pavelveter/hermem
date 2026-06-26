@@ -24,7 +24,7 @@ func TestEntityToEvidence_DropsUnrelated(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       true,
 		ValidFrom:      &now,
@@ -72,7 +72,7 @@ func TestEvidenceToEntity_ZerosUnrelated(t *testing.T) {
 	if e.Status != "" {
 		t.Errorf("Status not zero: %q", e.Status)
 	}
-	if e.CreatedAt != nil || e.UpdatedAt != (time.Time{}) || e.LastAccessedAt != nil {
+	if e.CreatedAt != nil || e.UpdatedAt != nil || e.LastAccessedAt != nil {
 		t.Errorf("timestamp fields not zero/nil: %+v %+v %+v", e.CreatedAt, e.UpdatedAt, e.LastAccessedAt)
 	}
 	if e.ValidFrom != nil || e.ValidTo != nil {
@@ -116,7 +116,7 @@ func TestEntityEvidence_RoundTrip_Lossy(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       true,
 		ValidFrom:      &now,

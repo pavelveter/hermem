@@ -172,7 +172,7 @@ func TestRecompress_MaxDepth(t *testing.T) {
 		ID:             "summary-maxed",
 		Content:        "maxed out",
 		CompressedFrom: []string{"e1"},
-		CompressedAt:   zeroTime,
+		CompressedAt:   &zeroTime,
 		Generation:     MaxRecursionDepth,
 		ExtractorModel: "llm",
 	}

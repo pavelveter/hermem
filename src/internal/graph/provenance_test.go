@@ -35,8 +35,8 @@ func TestSafeSourceLabel_NormalPath(t *testing.T) {
 func TestWalkLineage_Baseline(t *testing.T) {
 	now := time.Date(2026, 6, 24, 10, 0, 0, 0, time.UTC)
 	nodes := []core.Entity{
-		{ID: "f1", Source: "user", UpdatedAt: now},
-		{ID: "f2", Source: "", UpdatedAt: now.Add(1 * time.Minute)}, // deleted source
+		{ID: "f1", Source: "user", UpdatedAt: core.TimePtr(now)},
+		{ID: "f2", Source: "", UpdatedAt: core.TimePtr(now.Add(1 * time.Minute))}, // deleted source
 	}
 	got := WalkLineage(nodes)
 	if len(got) != 2 {

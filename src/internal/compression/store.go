@@ -100,7 +100,7 @@ func scanSummaryNode(row scanner) (SummaryNode, error) {
 	if err := row.Scan(&n.ID, &n.Content, &fromJSON, &compressedAt, &confidence, &n.Provenance, &n.Generation, &n.ExtractorModel, &supersededBy, &regenAt); err != nil {
 		return SummaryNode{}, err
 	}
-	n.CompressedAt = compressedAt
+	n.CompressedAt = &compressedAt
 	n.Confidence = float32(confidence)
 	if supersededBy.Valid {
 		n.SupersededBy = supersededBy.String

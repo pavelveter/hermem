@@ -14,7 +14,7 @@ type Entity struct {
 	Category       string     `json:"category"`
 	Content        string     `json:"content"`
 	Embedding      []float32  `json:"embedding,omitempty"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	UpdatedAt      *time.Time `json:"updated_at"`
 	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
 	Archived       bool       `json:"archived"`
 	Status         string     `json:"status,omitempty"`
@@ -85,6 +85,10 @@ func DefaultSchemaConfig(stateful bool) SchemaConfig {
 func NewTaskID() string {
 	return fmt.Sprintf("task-%d", time.Now().UnixNano())
 }
+
+// TimePtr returns a pointer to t. Convenience helper for constructing
+// *time.Time fields in struct literals.
+func TimePtr(t time.Time) *time.Time { return &t }
 
 // RetentionPolicy controls automatic archival of stale nodes.
 type RetentionPolicy struct {

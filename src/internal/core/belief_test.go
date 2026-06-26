@@ -27,7 +27,7 @@ func TestEntityToBelief_DropsUnrelated(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &earlier,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &later,
 		Archived:       false,
 		ValidFrom:      &earlier,
@@ -41,7 +41,7 @@ func TestEntityToBelief_DropsUnrelated(t *testing.T) {
 	got := e.AsBelief()
 	want := Belief{
 		CreatedAt:      &earlier,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &later,
 		Archived:       false,
 		Degree:         7,
@@ -61,7 +61,7 @@ func TestBeliefToEntity_ZerosUnrelated(t *testing.T) {
 	earlier := now.Add(-2 * time.Hour)
 	b := Belief{
 		CreatedAt:      &earlier,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &later,
 		Archived:       true,
 		Degree:         5,
@@ -72,7 +72,7 @@ func TestBeliefToEntity_ZerosUnrelated(t *testing.T) {
 	if e.CreatedAt != b.CreatedAt {
 		t.Errorf("CreatedAt pointer lost: want %p got %p", b.CreatedAt, e.CreatedAt)
 	}
-	if !e.UpdatedAt.Equal(b.UpdatedAt) {
+	if !e.UpdatedAt.Equal(*b.UpdatedAt) {
 		t.Errorf("UpdatedAt lost: want %v got %v", b.UpdatedAt, e.UpdatedAt)
 	}
 	if e.LastAccessedAt != b.LastAccessedAt {
@@ -118,7 +118,7 @@ func TestBelief_RoundTrip_Exact(t *testing.T) {
 	earlier := now.Add(-time.Hour)
 	original := Belief{
 		CreatedAt:      &earlier,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &later,
 		Archived:       true,
 		Degree:         4,
@@ -146,7 +146,7 @@ func TestEntityBelief_RoundTrip_Lossy(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &earlier,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &later,
 		Archived:       true,
 		ValidFrom:      &earlier,
@@ -163,7 +163,7 @@ func TestEntityBelief_RoundTrip_Lossy(t *testing.T) {
 	if roundTripped.CreatedAt != original.CreatedAt {
 		t.Errorf("CreatedAt pointer lost: want %p got %p", original.CreatedAt, roundTripped.CreatedAt)
 	}
-	if !roundTripped.UpdatedAt.Equal(original.UpdatedAt) {
+	if !roundTripped.UpdatedAt.Equal(*original.UpdatedAt) {
 		t.Errorf("UpdatedAt lost: want %v got %v", original.UpdatedAt, roundTripped.UpdatedAt)
 	}
 	if roundTripped.LastAccessedAt != original.LastAccessedAt {

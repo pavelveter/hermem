@@ -18,7 +18,7 @@ type SummaryNode struct {
 	ID             string     `json:"id"`
 	Content        string     `json:"content"`
 	CompressedFrom []string   `json:"compressed_from"`
-	CompressedAt   time.Time  `json:"compressed_at"`
+	CompressedAt   *time.Time `json:"compressed_at"`
 	Confidence     float32    `json:"confidence"`
 	Provenance     string     `json:"provenance"`
 	Generation     int        `json:"generation"`

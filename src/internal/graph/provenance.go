@@ -42,9 +42,9 @@ func SafeSourceLabel(s *Source) string {
 // human-readable tag returned by SafeSourceLabel; CreatedAt is the
 // entity's UpdatedAt at the time of recording.
 type LineageEntry struct {
-	FactID    string    `json:"fact_id"`
-	SourceTag string    `json:"source_tag"`
-	CreatedAt time.Time `json:"created_at"`
+	FactID    string     `json:"fact_id"`
+	SourceTag string     `json:"source_tag"`
+	CreatedAt *time.Time `json:"created_at"`
 }
 
 // WalkLineage flattens a slice of nodes into one LineageEntry per node.

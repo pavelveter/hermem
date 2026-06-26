@@ -50,7 +50,7 @@ func (cp *Compressor) Compress(ctx context.Context, entityIDs []string) (*Summar
 		ID:             fmt.Sprintf("summary-%s", id),
 		Content:        formatSummary(result),
 		CompressedFrom: entityIDs,
-		CompressedAt:   time.Now(),
+		CompressedAt:   core.TimePtr(time.Now()),
 		Confidence:     averageConfidence(entities),
 		Provenance:     fmt.Sprintf("compressed from %d entities at %s", len(entityIDs), time.Now().Format(time.RFC3339)),
 		Generation:     1,
@@ -117,7 +117,7 @@ func (cp *Compressor) Recompress(ctx context.Context, summaryID string) (*Summar
 		ID:             fmt.Sprintf("summary-%s", id),
 		Content:        formatSummary(result),
 		CompressedFrom: sourceIDs,
-		CompressedAt:   time.Now(),
+		CompressedAt:   core.TimePtr(time.Now()),
 		Confidence:     existing.Confidence,
 		Provenance:     provenance,
 		Generation:     existing.Generation + 1,
@@ -163,7 +163,7 @@ func (cp *Compressor) Regenerate(ctx context.Context, summaryID string) (*Summar
 
 	existing.Content = newContent
 	existing.RegeneratedAt = &now
-	existing.CompressedAt = time.Now()
+	existing.CompressedAt = core.TimePtr(time.Now())
 	if cp.metrics != nil {
 		cp.metrics.IncRegenerate()
 		cp.metrics.ObserveCompressDuration(time.Since(start))

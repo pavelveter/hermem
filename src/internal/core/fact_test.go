@@ -21,7 +21,7 @@ func TestEntityToFact_DropsMetadata(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       true,
 		ValidFrom:      &now,
@@ -79,7 +79,7 @@ func TestFactToEntity_ZerosMetadata(t *testing.T) {
 	if got.Source != "" || got.SourceType != "" {
 		t.Errorf("Source/SourceType not zero: %q / %q", got.Source, got.SourceType)
 	}
-	if got.CreatedAt != nil || got.UpdatedAt != (time.Time{}) || got.LastAccessedAt != nil {
+	if got.CreatedAt != nil || got.UpdatedAt != nil || got.LastAccessedAt != nil {
 		t.Errorf("timestamp fields not zero/nil: %+v %+v %+v", got.CreatedAt, got.UpdatedAt, got.LastAccessedAt)
 	}
 	if got.ValidFrom != nil || got.ValidTo != nil {
@@ -124,7 +124,7 @@ func TestEntity_RoundTrip_Lossy(t *testing.T) {
 		Source:         "dialog",
 		SourceType:     "extracted",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       true,
 		ValidFrom:      &now,

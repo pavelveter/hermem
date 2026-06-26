@@ -35,8 +35,8 @@ type Belief struct {
 	SourceKind     string
 	SourceID       string
 	Status         string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	CreatedAt      *time.Time
+	UpdatedAt      *time.Time
 	SupersededBy   *int64
 	ParentChainID  *int64
 	ArchivedAt     *time.Time
@@ -91,8 +91,8 @@ func (s *service) CreateBelief(ctx context.Context, b *Belief) error {
 		b.Confidence = 1.0
 	}
 	now := time.Now().UTC()
-	b.CreatedAt = now
-	b.UpdatedAt = now
+	b.CreatedAt = &now
+	b.UpdatedAt = &now
 	const q = `
 INSERT INTO beliefs (content, confidence, source_kind, source_id, status,
                      created_at, updated_at)

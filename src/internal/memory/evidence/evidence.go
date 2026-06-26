@@ -42,8 +42,8 @@ type Evidence struct {
 	Content    string
 	SourceKind string
 	SourceID   string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	CreatedAt  *time.Time
+	UpdatedAt  *time.Time
 }
 
 // Service is the persistence-side interface over the evidence table.

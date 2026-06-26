@@ -109,17 +109,17 @@ func sortByScoreDesc(ranked []rankedNode) {
 
 // --- scoring helpers used by walk.go + tests ---
 
-// recencyScore — exp-decay on UpdatedAt. Empty/zero UpdatedAt → 1
+// recencyScore — exp-decay on UpdatedAt. Nil/zero UpdatedAt → 1
 // ("as fresh as possible"), the conventional recency default so a
 // never-touched node doesn't get punished by the ranker.
 //
 // Implementation delegates to expDecayHours in temporal.go — keeps
 // the decay math in exactly one place across recency + temporal.
-func recencyScore(updatedAt time.Time, halfLifeHours float32) float32 {
-	if updatedAt.IsZero() || halfLifeHours <= 0 {
+func recencyScore(updatedAt *time.Time, halfLifeHours float32) float32 {
+	if updatedAt == nil || updatedAt.IsZero() || halfLifeHours <= 0 {
 		return 1
 	}
-	return expDecayHours(updatedAt, halfLifeHours)
+	return expDecayHours(*updatedAt, halfLifeHours)
 }
 
 func centralityScore(degree int) float32 {

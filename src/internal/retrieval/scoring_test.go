@@ -117,10 +117,10 @@ func TestDefaultCompositeScorer_UsesVectorAndRecency(t *testing.T) {
 	recentTime := time.Now()
 
 	old := core.GraphNode{
-		Entity: core.Entity{ID: "old", UpdatedAt: oldTime, Degree: 0},
+		Entity: core.Entity{ID: "old", UpdatedAt: &oldTime, Degree: 0},
 	}
 	recent := core.GraphNode{
-		Entity: core.Entity{ID: "recent", UpdatedAt: recentTime, Degree: 0},
+		Entity: core.Entity{ID: "recent", UpdatedAt: &recentTime, Degree: 0},
 	}
 
 	q := []float32{1, 0}
@@ -136,13 +136,14 @@ func TestDefaultCompositeScorer_UsesVectorAndRecency(t *testing.T) {
 
 // computeRecency / recencyScore: behavior on edge cases.
 func TestRecencyScoreUpdatedAt_ZeroIsOne(t *testing.T) {
-	if got := recencyScore(time.Time{}, 720); got != 1 {
+	if got := recencyScore(nil, 720); got != 1 {
 		t.Fatalf("zero UpdatedAt: want 1, got %v", got)
 	}
 }
 
 func TestRecencyScore_HalfLifeDecay(t *testing.T) {
-	got := recencyScore(time.Now().Add(-720*time.Hour), 720)
+	old := time.Now().Add(-720 * time.Hour)
+	got := recencyScore(&old, 720)
 	// expected e^(-1) ≈ 0.3679
 	if got < 0.3 || got > 0.4 {
 		t.Fatalf("decay at one half-life: want ≈0.368, got %v", got)
@@ -200,7 +201,7 @@ func TestComputeScoreComponents_PopulatesAllFields(t *testing.T) {
 	node := core.GraphNode{
 		Entity: core.Entity{
 			ID:        "x",
-			UpdatedAt: now,
+			UpdatedAt: &now,
 			CreatedAt: &created,
 			Degree:    9,
 		},
