@@ -1834,6 +1834,93 @@ local-only OTLP receiver. PromQL/Grafana dashboards can then filter
 by `service.name=hermem` to see retrieval latency histograms,
 ingestion batch sizes, and dependency-failure counts.
 
+### Prometheus /metrics endpoint
+
+In addition to the legacy `expvar` JSON at `/metrics`, the server now exposes
+`/metrics` in Prometheus exposition format (text/plain; version=0.0.4). The
+endpoint is registered by `Server.mount()` directly (see
+`src/internal/server/server.go`) and is reachable without authentication when
+`[server] api_key` is unset; when it is set, the same `X-API-Key` middleware
+applies to `/metrics` as to the rest of the surface.
+
+`prometheus/client_golang` v1.21.0 is wired against hermem's own
+`*prometheus.Registry` (not the global default) so hermem metrics are isolated
+from any third-party library that might also register with the default. The
+exposition handler is exposed via `Metrics.PrometheusHandler()`.
+
+#### Duration histograms with bounded labels
+
+Four domain `*HistogramVec` series carry the request cost of each pipeline stage.
+Each is pre-warmed at `New()` with an `_init` sentinel series so cold-start
+scrapes are zero-missing; bounded label sets guard against unbounded cardinality.
+All four share the same bucket boundaries defined as `durationBuckets` in
+`src/internal/metrics/metrics.go`:
+
+```go
+var durationBuckets = []float64{0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 30, 60}
+```
+
+| Series                              | Label      | Known values (`known[X]` in metrics.go)                                |
+| ----------------------------------- | ---------- | ---------------------------------------------------------------------- |
+| `hermem_ingest_duration_seconds`    | `category` | `observation`, `world`, `task`, `edge` (plus `_init` sentinel)         |
+| `hermem_retrieval_duration_seconds` | `mode`     | `search`, `retrieve`, `query`, `response`, `query_explain`, `provenance` (plus `_init`) |
+| `hermem_contradiction_duration_seconds` | `detector` | `lexical`, `composite` (`semantic` reserved for phase 2.4; plus `_init`) |
+| `hermem_rerank_duration_seconds`    | `strategy` | `llm_openai`, `llm_ollama`, `noop` (plus `_init`)                       |
+
+Adding a new label value is intentionally not free: extend the matching
+`knownCategories` / `knownModes` / `knownDetectors` / `knownStrategies` slice
+and the corresponding `TestHermemPrefixContract_KnownCategoriesSet` /
+`_KnownModesSet` / `_KnownDetectorsSet` / `_KnownStrategiesSet` regression test.
+Cardinality stays bounded by the slice length, and the matching regression
+test fails closed if any of the slice drifts.
+
+Plus domain counters (inc/dec) for stores, searches, retrieves, queries, edges,
+errors, task creates/pend/complete/delete, and contradiction hits/misses. The
+exact series cardinality is bounded by `sum(1 + len(knownX))` for the four
+`HistogramVec`s plus the inc/dec counter families; see
+`TestHermemPrefixContract_AllHermemMetricsPresent` in
+`src/internal/metrics/metrics_test.go` for the assertion envelope and the
+`prometheus.collectorCount` gauge for a runtime reading.
+
+
+
+#### Sample Prometheus scrape config
+
+```yaml
+scrape_configs:
+  - job_name: hermem
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: /metrics
+    # If [server] api_key is set:
+    authorization:
+      type:       X-API-Key
+      credentials_file: /etc/hermem/api_key   # one-line secret
+```
+
+#### Local development
+
+```bash
+# binary exposes /metrics on the configured port.
+curl -s http://localhost:8080/metrics | head -40
+
+# helper script records a snapshot to a file for offline inspection.
+hermem metrics --format=text > /tmp/hermem-metrics.txt
+```
+
+#### Migration / regression guards
+
+Any future commit that adds a new label value must:
+
+1. Append the value to the corresponding `known[...]` slice in
+   `src/internal/metrics/metrics.go`.
+2. Update the matching `TestHermemPrefixContract_KnownCategoriesSet` /
+   `KnownModesSet` / `KnownDetectorsSet` / `KnownStrategiesSet` regression test.
+
+`slog` continues to be the structured-logging surface; Prometheus is the
+metrics surface. Both are independent and avoid double-counting.
+
 ---
 
 ## 20. Architecture & Dependency Injection

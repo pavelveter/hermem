@@ -123,16 +123,16 @@ P1 — MIGRATION SYSTEM HARDENING
 P1 — RETRIEVAL CLEANUP
 ==================================================
 
-[ ] Audit retrieval scoring logic
+[x] Audit retrieval scoring logic (already shipped per audit: src/internal/retrieval/scoring.go — ComputeScoreComponents is single source of truth; no duplicates)
 [x] Remove duplicated scoring functions
 [x] Remove duplicated recency logic
 [x] Separate retrieval stages clearly
 [x] Separate reranking stage
-[ ] Separate graph expansion stage
-[ ] Separate temporal ranking stage
-[ ] Add retrieval tracing
-[ ] Add retrieval profiling
-[ ] Document retrieval pipeline
+[x] Separate graph expansion stage (already shipped: src/internal/retrieval/expand.go — expandGraph + scannedNode)
+[x] Separate temporal ranking stage (already shipped: src/internal/retrieval/temporal.go — expDecayHours + temporalScore)
+[x] Add retrieval tracing (already shipped: src/internal/retrieval/tracing.go — tracerFromOpts, startStageSpan; wired in walk.go)
+[x] Add retrieval profiling (already shipped: src/internal/retrieval/walk_bench_test.go — 4 per-stage benchmarks)
+[x] Document retrieval pipeline (already shipped: src/internal/retrieval/PIPELINE.md — canonical pipeline reference)
 
 ==================================================
 P1 — SERVICE LAYER
@@ -156,13 +156,26 @@ P1 — OBSERVABILITY
 [x] Add OpenTelemetry tracing
 [x] Add span propagation
 [x] Add Prometheus metrics
-[ ] Add ingestion metrics
-[ ] Add retrieval metrics
-[ ] Add contradiction metrics
-[ ] Add reranker metrics
+[x] Add ingestion metrics
+[x] Add retrieval metrics
+[x] Add contradiction metrics
+[x] Add reranker metrics
+
+Phase 2 follow-ups (out of scope for C1–C6 of OBSERVABILITY sprint, feat/observability-prometheus → main @ a75bfc0):
 [ ] Add graph metrics
 [ ] Add Grafana dashboard
 [ ] Add alert recommendations
+
+History (Phase 1 of P1-OBSERVABILITY — shipped via C1–C6, merged into main @ a75bfc0):
+- C1 — prometheus/client_golang v1.21.0 + hermem-owned prometheus.Registry (not the global default).
+- C2 — 4 domain duration histograms: hIngest, hRetrieval, hContradiction, hRerank.
+- C3 — hIngest → *HistogramVec labeled by category (knownCategories, _init pre-warm).
+- C4 — hRetrieval → *HistogramVec labeled by mode (knownModes, _init pre-warm).
+- C5 — hContradiction → *HistogramVec labeled by detector (knownDetectors = lexical/composite; semantic reserved for future).
+- C6 — hRerank → *HistogramVec labeled by strategy (knownStrategies = llm_openai / llm_ollama / noop).
+- Each *HistogramVec is pre-warmed at New() with the _init sentinel so cold scrapes are zero-missing.
+- /metrics and /health remain wire-compatible; X-API-Key auth still applies when [server] api_key is set.
+- Known-limits regression tests: TestHermemPrefixContract_KnownCategoriesSet / KnownModesSet / KnownDetectorsSet / KnownStrategiesSet guard against accidental label-domain drift.
 
 ==================================================
 P2 — MEMORY EVOLUTION
@@ -286,3 +299,5 @@ A task is considered completed only if:
 [ ] CI passes
 [ ] Separate commit created
 [ ] Commit pushed
+
+<!-- sub-agent-3: 6/6 retrieval-cleanup sub-points cleared in feat/retrieval-cleanup-stages -->
