@@ -138,18 +138,11 @@ type SearchResult struct {
 	Similarity float32 `json:"similarity"`
 }
 
-// BulkPair is an ID+vector pair for batch ingestion.
-type BulkPair struct {
-	ID  string
-	Vec []float32
-}
-
 // VectorIndex is the interface for vector similarity search and storage.
 type VectorIndex interface {
 	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
 	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
 	Store(ctx context.Context, id string, vec []float32) error
-	BulkStore(ctx context.Context, pairs []BulkPair) error
 	Remove(ctx context.Context, ids []string) error
 }
 

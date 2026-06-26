@@ -24,9 +24,6 @@ func (m *mockVectorIndex) SearchBatch(ctx context.Context, vecs [][]float32, lim
 func (m *mockVectorIndex) Store(ctx context.Context, id string, vec []float32) error {
 	return nil
 }
-func (m *mockVectorIndex) BulkStore(ctx context.Context, pairs []core.BulkPair) error {
-	return nil
-}
 func (m *mockVectorIndex) Remove(ctx context.Context, ids []string) error {
 	return nil
 }

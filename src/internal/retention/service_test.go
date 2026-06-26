@@ -31,7 +31,6 @@ func (s *stubVI) SearchBatch(_ context.Context, _ [][]float32, _ int) ([][]strin
 	return nil, nil
 }
 func (s *stubVI) Store(_ context.Context, _ string, _ []float32) error { return nil }
-func (s *stubVI) BulkStore(_ context.Context, _ []core.BulkPair) error { return nil }
 func (s *stubVI) Remove(_ context.Context, ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
