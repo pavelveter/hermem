@@ -71,7 +71,7 @@ P0 — CONTRADICTION ENGINE 2.0
 [x] Add contradiction explanation output
 [x] Add contradiction benchmark dataset
 [x] Add contradiction evaluation metrics
-[ ] Add contradiction regression tests
+[x] Add contradiction regression tests
 
 ==================================================
 P0 — RETRIEVAL EXPLAINABILITY
