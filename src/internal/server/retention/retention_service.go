@@ -1,20 +1,8 @@
-// Package retention_http exposes retention.Service over HTTP.
-//
-// PHASE 3.3 — adds one NEW route (POST /admin/retention/run) that fires
-// retention.Service.RunOnce synchronously and returns a runResponse
-// envelope wrapping its GCReport. No HTTP surface for retention existed
-// pre-PHASE-3.3; the goroutine lived inside server.Server.Serve as a raw
-// algo.GarbageCollector call and the only observability was slog.Info
-// lines. HTTP clients now have their first read-write entry point into
-// the archive sweep: the handler returns the full GCReport (started_at,
-// finished_at, swept, error) so callers can verify the sweep outcome in
-// the same request lifecycle.
-//
-// Authenticity: the handler is synchronous by design — callers want
-// confirm-before-respond semantics so they can retry on partial archive.
-// The long-lived auto-Run loop is wired by cli/serve.go via
-// server.Server.Serve (unchanged drain order: HTTP → GC cancel → DB
-// close).
+// Package retention exposes retention.Service over HTTP. Synchronous
+// POST /admin/retention/run returns the GCReport envelope body
+// directly, regardless of HTTP status — bespoke envelope-as-body
+// contract that bypasses server.mapStatus on the success/failure path.
+// Long-lived auto-Run loop is wired separately by cli/serve.go.
 //
 // §3.2 — embeds shared.BaseHTTPService. DefaultPolicy stays as a
 // shell-local field (per-shell snapshot semantics, not part of the

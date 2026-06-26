@@ -1,17 +1,7 @@
-// Package memory hosts the write-side HTTP transport for the memory
-// subsystem, POST-PHASE 3.5.
-//
-// After PHASE 3.4 + PHASE 3.5 the HTTP shell exposes ONLY /store.
-// The /edge route moved to src/internal/server/edge/ (PHASE 3.5); the
-// /timeline route moved to src/internal/server/timeline/ (PHASE 3.5).
-// The /ingest route moved to src/internal/server/ingest/ (PHASE 3.4).
-// URLs are byte-identical so existing clients see no drift between
-// PHASE 3.3 and PHASE 3.5.
-//
-// Domain logic still lives in src/internal/memory (Service); this
-// package owns the only remaining transport concerns: POST /store
-// JSON encoding, method checks, request-body limits, schema-conflict
-// cross-state guard, and metrics increments.
+// Package memory exposes memory.Service over HTTP. Embeds
+// shared.BaseHTTPService for routing and metrics; /store is the only
+// route. Owns transport-only concerns: JSON encoding, method check,
+// request-body limits, schema-conflict guard, metrics.
 //
 // §3.2 — embeds shared.BaseHTTPService; DedupThreshold stays as a
 // shell-local field (shell-local snapshot semantics). The pre-§3.2

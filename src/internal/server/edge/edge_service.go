@@ -1,11 +1,4 @@
-// Package edge_http exposes edge.Service over HTTP.
-//
-// PHASE 3.5 — moves the /edge route out of src/internal/server/memory/
-// into this new shell following the PHASE 3.1 + 3.2 + 3.3 + 3.4
-// transport-extraction pattern. The memory HTTP shell no longer owns
-// /edge — the edge HTTP shell owns it exclusively. The /edge URL
-// stays byte-identical so existing clients see no URL drift between
-// PHASE 3.4 and PHASE 3.5.
+// Package edge exposes edge.Service over HTTP.
 //
 // §3.2 — embeds shared.BaseHTTPService; h.Wrap folds the
 // IncErr + WriteError(500,...) boilerplate at the Svc.AddEdge error

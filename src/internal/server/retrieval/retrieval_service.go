@@ -1,17 +1,7 @@
-// Package retrieval hosts the read-only HTTP transport for the retrieval
-// subsystem. Domain logic lives in src/internal/retrieval (Service);
-// this package owns transport-only concerns: JSON encoding, method
-// checks, request-body limits, schema-conflict guards where applicable,
-// and metric increments.
-//
-// /contradictions moved to src/internal/server/contradiction in
-// PHASE 2.3 (ContradictionService extraction). It is no longer in
-// this HTTP shell's Routes() registry.
-//
-// Following the same pattern as PHASE 2.1's MemoryService extraction:
-// HTTPService is a thin shell — parse → validate → call Svc.* →
-// write envelope. The domain service has no knowledge of HTTP,
-// httputil, serverstate.Ref, or metrics.
+// Package retrieval exposes retrieval.Service over HTTP. One §3.2
+// DELIBERATE EXCEPTION at /provenance (bespoke 400-on-all mapping
+// preserves pre-§3.2 client wire bytes; see retrieval_service.go
+// HandleProvenance for the rationale).
 //
 // §3.2 — embeds shared.BaseHTTPService. Five of six handlers route
 // through s.Wrap so the IncErr + WriteError(500,...) boilerplate is

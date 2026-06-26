@@ -1,15 +1,6 @@
-// Package task hosts the task-graph HTTP transport.
-//
-// Domain logic lives in src/internal/task (Service); this package owns
-// transport-only concerns: JSON encoding, method checks, request-body
-// limits, metric increments, and the route registry for /task/* and
-// /recovery-plan.
-//
-// Following the same pattern as PHASE 2.1 (memory), 2.2 (retrieval),
-// 2.3 (contradiction): HTTPService is a thin shell — parse → validate
-// → call Svc.* → write envelope. The domain Service has no
-// knowledge of HTTP, httputil, serverstate.Ref, or metrics; the schema
-// is loaded once per request via Refs and threaded into the domain.
+// Package task exposes task.Service over HTTP. Thin shell — parse /
+// validate / call Svc / write envelope. One §3.2 DELIBERATE EXCEPTION
+// at /task/status (bespoke 422/400 mapping).
 //
 // §3.2 — embeds shared.BaseHTTPService. Eight of nine handlers route
 // through s.Wrap so the IncErr + WriteError(500,...) boilerplate is
