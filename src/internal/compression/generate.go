@@ -11,6 +11,10 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
+const (
+	MaxRecursionDepth = 3
+)
+
 type Compressor struct {
 	db        *sql.DB
 	extractor core.LLMExtractor
@@ -45,6 +49,9 @@ func (cp *Compressor) Compress(ctx context.Context, entityIDs []string) (*Summar
 		Generation:     1,
 		ExtractorModel: "llm",
 	}
+	if err := insertSummaryNode(ctx, cp.db, *summary); err != nil {
+		return nil, fmt.Errorf("compression: persist summary: %w", err)
+	}
 	return summary, nil
 }
 
@@ -64,6 +71,92 @@ func (cp *Compressor) CompressCluster(ctx context.Context, clusters [][]string) 
 		return []*SummaryNode{}, nil
 	}
 	return nodes, nil
+}
+
+func (cp *Compressor) Recompress(ctx context.Context, summaryID string) (*SummaryNode, error) {
+	existing, err := loadSummaryNode(ctx, cp.db, summaryID)
+	if err != nil {
+		return nil, fmt.Errorf("compression: recompress load: %w", err)
+	}
+	if existing.Generation >= MaxRecursionDepth {
+		return nil, fmt.Errorf("compression: max recursion depth (%d) reached for %s", MaxRecursionDepth, summaryID)
+	}
+
+	sourceIDs := make([]string, len(existing.CompressedFrom))
+	copy(sourceIDs, existing.CompressedFrom)
+	sourceIDs = append(sourceIDs, summaryID)
+
+	entities, err := cp.loadEntities(ctx, sourceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("compression: recompress load entities: %w", err)
+	}
+	dialog := buildCompressionDialog(entities)
+	result, err := cp.extractor.ExtractEntities(ctx, dialog)
+	if err != nil {
+		return nil, fmt.Errorf("compression: recompress extract: %w", err)
+	}
+
+	id := core.NewTaskID()
+	provenance := fmt.Sprintf("recompressed from %s (gen %d) + %d entities at %s",
+		summaryID, existing.Generation, len(existing.CompressedFrom), time.Now().Format(time.RFC3339))
+
+	newNode := &SummaryNode{
+		ID:             fmt.Sprintf("summary-%s", id),
+		Content:        formatSummary(result),
+		CompressedFrom: sourceIDs,
+		CompressedAt:   time.Now(),
+		Confidence:     existing.Confidence,
+		Provenance:     provenance,
+		Generation:     existing.Generation + 1,
+		ExtractorModel: "llm",
+	}
+	if err := insertSummaryNode(ctx, cp.db, *newNode); err != nil {
+		return nil, fmt.Errorf("compression: persist recompressed: %w", err)
+	}
+
+	if err := markSuperseded(ctx, cp.db, summaryID, newNode.ID); err != nil {
+		return nil, fmt.Errorf("compression: mark superseded: %w", err)
+	}
+	return newNode, nil
+}
+
+func (cp *Compressor) Regenerate(ctx context.Context, summaryID string) (*SummaryNode, error) {
+	existing, err := loadSummaryNode(ctx, cp.db, summaryID)
+	if err != nil {
+		return nil, fmt.Errorf("compression: regenerate load: %w", err)
+	}
+
+	entities, err := cp.loadEntities(ctx, existing.CompressedFrom)
+	if err != nil {
+		return nil, fmt.Errorf("compression: regenerate load entities: %w", err)
+	}
+	dialog := buildCompressionDialog(entities)
+	result, err := cp.extractor.ExtractEntities(ctx, dialog)
+	if err != nil {
+		return nil, fmt.Errorf("compression: regenerate extract: %w", err)
+	}
+
+	newContent := formatSummary(result)
+	now := time.Now()
+	if err := updateSummaryNodeContent(ctx, cp.db, summaryID, newContent, now); err != nil {
+		return nil, fmt.Errorf("compression: regenerate persist: %w", err)
+	}
+
+	existing.Content = newContent
+	existing.RegeneratedAt = &now
+	existing.CompressedAt = time.Now()
+	return &existing, nil
+}
+
+func markSuperseded(ctx context.Context, db *sql.DB, oldID, newID string) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE summary_nodes SET superseded_by = ? WHERE id = ?`,
+		newID, oldID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark superseded %s -> %s: %w", oldID, newID, err)
+	}
+	return nil
 }
 
 func (cp *Compressor) loadEntities(ctx context.Context, ids []string) ([]core.Entity, error) {
