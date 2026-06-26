@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -221,30 +220,6 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 		idx.byID[id] = len(idx.entries)
 		idx.entries = append(idx.entries, entry)
 		idx.flatMatrix = append(idx.flatMatrix, stored...)
-	}
-	return nil
-}
-
-func (idx *InMemoryVectorIndex) BulkStore(_ context.Context, pairs []core.BulkPair) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
-	for _, p := range pairs {
-		stored := make([]float32, len(p.Vec))
-		copy(stored, p.Vec)
-		entry := vectorEntry{id: p.ID, vec: stored, norm: 1}
-		if i, ok := idx.byID[p.ID]; ok {
-			idx.entries[i] = entry
-			if idx.cols > 0 {
-				copy(idx.flatMatrix[i*idx.cols:(i+1)*idx.cols], stored)
-			}
-		} else {
-			if idx.cols == 0 {
-				idx.cols = len(stored)
-			}
-			idx.byID[p.ID] = len(idx.entries)
-			idx.entries = append(idx.entries, entry)
-			idx.flatMatrix = append(idx.flatMatrix, stored...)
-		}
 	}
 	return nil
 }

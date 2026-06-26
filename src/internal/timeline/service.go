@@ -1,8 +1,8 @@
 // Package timeline owns the transport-agnostic time-ordered entity
 // read API.
 //
-// PHASE 3.5 lifts Timeline out of memory.Service into its own flat
-// pkg following the PHASE 2.x + PHASE 3.1 + 3.2 + 3.3 + 3.4
+// lifts Timeline out of memory.Service into its own flat
+// pkg following the PHASE 2.x +
 // precedent: flat pkg, stateless Service, per-call args (limit). No
 // HTTP / CLI coupling in the domain pkg. The HTTP shell lives in
 // src/internal/server/timeline/.
@@ -42,7 +42,7 @@ func New(db *sql.DB) *Service {
 // normal case (extraction pipeline doesn't always populate
 // source/conversation/message ids).
 //
-// The TimelineEntry type MOVED here in PHASE 3.5 from
+// The TimelineEntry type MOVED here in from
 // src/internal/memory/service.go because it's the natural Timeline
 // return type. The transport shell (server/timeline) uses it as
 // the in-memory transport-only wire-shape backing struct.
@@ -62,7 +62,7 @@ type TimelineEntry struct {
 // implicit via the limit arg; the caller (HTTP shell or CLI shell)
 // is responsible for any deeper pagination scheme.
 //
-// mirroring the pre-PHASE-3.5 memory.Service.Timeline SQL verbatim
+// mirroring the memory.Service.Timeline SQL verbatim
 // so existing /timeline rows surface byte-identical to clients.
 func (s *Service) Timeline(ctx context.Context, limit int) ([]TimelineEntry, error) {
 	if limit < 0 {

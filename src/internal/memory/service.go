@@ -1,16 +1,16 @@
 // Package memory hosts the transport-agnostic MemoryService — the domain
-// write/read API for hermem's memory subsystem, POST-PHASE 3.5.
+// write/read API for hermem's memory subsystem, .
 //
 // Service carries no transport concerns: no http.ResponseWriter, no metrics
 // counters, no SIGHUP hooks, no reference to serverstate.Ref. Handlers (HTTP
 // shell in server/memory/, CLI shell in cli/memory/) own all cross-cutting
 // plumbing and delegate here for the actual domain work.
 //
-// After PHASE 3.4 + 3.5 the memory domain is a thin CRUD shell: only
+// After the memory domain is a thin CRUD shell: only
 // Store + StoreAndLink remain. The Ingest method moved to
-// src/internal/ingest/ (PHASE 3.4), AddEdge moved to src/internal/edge/
-// (PHASE 3.5), Timeline + TimelineEntry moved to src/internal/timeline/
-// (PHASE 3.5). The three Service fields (db, vi, embedder) cover
+// src/internal/ingest/ (), AddEdge moved to src/internal/edge/
+// (), Timeline + TimelineEntry moved to src/internal/timeline/
+// (). The three Service fields (db, vi, embedder) cover
 // Store + StoreAndLink: db + vi persist the row + write to the vector
 // index, embedder is used by StoreAndLink's vector.AutoLinkEdges for
 // the related_to auto-discovery path. The LLM extractor is no longer
@@ -40,16 +40,16 @@ import (
 // reload path (SIGHUP) constructs a fresh Service binding against the
 // new schema without touching a stateful singleton.
 //
-// Post-PHASE 3.5 the Service is a thin CRUD shell: only Store +
+// the Service is a thin CRUD shell: only Store +
 // StoreAndLink remain. Ingest moved to src/internal/ingest/ (PHASE
-// 3.4), AddEdge moved to src/internal/edge/ (PHASE 3.5), Timeline
-// moved to src/internal/timeline/ (PHASE 3.5). The remaining three
+// 3.4), AddEdge moved to src/internal/edge/ (), Timeline
+// moved to src/internal/timeline/ (). The remaining three
 // Service fields (db, vi, embedder) are all used by Store + StoreAndLink:
 // db + vi persist the row + write to the vector index, embedder is
 // used by StoreAndLink's vector.AutoLinkEdges for the related_to
 // auto-discovery path. The LLM extractor is now owned exclusively
 // by src/internal/ingest/ — passing it here would be dead weight
-// (no memory-domain method calls it post-PHASE 3.4).
+// (no memory-domain method calls it ).
 type Service struct {
 	db       *sql.DB
 	vi       core.VectorIndex
@@ -57,7 +57,7 @@ type Service struct {
 }
 
 // New constructs a Service. db + vi + embedder are the only deps
-// needed for the post-PHASE 3.4/3.5 surface (Store + StoreAndLink).
+// needed for the surface (Store + StoreAndLink).
 // The LLM extractor is no longer threaded through here — the
 // dialog-pipeline extractor wiring lives in src/internal/ingest/,
 // where it's actually consumed.
@@ -98,10 +98,10 @@ func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema core.
 // StoreAndLink is Store followed by vector.AutoLinkEdges. HTTP shell
 // calls this for `/store` so the new entity surfaces in the related_to
 // graph without a second HTTP hop. CLI /store continues to call plain
-// Store (pre-PHASE-2.1 behavior preserved: CLI never auto-linked).
+// Store ( behavior preserved: CLI never auto-linked).
 //
 // AutoLinkEdges is called with req.Embedding verbatim — no auto-embed
-// on empty. This matches pre-PHASE-2.1 HTTP shell behavior exactly:
+// on empty. This matches HTTP shell behavior exactly:
 // whatever embedding the caller supplied (possibly nil) is what
 // AutoLinkEdges sees.
 func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schema core.SchemaConfig) error {

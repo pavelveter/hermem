@@ -215,17 +215,6 @@ func (v *failingVIRecord) Remove(_ context.Context, ids []string) error {
 	return nil
 }
 
-// BulkStore is a no-op for the § 3.1 path: ProcessDialogWithProvenance
-// no longer calls it (BulkStore was removed in this round). The
-// no-op stub satisfies the static `core.VectorIndex` interface check
-// inside NewIngestionWorker even though the runtime path never invokes
-// it. Kept here — not deleted — because a future regression that
-// reintroduces BulkStore at runtime would surface silently without
-// this stub method being present.
-func (v *failingVIRecord) BulkStore(_ context.Context, _ []core.BulkPair) error {
-	return nil
-}
-
 // viSnapshot returns copies of stores/removes/callOrder under the
 // spy mutex so tests can assert on the recorded call sequence
 // without racing the ingest goroutine.

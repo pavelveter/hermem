@@ -1,6 +1,6 @@
 // Package shared provides HTTP helpers shared across server sub-packages.
 //
-// These were previously duplicated verbatim in server/memory and server/edge.
+// These were in server/memory and server/edge.
 // Consolidating them here eliminates copy-paste and gives a single place
 // for schema-conflict guard evolution.
 package shared

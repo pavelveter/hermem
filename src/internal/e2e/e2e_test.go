@@ -455,7 +455,7 @@ func contains(slice []string, s string) bool {
 	return false
 }
 
-func taskIDs(tasks []core.Entity) []string {
+func taskIDs(tasks []core.Task) []string {
 	out := make([]string, len(tasks))
 	for i, t := range tasks {
 		out[i] = t.ID
@@ -463,7 +463,7 @@ func taskIDs(tasks []core.Entity) []string {
 	return out
 }
 
-func containsEntity(tasks []core.Entity, id string) bool {
+func containsEntity(tasks []core.Task, id string) bool {
 	for _, t := range tasks {
 		if t.ID == id {
 			return true

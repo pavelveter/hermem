@@ -138,18 +138,11 @@ type SearchResult struct {
 	Similarity float32 `json:"similarity"`
 }
 
-// BulkPair is an ID+vector pair for batch ingestion.
-type BulkPair struct {
-	ID  string
-	Vec []float32
-}
-
 // VectorIndex is the interface for vector similarity search and storage.
 type VectorIndex interface {
 	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
 	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
 	Store(ctx context.Context, id string, vec []float32) error
-	BulkStore(ctx context.Context, pairs []BulkPair) error
 	Remove(ctx context.Context, ids []string) error
 }
 
@@ -209,14 +202,14 @@ type ScoreBreakdown struct {
 
 // RetrievedFact is one re-ranked item in a category bucket.
 type RetrievedFact struct {
-	Content       string          `json:"content"`
-	ParentID      string          `json:"parent_id,omitempty"`
-	RelationType  string          `json:"relation_type,omitempty"`
-	Depth         int             `json:"depth"`
-	VectorScore   float32         `json:"vector_score,omitempty"`
-	RecencyScore  float32         `json:"recency_score,omitempty"`
-	DepthPenalty  float32         `json:"depth_penalty,omitempty"`
-	RankingScore  float32         `json:"ranking_score,omitempty"`
+	Content        string          `json:"content"`
+	ParentID       string          `json:"parent_id,omitempty"`
+	RelationType   string          `json:"relation_type,omitempty"`
+	Depth          int             `json:"depth"`
+	VectorScore    float32         `json:"vector_score,omitempty"`
+	RecencyScore   float32         `json:"recency_score,omitempty"`
+	DepthPenalty   float32         `json:"depth_penalty,omitempty"`
+	RankingScore   float32         `json:"ranking_score,omitempty"`
 	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
 }
 
@@ -227,13 +220,13 @@ type Reranker interface {
 
 // GraphNode is one node returned by the graph-walk CTE.
 type GraphNode struct {
-	Entity        Entity          `json:"entity"`
-	Relations     []Edge          `json:"relations,omitempty"`
-	Depth         int             `json:"depth"`
-	PathWeight    float32         `json:"path_weight,omitempty"`
-	ParentID      string          `json:"parent_id"`
-	RelationType  string          `json:"relation_type,omitempty"`
-	RankingScore  float32         `json:"ranking_score"`
+	Entity         Entity          `json:"entity"`
+	Relations      []Edge          `json:"relations,omitempty"`
+	Depth          int             `json:"depth"`
+	PathWeight     float32         `json:"path_weight,omitempty"`
+	ParentID       string          `json:"parent_id"`
+	RelationType   string          `json:"relation_type,omitempty"`
+	RankingScore   float32         `json:"ranking_score"`
 	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
 }
 
@@ -390,7 +383,7 @@ type TaskStatusRequest struct {
 }
 
 type TaskExecutableResponse struct {
-	Tasks []Entity `json:"tasks"`
+	Tasks []Task `json:"tasks"`
 }
 
 type TaskListRequest struct {
@@ -403,7 +396,7 @@ type TaskShowRequest struct {
 }
 
 type TaskShowResponse struct {
-	Entity      Entity `json:"entity"`
+	Entity      Task   `json:"entity"`
 	BlockedBy   []Edge `json:"blocked_by"`
 	RecoversVia []Edge `json:"recovers_via"`
 }

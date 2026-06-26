@@ -9,13 +9,13 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// ListTasks returns task entities filtered by optional status and goal subtree.
-func ListTasks(db *sql.DB, schema core.SchemaConfig, status, goalID string) ([]core.Entity, error) {
+// ListTasks returns tasks (slim core.Task) filtered by optional status and goal subtree.
+func ListTasks(db *sql.DB, schema core.SchemaConfig, status, goalID string) ([]core.Task, error) {
 	var wheres []string
 	var args []interface{}
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	if catPH == "" {
-		return []core.Entity{}, nil
+		return []core.Task{}, nil
 	}
 	wheres = append(wheres, "e.category IN ("+catPH+") AND e.archived = 0")
 	args = append(args, catArgs...)
@@ -36,51 +36,56 @@ func ListTasks(db *sql.DB, schema core.SchemaConfig, status, goalID string) ([]c
 		return nil, fmt.Errorf("list tasks: %w", err)
 	}
 	defer rows.Close()
-	return ScanTaskEntities(rows)
+	tasks, err := ScanTaskEntities(rows)
+	if err != nil {
+		return nil, err
+	}
+	return core.NormalizeSlice(tasks), nil
 }
 
-// GetTaskWithRelations returns a task entity plus its blocked_by and recovers_via edges.
-func GetTaskWithRelations(db *sql.DB, schema core.SchemaConfig, id string) (core.Entity, []core.Edge, []core.Edge, error) {
+// GetTaskWithRelations returns a slim core.Task plus its blocked_by and recovers_via edges.
+func GetTaskWithRelations(db *sql.DB, schema core.SchemaConfig, id string) (core.Task, []core.Edge, []core.Edge, error) {
 	var e core.Entity
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{id}, catArgs...)
 	err := db.QueryRow("SELECT id, category, content, COALESCE(status, '') AS status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return core.Entity{}, nil, nil, fmt.Errorf("task not found: %s", id)
+		return core.Task{}, nil, nil, fmt.Errorf("task not found: %s", id)
 	}
 	if err != nil {
-		return core.Entity{}, nil, nil, fmt.Errorf("get task: %w", err)
+		return core.Task{}, nil, nil, fmt.Errorf("get task: %w", err)
 	}
+	task := core.Task{Fact: core.Fact{ID: e.ID, Category: e.Category, Content: e.Content}, Status: e.Status}
 	blocked, err := QueryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE source_id = ? AND relation_type = ?", id, schema.RelationBlocking)
 	if err != nil {
-		return core.Entity{}, nil, nil, err
+		return core.Task{}, nil, nil, err
 	}
 	recovers, err := QueryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE source_id = ? AND relation_type = ?", id, schema.RelationRecovery)
 	if err != nil {
-		return core.Entity{}, nil, nil, err
+		return core.Task{}, nil, nil, err
 	}
-	return e, blocked, recovers, nil
+	return task, blocked, recovers, nil
 }
 
-// GetTaskByID returns a task entity by ID.
-func GetTaskByID(db *sql.DB, schema core.SchemaConfig, id string) (core.Entity, error) {
+// GetTaskByID returns a slim core.Task by ID.
+func GetTaskByID(db *sql.DB, schema core.SchemaConfig, id string) (core.Task, error) {
 	var e core.Entity
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{id}, catArgs...)
 	err := db.QueryRow("SELECT id, category, content, COALESCE(status, '') AS status, updated_at FROM entities WHERE id = ? AND category IN ("+catPH+")", args...).Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return core.Entity{}, fmt.Errorf("task not found: %s", id)
+		return core.Task{}, fmt.Errorf("task not found: %s", id)
 	}
 	if err != nil {
-		return core.Entity{}, fmt.Errorf("get task: %w", err)
+		return core.Task{}, fmt.Errorf("get task: %w", err)
 	}
-	return e, nil
+	return core.Task{Fact: core.Fact{ID: e.ID, Category: e.Category, Content: e.Content}, Status: e.Status}, nil
 }
 
-// GetTasksByIDs returns a map of task entities for the given IDs.
-func GetTasksByIDs(db *sql.DB, schema core.SchemaConfig, ids []string) (map[string]core.Entity, error) {
+// GetTasksByIDs returns a map of slim core.Task values for the given IDs.
+func GetTasksByIDs(db *sql.DB, schema core.SchemaConfig, ids []string) (map[string]core.Task, error) {
 	if len(ids) == 0 {
-		return map[string]core.Entity{}, nil
+		return map[string]core.Task{}, nil
 	}
 	phs, args := InClauseArgs(ids)
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
@@ -91,13 +96,13 @@ func GetTasksByIDs(db *sql.DB, schema core.SchemaConfig, ids []string) (map[stri
 		return nil, fmt.Errorf("get tasks by ids: %w", err)
 	}
 	defer rows.Close()
-	out := make(map[string]core.Entity)
+	out := make(map[string]core.Task)
 	for rows.Next() {
 		var e core.Entity
 		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
-		out[e.ID] = e
+		out[e.ID] = core.Task{Fact: core.Fact{ID: e.ID, Category: e.Category, Content: e.Content}, Status: e.Status}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate tasks: %w", err)
@@ -115,11 +120,11 @@ func GetRecoversVia(db *sql.DB, schema core.SchemaConfig, id string) ([]core.Edg
 	return QueryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE target_id = ? AND relation_type = ?", id, schema.RelationRecovery)
 }
 
-// GetRootTasks returns tasks that have no blocked_by edges.
-func GetRootTasks(db *sql.DB, schema core.SchemaConfig) ([]core.Entity, error) {
+// GetRootTasks returns slim core.Tasks that have no blocked_by edges.
+func GetRootTasks(db *sql.DB, schema core.SchemaConfig) ([]core.Task, error) {
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	if catPH == "" {
-		return []core.Entity{}, nil
+		return []core.Task{}, nil
 	}
 	query := `SELECT e.id, e.category, e.content, COALESCE(e.status, '') AS status, e.updated_at, COALESCE(e.priority, 0) FROM entities e WHERE e.category IN (` + catPH + `) AND e.archived = 0 AND NOT EXISTS (SELECT 1 FROM edges WHERE target_id = e.id AND relation_type = ?)`
 	args := append(catArgs, schema.RelationBlocking)
@@ -128,7 +133,11 @@ func GetRootTasks(db *sql.DB, schema core.SchemaConfig) ([]core.Entity, error) {
 		return nil, fmt.Errorf("get root tasks: %w", err)
 	}
 	defer rows.Close()
-	return ScanTaskEntities(rows)
+	tasks, err := ScanTaskEntities(rows)
+	if err != nil {
+		return nil, err
+	}
+	return core.NormalizeSlice(tasks), nil
 }
 
 // GetTaskTree builds a tree of tasks starting from rootID.
@@ -258,19 +267,24 @@ func blockedEdgesToSourceIDs(edges []core.Edge) []string {
 	return out
 }
 
-// ScanTaskEntities scans rows into an Entity slice.
-func ScanTaskEntities(rows *sql.Rows) ([]core.Entity, error) {
-	var tasks []core.Entity
+// ScanTaskEntities scans rows into a slim core.Task slice. Projects
+// Entity-scan variables into core.Task via explicit field assignment —
+// bypasses entity.AsTask() because its current implementation lets the
+// embedded Fact go zero-valued (Go anon-embed promotion does not
+// auto-fill from an outer struct's named fields).
+func ScanTaskEntities(rows *sql.Rows) ([]core.Task, error) {
+	var tasks []core.Task
 	for rows.Next() {
 		var e core.Entity
 		var priority sql.NullInt64
 		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &e.Status, &e.UpdatedAt, &priority); err != nil {
 			return nil, fmt.Errorf("scan task entity: %w", err)
 		}
+		t := core.Task{Fact: core.Fact{ID: e.ID, Category: e.Category, Content: e.Content}, Status: e.Status}
 		if priority.Valid {
-			e.Priority = int(priority.Int64)
+			t.Priority = int(priority.Int64)
 		}
-		tasks = append(tasks, e)
+		tasks = append(tasks, t)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate tasks: %w", err)

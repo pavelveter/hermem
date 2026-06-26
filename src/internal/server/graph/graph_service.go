@@ -48,14 +48,6 @@ func New(svc *graphsvc.Service, m *metrics.Metrics, refs *serverstate.Ref, dim i
 
 // Routes returns the URL → handler mapping for this shell.
 //
-// Three endpoints:
-//   - /connected-components (moved from AdminService in PHASE 3.1)
-//   - /communities          (moved from AdminService in PHASE 3.1)
-//   - /graph/verify         (NEW — algo.VerifyGraph exposed over HTTP)
-//
-// Pre-PHASE-3.1 /connected-components and /communities lived in
-// AdminService.Routes(). They are removed there.
-//
 // §3.2 — all three handlers route through s.Wrap.
 func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
@@ -116,11 +108,10 @@ func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) 
 
 // HandleGraphVerify — GET /graph/verify.
 //
-// §3.2 — error-returning handler. The "no server state" pre-check
-// was a transport-side concern pre-§3.2; defer it to mapStatus by
-// returning a sentinel error wrapping the literal message. The
-// serverstate-is-nil condition should not occur in production but
-// is kept as a defensive 500 path.
+// §3.2 — error-returning handler. Defer the no-state pre-check to
+// mapStatus by returning a sentinel error wrapping the literal
+// message. The serverstate-is-nil condition is kept as a defensive
+// 500 path in production even though it should not occur.
 func (s *HTTPService) HandleGraphVerify(w http.ResponseWriter, r *http.Request) error {
 	s.Metrics.IncGraphVerify()
 	state := s.Refs.Load()
@@ -143,5 +134,4 @@ func (s *HTTPService) HandleGraphVerify(w http.ResponseWriter, r *http.Request) 
 
 // HandleGraphVerify's defensive state==nil branch returns
 // shared.ErrNoServerState so that mapStatus routes to (500, "no
-// server state") — identical wire bytes to the pre-§3.2 inline
-// WriteError(500, ...) branch.
+// server state").

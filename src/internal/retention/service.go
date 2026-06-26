@@ -1,9 +1,9 @@
 // Package retention owns the transport-agnostic garbage-collection / archive
 // sweep for stale observation entities.
 //
-// PHASE 3.3 lifts the sweep loop out of src/internal/algo/gc.go (which is
+// lifts the sweep loop out of src/internal/algo/gc.go (which is
 // deleted in this phase) into a flat pkg following the PHASE 2.x + PHASE
-// 3.1 + PHASE 3.2 precedent: stateless Service, per-call policy, no HTTP /
+// 3.1 + precedent: stateless Service, per-call policy, no HTTP /
 // CLI coupling. The HTTP shell lives in src/internal/server/retention/.
 //
 // Concurrency contract: the long-lived Run loop calls RunOnce on a ticker;
@@ -26,7 +26,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// GCReport is the envelope returned by RunOnce. Simpler than PHASE 3.1's
+// GCReport is the envelope returned by RunOnce. Simpler than 's
 // ConnectedComponent (no nested lists) because a sweep has flat scalar
 // outcomes: a timestamp pair, a single Swept count, and an optional Error.
 // The HTTP shell's POST /admin/retention/run handler returns this struct
@@ -58,7 +58,7 @@ func New(db *sql.DB, vi core.VectorIndex) *Service {
 // Each sweep delegates to RunOnce so the loop body and the one-shot code
 // path stay identical. The HTTP shell's lifecycle manager (see
 // src/internal/server/server.go Serve) wires Run into a goroutine that is
-// cancelled before close, matching the pre-PHASE-3.3 drain order:
+// cancelled before close, matching the drain order:
 // HTTP → GC cancel → DB close.
 func (s *Service) Run(ctx context.Context, policy core.RetentionPolicy) {
 	ticker := time.NewTicker(policy.RunInterval)
@@ -92,7 +92,7 @@ func (s *Service) Run(ctx context.Context, policy core.RetentionPolicy) {
 // below mutates the named-return copy of the envelope, so callers always
 // see the post-deferred timestamp. Returning `rep.X = Y; err = Z; return`
 // (rather than `return rep, Z`) keeps the defer effect observable on
-// every code path. PHASE 3.3 review-flagged bug: an earlier draft used a
+// every code path. review-flagged bug: an earlier draft used a
 // local GCReport + deferred stamp, which produced a zero FinishedAt on
 // every early-return path because the defer mutated the local copy
 // AFTER the return value had already been captured by the caller.

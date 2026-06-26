@@ -20,9 +20,6 @@ func newStoreCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
-			// Pre-validation kept at CLI for verbatim message parity with
-			// pre-PHASE-2.1 command behavior — service.Store also enforces
-			// the same checks as defense-in-depth for non-CLI callers.
 			if req.ID == "" || req.Category == "" || req.Content == "" {
 				return fmt.Errorf("id, category, content required")
 			}

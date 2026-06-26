@@ -36,10 +36,4 @@ func (n SummaryNode) AsEntity() core.Entity {
 	}
 }
 
-func EntityAsSummaryNode(e core.Entity) SummaryNode {
-	return SummaryNode{
-		ID:         e.ID,
-		Content:    e.Content,
-		Confidence: e.Confidence,
-	}
-}
+

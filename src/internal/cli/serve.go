@@ -67,25 +67,25 @@ func runServe(env *clienv.Env, port string) error {
 	)
 
 	refs := serverstate.NewRef(buildState(env.Cfg, env.Reranker))
-	// PHASE 2.1: build the memory domain Service once and hand the HTTP shell
+	// : build the memory domain Service once and hand the HTTP shell
 	// (server/memory) a borrowed pointer. IngestionWorker was created
-	// inside Mem.Ingest per call pre-PHASE-3.4 (now constructed inside
+	// inside Mem.Ingest per call (now constructed inside
 	// ingest.Service.Ingest). The LLM extractor is no longer threaded
-	// through memory.Service post-PHASE 3.4/3.5 — the dialog-pipeline
+	// through memory.Service — the dialog-pipeline
 	// extractor wiring lives in src/internal/ingest/, where it's actually
 	// consumed.
 	memSvc := memdomain.New(env.DB, env.VI, env.Embedder)
-	// PHASE 3.5: edge domain Service owns the relation-edge write API
+	// : edge domain Service owns the relation-edge write API
 	// (AddEdge + auto-create dispatch). vi + embedder are held so the
 	// auto-create path can call vector.AddEdgeWithAutoCreate without
 	// constructor branching on each invocation.
 	edgeSvc := edgedomain.New(env.DB, env.VI, env.Embedder)
-	// PHASE 3.5: timeline domain Service owns the read-only time-ordered
+	// : timeline domain Service owns the read-only time-ordered
 	// entity projection. db-only — no embedder, no vector index, no
 	// schema gates (read surface, not write surface).
 	timelineSvc := timelinedomain.New(env.DB)
-	// PHASE 3.6: reembed domain Service owns the batch re-embedding
-	// orchestrator moved from algo/reembed.go (deleted in this phase).
+	// : reembed domain Service owns the batch re-embedding
+
 	// The three deps (db, vi, embedder) are Service fields; per-call
 	// args (dim, batchSize, model) come from the request.
 	healthSvc := healthdomain.New(
@@ -96,27 +96,27 @@ func runServe(env *clienv.Env, port string) error {
 		healthdomain.DiskSpaceProbe(env.Cfg.DBPath),
 	).WithMetrics(env.Metrics)
 	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
-	// PHASE 2.2: same shape for retrieval. The domain Service owns
+	// : same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.
 	retSvc := retdomain.New(env.DB, env.VI, env.Embedder)
-	// PHASE 2.3: contradiction domain Service is read-only and
+	// : contradiction domain Service is read-only and
 	// DB-only (no vector index / embedder / schema); same shape as
 	// retrieval/memory but slimmer dependencies.
 	cndSvc := contradictdomain.New(env.DB)
-	// PHASE 2.4: task domain Service holds db + embedder + vi. The
+	// : task domain Service holds db + embedder + vi. The
 	// embedded AutoLinkEdges inside Service.Create is the only call
 	// path that uses embedder + vi; all other methods are pure SQL.
 	// The HTTP shell (server/task) takes a borrowed pointer to this
 	// Service and threads it into the 10-endpoint mux.
 	taskSvc := taskdomain.New(env.DB, env.Embedder, env.VI)
-	// PHASE 3.1: graph domain Service is read-only and DB-only
-	// (same shape as contradiction's PHASE 2.3 precedent). The
+	// : graph domain Service is read-only and DB-only
+	// (same shape as contradiction's precedent). The
 	// HTTP shell mounts /connected-components + /communities
 	// (moved from AdminService) plus the NEW /graph/verify. Dim
 	// is loaded once from cfg at boot — VectorDim is a static
 	// dimensional commitment for the lifetime of the daemon.
 	graphSvc := graphdomain.New(env.DB)
-	// PHASE 3.2: migration domain Service covers schema / migration
+	// : migration domain Service covers schema / migration
 	// inspection (db/migrate / db/rollback / db/verify / db/schema).
 	// OUT OF SCOPE: store.RunMigrations + store.StoreSchemaFingerprint
 	// stay in store/ — they are bootstrapping mutating hooks called
@@ -124,18 +124,18 @@ func runServe(env *clienv.Env, port string) error {
 	// request-time reads. The HTTP shell exposes 4 NEW routes that
 	// previously had no HTTP surface (only CLI subcommands).
 	migrSvc := migrationdomain.New(env.DB)
-	// PHASE 3.4: ingest domain Service owns the synchronous dialog
+	// : ingest domain Service owns the synchronous dialog
 	// pipeline orchestration (extraction -> embed -> dedup -> upsert
 	// -> edges). Constructs an IngestionWorker PER CALL inside
-	// Ingest() — preserves the pre-PHASE-2.1 SIGHUP-race-free invariant.
+	// Ingest() — preserves the SIGHUP-race-free invariant.
 	// The HTTP shell replaces the previously-on-server/memory-shell
 	// HandleIngest route; the URL stays at /ingest. /ingest/jobs GET
 	// endpoint is NEW.
 	ingestSvc := ingestdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
-	// PHASE 3.3: retention domain Service owns the archive sweep
+	// : retention domain Service owns the archive sweep
 	// (RunOnce + Run loop). DefaultPolicy is captured at construction
 	// from cfg.Retention and passed to the HTTP shell; SIGHUP does not
-	// propagate policy changes (matches pre-PHASE-3.3 closure-capture
+	// propagate policy changes (matches closure-capture
 	// behaviour inside server.Server.Serve). The long-lived Run
 	// goroutine is wired by server.Server.Serve directly — cli/serve.go
 	// is only responsible for constructing the domain Service + HTTP
