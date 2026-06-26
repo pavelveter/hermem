@@ -1,0 +1,124 @@
+{
+  "title": "Hermem / Prometheus",
+  "uid": "hermem-main",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Ingest",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "displayMode": "table" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, category)(rate(hermem_ingest_duration_seconds_bucket{category=~\"^(observation|world|task|edge)$\"}[5m])))",
+          "legendFormat": "{{category}}",
+          "datasource": { "uid": "prometheus", "type": "prometheus" }
+        }
+      ],
+      "options": { "legend": { "show": true, "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "id": 2,
+      "title": "Retrieval",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "displayMode": "table" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, mode)(rate(hermem_retrieval_duration_seconds_bucket{mode=~\"^(search|retrieve|query|response|query_explain|provenance)$\"}[5m])))",
+          "legendFormat": "{{mode}}",
+          "datasource": { "uid": "prometheus", "type": "prometheus" }
+        }
+      ],
+      "options": { "legend": { "show": true, "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "id": 3,
+      "title": "Contradiction",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "displayMode": "table" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, detector)(rate(hermem_contradiction_duration_seconds_bucket{detector=~\"^(lexical|composite)$\"}[5m])))",
+          "legendFormat": "{{detector}}",
+          "datasource": { "uid": "prometheus", "type": "prometheus" }
+        }
+      ],
+      "options": { "legend": { "show": true, "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "id": 4,
+      "title": "Rerank",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "displayMode": "table" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, strategy)(rate(hermem_rerank_duration_seconds_bucket{strategy=~\"^(llm_openai|llm_ollama|noop)$\"}[5m])))",
+          "legendFormat": "{{strategy}}",
+          "datasource": { "uid": "prometheus", "type": "prometheus" }
+        }
+      ],
+      "options": { "legend": { "show": true, "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "id": 5,
+      "title": "Health",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 32 },
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "value": "0", "text": "DOWN" },
+            { "type": "value", "value": "1", "text": "UP" }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"hermem\"}",
+          "datasource": { "uid": "prometheus", "type": "prometheus" }
+        }
+      ],
+      "options": { "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    }
+  ],
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "schemaVersion": 37,
+  "version": 1
+}
