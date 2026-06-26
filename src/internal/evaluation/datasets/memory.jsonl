@@ -1,0 +1,30 @@
+{"query_id": "mem-q-01", "relevant_docs": ["ent-010", "ent-091"]}
+{"query_id": "mem-q-02", "relevant_docs": ["ent-005", "ent-008", "ent-009", "ent-030"]}
+{"query_id": "mem-q-03", "relevant_docs": ["ent-010", "ent-031", "ent-066"]}
+{"query_id": "mem-q-04", "relevant_docs": ["ent-028", "ent-063", "ent-086"]}
+{"query_id": "mem-q-05", "relevant_docs": ["ent-017", "ent-061", "ent-074", "ent-093"]}
+{"query_id": "mem-q-06", "relevant_docs": ["ent-053", "ent-061"]}
+{"query_id": "mem-q-07", "relevant_docs": ["ent-013", "ent-085"]}
+{"query_id": "mem-q-08", "relevant_docs": ["ent-046", "ent-053", "ent-055"]}
+{"query_id": "mem-q-09", "relevant_docs": ["ent-007", "ent-087", "ent-094"]}
+{"query_id": "mem-q-10", "relevant_docs": ["ent-008", "ent-013", "ent-052", "ent-083"]}
+{"query_id": "mem-q-11", "relevant_docs": ["ent-014", "ent-025", "ent-032", "ent-044"]}
+{"query_id": "mem-q-12", "relevant_docs": ["ent-058", "ent-069"]}
+{"query_id": "mem-q-13", "relevant_docs": ["ent-024", "ent-055"]}
+{"query_id": "mem-q-14", "relevant_docs": ["ent-010", "ent-032", "ent-060"]}
+{"query_id": "mem-q-15", "relevant_docs": ["ent-007", "ent-013", "ent-071"]}
+{"query_id": "mem-q-16", "relevant_docs": ["ent-002", "ent-012", "ent-070", "ent-097"]}
+{"query_id": "mem-q-17", "relevant_docs": ["ent-022", "ent-053"]}
+{"query_id": "mem-q-18", "relevant_docs": ["ent-028", "ent-052", "ent-062"]}
+{"query_id": "mem-q-19", "relevant_docs": ["ent-022", "ent-049"]}
+{"query_id": "mem-q-20", "relevant_docs": ["ent-034", "ent-050"]}
+{"query_id": "mem-q-21", "relevant_docs": ["ent-037", "ent-055", "ent-090"]}
+{"query_id": "mem-q-22", "relevant_docs": ["ent-063", "ent-072", "ent-085", "ent-092"]}
+{"query_id": "mem-q-23", "relevant_docs": ["ent-025", "ent-038"]}
+{"query_id": "mem-q-24", "relevant_docs": ["ent-008", "ent-075"]}
+{"query_id": "mem-q-25", "relevant_docs": ["ent-008", "ent-041", "ent-070", "ent-096"]}
+{"query_id": "mem-q-26", "relevant_docs": ["ent-007", "ent-075"]}
+{"query_id": "mem-q-27", "relevant_docs": ["ent-021", "ent-065", "ent-068"]}
+{"query_id": "mem-q-28", "relevant_docs": ["ent-011", "ent-066"]}
+{"query_id": "mem-q-29", "relevant_docs": ["ent-009", "ent-077"]}
+{"query_id": "mem-q-30", "relevant_docs": ["ent-031", "ent-087"]}
