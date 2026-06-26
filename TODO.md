@@ -142,12 +142,12 @@ P1 — SERVICE LAYER
 [x] Create RetrievalService
 [x] Create ContradictionService
 [x] Create TaskService
-[ ] Create EpisodeService
-[ ] Create GoalService
+[x] Create EpisodeService
+[x] Create GoalService
 [x] Remove business logic from HTTP handlers
 [x] Remove business logic from CLI commands
 [x] Add service-level tests
-[ ] Document service boundaries
+[x] Document service boundaries
 
 ==================================================
 P1 — OBSERVABILITY
@@ -317,3 +317,4 @@ A task is considered completed only if:
 <!-- sub-agent-10 -->
 <!-- sub-agent-11 -->
 <!-- sub-agent-12 -->
+<!-- sub-agent-13: P1 SERVICE LAYER — EpisodeService + GoalService + service boundaries docs -->
