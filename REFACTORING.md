@@ -294,7 +294,7 @@ sub-packages. Or at minimum add a `doc.go` with package organization notes.
 
 ---
 
-### [ ] 5.3 `episodic/` duplicates P1 `episode/` service layer
+### [x] 5.3 `episodic/` duplicates P1 `episode/` service layer
 
 **Files:**
 - `src/internal/episodic/` — 7 files (episode, session, event, timeline,
