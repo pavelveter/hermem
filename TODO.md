@@ -161,6 +161,8 @@ P1 — OBSERVABILITY
 [x] Add contradiction metrics
 [x] Add reranker metrics
 
+[x] Add hermem diagnose CLI for self-diagnostics
+
 Phase 2 follow-ups (out of scope for C1–C6 of OBSERVABILITY sprint, feat/observability-prometheus → main @ a75bfc0):
 [ ] Add graph metrics
 [ ] Add Grafana dashboard
@@ -308,3 +310,4 @@ A task is considered completed only if:
 <!-- sub-agent-2: 5/5 evaluation-framework sub-points complete in feat/evaluation-framework -->
 
 <!-- sub-agent-7 -->
+<!-- sub-agent-8 -->
