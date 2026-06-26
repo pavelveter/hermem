@@ -64,7 +64,7 @@ P0 — CONTRADICTION ENGINE 2.0
 [x] Extract contradiction detection behind interface
 [x] Create ContradictionDetector interface
 [x] Implement LexicalDetector
-[ ] Implement EmbeddingDetector
+[x] Implement EmbeddingDetector
 [ ] Implement LLMDetector
 [x] Add detector composition pipeline
 [x] Add contradiction confidence scoring
@@ -155,7 +155,7 @@ P1 — OBSERVABILITY
 
 [x] Add OpenTelemetry tracing
 [x] Add span propagation
-[x] Add Prometheus metrics
+[ ] Add Prometheus metrics
 [ ] Add ingestion metrics
 [ ] Add retrieval metrics
 [ ] Add contradiction metrics

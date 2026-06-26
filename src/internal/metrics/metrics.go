@@ -1,18 +1,17 @@
-// Package metrics owns hermem_* Prometheus metrics and exposes a single
-// hermem-owned *prometheus.Registry the HTTP layer can serve via promhttp.
+// Package metrics holds the dependency-injected request counters + the
+// Prometheus exposition writer.
 //
-// OBSERVABILITY sprint commit 1/8 added a Prometheus driver layer underneath
-// the original Metrics struct (atomic.Int64 + IncXxx methods preserved
-// byte-compatibly from e2aa722). Each IncXxx bumps BOTH the atomic counter
-// (legacy expvar-style view) AND a prometheus.Counter; both layers are
-// safe for concurrent use.
+// State model: every counter is a field of the Metrics struct (atomic.Int64).
+// The Metrics struct is constructed once per process via metrics.New() and
+// threaded through clienv.Env → server service constructors → HTTP handlers.
+// This replaces the round-1 through round-8 package-level atomic.Int64
+// globals — removes the cross-test pollution surface area and makes the
+// counter wiring unit-testable without lockstep cleanup between tests.
 //
-// IMPORTANT (called out for future maintainers): per-domain collectors
-// added by commits 2-6 (Histograms for retrieval/query latency, GaugeVecs
-// for graph depth, vec counters tagged by mode, etc.) register on the
-// SAME *prometheus.Registry returned by PrometheusRegistry(). Do NOT call
-// prometheus.MustRegister / promauto — that pins to the global default
-// and silently defeats the hermem-owned intent.
+// async-metrics (the per-entity last_accessed_at tracking) is owned by a
+// separate concern: AsyncMetricsWorker (worker.go). It batches writes to
+// the metrics_entity_access SQLite table — a different state model
+// (DB-backed, not in-process atomic) — and is NOT refactored in this PR.
 package metrics
 
 import (
@@ -20,242 +19,108 @@ import (
 	"io"
 	"net/http"
 	"sync/atomic"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics is the hermem-wide counter bag.
-// Migration cheat-sheet (when adding a new IncXxx metric):
+// Metrics holds the Prometheus-style request counters as atomic.Int64 fields.
+// Methods Inc* increment and WriteExposition emits the canonical exposition
+// text format; MetricsHandler is the HTTP wrapper.
 //
-// A maintainer adding e.g. IncConnect must edit 7 spots in this file, in order:
-//
-//	1. Struct atomic field — add `connectCount atomic.Int64` to the atomic block.
-//	2. Struct prom field — add `pConnect prometheus.Counter` to the prom block.
-//	3. New() init — construct m.pConnect = prometheus.NewCounter(CounterOpts{Name: "hermem_connect_total", Help: "..."})
-//	4. New() MustRegister — append m.pConnect to the vararg list.
-//	5. IncXxx method body — `m.connectCount.Add(1); m.pConnect.Inc()`
-//	6. WriteExposition line — one fmt.Fprintf("# HELP hermem_connect_total …\n# TYPE …\nhermem_connect_total %d\n", m.connectCount.Load())
-//	7. metrics_test.go — add to cases slice + wantProm slice; run go test.
-//
-// Each IncXxx tracks two storages (atomic + prom) so the legacy /metrics-style
-// endpoint and the new client_golang /metrics endpoint both serve accurate
-// counts in lockstep. Future OBSERVABILITY commits 2-8 may migrate the
-// per-domain Histograms / CounterVecs in place; once ALL 17 atomic counters
-// are no longer served by MetricsHandler, this dual-tracking can collapse
-// to prom-only.
-
+// All fields are private to keep the increment surface (the 16 Inc* methods
+// + WriteExposition) the only call paths; callers cannot accidentally bypass
+// the atomic increment by direct field access.
 type Metrics struct {
-	// atomic.Int64 fields preserved from e2aa722 verbatim — keep server-side
-	// callers byte-compatible (pre-OBSERVABILITY code used these names).
-	storeCount         atomic.Int64
-	searchCount        atomic.Int64
-	retrieveCount      atomic.Int64
-	ingestCount        atomic.Int64
-	queryCount         atomic.Int64
-	edgeCount          atomic.Int64
-	errCount           atomic.Int64
+	storeCount          atomic.Int64
+	searchCount         atomic.Int64
+	retrieveCount       atomic.Int64
+	ingestCount         atomic.Int64
+	queryCount          atomic.Int64
+	edgeCount           atomic.Int64
+	errorCount          atomic.Int64
 	schemaConflictCount atomic.Int64
-	taskStatusCount    atomic.Int64
-	taskExecCount      atomic.Int64
-	taskListCount      atomic.Int64
-	taskShowCount      atomic.Int64
-	taskDepCount       atomic.Int64
-	taskRollbackCount  atomic.Int64
-	taskTreeCount      atomic.Int64
-	taskCreateCount    atomic.Int64
-	retentionRunCount  atomic.Int64
-
-	// Prometheus layer (added by OBSERVABILITY commit 1/8).
-	promReg *prometheus.Registry
-	pStore    prometheus.Counter
-	pSearch   prometheus.Counter
-	pRetrieve prometheus.Counter
-	pIngest   prometheus.Counter
-	pQuery    prometheus.Counter
-	pEdge     prometheus.Counter
-	pErr      prometheus.Counter
-	pSchemaConflict prometheus.Counter
-	pTaskStatus    prometheus.Counter
-	pTaskExec      prometheus.Counter
-	pTaskList      prometheus.Counter
-	pTaskShow      prometheus.Counter
-	pTaskDep       prometheus.Counter
-	pTaskRollback  prometheus.Counter
-	pTaskTree      prometheus.Counter
-	pTaskCreate    prometheus.Counter
-	pRetentionRun  prometheus.Counter
+	taskStatusCount     atomic.Int64
+	taskExecCount       atomic.Int64
+	taskListCount       atomic.Int64
+	taskShowCount       atomic.Int64
+	taskDepCount        atomic.Int64
+	taskRollbackCount   atomic.Int64
+	taskTreeCount       atomic.Int64
+	taskCreateCount     atomic.Int64
+	retentionRunCount   atomic.Int64
 }
 
-// New constructs the Metrics struct with both legacy atomic counters and
-// Prometheus collectors wired. Returned pointer is safe for concurrent use.
+// New returns a fresh Metrics instance with all counters zero-initialised.
+// Each process / test should call New exactly once and pass it through the
+// service constructors — never share one *Metrics between two test bodies,
+// or cross-test increments will leak.
 func New() *Metrics {
-	reg := prometheus.NewRegistry()
-	m := &Metrics{
-		promReg: reg,
-		pStore: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_store_total",
-			Help: "Total /store HTTP calls counted (atomic + prometheus in lockstep).",
-		}),
-		pSearch: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_search_total",
-			Help: "Total /search HTTP calls counted.",
-		}),
-		pRetrieve: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_retrieve_total",
-			Help: "Total /retrieve HTTP calls counted.",
-		}),
-		pIngest: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_ingest_total",
-			Help: "Total ingestion events counted.",
-		}),
-		pQuery: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_query_total",
-			Help: "Total /query HTTP calls counted.",
-		}),
-		pEdge: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_edge_total",
-			Help: "Total edge operations counted.",
-		}),
-		pErr: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_errors_total",
-			Help: "Total error responses counted across HTTP handlers.",
-		}),
-		pSchemaConflict: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_schema_conflict_total",
-			Help: "Total 409 schema_conflict responses counted (SIGHUP raced mid-request).",
-		}),
-		pTaskStatus: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_status_total",
-			Help: "Total /task/status calls counted.",
-		}),
-		pTaskExec: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_exec_total",
-			Help: "Total /task/executable (and /task/next) calls counted.",
-		}),
-		pTaskList: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_list_total",
-			Help: "Total /task/list calls counted.",
-		}),
-		pTaskShow: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_show_total",
-			Help: "Total /task/show calls counted.",
-		}),
-		pTaskDep: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_dep_total",
-			Help: "Total /task/dep calls counted.",
-		}),
-		pTaskRollback: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_rollback_total",
-			Help: "Total /task/rollback calls counted.",
-		}),
-		pTaskTree: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_tree_total",
-			Help: "Total /task/tree calls counted.",
-		}),
-		pTaskCreate: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_task_create_total",
-			Help: "Total /task/create calls counted.",
-		}),
-		pRetentionRun: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "hermem_retention_run_total",
-			Help: "Total retention GarbageCollector cycle runs counted.",
-		}),
-	}
-	reg.MustRegister(
-		m.pStore, m.pSearch, m.pRetrieve, m.pIngest, m.pQuery, m.pEdge, m.pErr,
-		m.pSchemaConflict,
-		m.pTaskStatus, m.pTaskExec, m.pTaskList, m.pTaskShow, m.pTaskDep,
-		m.pTaskRollback, m.pTaskTree, m.pTaskCreate,
-		m.pRetentionRun,
-	)
-	return m
+	return &Metrics{}
 }
 
-// PrometheusRegistry returns the hermem-owned *prometheus.Registry. Used
-// by commits 2-6 of the OBSERVABILITY sprint to wire the /metrics endpoint
-// through promhttp.HandlerFor. Server handlers can pre-register per-domain
-// Histograms / CounterVecs against this registry; New() already registers
-// the 17 IncXxx counters above.
-func (m *Metrics) PrometheusRegistry() *prometheus.Registry { return m.promReg }
+// --- Increment methods ---
+//
+// Each handler-side IncXxx performs a single atomic.Add(1) on its dedicated
+// counter. Atomic.Int64 is the lowest-level thread-safe increment available
+// in Go's stdlib (no mutex, no CAS retry spin under contention) — chosen
+// over a Mutex+int pair because (a) handlers are request-hot paths, (b)
+// IncXxx is one-line mem-to-mem, (c) Prometheus exposition format requires
+// Load() to return an exact snapshot, which an int64 mutex-guarded counter
+// cannot promise without complicating the handler shape.
 
-// PrometheusHandler returns the http.Handler that serves the hermem-owned
-// registry via client_golang's promhttp driver (text exposition v0.0.4).
-func (m *Metrics) PrometheusHandler() http.Handler {
-	return promhttp.HandlerFor(m.promReg, promhttp.HandlerOpts{})
+func (m *Metrics) IncStore()    { m.storeCount.Add(1) }
+func (m *Metrics) IncSearch()   { m.searchCount.Add(1) }
+func (m *Metrics) IncRetrieve() { m.retrieveCount.Add(1) }
+func (m *Metrics) IncIngest()   { m.ingestCount.Add(1) }
+func (m *Metrics) IncQuery()    { m.queryCount.Add(1) }
+func (m *Metrics) IncEdge()     { m.edgeCount.Add(1) }
+func (m *Metrics) IncErr()      { m.errorCount.Add(1) }
+
+// IncSchemaConflict counts 409 Schema-Conflict responses emitted by
+// the cross-state tx guard (HandleStore / HandleEdge). Distinct from
+// IncErr so a SIGHUP-burst of rejected writes does not pollute the
+// operator's error-rate dashboard (server is healthy; clients retry).
+func (m *Metrics) IncSchemaConflict() { m.schemaConflictCount.Add(1) }
+func (m *Metrics) IncTaskStatus()     { m.taskStatusCount.Add(1) }
+func (m *Metrics) IncTaskExec()       { m.taskExecCount.Add(1) }
+func (m *Metrics) IncTaskList()       { m.taskListCount.Add(1) }
+func (m *Metrics) IncTaskShow()       { m.taskShowCount.Add(1) }
+func (m *Metrics) IncTaskDep()        { m.taskDepCount.Add(1) }
+func (m *Metrics) IncTaskRollback()   { m.taskRollbackCount.Add(1) }
+func (m *Metrics) IncTaskTree()       { m.taskTreeCount.Add(1) }
+func (m *Metrics) IncTaskCreate()     { m.taskCreateCount.Add(1) }
+
+// IncRetentionRun counts POST /admin/retention/run requests that
+// reached retention.Service.RunOnce, regardless of HTTP 200 vs 500
+// outcome — operators verify the sweep via the GCReport envelope on
+// the body. Pre-PHASE-3.3 there was no HTTP route for retention, so
+// the counter starts at 0 historically; PHASE 3.3 introduces it
+// alongside the existing 16 task + server counters so per-handler
+// observability stays symmetric across every HTTP shell.
+func (m *Metrics) IncRetentionRun() { m.retentionRunCount.Add(1) }
+
+// WriteExposition writes Prometheus exposition-format metrics to w.
+// Used by both the HTTP handler (`MetricsHandler`) and the
+// `hermem metrics` CLI command — kept as one source of truth so
+// CLI and server output match byte-for-byte.
+//
+// Format spec: https://prometheus.io/docs/instrumenting/exposition_formats/
+// — each metric emits a HELP line, a TYPE line, and a value line,
+// in that order. The order of `hermem_*_total` records is fixed
+// (insertion order of the Inc* calls above) so a scraper diff
+// against a previous scrape changes only the numeric field.
+func (m *Metrics) WriteExposition(w io.Writer) {
+	fmt.Fprintf(w, "# HELP hermem_store_total Total store operations\n# TYPE hermem_store_total counter\nhermem_store_total %d\n", m.storeCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_search_total Total search operations\n# TYPE hermem_search_total counter\nhermem_search_total %d\n", m.searchCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_retrieve_total Total retrieve operations\n# TYPE hermem_retrieve_total counter\nhermem_retrieve_total %d\n", m.retrieveCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_ingest_total Total ingest operations\n# TYPE hermem_ingest_total counter\nhermem_ingest_total %d\n", m.ingestCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_query_total Total query operations\n# TYPE hermem_query_total counter\nhermem_query_total %d\n", m.queryCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_edge_total Total edge operations\n# TYPE hermem_edge_total counter\nhermem_edge_total %d\n", m.edgeCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_errors_total Total errors\n# TYPE hermem_errors_total counter\nhermem_errors_total %d\n", m.errorCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_schema_conflict_total 409 Schema-Conflict responses from cross-state tx guard\n# TYPE hermem_schema_conflict_total counter\nhermem_schema_conflict_total %d\n", m.schemaConflictCount.Load())
+	fmt.Fprintf(w, "# HELP hermem_retention_run_total POST /admin/retention/run dispatches that reached retention.Service.RunOnce\n# TYPE hermem_retention_run_total counter\nhermem_retention_run_total %d\n", m.retentionRunCount.Load())
 }
 
-// IncXxx methods below bump BOTH the atomic counter (legacy view) AND
-// the prometheus.Counter so /metrics reflects the same call counts that
-// the legacy expvar-style counters did. Each pair is byte-compatible
-// with pre-OBSERVABILITY callers.
-
-func (m *Metrics) IncStore()         { m.storeCount.Add(1); m.pStore.Inc() }
-func (m *Metrics) IncSearch()        { m.searchCount.Add(1); m.pSearch.Inc() }
-func (m *Metrics) IncRetrieve()      { m.retrieveCount.Add(1); m.pRetrieve.Inc() }
-func (m *Metrics) IncIngest()        { m.ingestCount.Add(1); m.pIngest.Inc() }
-func (m *Metrics) IncQuery()         { m.queryCount.Add(1); m.pQuery.Inc() }
-func (m *Metrics) IncEdge()          { m.edgeCount.Add(1); m.pEdge.Inc() }
-func (m *Metrics) IncErr()           { m.errCount.Add(1); m.pErr.Inc() }
-func (m *Metrics) IncSchemaConflict(){ m.schemaConflictCount.Add(1); m.pSchemaConflict.Inc() }
-func (m *Metrics) IncTaskStatus()    { m.taskStatusCount.Add(1); m.pTaskStatus.Inc() }
-func (m *Metrics) IncTaskExec()      { m.taskExecCount.Add(1); m.pTaskExec.Inc() }
-func (m *Metrics) IncTaskList()      { m.taskListCount.Add(1); m.pTaskList.Inc() }
-func (m *Metrics) IncTaskShow()      { m.taskShowCount.Add(1); m.pTaskShow.Inc() }
-func (m *Metrics) IncTaskDep()       { m.taskDepCount.Add(1); m.pTaskDep.Inc() }
-func (m *Metrics) IncTaskRollback()  { m.taskRollbackCount.Add(1); m.pTaskRollback.Inc() }
-func (m *Metrics) IncTaskTree()      { m.taskTreeCount.Add(1); m.pTaskTree.Inc() }
-func (m *Metrics) IncTaskCreate()    { m.taskCreateCount.Add(1); m.pTaskCreate.Inc() }
-func (m *Metrics) IncRetentionRun()  { m.retentionRunCount.Add(1); m.pRetentionRun.Inc() }
-
-// WriteExposition writes the legacy expvar-style Prometheus text-format
-// dump of all 17 atomic counters. Preserved from e2aa722 verbatim so any
-// /metrics-style endpoint that already calls this method keeps working.
-func (m *Metrics) WriteExposition(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "# HELP hermem_store_total Total store operations\n# TYPE hermem_store_total counter\nhermem_store_total %d\n", m.storeCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_search_total Total search operations\n# TYPE hermem_search_total counter\nhermem_search_total %d\n", m.searchCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_retrieve_total Total retrieve operations\n# TYPE hermem_retrieve_total counter\nhermem_retrieve_total %d\n", m.retrieveCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_ingest_total Total ingest operations\n# TYPE hermem_ingest_total counter\nhermem_ingest_total %d\n", m.ingestCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_query_total Total query operations\n# TYPE hermem_query_total counter\nhermem_query_total %d\n", m.queryCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_edge_total Total edge operations\n# TYPE hermem_edge_total counter\nhermem_edge_total %d\n", m.edgeCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_errors_total Total error responses\n# TYPE hermem_errors_total counter\nhermem_errors_total %d\n", m.errCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_schema_conflict_total Total 409 schema_conflict responses\n# TYPE hermem_schema_conflict_total counter\nhermem_schema_conflict_total %d\n", m.schemaConflictCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_status_total Total /task/status operations\n# TYPE hermem_task_status_total counter\nhermem_task_status_total %d\n", m.taskStatusCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_exec_total Total /task/executable operations\n# TYPE hermem_task_exec_total counter\nhermem_task_exec_total %d\n", m.taskExecCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_list_total Total /task/list operations\n# TYPE hermem_task_list_total counter\nhermem_task_list_total %d\n", m.taskListCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_show_total Total /task/show operations\n# TYPE hermem_task_show_total counter\nhermem_task_show_total %d\n", m.taskShowCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_dep_total Total /task/dep operations\n# TYPE hermem_task_dep_total counter\nhermem_task_dep_total %d\n", m.taskDepCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_rollback_total Total /task/rollback operations\n# TYPE hermem_task_rollback_total counter\nhermem_task_rollback_total %d\n", m.taskRollbackCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_tree_total Total /task/tree operations\n# TYPE hermem_task_tree_total counter\nhermem_task_tree_total %d\n", m.taskTreeCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_task_create_total Total /task/create operations\n# TYPE hermem_task_create_total counter\nhermem_task_create_total %d\n", m.taskCreateCount.Load())
-	if err != nil { return err }
-	_, err = fmt.Fprintf(w, "# HELP hermem_retention_run_total Total retention GarbageCollector runs\n# TYPE hermem_retention_run_total counter\nhermem_retention_run_total %d\n", m.retentionRunCount.Load())
-	return err
-}
-
-// MetricsHandler returns the legacy expvar-style http.Handler that
-// emits Prometheus text-format from the atomic counters.
-// Preserved from e2aa722 verbatim so any /metrics-style endpoint that
-// already wires this method keeps working alongside the new client_golang
-// registry exposed via PrometheusHandler().
-func (m *Metrics) MetricsHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		_ = m.WriteExposition(w)
-	})
+// MetricsHandler serves Prometheus-format metrics over HTTP.
+func (m *Metrics) MetricsHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	m.WriteExposition(w)
 }
