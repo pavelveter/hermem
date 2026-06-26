@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -20,26 +18,24 @@ func (r *NoopReranker) Rerank(_ context.Context, _ string, facts []core.Retrieve
 }
 
 // OllamaReranker calls Ollama's /api/rerank endpoint; on failure it returns input unchanged.
+//
+// Graceful-degrade is enforced explicitly via `if err != nil { return facts, nil }`
+// after every call site, so transport / decode / no-data outcomes all preserve
+// the input ordering rather than surface an error to the retrieval pipeline.
 type OllamaReranker struct {
-	BaseURL   string
-	Model     string
-	client    *http.Client
-	resilient *ResilientClient
+	BaseURL string
+	Model   string
+	http    *httpClient
 }
 
 func NewOllamaReranker(baseURL, model string, timeout time.Duration) *OllamaReranker {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	c := &http.Client{Timeout: timeout}
 	return &OllamaReranker{
-		BaseURL:   baseURL,
-		Model:     model,
-		client:    c,
-		resilient: NewResilientClient(c, 3, DefaultBackoffs()), // 1 + 2 retries; graceful-degrade after
+		BaseURL: baseURL,
+		Model:   model,
+		http:    newHTTPClient(baseURL, "", timeout, 3), // 1 + 2 retries; graceful-degrade after
 	}
 }
 
@@ -51,33 +47,19 @@ func (r *OllamaReranker) Rerank(ctx context.Context, query string, facts []core.
 	for i, f := range facts {
 		docs[i] = f.Content
 	}
-	url := strings.TrimRight(r.BaseURL, "/") + "/api/rerank"
-	body, _ := json.Marshal(map[string]interface{}{
-		"model": r.Model, "query": query, "documents": docs,
-	})
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return facts, nil // graceful degradation
+	body := map[string]interface{}{
+		"model":     r.Model,
+		"query":     query,
+		"documents": docs,
 	}
-	req.Header.Set("Content-Type", "application/json")
-	captured := body
-	req.Body = io.NopCloser(strings.NewReader(string(captured)))
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(strings.NewReader(string(captured))), nil
-	}
-	// ResilientClient.Do retries on 5xx/429/network; on final failure
-	// we degrade to the input ordering rather than surface an error.
-	resp, err := r.resilient.Do(ctx, req)
-	if err != nil {
-		return facts, nil
-	}
-	defer resp.Body.Close()
 	var rr struct {
 		Results []struct {
 			Index int `json:"index"`
 		} `json:"results"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&rr)
+	if err := r.http.doPOST(ctx, "/api/rerank", body, &rr); err != nil {
+		return facts, nil // graceful degradation
+	}
 	reranked := make([]core.RetrievedFact, 0, len(facts))
 	for _, item := range rr.Results {
 		if item.Index >= 0 && item.Index < len(facts) {
@@ -93,27 +75,21 @@ func (r *OllamaReranker) Rerank(ctx context.Context, query string, facts []core.
 // OpenAIReranker uses OpenAI chat completions with a relevance-ordering prompt.
 // On any failure it returns the original ordering.
 type OpenAIReranker struct {
-	BaseURL   string
-	APIKey    string
-	Model     string
-	client    *http.Client
-	resilient *ResilientClient
+	BaseURL string
+	APIKey  string
+	Model   string
+	http    *httpClient
 }
 
 func NewOpenAIReranker(baseURL, model, key string, timeout time.Duration) *OpenAIReranker {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	c := &http.Client{Timeout: timeout}
 	return &OpenAIReranker{
-		BaseURL:   baseURL,
-		APIKey:    key,
-		Model:     model,
-		client:    c,
-		resilient: NewResilientClient(c, 3, DefaultBackoffs()),
+		BaseURL: baseURL,
+		APIKey:  key,
+		Model:   model,
+		http:    newHTTPClient(baseURL, key, timeout, 3),
 	}
 }
 
@@ -135,30 +111,12 @@ Documents:
 %s
 
 Reorder the documents by relevance to the query. Return ONLY a JSON object with this exact shape: {"order": [3, 1, 2]} listing the document numbers (1-indexed) in relevance order, most relevant first. Do not add any prose, code fences, or extra keys.`, query, docList.String())
-	body, _ := json.Marshal(map[string]interface{}{
+	body := map[string]interface{}{
 		"model":           r.Model,
 		"messages":        []map[string]string{{"role": "user", "content": prompt}},
 		"response_format": map[string]string{"type": "json_object"},
 		"temperature":     0,
-	})
-	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(r.BaseURL, "/")+"/chat/completions", nil)
-	if err != nil {
-		return facts, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if r.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+r.APIKey)
-	}
-	captured := body
-	req.Body = io.NopCloser(strings.NewReader(string(captured)))
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(strings.NewReader(string(captured))), nil
-	}
-	resp, err := r.resilient.Do(ctx, req)
-	if err != nil {
-		return facts, nil
-	}
-	defer resp.Body.Close()
 	var cr struct {
 		Choices []struct {
 			Message struct {
@@ -166,7 +124,7 @@ Reorder the documents by relevance to the query. Return ONLY a JSON object with 
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+	if err := r.http.doPOST(ctx, "/chat/completions", body, &cr); err != nil {
 		return facts, nil
 	}
 	if len(cr.Choices) == 0 {
@@ -176,8 +134,7 @@ Reorder the documents by relevance to the query. Return ONLY a JSON object with 
 	// payload in ```json fences or leading/trailing whitespace — strip
 	// before unmarshalling so a noisy response does not silently fall
 	// back to the no-op ordering.
-	content := strings.TrimSpace(cr.Choices[0].Message.Content)
-	content = stripJSONFence(content)
+	content := stripJSONFence(cr.Choices[0].Message.Content)
 	if content == "" {
 		return facts, nil
 	}

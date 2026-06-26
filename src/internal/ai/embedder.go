@@ -2,20 +2,15 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 )
 
 // OllamaEmbedder implements core.Embedder against the Ollama /api/embeddings endpoint.
 type OllamaEmbedder struct {
-	BaseURL   string
-	Model     string
-	client    *http.Client
-	resilient *ResilientClient
+	BaseURL string
+	Model   string
+	http    *httpClient
 }
 
 func NewOllamaEmbedder(baseURL, model string, timeout time.Duration) *OllamaEmbedder {
@@ -25,15 +20,10 @@ func NewOllamaEmbedder(baseURL, model string, timeout time.Duration) *OllamaEmbe
 	if model == "" {
 		model = "nomic-embed-text"
 	}
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	c := &http.Client{Timeout: timeout}
 	return &OllamaEmbedder{
-		BaseURL:   baseURL,
-		Model:     model,
-		client:    c,
-		resilient: NewResilientClient(c, 4, DefaultBackoffs()), // 1 initial + 3 retries
+		BaseURL: baseURL,
+		Model:   model,
+		http:    newHTTPClient(baseURL, "", timeout, 4), // 1 initial + 3 retries
 	}
 }
 
@@ -47,44 +37,19 @@ type ollamaEmbedResp struct {
 }
 
 func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	body, _ := json.Marshal(ollamaEmbedReq{Model: e.Model, Prompt: text})
-	url := strings.TrimRight(e.BaseURL, "/") + "/api/embeddings"
-	// NewRequestWithContext pins ctx onto the in-flight request so an
-	// upstream cancellation aborts the connection even if the response
-	// body is mid-read.
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("ollama embed: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	captured := body
-	req.Body = io.NopCloser(strings.NewReader(string(captured)))
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(strings.NewReader(string(captured))), nil
-	}
-	resp, err := e.resilient.Do(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("ollama embed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("ollama embed: %d: %s", resp.StatusCode, string(b))
-	}
 	var r ollamaEmbedResp
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return nil, fmt.Errorf("ollama embed decode: %w", err)
+	if err := e.http.doPOST(ctx, "/api/embeddings", ollamaEmbedReq{Model: e.Model, Prompt: text}, &r); err != nil {
+		return nil, fmt.Errorf("ollama embed: %w", err)
 	}
 	return r.Embedding, nil
 }
 
 // OpenAIEmbedder implements core.Embedder against the OpenAI /v1/embeddings endpoint.
 type OpenAIEmbedder struct {
-	BaseURL   string
-	APIKey    string
-	Model     string
-	client    *http.Client
-	resilient *ResilientClient
+	BaseURL string
+	APIKey  string
+	Model   string
+	http    *httpClient
 }
 
 func NewOpenAIEmbedder(baseURL, apiKey, model string, timeout time.Duration) *OpenAIEmbedder {
@@ -94,16 +59,11 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string, timeout time.Duration) *Op
 	if model == "" {
 		model = "text-embedding-3-small"
 	}
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	c := &http.Client{Timeout: timeout}
 	return &OpenAIEmbedder{
-		BaseURL:   baseURL,
-		APIKey:    apiKey,
-		Model:     model,
-		client:    c,
-		resilient: NewResilientClient(c, 4, DefaultBackoffs()),
+		BaseURL: baseURL,
+		APIKey:  apiKey,
+		Model:   model,
+		http:    newHTTPClient(baseURL, apiKey, timeout, 4),
 	}
 }
 
@@ -119,30 +79,9 @@ type openaiEmbedResp struct {
 }
 
 func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	body, _ := json.Marshal(openaiEmbedReq{Input: text, Model: e.Model})
-	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(e.BaseURL, "/")+"/embeddings", nil)
-	if err != nil {
-		return nil, fmt.Errorf("openai embed: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+e.APIKey)
-	captured := body
-	req.Body = io.NopCloser(strings.NewReader(string(captured)))
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(strings.NewReader(string(captured))), nil
-	}
-	resp, err := e.resilient.Do(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("openai embed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openai embed: %d: %s", resp.StatusCode, string(b))
-	}
 	var r openaiEmbedResp
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return nil, fmt.Errorf("openai embed decode: %w", err)
+	if err := e.http.doPOST(ctx, "/embeddings", openaiEmbedReq{Input: text, Model: e.Model}, &r); err != nil {
+		return nil, fmt.Errorf("openai embed: %w", err)
 	}
 	if len(r.Data) == 0 {
 		return nil, fmt.Errorf("openai embed: no data")
