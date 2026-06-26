@@ -681,7 +681,7 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 | **HIGH** | §2.2-2.3: Naming conventions | Low | ✅ DONE — BOTH complete |
 | **HIGH** | §3.1-3.2: RouteProvider + BaseHTTPService | High | ✅ §3.1+§3.2 DONE — 12 for-loops collapsed + ~250 LOC via Wrap + mapStatus |
 | **HIGH** | §8: Entity decomposition | High | ~80 LOC eliminated, type safety |
-| **HIGH** | §9: AI client unification | Medium | ~300 LOC eliminated |
+| **✅ DONE** | §9: AI client unification | Medium | ✅ DONE — 6 clients collapsed to httpClient.doPOST; ~23 net LOC after helper + 215 LOC of test coverage |
 | **HIGH** | §10: HTTP handler boilerplate | Medium | ~350 LOC eliminated |
 | **HIGH** | §11: AMX CGo verification | Low | No code change, CI guard only |
 | **MEDIUM** | §4.1-4.2: Comment cleanup | Low | ~1500 LOC eliminated |
@@ -708,8 +708,8 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 5. **§1.4** — Add `NormalizeSlice[T]` and use everywhere
    (Go 1.18+ generics, safe transformation)
 
-6. **§9** — AI client unification (`httpClient` helper)
-   (high payoff, self-contained in `ai/` package)
+6. ~~**§9** — AI client unification (`httpClient` helper)~~ ✅ DONE
+   (6 clients collapsed to httpClient.doPOST; ~23 net LOC + 215 LOC test coverage)
 
 7. **§10** — HTTP handler boilerplate (`DecodeJSON[T]` + `RespondJSON`)
    (high payoff, depends on §2.1 + §3.1 for clean base)
@@ -1074,7 +1074,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 | **HIGH** | §2.2-2.3: Naming conventions | Low | ✅ DONE — BOTH complete |
 | **HIGH** | §3.1-3.2: RouteProvider + BaseHTTPService | High | ✅ §3.1+§3.2 DONE — 12 for-loops collapsed + ~250 LOC via Wrap + mapStatus |
 | **HIGH** | §8: Entity decomposition | High | ~80 LOC eliminated, type safety |
-| **HIGH** | §9: AI client unification | Medium | ~300 LOC eliminated |
+| **✅ DONE** | §9: AI client unification | Medium | ✅ DONE — 6 clients collapsed to httpClient.doPOST; ~23 net LOC after helper + 215 LOC of test coverage |
 | **HIGH** | §10: HTTP handler boilerplate | Medium | ~350 LOC eliminated |
 | **HIGH** | §11: AMX CGo verification | Low | No code change, CI guard only |
 | **✅ DONE** | §12.2: Central error taxonomy | — | Eliminates string-matching in handlers |
@@ -1112,7 +1112,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 8. **§12.6** — Component lifecycle (`Start`/`Stop`)
    (replaces ad-hoc goroutine management in `server.Serve()`)
 
-9. **§9** — AI client unification (`httpClient` helper)
+9. ~~**§9** — AI client unification (`httpClient` helper)~~ ✅ DONE — 6 clients collapsed; ~23 net LOC; +7 contract tests
 
 10. **§10** — HTTP handler boilerplate (`DecodeJSON[T]` + `RespondJSON`)
 
