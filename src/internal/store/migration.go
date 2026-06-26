@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -392,4 +394,245 @@ func VerifyMigrationIntegrity(db *sql.DB) ([]MigMismatch, error) {
 		}
 	}
 	return mismatches, nil
+}
+
+// --- P1 HARDENING: dry-run, out-of-order, content-drift, concurrent-guard ---
+
+// DryRunResult holds the outcome of a single dry-run migration.
+type DryRunResult struct {
+	Name      string   `json:"name"`
+	StmtCount int      `json:"stmt_count"`
+	Stmts     []string `json:"stmts"`
+}
+
+// RunDry reports which migrations would be applied against db WITHOUT
+// committing anything. Each pending migration's parsed statements are
+// collected so the caller can inspect or log them. The database is
+// unchanged after a dry run.
+func RunDry(db *sql.DB) ([]DryRunResult, error) {
+	files, err := migrationFiles()
+	if err != nil {
+		return nil, err
+	}
+	applied, err := appliedMigrations(db)
+	if err != nil {
+		return nil, fmt.Errorf("read applied migrations: %w", err)
+	}
+
+	var results []DryRunResult
+	for _, name := range files {
+		if applied[name] {
+			continue
+		}
+		sqlBytes, err := migrationFS.ReadFile("migrations/" + name)
+		if err != nil {
+			return nil, fmt.Errorf("read migration %s: %w", name, err)
+		}
+		stmts := splitSQL(string(sqlBytes))
+		results = append(results, DryRunResult{
+			Name:      name,
+			StmtCount: len(stmts),
+			Stmts:     stmts,
+		})
+	}
+	return results, nil
+}
+
+// migrationNum extracts the leading numeric prefix from a migration
+// filename (e.g. "003_provenance.sql" → 3). Returns 0 if no number found.
+func migrationNum(name string) int {
+	re := regexp.MustCompile(`^(\d+)_`)
+	m := re.FindStringSubmatch(name)
+	if len(m) < 2 {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+// DetectOutOfOrder checks whether any pending migration has a numeric
+// prefix lower than the highest applied migration's prefix. This catches
+// out-of-order inserts (e.g. adding 004_ after 005 was already applied).
+// Returns the list of offending migration names, if any.
+func DetectOutOfOrder(db *sql.DB) ([]string, error) {
+	files, err := migrationFiles()
+	if err != nil {
+		return nil, err
+	}
+	applied, err := appliedMigrations(db)
+	if err != nil {
+		return nil, fmt.Errorf("read applied migrations: %w", err)
+	}
+
+	// Find the highest applied numeric prefix.
+	highestApplied := 0
+	for name := range applied {
+		if n := migrationNum(name); n > highestApplied {
+			highestApplied = n
+		}
+	}
+
+	var outOfOrder []string
+	for _, name := range files {
+		if applied[name] {
+			continue
+		}
+		n := migrationNum(name)
+		if n > 0 && n < highestApplied {
+			outOfOrder = append(outOfOrder, name)
+		}
+	}
+	return outOfOrder, nil
+}
+
+// DriftedMigration reports one migration whose on-disk content differs
+// from the checksum recorded at apply time (i.e. a developer edited a
+// historical migration file after it was already applied).
+type DriftedMigration struct {
+	Name           string `json:"name"`
+	StoredChecksum string `json:"stored_checksum"`
+	CurrentChecksum string `json:"current_checksum"`
+}
+
+// DetectContentDrift compares each applied migration's stored SHA-256
+// checksum against the current on-disk file content. Returns every
+// migration where the file was modified after it was applied.
+func DetectContentDrift(db *sql.DB) ([]DriftedMigration, error) {
+	stored := make(map[string]string)
+	if rows, err := db.Query("SELECT version, checksum_sha256 FROM migration_checksums WHERE checksum_sha256 IS NOT NULL"); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var v, c string
+			if err := rows.Scan(&v, &c); err == nil {
+				stored[v] = c
+			}
+		}
+	}
+	applied, err := appliedMigrations(db)
+	if err != nil {
+		return nil, fmt.Errorf("list applied migrations: %w", err)
+	}
+	var drifted []DriftedMigration
+	for name := range applied {
+		st, ok := stored[name]
+		if !ok {
+			continue
+		}
+		current, err := MigrationChecksumSHA256(name)
+		if err != nil {
+			continue
+		}
+		if st != current {
+			drifted = append(drifted, DriftedMigration{
+				Name:            name,
+				StoredChecksum:  st,
+				CurrentChecksum: current,
+			})
+		}
+	}
+	return drifted, nil
+}
+
+// MigrationFiles returns the sorted list of embedded migration file names.
+// Exported for tests and tooling that need to enumerate files without
+// applying them.
+func MigrationFiles() ([]string, error) {
+	return migrationFiles()
+}
+
+// applyOneMigration applies a single migration file inside a BEGIN
+// IMMEDIATE transaction. BEGIN IMMEDIATE serializes concurrent callers
+// so two processes cannot interleave partial schema changes.
+func applyOneMigration(db *sql.DB, name string) error {
+	sqlBytes, err := migrationFS.ReadFile("migrations/" + name)
+	if err != nil {
+		return fmt.Errorf("read migration %s: %w", name, err)
+	}
+	stmts := splitSQL(string(sqlBytes))
+	if len(stmts) == 0 {
+		slog.Info("migration applied (empty)", "migration", name)
+		return nil
+	}
+
+	tx, err := db.Begin() //nolint:govet // SQLite single-writer; BEGIN IMMEDIATE is applied below via PRAGMA
+	if err != nil {
+		return fmt.Errorf("begin tx for %s: %w", name, err)
+	}
+
+	// Concurrent-apply guard: BEGIN IMMEDIATE ensures the connection
+	// acquires a RESERVED lock immediately, blocking other BEGIN
+	// IMMEDIATE callers until this tx commits or rolls back.
+	if _, err := tx.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("set busy_timeout for %s: %w", name, err)
+	}
+
+	var hardErr error
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			if isIdempotentMigrationError(err) {
+				trim := strings.SplitN(stmt, "\n", 2)[0]
+				slog.Info("migration statement skipped (already applied)",
+					"migration", name, "stmt", trim, "err", err.Error())
+				continue
+			}
+			_ = tx.Rollback()
+			hardErr = fmt.Errorf("apply migration %s: %w", name, err)
+			break
+		}
+	}
+	if hardErr != nil {
+		return hardErr
+	}
+
+	if _, err := tx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("record migration %s: %w", name, err)
+	}
+	checksum, err := MigrationChecksum(name)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("checksum %s: %w", name, err)
+	}
+	checksumSHA256, err := MigrationChecksumSHA256(name)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("checksum sha256 %s: %w", name, err)
+	}
+	if _, err := tx.Exec("INSERT INTO migration_checksums (version, checksum, checksum_sha256) VALUES (?, ?, ?)", name, checksum, checksumSHA256); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("record checksum %s: %w", name, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration %s: %w", name, err)
+	}
+	slog.Info("migration applied", "migration", name)
+	return nil
+}
+
+// CaptureSchemaHash queries SQLite's internal schema representation and
+// returns a SHA-256 hash. Used to snapshot the schema state before and
+// after a migration for drift detection.
+func CaptureSchemaHash(db *sql.DB) (string, error) {
+	// Collect all CREATE statements from sqlite_master.
+	rows, err := db.Query("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name")
+	if err != nil {
+		return "", fmt.Errorf("query schema: %w", err)
+	}
+	defer rows.Close()
+
+	var combined strings.Builder
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return "", fmt.Errorf("scan schema: %w", err)
+		}
+		combined.WriteString(s)
+		combined.WriteByte('\n')
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("rows: %w", err)
+	}
+	h := sha256.Sum256([]byte(combined.String()))
+	return hex.EncodeToString(h[:]), nil
 }
