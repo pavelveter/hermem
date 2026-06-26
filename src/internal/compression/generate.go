@@ -18,13 +18,20 @@ const (
 type Compressor struct {
 	db        *sql.DB
 	extractor core.LLMExtractor
+	metrics   *Metrics
 }
 
 func NewCompressor(db *sql.DB, extractor core.LLMExtractor) *Compressor {
 	return &Compressor{db: db, extractor: extractor}
 }
 
+func (cp *Compressor) WithMetrics(m *Metrics) *Compressor {
+	cp.metrics = m
+	return cp
+}
+
 func (cp *Compressor) Compress(ctx context.Context, entityIDs []string) (*SummaryNode, error) {
+	start := time.Now()
 	if len(entityIDs) == 0 {
 		return nil, fmt.Errorf("compression: Compress: no entity IDs provided")
 	}
@@ -52,6 +59,11 @@ func (cp *Compressor) Compress(ctx context.Context, entityIDs []string) (*Summar
 	if err := insertSummaryNode(ctx, cp.db, *summary); err != nil {
 		return nil, fmt.Errorf("compression: persist summary: %w", err)
 	}
+	if cp.metrics != nil {
+		cp.metrics.IncCompress()
+		cp.metrics.AddCompressedEntities(len(entityIDs))
+		cp.metrics.ObserveCompressDuration(time.Since(start))
+	}
 	return summary, nil
 }
 
@@ -65,6 +77,9 @@ func (cp *Compressor) CompressCluster(ctx context.Context, clusters [][]string) 
 		if err != nil {
 			return nil, fmt.Errorf("compression: compress cluster: %w", err)
 		}
+		if cp.metrics != nil {
+			cp.metrics.AddClusterSize(len(cluster))
+		}
 		nodes = append(nodes, node)
 	}
 	if nodes == nil {
@@ -74,6 +89,7 @@ func (cp *Compressor) CompressCluster(ctx context.Context, clusters [][]string) 
 }
 
 func (cp *Compressor) Recompress(ctx context.Context, summaryID string) (*SummaryNode, error) {
+	start := time.Now()
 	existing, err := loadSummaryNode(ctx, cp.db, summaryID)
 	if err != nil {
 		return nil, fmt.Errorf("compression: recompress load: %w", err)
@@ -117,10 +133,16 @@ func (cp *Compressor) Recompress(ctx context.Context, summaryID string) (*Summar
 	if err := markSuperseded(ctx, cp.db, summaryID, newNode.ID); err != nil {
 		return nil, fmt.Errorf("compression: mark superseded: %w", err)
 	}
+	if cp.metrics != nil {
+		cp.metrics.IncRecompress()
+		cp.metrics.AddCompressedEntities(len(sourceIDs))
+		cp.metrics.ObserveRecompressDuration(time.Since(start))
+	}
 	return newNode, nil
 }
 
 func (cp *Compressor) Regenerate(ctx context.Context, summaryID string) (*SummaryNode, error) {
+	start := time.Now()
 	existing, err := loadSummaryNode(ctx, cp.db, summaryID)
 	if err != nil {
 		return nil, fmt.Errorf("compression: regenerate load: %w", err)
@@ -145,6 +167,10 @@ func (cp *Compressor) Regenerate(ctx context.Context, summaryID string) (*Summar
 	existing.Content = newContent
 	existing.RegeneratedAt = &now
 	existing.CompressedAt = time.Now()
+	if cp.metrics != nil {
+		cp.metrics.IncRegenerate()
+		cp.metrics.ObserveCompressDuration(time.Since(start))
+	}
 	return &existing, nil
 }
 
