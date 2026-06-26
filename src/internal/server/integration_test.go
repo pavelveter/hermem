@@ -925,3 +925,66 @@ func TestStore_MalformedJSONReturns422WithCodeField(t *testing.T) {
 	}
 	t.Logf("§10 422 envelope: code=%q field=%q error=%q", envelope.Code, envelope.Field, envelope.Error)
 }
+
+// TestStore_UnknownFieldReturns422WithFieldAttribute is the §10 contract
+// test parallel to TestStore_MalformedJSONReturns422WithCodeField — but
+// for the unknown-field branch of DecodeStrict instead of the
+// bad_json branch. The two branches differ in one wire detail: the
+// malformed/trailing_data/error_type paths DO NOT populate the Field
+// JSON attribute (the offending key is unknown or generic), but the
+// unknown_field path MUST populate Field with the offending key so a
+// client UI can highlight exactly which input was rejected. Pre-§10
+// the envelope didn't carry Field at all; this test pins the §10 wire
+// contract that field="<offending key>" exactly, so a future regression
+// that strips Field or that fails to wire it through DomainError → Wrap
+// → WriteErrorWithCode fails the integration assertion rather than
+// silently degrading.
+func TestStore_UnknownFieldReturns422WithFieldAttribute(t *testing.T) {
+	f := newTestFixture(t)
+	// Extra field "extra" not in {id, category, content} triggers
+	// DecodeStrict's unknown-field branch → ("unknown_field", "extra",
+	// "unknown field: extra", false) → DecodeJSON wraps it as
+	// *core.DomainError{Code: CodeInvalidInput, Field: "extra",
+	// Message: "unknown field: extra"}, surfaced by §3.2 Wrap → 422 +
+	// {error: "unknown field: extra (extra)", code: "invalid_input",
+	// field: "extra"}. DomainError.Error() renders Message+Field as
+	// "msg (field)" so the trailing "(extra)" appears in the wire too.
+	body := `{"id":"a","category":"world","content":"hello","extra":"oops"}`
+	resp, err := f.ts.Client().Post(f.ts.URL+"/store", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /store: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	var envelope struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+		Field string `json:"field"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if envelope.Error == "" {
+		t.Fatalf("expected non-empty error message, got empty (envelope: %+v)", envelope)
+	}
+	// Pin BOTH attributes exactly: any rename of CodeInvalidInput OR a
+	// regression that drops the code attribute or leaves Field empty
+	// for the unknown-field branch will fail one of these two assertions
+	// at the integration level rather than silently passing a looser
+	// check.
+	if envelope.Code != "invalid_input" {
+		t.Fatalf("want code=\"invalid_input\", got %q (envelope: %+v)", envelope.Code, envelope)
+	}
+	if envelope.Field != "extra" {
+		t.Fatalf("want field=\"extra\" (the offending unknown key), got %q (envelope: %+v)", envelope.Field, envelope)
+	}
+	// DomainError.Error() renders "msg (field)" inline; the wire byte
+	// carries the field suffix so operator logs/grep can still tell
+	// WHICH input was wrong even if they don't parse the JSON structure.
+	if !strings.Contains(envelope.Error, "extra") {
+		t.Fatalf("error message should embed field name; got %q", envelope.Error)
+	}
+	t.Logf("§10 422 envelope (unknown-field): code=%q field=%q error=%q", envelope.Code, envelope.Field, envelope.Error)
+}
