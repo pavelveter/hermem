@@ -73,6 +73,18 @@ var knownCategories = []string{"_init", "observation", "world", "task", "edge"}
 // + bump TestHermemPrefixContract_KnownModesSet.
 var knownModes = []string{"_init", "search", "retrieve", "query", "response", "query_explain", "provenance"}
 
+// knownDetectors is the bounded value-set for the hContradiction `detector` label.
+// Aligned with src/internal/contradiction's actual detectors (verified via
+// code-searcher at C5 amend time): "lexical" (NewLexicalDetector in lexical.go),
+// "composite" (NewCompositeDetector in composite.go). "semantic" is referenced
+// in detector.go + lexical.go comments as a FUTURE detector (PHASE 2.4) but
+// does not yet have a concrete implementation — excluded from the bounded
+// value-set until it lands. When the semantic detector commits, extend this
+// slice + bump TestHermemPrefixContract_KnownDetectorsSet.
+// Math: 3 Ã (10 durationBuckets + +Inf = 11 buckets + _sum + _count)
+//      = 3 Ã 13 = 39 time-series per scrape.
+var knownDetectors = []string{"_init", "lexical", "composite"}
+
 // Metrics is the hermem-wide counter + histogram bag.
 //
 // Migration cheat-sheet (when adding a new IncXxx counter):
@@ -166,7 +178,7 @@ type Metrics struct {
 	// child never gets confused with a real category.
 	hIngest        *prometheus.HistogramVec
 	hRetrieval     *prometheus.HistogramVec
-	hContradiction prometheus.Histogram
+	hContradiction *prometheus.HistogramVec
 	hRerank        prometheus.Histogram
 }
 
@@ -258,11 +270,11 @@ func New() *Metrics {
 			Help:    "End-to-end retrieval/search latency (request -> response) labelled by retrieval mode (one of the 6 read-side endpoints). Includes embed + cosine + rerank overhead.",
 			Buckets: durationBuckets,
 		}, []string{"mode"}),
-		hContradiction: prometheus.NewHistogram(prometheus.HistogramOpts{
+		hContradiction: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "hermem_contradiction_duration_seconds",
-			Help:    "Contradiction detection latency per scan (cosine pair-check + threshold walk).",
+			Help:    "Contradiction detection latency per scan labelled by detector (one of the 4 contradiction algorithms).",
 			Buckets: durationBuckets,
-		}),
+		}, []string{"detector"}),
 		hRerank: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "hermem_rerank_duration_seconds",
 			Help:    "Reranker latency per candidate batch (cross-encoder or LLM-based; bound by 60s LLM timeout).",
@@ -286,6 +298,7 @@ func New() *Metrics {
 	// Callers MUST NOT pass category="_init" — it is a system-only sentinel.
 	m.hIngest.WithLabelValues(knownCategories[0]) // knownCategories[0] = "_init"
 	m.hRetrieval.WithLabelValues(knownModes[0]) // knownModes[0] = "_init"
+	m.hContradiction.WithLabelValues(knownDetectors[0]) // knownDetectors[0] = "_init"
 	return m
 }
 
@@ -348,7 +361,17 @@ func (m *Metrics) ObserveIngestDuration(seconds float64, category string) {
 func (m *Metrics) ObserveRetrievalDuration(seconds float64, mode string) {
 	m.hRetrieval.WithLabelValues(mode).Observe(seconds)
 }
-func (m *Metrics) ObserveContradictionDuration(seconds float64) { m.hContradiction.Observe(seconds) }
+// ObserveContradictionDuration records contradiction-detection latency per
+// scan, labelled by `detector` (one of: exact / embedding / temporal / rule).
+// Caller MUST pass a value from knownDetectors; "_init" is reserved for the
+// system's pre-warm child. Pre-C5 callers break intentionally at this
+// commit boundary.
+//
+// Dashboard authors: filter detector=~"^(exact|embedding|temporal|rule)$"
+// to exclude the system "_init" sentinel.
+func (m *Metrics) ObserveContradictionDuration(seconds float64, detector string) {
+	m.hContradiction.WithLabelValues(detector).Observe(seconds)
+}
 func (m *Metrics) ObserveRerankDuration(seconds float64) { m.hRerank.Observe(seconds) }
 
 // WriteExposition writes the legacy expvar-style Prometheus text-format

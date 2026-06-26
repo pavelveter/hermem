@@ -258,7 +258,7 @@ func TestDurationHistograms(t *testing.T) {
 	// in the .05 .1 .5 1 2 5 10 15 30 60 layout.
 	m.ObserveIngestDuration(0.3, "observation")
 	m.ObserveRetrievalDuration(5, "search")
-	m.ObserveContradictionDuration(25)
+	m.ObserveContradictionDuration(25, "lexical")
 	m.ObserveRerankDuration(45)
 	// Second observation on ingest to confirm count tracks multiple samples.
 	m.ObserveIngestDuration(0.7, "observation")
@@ -409,6 +409,48 @@ func TestHermemPrefixContract_KnownModesSet(t *testing.T) {
 	for _, want := range wantModes {
 		if !seenLabels[want] {
 			t.Errorf("expected mode=%q in registry, missing (got: %v)", want, seenLabels)
+		}
+	}
+}
+
+
+// TestHermemPrefixContract_KnownDetectorsSet enforces the bounded-value-set
+// contract on the hContradiction `detector` label. Adding a new detector
+// MUST extend knownDetectors in metrics.go AND bump the `want` slice below.
+//
+// Aligned with src/internal/contradiction's concrete detectors today:
+// NewLexicalDetector + NewCompositeDetector. The "semantic" detector is
+// planned (PHASE 2.4 comments) but not yet implemented, so it is NOT in the
+// bounded value-set until it lands.
+func TestHermemPrefixContract_KnownDetectorsSet(t *testing.T) {
+	m := New()
+	for _, d := range []string{"lexical", "composite"} {
+		m.ObserveContradictionDuration(0.001, d)
+	}
+	mfs, err := m.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	hMF := findMF(mfs, "hermem_contradiction_duration_seconds")
+	if hMF == nil {
+		t.Fatal("hContradiction MetricFamily missing despite pre-warm; Vec not registered")
+	}
+	seenLabels := map[string]bool{}
+	for _, child := range hMF.GetMetric() {
+		for _, lp := range child.GetLabel() {
+			if lp.GetName() == "detector" {
+				seenLabels[lp.GetValue()] = true
+			}
+		}
+	}
+	wantDetectors := []string{"_init", "lexical", "composite"}
+	if len(seenLabels) != len(wantDetectors) {
+		t.Errorf("expected %d detector labels after prewarm+2 observations, got %d (labels: %v)",
+			len(wantDetectors), len(seenLabels), seenLabels)
+	}
+	for _, want := range wantDetectors {
+		if !seenLabels[want] {
+			t.Errorf("expected detector=%q in registry, missing (got: %v)", want, seenLabels)
 		}
 	}
 }
