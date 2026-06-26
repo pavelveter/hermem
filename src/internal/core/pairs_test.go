@@ -58,20 +58,23 @@ func (k modelKind) projectFrom(e Entity) any {
 	return nil
 }
 
-// restore runs k (typed via any) → Entity using the model's
-// own AsEntity() inverse.
+// restore runs k (typed via any) → Entity using Compose, threading
+// the model into its band slot and zeroing the other 4 bands. This
+// is the §8.4 replacement for the deleted X.AsEntity() bridges —
+// the bridge variants were lossy on the embedded-Fact identity, so
+// Compose is the only safe round-trip option now.
 func (k modelKind) restore(v any) Entity {
 	switch x := v.(type) {
 	case Fact:
-		return x.AsEntity()
+		return Compose(x, Evidence{}, Episode{}, Task{}, Belief{})
 	case Evidence:
-		return x.AsEntity()
+		return Compose(Fact{}, x, Episode{}, Task{}, Belief{})
 	case Episode:
-		return x.AsEntity()
+		return Compose(Fact{}, Evidence{}, x, Task{}, Belief{})
 	case Task:
-		return x.AsEntity()
+		return Compose(Fact{}, Evidence{}, Episode{}, x, Belief{})
 	case Belief:
-		return x.AsEntity()
+		return Compose(Fact{}, Evidence{}, Episode{}, Task{}, x)
 	}
 	return Entity{}
 }

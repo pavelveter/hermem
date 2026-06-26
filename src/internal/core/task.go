@@ -13,10 +13,10 @@ import "time"
 // P0 ENTITY MODEL REFACTOR (item #6) — lands after Fact (item #3),
 // Evidence (item #4), Episode (item #5). The pattern matches all
 // three: minimal domain-specific surface, identity via embedded Fact,
-// lifecycle metadata as the explicit struct fields. The AsTask() /
-// AsEntity() conversion methods keep working for callers that prefer
-// the per-domain-model API; the AsEntity() projection becomes dead
-// code once all consumers use slim types directly (§8 Phase 4).
+// lifecycle metadata as the explicit struct fields. The AsTask()
+// down-direction projection (Entity → slim type) is the canonical
+// API; the inverse Task.AsEntity() (lossy on embedded-Fact identity)
+// was removed in §8.4.
 type Task struct {
 	Fact
 	Status    string     `json:"status,omitempty"`
@@ -31,13 +31,11 @@ type Task struct {
 // Archived / Degree / ConversationID / MessageID / ExtractedFrom).
 // Callers that need the full row continue to use Entity.
 //
-// §8 TODO: this direction round-trips identity (Ent fields ID/Category/
-// Content/Embedding drop into the embedded Task.Fact automatically —
-// they aren't explicitly mapped). The INVERSE Task.AsEntity() does NOT —
-// it constructs a fresh Entity and silently drops the embedded Fact.
-// §8 Phase 2 must replace callers doing `t.AsEntity()` with `t` directly.
-// No static guard exists; pre-Phase-2 callers that read .ID after an
-// AsEntity round-trip will get the zero value silently.
+// This direction round-trips identity: the source Entity's ID /
+// Category / Content / Embedding land in the embedded Task.Fact
+// automatically via Go's anon-embed promotion (no explicit mapping).
+// The inverse Task.AsEntity() was lossy on the embedded Fact and
+// was removed in §8.4.
 func (e Entity) AsTask() Task {
 	return Task{
 		Status:    e.Status,
@@ -47,21 +45,3 @@ func (e Entity) AsTask() Task {
 	}
 }
 
-// AsEntity lifts the 4 task-lifecycle fields back into an Entity.
-// The 15 non-task fields are zeroed / nil. Callers that need them
-// back must merge from a domain-specific source (Fact for content,
-// Evidence for quality, Episode for provenance, etc.).
-//
-// §8 NOTE: drops embedded Fact identity (ID/Category/Content/Embedding)
-// silently. Until §8 Phase 2 (read-path switchover) lands, callers
-// that round-trip through AsEntity lose identity — prefer consuming
-// the slim type directly when both identity and domain-specific
-// fields are needed.
-func (t Task) AsEntity() Entity {
-	return Entity{
-		Status:    t.Status,
-		ValidFrom: t.ValidFrom,
-		ValidTo:   t.ValidTo,
-		Priority:  t.Priority,
-	}
-}

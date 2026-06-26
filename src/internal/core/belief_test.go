@@ -66,7 +66,7 @@ func TestBeliefToEntity_ZerosUnrelated(t *testing.T) {
 		Archived:       true,
 		Degree:         5,
 	}
-	e := b.AsEntity()
+	e := Compose(Fact{}, Evidence{}, Episode{}, Task{}, b)
 
 	// Belief fields preserved (pointer-identity must match).
 	if e.CreatedAt != b.CreatedAt {
@@ -123,7 +123,7 @@ func TestBelief_RoundTrip_Exact(t *testing.T) {
 		Archived:       true,
 		Degree:         4,
 	}
-	got := original.AsEntity().AsBelief()
+	got := Compose(Fact{}, Evidence{}, Episode{}, Task{}, original).AsBelief()
 	if !reflect.DeepEqual(original, got) {
 		t.Fatalf("belief round-trip shifted fields: want %+v, got %+v", original, got)
 	}
@@ -157,7 +157,7 @@ func TestEntityBelief_RoundTrip_Lossy(t *testing.T) {
 		MessageID:      "msg-1",
 		ExtractedFrom:  "msg-1",
 	}
-	roundTripped := original.AsBelief().AsEntity()
+	roundTripped := Compose(Fact{}, Evidence{}, Episode{}, Task{}, original.AsBelief())
 
 	// Belief fields preserved.
 	if roundTripped.CreatedAt != original.CreatedAt {

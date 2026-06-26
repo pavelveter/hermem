@@ -13,9 +13,9 @@ package core
 // P0 ENTITY MODEL REFACTOR (item #5) — lands after Fact (item #3) and
 // Evidence (item #4). Pattern matches both: minimal surface, identity
 // via embedded Fact, provenance triple as the explicit struct fields.
-// The AsEpisode() conversion keeps working for callers that prefer
-// the per-domain-model API; the projection becomes dead code once
-// all consumers use slim types directly (§8 Phase 4).
+// The AsEpisode() down-direction projection (Entity → slim type) is
+// the canonical API; the inverse Episode.AsEntity() (lossy on
+// embedded-Fact identity) was removed in §8.4.
 type Episode struct {
 	Fact
 	ConversationID string `json:"conversation_id,omitempty"`
@@ -36,20 +36,3 @@ func (e Entity) AsEpisode() Episode {
 	}
 }
 
-// AsEntity lifts the 3 episode fields back into an Entity. The 16
-// non-episode fields are zeroed / nil. Callers that need them back
-// must merge from a domain-specific source (Fact for content,
-// Evidence for quality, Task for lifecycle, etc.).
-//
-// §8 NOTE: drops embedded Fact identity (ID/Category/Content/Embedding)
-// silently. Until §8 Phase 2 (read-path switchover) lands, callers
-// that round-trip through AsEntity lose identity — prefer consuming
-// the slim type directly when both identity and domain-specific
-// fields are needed.
-func (ep Episode) AsEntity() Entity {
-	return Entity{
-		ConversationID: ep.ConversationID,
-		MessageID:      ep.MessageID,
-		ExtractedFrom:  ep.ExtractedFrom,
-	}
-}

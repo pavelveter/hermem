@@ -55,7 +55,7 @@ func TestEpisodeToEntity_ZerosUnrelated(t *testing.T) {
 		MessageID:      "msg-2",
 		ExtractedFrom:  "msg-2",
 	}
-	e := ep.AsEntity()
+	e := Compose(Fact{}, Evidence{}, ep, Task{}, Belief{})
 
 	// Episode fields preserved.
 	if e.ConversationID != ep.ConversationID || e.MessageID != ep.MessageID || e.ExtractedFrom != ep.ExtractedFrom {
@@ -94,7 +94,7 @@ func TestEpisode_RoundTrip_Exact(t *testing.T) {
 		MessageID:      "msg-3",
 		ExtractedFrom:  "msg-3",
 	}
-	got := original.AsEntity().AsEpisode()
+	got := Compose(Fact{}, Evidence{}, original, Task{}, Belief{}).AsEpisode()
 	if !reflect.DeepEqual(original, got) {
 		t.Fatalf("episode round-trip shifted fields: want %+v, got %+v", original, got)
 	}
@@ -126,7 +126,7 @@ func TestEntityEpisode_RoundTrip_Lossy(t *testing.T) {
 		MessageID:      "msg-1",
 		ExtractedFrom:  "msg-1",
 	}
-	roundTripped := original.AsEpisode().AsEntity()
+	roundTripped := Compose(Fact{}, Evidence{}, original.AsEpisode(), Task{}, Belief{})
 
 	// Episode fields preserved.
 	if roundTripped.ConversationID != original.ConversationID ||
