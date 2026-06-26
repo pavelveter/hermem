@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **P2 — EPISODIC MEMORY**: `feat/episodic-memory` completes all 10 P2 EPISODIC MEMORY items via the new `src/internal/episodic/` package and migration `011_create_episodes_events.sql`. All 105 tests pass race-safe. All 10 TODO.md items now [x].
+  - **feat(episodic)**: migration 011 — `episodes` (session/conversation FKs, title, summary, started_at, ended_at, JSON metadata), `events` (CHECK-constrained type: message | action | observation | system), `episode_memories` junction (with role), `episode_tasks` junction.
+  - **feat(episodic)**: `Episode` domain type + `Service` (Create/Get/ListBySession/UpdateSummary/EndEpisode) — flat-package + stateless pattern.
+  - **feat(episodic)**: `SessionService` (CreateSession/GetSession/EndSession/ListSessions) — adds the Go layer over migration 004's `sessions` table.
+  - **feat(episodic)**: `EventService` with typed `EventType` enum (message | action | observation | system) — validates at the Go layer, SQL CHECK is the authoritative guard.
+  - **feat(episodic)**: `LinkService` (LinkMemory/UnlinkMemory/ListMemoriesForEpisode/ListEpisodesForMemory) — idempotent via ON CONFLICT DO NOTHING; slim MemoryRef/EpisodeRef projections.
+  - **feat(episodic)**: `TaskLinkService` (LinkTask/UnlinkTask/ListTasksForEpisode) — same idempotent pattern, no role column.
+  - **feat(episodic)**: `TimelineService.ReconstructTimeline` merges events + linked memories + linked tasks into a single chronologically sorted feed; stable tiebreak on (kind, source_id).
+  - **feat(episodic)**: `RetrievalService.SearchEpisodes` with filter struct (SessionID, TimeFrom, TimeTo, HasSummary, HasLinkedMemories, Limit) + optional semantic rerank via a local Embedder interface (cosine against `metadata.embedding`).
+  - **feat(episodic)**: `Summarizer` stitches events + memories into a dialog, hands to `core.LLMExtractor`, formats extracted entities as a bulleted summary, persists via `UpdateSummary`.
+  - **feat(episodic)**: `PlaybackService` renders the chronological feed as `[]PlaybackFrame` with per-kind Actor context; exports JSON, Markdown, and plain text.
+  - **test(episodic)**: 5 integration tests (full pipeline, empty-episode, missing-LLM, parallel subtests, search-with-filters) using SQLite shared in-memory + MaxOpenConns(1) for -race safety.
+  - **docs**: USAGE.md ## Episodic Memory section added; TODO.md 10 items flipped + sub-agent-11 provenance comment added.
+
 - **P2 — MEMORY EVOLUTION (C3–C10)**: `feat/memory-evolution-rest` completes the remaining 8 sub-items of the P2 memory evolution track via the new `src/internal/evolution/` package and migration `010_add_belief_history.sql`. All 29 tests pass race-safe with store.MemDBRandom(). C3–C10 now [x] in TODO.md.
   - C3 — `evolution.PropagateConfidence` aggregates evidence by polarity (support/refute strength ratio) to update belief confidence.
   - C4 — `evolution.AggregateEvidence` with Sum/Avg/Min selectors for evidence strength aggregation.

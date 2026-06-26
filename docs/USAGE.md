@@ -2129,3 +2129,142 @@ Package `src/internal/evolution/queries.go` (C10 of P2 MEMORY EVOLUTION).
 
 Both use JOIN-style single-SQL queries (N+1-safe). `StateAt` has a benchmark.
 
+## Episodic Memory
+
+The `src/internal/episodic/` package provides a layered episodic
+memory subsystem on top of the existing `entities` and `sessions`
+tables. One episode groups a bounded time-window of fine-grained
+events plus optional links to extracted memory entities and
+task entities. The subsystem is read-write through Go services;
+no HTTP shell ships in this release (transport is a follow-up).
+
+### Service surface
+
+```go
+import (
+    "github.com/pavelveter/hermem/src/internal/core"
+    "github.com/pavelveter/hermem/src/internal/episodic"
+)
+
+// EpisodeService — CRUD on the episodes table.
+epSvc  := episodic.New(db)
+epSvc.CreateEpisode(ctx, episodic.Episode{
+    ID:        "ep-1",
+    SessionID: "sess-1",
+    Title:     "first conversation",
+})
+ep, _ := epSvc.GetEpisode(ctx, "ep-1")
+epSvc.UpdateSummary(ctx, "ep-1", "user asked about Go modules")
+epSvc.EndEpisode(ctx, "ep-1", time.Time{})  // zero = now
+
+// SessionService — group containers around episodes.
+sessSvc := episodic.NewSessionService(db)
+sessSvc.CreateSession(ctx, episodic.Session{ID: "sess-1"})
+sessSvc.EndSession(ctx, "sess-1", time.Time{})
+
+// EventService — typed events on an episode (message | action |
+// observation | system). SQL CHECK constraint is the authoritative
+// guard; the Go type catches bad inputs with a friendly error.
+evSvc := episodic.NewEventService(db)
+evSvc.CreateEvent(ctx, episodic.Event{
+    ID: "ev-1", EpisodeID: "ep-1",
+    Type:    episodic.EventMessage,
+    Content: "hello world",
+})
+
+// LinkService + TaskLinkService — many-to-many links.
+linkSvc := episodic.NewLinkService(db)
+linkSvc.LinkMemory(ctx, "ep-1", "ent-1", "extracted")
+linkSvc.LinkMemory(ctx, "ep-1", "ent-2", "referenced")
+taskSvc := episodic.NewTaskLinkService(db)
+taskSvc.LinkTask(ctx, "ep-1", "task-1")
+
+// TimelineService — chronological feed merging events + linked
+// memories + linked tasks.
+ts := episodic.NewTimelineService(db)
+entries, _ := ts.ReconstructTimeline(ctx, "ep-1")
+
+// RetrievalService — filter + optional semantic rerank.
+retSvc := episodic.NewRetrievalService(db, nil)  // nil embedder = pure SQL
+results, _ := retSvc.SearchEpisodes(ctx, "", episodic.EpisodeFilter{
+    SessionID:         "sess-1",
+    HasLinkedMemories: true,
+    Limit:             10,
+})
+
+// Summarizer — hand dialog to an LLM extractor; persist summary.
+ext := /* core.LLMExtractor — Ollama / OpenAI / stub */
+sum := episodic.NewSummarizer(db, ext)
+summary, _ := sum.SummarizeEpisode(ctx, "ep-1")
+
+// PlaybackService — render the chronological feed as frames
+// (JSON / Markdown / plain text export).
+pb := episodic.NewPlaybackService(db)
+frames, _ := pb.Playback(ctx, "ep-1")
+md := pb.ExportMarkdown(frames)
+txt := pb.ExportText(frames)
+jsonBytes, _ := pb.ExportJSON(frames)
+```
+
+### Types
+
+```go
+type Episode struct {
+    ID, SessionID, ConversationID, Title, Summary string
+    StartedAt                            time.Time
+    EndedAt                              *time.Time
+    Metadata                             map[string]any
+}
+
+type Session struct {
+    ID        string
+    StartedAt time.Time
+    EndedAt   *time.Time
+    Metadata  map[string]any
+}
+
+type Event struct {
+    ID, EpisodeID string
+    Type          EventType  // EventMessage | EventAction | EventObservation | EventSystem
+    Content       string
+    Timestamp     time.Time
+    Metadata      map[string]any
+}
+
+type TimelineEntry struct {
+    Kind                              TimelineEntryKind // TimelineEvent | TimelineMemory | TimelineTask
+    SourceID, EpisodeID, Type, Content string
+    Timestamp                         time.Time
+}
+
+type PlaybackFrame struct {
+    Timestamp                time.Time
+    Type                     string  // "event" | "memory" | "task"
+    Source, Actor, Content  string
+}
+
+type EpisodeFilter struct {
+    SessionID         string
+    TimeFrom, TimeTo  time.Time  // zero = no constraint
+    HasSummary        bool
+    HasLinkedMemories bool
+    Limit             int        // <= 0 = no cap
+}
+```
+
+### Conventions
+
+- **Flat package, stateless Services**: each Service is a one- or
+  two-field struct (just `db`, or `db + embedder` for retrieval)
+  constructed once and held long-lived.
+- **Idempotent linking**: `LinkMemory` / `LinkTask` use
+  `ON CONFLICT DO NOTHING` so duplicate inserts are no-ops.
+- **ON DELETE CASCADE** on event + link-table FKs; `SET NULL` on
+  episode.session_id / episode.conversation_id so the session
+  layer remains independent of episode lifecycle.
+- **JSON metadata** is the extensibility seam — embeddings (for
+  semantic retrieval) and per-episode annotations land in
+  `metadata.embedding` and free-form keys.
+- **Nil embedder** in RetrievalService disables semantic rerank
+  cleanly; the Service falls back to pure SQL filtering.
+

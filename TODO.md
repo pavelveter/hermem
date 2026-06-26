@@ -200,16 +200,16 @@ Phase 1 (C1–C10, feat/memory-evolution branch):
 P2 — EPISODIC MEMORY
 ==================================================
 
-[ ] Create Episode entities
-[ ] Create Session entities
-[ ] Create Event entities
-[ ] Link memories to episodes
-[ ] Link tasks to episodes
-[ ] Add timeline reconstruction
-[ ] Add episode retrieval
-[ ] Add episode summarization
-[ ] Add historical playback support
-[ ] Add episodic memory tests
+[x] Create Episode entities
+[x] Create Session entities
+[x] Create Event entities
+[x] Link memories to episodes
+[x] Link tasks to episodes
+[x] Add timeline reconstruction
+[x] Add episode retrieval
+[x] Add episode summarization
+[x] Add historical playback support
+[x] Add episodic memory tests
 
 ==================================================
 P2 — SEMANTIC COMPRESSION
@@ -315,3 +315,4 @@ A task is considered completed only if:
 <!-- sub-agent-8 -->
 <!-- sub-agent-9 -->
 <!-- sub-agent-10 -->
+<!-- sub-agent-11 -->
