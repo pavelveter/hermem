@@ -1,14 +1,6 @@
-// Package migration hosts the HTTP transport for the migration /
-// schema domain.
-//
-// PHASE 3.2 introduces this shell as part of the god-object
-// demolition pattern established by PHASE 2.x + PHASE 3.1. The shell
-// exposes 4 NEW HTTP routes that previously had no HTTP surface at
-// all (only CLI subcommands):
-//   - GET  /db/migrate   — applied/pending migration list
-//   - POST /db/rollback  — remove last applied migration
-//   - GET  /db/verify    — checksum integrity check
-//   - GET  /db/schema    — schema fingerprint comparison
+// Package migration exposes migration.Service over HTTP. Four routes
+// (/db/migrate, /db/rollback, /db/verify, /db/schema) lifted from
+// cli/db/*.go.
 //
 // §3.2 — embeds shared.BaseHTTPService; all 4 handlers route through
 // s.Wrap so the IncErr + WriteError(500,...) boilerplate is collapsed.

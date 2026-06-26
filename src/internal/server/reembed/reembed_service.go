@@ -1,19 +1,11 @@
-// Package reembed_http exposes reembed.Service over HTTP.
-//
-// PHASE 3.6 — moves the /admin/re-embed route out of
-// src/internal/server/admin_service.go into this new shell
-// following the PHASE 3.1 + 3.2 + 3.3 + 3.4 + 3.5 transport-
-// extraction pattern. The AdminService HTTP shell no longer
-// owns /admin/re-embed — the reembed HTTP shell owns it
-// exclusively. The /admin/re-embed URL stays byte-identical
-// so existing clients see no drift between PHASE 3.5 and
-// PHASE 3.6.
+// Package reembed exposes reembed.Service over HTTP. Minimum
+// HTTPService shape ({Svc, Metrics}) — no Refs because re-embed
+// reads every entity directly from the DB (no schema gates).
 //
 // §3.2 — embeds shared.BaseHTTPService for the cross-shell
 // {Metrics, Refs} pair and routes via s.Wrap. No Refs because
 // re-embed reads every entity directly from the DB (no schema
-// gates). Matching the PHASE 3.5 timeline shell shape:
-// {Svc, Metrics}, the minimum HTTPService dimension in the chain.
+// gates).
 package reembed
 
 import (
@@ -27,7 +19,7 @@ import (
 
 // HTTPService is the transport shell for reembed.Service. Holds
 // the borrowed reembed.Service pointer + observability only — no
-// serverstate.Ref because re-embed read all entities directly
+// serverstate.Ref because re-embed reads all entities directly
 // from the DB (no schema gates).
 type HTTPService struct {
 	Svc *reembed.Service

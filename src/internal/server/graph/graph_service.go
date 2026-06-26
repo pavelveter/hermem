@@ -1,11 +1,6 @@
-// Package graph hosts the HTTP shell for the graph analytics domain.
-//
-// PHASE 3.1 introduces this shell as part of the god-object demolition
-// pattern established by PHASE 2.x. The shell lifts two routes out of
-// the central AdminService (/connected-components, /communities) and
-// adds one NEW route (/graph/verify) that exposes algo.VerifyGraph over
-// HTTP. AdminService retained /health/*, /metrics, and /admin/re-embed,
-// which are out of the graph domain.
+// Package graph exposes graph.Service over HTTP. Three routes
+// (/connected-components, /communities, /graph/verify). Dim is a
+// shell-local snapshot (vec-dim from cfg; handlers don't read Refs).
 //
 // §3.2 — embeds shared.BaseHTTPService; Dim stays as a shell-local
 // field (construction-time VecDim snapshot, not part of the base).

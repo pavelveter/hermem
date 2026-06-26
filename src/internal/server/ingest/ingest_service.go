@@ -1,15 +1,6 @@
-// Package ingest exposes ingest.Service over HTTP.
-//
-// PHASE 3.4 — moves the /ingest route out of src/internal/server/memory/
-// into this new shell and adds a GET /ingest/jobs surface. The memory
-// HTTP shell no longer owns the ingest route — the ingest HTTP shell
-// owns it exclusively. The /ingest URL stays byte-identical so
-// existing clients see no URL drift between PHASE 3.3 and PHASE 3.4.
-//
-// The IngestionWorker is still constructed inside ingest.Service.Ingest
-// per call — Service carries no long-lived worker, so SIGHUP races
-// with mid-call schema mutation simply cannot occur (PHASE 2.1
-// invariant preserved verbatim through the ownership split).
+// Package ingest exposes ingest.Service over HTTP. Per-call worker
+// construction (Service holds no long-lived IngestionWorker) —
+// SIGHUP-race-free by design.
 //
 // §3.2 — embeds shared.BaseHTTPService; DedupThreshold stays as a
 // shell-local field (per-shell snapshot semantics).

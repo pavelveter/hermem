@@ -1,14 +1,5 @@
-// Package contradiction hosts the HTTP transport for the contradiction
-// subsystem.
-//
-// Domain logic lives in src/internal/contradiction (Service); this
-// package owns transport-only concerns: JSON encoding, method check,
-// metric increments, and the route registry for GET /contradictions[?id=X].
-//
-// Following the same pattern as PHASE 2.1's MemoryService extraction and
-// PHASE 2.2's RetrievalService extraction: HTTPService is a thin shell
-// — parse → call Service.List → write envelope. The domain Service has
-// no knowledge of HTTP, httputil, serverstate, or metrics.
+// Package contradiction exposes contradiction.Service over HTTP. One
+// route (GET /contradictions[?id=X]); no Refs (DB-only domain).
 //
 // §3.2 — embeds shared.BaseHTTPService for the cross-shell {Metrics,
 // Refs} pair and routes via s.Wrap so the IncErr + WriteError(500,...)

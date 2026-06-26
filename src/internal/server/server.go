@@ -1,53 +1,7 @@
-// Package server provides the HTTP API shell.
-//
-// After the god-object split this package is just a dispatcher + lifecycle
-// manager. Domain logic lives in the per-sub-domain sub-packages:
-//
-//   - server/retrieval/     — search, retrieve, query, response, query_explain, provenance
-//   - server/task/          — task/status, executable, list, show, dep, tree, create, rollback, recovery-plan
-//   - server/memory/        — HTTP shell for /store, /ingest, /edge, /timeline. Delegates
-//     domain logic to internal/memory.Service.
-//   - server/contradiction/ — GET /contradictions[?id=X]. Delegates to internal/contradiction.Service.
-//     Added in PHASE 2.3 (previously /contradictions lived in server/retrieval
-//     behind a temporary retrieval.Service.DB() reach-through).
-//   - server/edge/          — POST /edge. Delegates to internal/edge.Service.
-//     Added in PHASE 3.5 (the /edge route previously lived on server/memory
-//     shell; lifted out following the PHASE 3.1–3.4 transport-extraction
-//     pattern. URL contract byte-identical).
-//   - server/ingest/        — /ingest, /ingest/jobs. Delegates to internal/ingest.Service.
-//     Added in PHASE 3.4 (the /ingest route previously lived on server/memory
-//     shell; lifted out following the PHASE 3.1–3.3 transport-extraction
-//     pattern. /ingest/jobs GET is NEW — synchronous ingest has no async
-//     job tracker; the route returns a canonical empty-list envelope
-//     until a future PHASE 3.x async-extraction lands).
-//   - server/graph/         — /connected-components, /communities, /graph/verify. Delegates
-//     to internal/graph.Service. Added in PHASE 3.1 (previously /connected-components
-//     and /communities lived on AdminService as a god-object).
-//   - server/migration/     — /db/migrate, /db/rollback, /db/verify, /db/schema. Delegates
-//     to internal/migration.Service. Added in PHASE 3.2 (the four db/* routes previously
-//     lived as CLI-only in cli/db/{migrate,schema,verify,rollback}.go).
-//   - server/retention/     — POST /admin/retention/run. Delegates to
-//     internal/retention.Service. Added in PHASE 3.3 (the retention
-//     goroutine previously lived in server/server.go Serve as a raw
-//     algo.GarbageCollector call; no HTTP surface existed pre-PHASE-3.3).
-//   - server/timeline/      — GET /timeline. Delegates to internal/timeline.Service.
-//     Added in PHASE 3.5 (the /timeline route previously lived on server/memory
-//     shell; lifted out following the PHASE 3.1–3.4 transport-extraction
-//     pattern. URL contract byte-identical; wire-shape preserved verbatim
-//     so existing /timeline consumers see no drift).
-//   - server/reembed/       — POST /admin/re-embed. Delegates to internal/reembed.Service.
-//     Added in PHASE 3.6 (the re-embed orchestrator previously lived in
-//     src/internal/algo/reembed.go, which was deleted; the HTTP route
-//     was extracted from AdminService following the PHASE 3.3 retention
-//     precedent. URL contract byte-identical).
-//   - server/health/         — /health, /health/live, /health/ready. Delegates to
-//     internal/health.Service. Added in PHASE 3.7 (the three health-probe
-//     routes previously lived on AdminService; extracted following the
-//     PHASE 3.1–3.6 transport-extraction pattern. URL contracts
-//     byte-identical).
-//   - /metrics is registered by Server.mount() directly from the
-//     Metrics field — no separate admin shell. PHASE 3.8 dissolved
-//     the AdminService god-object's final route into the Server.
+// Package server provides the HTTP API shell. Dispatcher + lifecycle
+// manager: 12 typed HTTPService sub-shells (each implements
+// RouteProvider) are mounted via Server.mount(); /metrics is registered
+// directly from the Server's Metrics field.
 //
 // Shared per-request configuration is read atomically via *serverstate.Ref —
 // concurrent SIGHUP-driven state swaps are safe with in-flight handlers.
