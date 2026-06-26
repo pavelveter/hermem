@@ -123,16 +123,16 @@ P1 — MIGRATION SYSTEM HARDENING
 P1 — RETRIEVAL CLEANUP
 ==================================================
 
-[ ] Audit retrieval scoring logic
+[x] Audit retrieval scoring logic (already shipped per audit: src/internal/retrieval/scoring.go — ComputeScoreComponents is single source of truth; no duplicates)
 [x] Remove duplicated scoring functions
 [x] Remove duplicated recency logic
 [x] Separate retrieval stages clearly
 [x] Separate reranking stage
-[ ] Separate graph expansion stage
-[ ] Separate temporal ranking stage
-[ ] Add retrieval tracing
-[ ] Add retrieval profiling
-[ ] Document retrieval pipeline
+[x] Separate graph expansion stage (already shipped: src/internal/retrieval/expand.go — expandGraph + scannedNode)
+[x] Separate temporal ranking stage (already shipped: src/internal/retrieval/temporal.go — expDecayHours + temporalScore)
+[x] Add retrieval tracing (already shipped: src/internal/retrieval/tracing.go — tracerFromOpts, startStageSpan; wired in walk.go)
+[x] Add retrieval profiling (already shipped: src/internal/retrieval/walk_bench_test.go — 4 per-stage benchmarks)
+[x] Document retrieval pipeline (already shipped: src/internal/retrieval/PIPELINE.md — canonical pipeline reference)
 
 ==================================================
 P1 — SERVICE LAYER
@@ -299,3 +299,5 @@ A task is considered completed only if:
 [ ] CI passes
 [ ] Separate commit created
 [ ] Commit pushed
+
+<!-- sub-agent-3: 6/6 retrieval-cleanup sub-points cleared in feat/retrieval-cleanup-stages -->
