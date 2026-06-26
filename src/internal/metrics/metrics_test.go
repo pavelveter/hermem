@@ -259,7 +259,7 @@ func TestDurationHistograms(t *testing.T) {
 	m.ObserveIngestDuration(0.3, "observation")
 	m.ObserveRetrievalDuration(5, "search")
 	m.ObserveContradictionDuration(25, "lexical")
-	m.ObserveRerankDuration(45)
+	m.ObserveRerankDuration(45, "llm_ollama")
 	// Second observation on ingest to confirm count tracks multiple samples.
 	m.ObserveIngestDuration(0.7, "observation")
 
@@ -451,6 +451,50 @@ func TestHermemPrefixContract_KnownDetectorsSet(t *testing.T) {
 	for _, want := range wantDetectors {
 		if !seenLabels[want] {
 			t.Errorf("expected detector=%q in registry, missing (got: %v)", want, seenLabels)
+		}
+	}
+}
+
+
+// TestHermemPrefixContract_KnownStrategiesSet enforces the bounded-value-set
+// contract on the hRerank `strategy` label. Adding a new rerank strategy
+// MUST extend knownStrategies in metrics.go AND bump the `want` slice below.
+//
+// Aligned with src/internal/ai/reranker.go:
+//
+//   - NewOllamaReranker / NewOpenAIReranker → "llm"
+//   - NoopReranker / raw-cosine order → "cosine_only"
+//   - Cross-encoder → planned "cross_encoder" (not implemented yet; bounded set
+//     reserves the slot so dashboard authors know future it is intended)
+func TestHermemPrefixContract_KnownStrategiesSet(t *testing.T) {
+	m := New()
+	for _, s := range []string{"llm_openai", "llm_ollama", "noop"} {
+		m.ObserveRerankDuration(0.001, s)
+	}
+	mfs, err := m.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	hMF := findMF(mfs, "hermem_rerank_duration_seconds")
+	if hMF == nil {
+		t.Fatal("hRerank MetricFamily missing despite pre-warm; Vec not registered")
+	}
+	seenLabels := map[string]bool{}
+	for _, child := range hMF.GetMetric() {
+		for _, lp := range child.GetLabel() {
+			if lp.GetName() == "strategy" {
+				seenLabels[lp.GetValue()] = true
+			}
+		}
+	}
+	wantStrategies := []string{"_init", "llm_openai", "llm_ollama", "noop"}
+	if len(seenLabels) != len(wantStrategies) {
+		t.Errorf("expected %d strategy labels after prewarm+3 observations, got %d (labels: %v)",
+			len(wantStrategies), len(seenLabels), seenLabels)
+	}
+	for _, want := range wantStrategies {
+		if !seenLabels[want] {
+			t.Errorf("expected strategy=%q in registry, missing (got: %v)", want, seenLabels)
 		}
 	}
 }
