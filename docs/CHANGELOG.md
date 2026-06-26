@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- docs: TODO.md audit pass flips `[x] Add Grafana dashboard` and `[x] Add alert recommendations` to reflect the opencode merge at `81a624c`. The duplicate `[x] Add Belief abstraction` line in the P2 MEMORY EVOLUTION section is removed (single source of truth). C3–C10 of `P2 MEMORY EVOLUTION` remain `[ ]` (not shipped).
+- **P2 — MEMORY EVOLUTION (C3–C10)**: `feat/memory-evolution-rest` completes the remaining 8 sub-items of the P2 memory evolution track via the new `src/internal/evolution/` package and migration `010_add_belief_history.sql`. All 29 tests pass race-safe with store.MemDBRandom(). C3–C10 now [x] in TODO.md.
+  - C3 — `evolution.PropagateConfidence` aggregates evidence by polarity (support/refute strength ratio) to update belief confidence.
+  - C4 — `evolution.AggregateEvidence` with Sum/Avg/Min selectors for evidence strength aggregation.
+  - C5 — `evolution.TrustScore` formula: confidence × sourceWeight × recencyFactor; configurable TrustWeights with defaults.
+  - C6 — `evolution.TraceRevisions` uses recursive CTE (N+1-safe, MaxChainDepth=32) to walk parent_chain_id backward.
+  - C7 — `evolution.ListActiveBeliefs` filters beliefs to Active-only by default, with includeSuperseded opt-in flag.
+  - C8 — `evolution.GetSupportRefute` counts evidence rows by polarity in a single SQL query.
+  - C9 — `evolution.RecordHistory` / `ListHistory` append-only belief_history table (migration 010).
+  - C10 — `evolution.GetSupersededBy` / `StateAt` evolution queries using JOIN-style SQL (N+1-safe) + benchmark.
+  - Migration: `010_add_belief_history.sql` — idempotent CREATE TABLE IF NOT EXISTS + two indexes.
+
+- docs: TODO.md audit pass flips `[x] Add Grafana dashboard` and `[x] Add alert recommendations` to reflect the opencode merge at `81a624c`. The duplicate `[x] Add Belief abstraction` line in the P2 MEMORY EVOLUTION section is removed (single source of truth).
 - **P1 — MIGRATION SYSTEM HARDENING**: Hardens the SQLite migration subsystem with dry-run mode, out-of-order detection, content-drift detection, concurrent-apply guards, schema snapshotting, down-migration test harness, and race-safe concurrent tests. New exported functions: `RunDry`, `DetectOutOfOrder`, `DetectContentDrift`, `CaptureSchemaHash`, `MigrationFiles`, `applyOneMigration`. Tests: +14 unit/race cases in `migration_test.go`.
 
 - **P2 — MEMORY EVOLUTION (C1)**: `feat/memory-evolution` introduces the first-class `belief` package (`src/internal/memory/belief/`) plus migration `008_add_beliefs_table.sql`. `Belief.Service` exposes `CreateBelief`, `GetBelief`, `ListBeliefs`, `UpdateConfidence`, `MarkSuperseded` against a dedicated `beliefs` SQLite table (id, content, confidence [0,1], source_kind, source_id, status enum, timestamps, FK columns for superseded_by / parent_chain_id). The legacy thin `core.Belief` projection off `core.Entity` is preserved untouched for backward compatibility. Race-safe unit tests (8 cases) in `belief_test.go` exercise happy path, nil/empty rejection, default confidence, ordered listing, confidence bounds + ErrNotFound + id<=0 short-circuit, transactional MarkSuperseded + missing-target rollback.
