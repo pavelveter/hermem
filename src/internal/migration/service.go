@@ -57,7 +57,7 @@ type Service struct {
 }
 
 // NewService constructs a Service. db must be non-nil.
-func NewService(db *sql.DB) *Service {
+func New(db *sql.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -76,10 +76,7 @@ func (s *Service) Status(_ context.Context) ([]store.MigStatus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("migration status: %w", err)
 	}
-	if status == nil {
-		status = []store.MigStatus{}
-	}
-	return status, nil
+	return core.NormalizeSlice(status), nil
 }
 
 // Rollback removes the last-applied migration. When target is
@@ -105,10 +102,7 @@ func (s *Service) Verify(_ context.Context) ([]store.MigMismatch, error) {
 	if err != nil {
 		return nil, fmt.Errorf("migration verify: %w", err)
 	}
-	if mismatches == nil {
-		mismatches = []store.MigMismatch{}
-	}
-	return mismatches, nil
+	return core.NormalizeSlice(mismatches), nil
 }
 
 // DryRun returns the list of pending migrations (not yet applied)
@@ -124,10 +118,7 @@ func (s *Service) DryRun(_ context.Context) ([]store.MigStatus, error) {
 			pending = append(pending, m)
 		}
 	}
-	if pending == nil {
-		pending = []store.MigStatus{}
-	}
-	return pending, nil
+	return core.NormalizeSlice(pending), nil
 }
 
 // SchemaReport is the typed envelope returned by Schema. JSON tags

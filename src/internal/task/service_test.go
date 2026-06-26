@@ -20,7 +20,7 @@ func TestNewService_Success(t *testing.T) {
 	}
 	defer db.Close()
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := NewService(db, &fixedEmbedder{}, vi)
+	svc := New(db, &fixedEmbedder{}, vi)
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -231,7 +231,7 @@ func newSvcFixture(t *testing.T) *svcFixture {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := NewService(db, fixedEmbedder{}, vi)
+	svc := New(db, fixedEmbedder{}, vi)
 	return &svcFixture{svc: svc, db: db, vi: vi}
 }
 

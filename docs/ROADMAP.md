@@ -1,27 +1,17 @@
-# Hermem Roadmap
+==================================================
+P3 — LONG TERM RESEARCH
+==================================================
 
-## v0.8
-
-- [ ] OpenTelemetry
-- [ ] Prometheus
-- [ ] Migration framework
-- [ ] SDK generation
-- [ ] OpenAPI spec
-
-## v0.9
-
-- [ ] Contradiction graph
-- [ ] Evidence graph APIs
-- [ ] Confidence-aware retrieval
-- [ ] Multi-hop retrieval
-- [ ] Explainable retrieval
-
-## v1.0
-
-- [ ] Episodic memory
-- [ ] Temporal memory
-- [ ] Belief abstraction
-- [ ] Semantic compression
+[ ] Design belief graph architecture
+[ ] Design memory decay model
+[ ] Design confidence propagation model
+[ ] Design autonomous memory cleanup
+[ ] Design identity memory layer
+[ ] Design self-reflection memory layer
+[ ] Design memory-driven planning
+[ ] Design memory-driven reasoning
+[ ] Design autonomous memory evolution
+[ ] Design reasoning memory engine
 
 ## v2.0
 

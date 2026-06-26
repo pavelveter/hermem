@@ -66,7 +66,7 @@ func TestService_NewService_NotNil(t *testing.T) {
 	}
 	defer db.Close()
 	vi := &stubVI{}
-	svc := retention.NewService(db, vi)
+	svc := retention.New(db, vi)
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -79,7 +79,7 @@ func TestService_RunOnce_HappyPath_ArchivesExpiredObservation(t *testing.T) {
 	}
 	defer db.Close()
 	vi := &stubVI{}
-	svc := retention.NewService(db, vi)
+	svc := retention.New(db, vi)
 
 	// Seed an observation updated_at well before the cutoff.
 	seedObservation(t, db, "obs-stale-1", time.Now().Add(-2*time.Hour))
@@ -113,7 +113,7 @@ func TestService_RunOnce_ZeroCandidates_ReturnsZeroSwept(t *testing.T) {
 	}
 	defer db.Close()
 	vi := &stubVI{}
-	svc := retention.NewService(db, vi)
+	svc := retention.New(db, vi)
 
 	pol := core.RetentionPolicy{
 		ObservationTTL:  1 * time.Hour,
@@ -146,7 +146,7 @@ func TestService_RunOnce_TTL_AlreadyExpired_ArchivesImmediately(t *testing.T) {
 	}
 	defer db.Close()
 	vi := &stubVI{}
-	svc := retention.NewService(db, vi)
+	svc := retention.New(db, vi)
 
 	// updated_at is 1 ns ago; ObservationTTL=0 means cutoff = now, so
 	// everything older than now is archived. The row qualifies by 1 ns.
@@ -174,7 +174,7 @@ func TestService_RunOnce_CancelledContext_ReturnsError(t *testing.T) {
 	}
 	defer db.Close()
 	vi := &stubVI{}
-	svc := retention.NewService(db, vi)
+	svc := retention.New(db, vi)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel BEFORE call
@@ -201,7 +201,7 @@ func TestService_Run_RespectsContextCancel(t *testing.T) {
 	}
 	defer db.Close()
 	vi := &stubVI{}
-	svc := retention.NewService(db, vi)
+	svc := retention.New(db, vi)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	pol := core.RetentionPolicy{

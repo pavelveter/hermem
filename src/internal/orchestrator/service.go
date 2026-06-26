@@ -77,6 +77,6 @@ func (s *Service) resolveExecutableTasks(ctx context.Context, schema core.Schema
 	// taskdomain.NewService requires an embedder + vi; AgentLoop +
 	// ExecutionPlan don't read either, so we pass nil. Service.Executable
 	// never touches embedder or vi internally.
-	svc := taskdomain.NewService(s.db, nil, nil)
+	svc := taskdomain.New(s.db, nil, nil)
 	return svc.Executable(ctx, goalID, schema)
 }

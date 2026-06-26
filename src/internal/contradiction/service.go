@@ -38,7 +38,7 @@ type Service struct {
 }
 
 // NewService constructs a Service. db must be non-nil.
-func NewService(db *sql.DB) *Service {
+func New(db *sql.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -59,8 +59,5 @@ func (s *Service) List(_ context.Context, entityID string) ([]core.Contradiction
 	if err != nil {
 		return nil, err
 	}
-	if pairs == nil {
-		pairs = []core.ContradictionPair{}
-	}
-	return pairs, nil
+	return core.NormalizeSlice(pairs), nil
 }

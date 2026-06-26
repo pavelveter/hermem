@@ -42,7 +42,7 @@ func newIngestFixture(t *testing.T) (*sql.DB, *vector.InMemoryVectorIndex) {
 
 func TestService_NewService_NotNil(t *testing.T) {
 	db, vi := newIngestFixture(t)
-	svc := ingest.NewService(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
+	svc := ingest.New(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -50,7 +50,7 @@ func TestService_NewService_NotNil(t *testing.T) {
 
 func TestService_Ingest_EmptyDialogReturnsError(t *testing.T) {
 	db, vi := newIngestFixture(t)
-	svc := ingest.NewService(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
+	svc := ingest.New(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
 	err := svc.Ingest(context.Background(), "", 0.5, core.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected error from empty dialog, got nil")
@@ -62,7 +62,7 @@ func TestService_Ingest_EmptyDialogReturnsError(t *testing.T) {
 
 func TestService_Ingest_NilExtractorReturnsError(t *testing.T) {
 	db, vi := newIngestFixture(t)
-	svc := ingest.NewService(db, vi, nil, nil)
+	svc := ingest.New(db, vi, nil, nil)
 	err := svc.Ingest(context.Background(), "user: hi", 0.5, core.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected error from nil extractor, got nil")
@@ -78,7 +78,7 @@ func TestService_Ingest_HappyPath_NoEntities(t *testing.T) {
 	// IngestionWorker iterates zero entities, returns nil. PHASE 3.4
 	// preserves this short-circuit; if a regression reintroduces
 	// an early-return guard for empty results, this test catches it.
-	svc := ingest.NewService(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
+	svc := ingest.New(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
 	if err := svc.Ingest(context.Background(), "user: hi", 0.5, core.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestService_Ingest_HappyPath_NoEntities(t *testing.T) {
 
 func TestService_Ingest_ExtractorErrorPropagates(t *testing.T) {
 	db, vi := newIngestFixture(t)
-	svc := ingest.NewService(db, vi, nil, &stubExtractor{err: errors.New("dial boom")})
+	svc := ingest.New(db, vi, nil, &stubExtractor{err: errors.New("dial boom")})
 	err := svc.Ingest(context.Background(), "user: hi", 0.5, core.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected dial error, got nil")

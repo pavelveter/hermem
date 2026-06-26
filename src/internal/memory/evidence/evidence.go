@@ -60,7 +60,7 @@ type sqlService struct {
 }
 
 // NewService returns a SQL-backed Service over db.
-func NewService(db *sql.DB) Service { return &sqlService{db: db} }
+func New(db *sql.DB) Service { return &sqlService{db: db} }
 
 func (s *sqlService) CreateEvidence(ctx context.Context, e *Evidence) error {
 	if e == nil {

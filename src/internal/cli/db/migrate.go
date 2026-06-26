@@ -18,7 +18,7 @@ func newMigrateCmd(env *cli.Env) *cobra.Command {
 			// PHASE 3.2: routes through the transport-agnostic migration
 			// Service rather than hitting store.* directly. Mirrors the
 			// PHASE 2.x + 3.1 pattern of "domain service per call".
-			svc := migration.NewService(env.DB)
+			svc := migration.New(env.DB)
 			status, err := svc.Status(env.Ctx)
 			if err != nil {
 				return fmt.Errorf("migrate status: %w", err)

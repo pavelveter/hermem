@@ -20,7 +20,7 @@ func newListCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
-			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			tasks, err := svc.List(env.Ctx, req.Status, req.GoalID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("list: %w", err)

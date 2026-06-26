@@ -38,7 +38,7 @@ func TestIntegrity_VerifyCleanAfterMemDB(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	mismatches, err := svc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -58,7 +58,7 @@ func TestIntegrity_TamperedChecksumDetected(t *testing.T) {
 	if _, err := db.Exec(`UPDATE migration_checksums SET checksum_sha256 = 'tampered' WHERE version = '001_initial_schema.sql'`); err != nil {
 		t.Fatalf("update checksum: %v", err)
 	}
-	svc := NewService(db)
+	svc := New(db)
 	mismatches, err := svc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -94,7 +94,7 @@ func TestIntegrity_ChecksumBackfill(t *testing.T) {
 	if _, err := db.Exec(`UPDATE migration_checksums SET checksum_sha256 = NULL WHERE version = '001_initial_schema.sql'`); err != nil {
 		t.Fatalf("null checksum: %v", err)
 	}
-	svc := NewService(db)
+	svc := New(db)
 	mismatches, err := svc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)

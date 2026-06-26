@@ -24,17 +24,17 @@ import (
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
-	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
+	"github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	healthsrv "github.com/pavelveter/hermem/src/internal/server/health"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
-	reembedsrv "github.com/pavelveter/hermem/src/internal/server/reembed"
-	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
+	"github.com/pavelveter/hermem/src/internal/server/reembed"
+	"github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
-	tlsrv "github.com/pavelveter/hermem/src/internal/server/timeline"
+	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
@@ -97,24 +97,24 @@ func runServe(env *clienv.Env, port string) error {
 	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
 	// PHASE 2.2: same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.
-	retSvc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+	retSvc := retdomain.New(env.DB, env.VI, env.Embedder)
 	// PHASE 2.3: contradiction domain Service is read-only and
 	// DB-only (no vector index / embedder / schema); same shape as
 	// retrieval/memory but slimmer dependencies.
-	cndSvc := contradictdomain.NewService(env.DB)
+	cndSvc := contradictdomain.New(env.DB)
 	// PHASE 2.4: task domain Service holds db + embedder + vi. The
 	// embedded AutoLinkEdges inside Service.Create is the only call
 	// path that uses embedder + vi; all other methods are pure SQL.
 	// The HTTP shell (server/task) takes a borrowed pointer to this
 	// Service and threads it into the 10-endpoint mux.
-	taskSvc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+	taskSvc := taskdomain.New(env.DB, env.Embedder, env.VI)
 	// PHASE 3.1: graph domain Service is read-only and DB-only
 	// (same shape as contradiction's PHASE 2.3 precedent). The
 	// HTTP shell mounts /connected-components + /communities
 	// (moved from AdminService) plus the NEW /graph/verify. Dim
 	// is loaded once from cfg at boot — VectorDim is a static
 	// dimensional commitment for the lifetime of the daemon.
-	graphSvc := graphdomain.NewService(env.DB)
+	graphSvc := graphdomain.New(env.DB)
 	// PHASE 3.2: migration domain Service covers schema / migration
 	// inspection (db/migrate / db/rollback / db/verify / db/schema).
 	// OUT OF SCOPE: store.RunMigrations + store.StoreSchemaFingerprint
@@ -122,7 +122,7 @@ func runServe(env *clienv.Env, port string) error {
 	// from main.go boot and cli/serve.go's SIGHUP loop, not
 	// request-time reads. The HTTP shell exposes 4 NEW routes that
 	// previously had no HTTP surface (only CLI subcommands).
-	migrSvc := migrationdomain.NewService(env.DB)
+	migrSvc := migrationdomain.New(env.DB)
 	// PHASE 3.4: ingest domain Service owns the synchronous dialog
 	// pipeline orchestration (extraction -> embed -> dedup -> upsert
 	// -> edges). Constructs an IngestionWorker PER CALL inside
@@ -130,7 +130,7 @@ func runServe(env *clienv.Env, port string) error {
 	// The HTTP shell replaces the previously-on-server/memory-shell
 	// HandleIngest route; the URL stays at /ingest. /ingest/jobs GET
 	// endpoint is NEW.
-	ingestSvc := ingestdomain.NewService(env.DB, env.VI, env.Embedder, env.Extractor)
+	ingestSvc := ingestdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
 	// PHASE 3.3: retention domain Service owns the archive sweep
 	// (RunOnce + Run loop). DefaultPolicy is captured at construction
 	// from cfg.Retention and passed to the HTTP shell; SIGHUP does not
@@ -143,21 +143,21 @@ func runServe(env *clienv.Env, port string) error {
 	// name collision with the retrieval domain Service declared
 	// further up; both have the type prefix `*Service` so a single
 	// short name would shadow.
-	retentionSvc := retentiondomain.NewService(env.DB, env.VI)
+	retentionSvc := retentiondomain.New(env.DB, env.VI)
 
 	srv := server.NewServer(
 		refs,
 		ret.New(retSvc, env.Metrics, refs),
 		tasksvc.New(taskSvc, env.Metrics, refs),
 		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
-		edgesrv.New(edgeSvc, env.Metrics, refs),
-		tlsrv.New(timelineSvc, env.Metrics),
+		edge.New(edgeSvc, env.Metrics, refs),
+		timeline.New(timelineSvc, env.Metrics),
 		ingsrv.New(ingestSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
 		cnd.New(cndSvc, env.Metrics),
 		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
 		migrsrv.New(migrSvc, env.Metrics, refs),
-		retsrv.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
-		reembedsrv.New(reembedSvc, env.Metrics),
+		retention.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
+		reembed.New(reembedSvc, env.Metrics),
 		healthsrv.New(healthSvc),
 		env.Metrics,
 	)

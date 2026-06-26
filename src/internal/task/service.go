@@ -23,6 +23,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -51,24 +52,25 @@ type Service struct {
 // NewService constructs a Service. All three deps are required; passing
 // nil embedder makes Create fail with a domain error that the HTTP
 // shell maps to 500.
-func NewService(db *sql.DB, embedder core.Embedder, vi core.VectorIndex) *Service {
+func New(db *sql.DB, embedder core.Embedder, vi core.VectorIndex) *Service {
 	return &Service{db: db, embedder: embedder, vi: vi}
 }
 
 // Status transitions a task's status (e.g. pending → running → completed).
-// Validation is delegated to store.SetStatus which returns either:
-//   - "task not found: <id>"  — HTTP shell maps to 400 with the verbatim
-//     message (client mistake: wrong id)
-//   - any other error          — HTTP shell maps to 422 (semantic violation:
-//     unknown state, illegal forward transition, etc.)
+// Validation is delegated to store.SetStatus.
 //
-// Schema is passed per call so the SIGHUP reload path constructs a
-// fresh Service binding without touching a long-lived state singleton.
+// Errors: returns core.NewNotFoundError if the entity doesn't exist;
+// other store errors (invalid status, non-stateful) are wrapped as-is
+// and map to 422 in the HTTP shell via MapError's default→500 codepath
+// plus a task-specific override in HandleTaskStatus.
 func (s *Service) Status(_ context.Context, id, newStatus string, schema core.SchemaConfig) error {
 	if id == "" || newStatus == "" {
-		return fmt.Errorf("status: id and new status required")
+		return core.NewInvalidInputError("id and new status required")
 	}
 	if err := store.SetStatus(s.db, schema, id, newStatus); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return core.NewNotFoundError(err.Error())
+		}
 		return fmt.Errorf("status: %w", err)
 	}
 	return nil
@@ -89,10 +91,7 @@ func (s *Service) Executable(_ context.Context, goalID string, schema core.Schem
 	if err != nil {
 		return nil, err
 	}
-	if tasks == nil {
-		tasks = []core.Entity{}
-	}
-	return tasks, nil
+	return core.NormalizeSlice(tasks), nil
 }
 
 // List returns task entities filtered by status and/or goal subtree.
@@ -104,23 +103,23 @@ func (s *Service) List(_ context.Context, status, goalID string, schema core.Sch
 	if err != nil {
 		return nil, fmt.Errorf("list: %w", err)
 	}
-	if tasks == nil {
-		tasks = []core.Entity{}
-	}
-	return tasks, nil
+	return core.NormalizeSlice(tasks), nil
 }
 
 // Show returns one task entity plus its blocked_by + recovers_via
-// edge lists. The HTTP shell maps:
-//   - "task not found: <id>"  → 400
-//   - generic SQL error       → 500
-//   - success                 → 200 with core.TaskShowResponse
+// edge lists.
+//
+// Errors: returns core.NewNotFoundError if the entity doesn't exist;
+// other store errors are wrapped as-is.
 func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (core.Entity, []core.Edge, []core.Edge, error) {
 	if id == "" {
-		return core.Entity{}, nil, nil, fmt.Errorf("show: id required")
+		return core.Entity{}, nil, nil, core.NewInvalidInputError("id required")
 	}
 	entity, blocked, recovers, err := store.GetTaskWithRelations(s.db, schema, id)
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return core.Entity{}, nil, nil, core.NewNotFoundError(err.Error())
+		}
 		return core.Entity{}, nil, nil, fmt.Errorf("show: %w", err)
 	}
 	return entity, blocked, recovers, nil
@@ -201,7 +200,7 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 	}
 	cat := config.FirstStatefulCategory(schema)
 	if cat == "" {
-		return "", fmt.Errorf("create: no stateful category configured")
+		return "", core.NewInvalidInputError("no stateful category configured")
 	}
 	entity := core.Entity{
 		ID:        id,
@@ -232,10 +231,7 @@ func (s *Service) RecoveryPlan(_ context.Context, id string, schema core.SchemaC
 	if err != nil {
 		return nil, fmt.Errorf("recovery: %w", err)
 	}
-	if plan == nil {
-		plan = []core.Entity{}
-	}
-	return plan, nil
+	return core.NormalizeSlice(plan), nil
 }
 
 // --- internal helpers ---

@@ -50,7 +50,7 @@ type Service struct {
 // (RunOnce removes from vi after every successful archive sweep). The DB's
 // MaxOpenConns constraint must be 1 (set by store.InitDB) so the BEGIN
 // IMMEDIATE writer-lock serializes against parallel ingest transactions.
-func NewService(db *sql.DB, vi core.VectorIndex) *Service {
+func New(db *sql.DB, vi core.VectorIndex) *Service {
 	return &Service{db: db, vi: vi}
 }
 

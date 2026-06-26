@@ -24,8 +24,8 @@ func openDB(t *testing.T) *sql.DB {
 func TestPropagateConfidence_AllSupport(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
-	bSvc := belief.NewService(db)
-	eSvc := evidence.NewService(db)
+	bSvc := belief.New(db)
+	eSvc := evidence.New(db)
 	b := &belief.Belief{Content: "test", Confidence: 1.0}
 	if err := bSvc.CreateBelief(ctx, b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)
@@ -51,8 +51,8 @@ func TestPropagateConfidence_AllSupport(t *testing.T) {
 func TestPropagateConfidence_MixedEvidence(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
-	bSvc := belief.NewService(db)
-	eSvc := evidence.NewService(db)
+	bSvc := belief.New(db)
+	eSvc := evidence.New(db)
 	b := &belief.Belief{Content: "mixed", Confidence: 1.0}
 	if err := bSvc.CreateBelief(ctx, b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)
@@ -78,8 +78,8 @@ func TestPropagateConfidence_MixedEvidence(t *testing.T) {
 func TestPropagateConfidence_NoEvidenceKeepsConfidence(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
-	bSvc := belief.NewService(db)
-	eSvc := evidence.NewService(db)
+	bSvc := belief.New(db)
+	eSvc := evidence.New(db)
 	b := &belief.Belief{Content: "no-evic", Confidence: 0.7}
 	if err := bSvc.CreateBelief(ctx, b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)

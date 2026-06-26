@@ -24,7 +24,7 @@ func newProvenanceCmd(env *cli.Env) *cobra.Command {
 		Short: "Query entities by provenance (conversation / message / source)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+			svc := retdomain.New(env.DB, env.VI, env.Embedder)
 			entities, err := svc.Provenance(env.Ctx, convID, msgID, source, limit)
 			if err != nil {
 				return fmt.Errorf("provenance: %w", err)

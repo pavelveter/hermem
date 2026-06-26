@@ -82,10 +82,7 @@ func (cp *Compressor) CompressCluster(ctx context.Context, clusters [][]string) 
 		}
 		nodes = append(nodes, node)
 	}
-	if nodes == nil {
-		return []*SummaryNode{}, nil
-	}
-	return nodes, nil
+	return core.NormalizeSlice(nodes), nil
 }
 
 func (cp *Compressor) Recompress(ctx context.Context, summaryID string) (*SummaryNode, error) {

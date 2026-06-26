@@ -60,7 +60,7 @@ func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema core
 		return fmt.Errorf("edge: source_id, target_id, relation_type required")
 	}
 	if !schema.AllowedRelations[req.RelationType] {
-		return &ErrInvalidSchema{Field: "relation_type", Value: req.RelationType}
+		return core.NewInvalidSchemaError("relation_type", req.RelationType)
 	}
 	if req.AutoCreate {
 		if err := vector.AddEdgeWithAutoCreate(ctx, s.db, s.vi, s.embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {
@@ -74,18 +74,3 @@ func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema core
 	return nil
 }
 
-// ErrInvalidSchema is returned by Service.AddEdge when a request
-// violates the supplied schema. HTTP shell maps it to 422
-// Unprocessable Entity; CLI shell prints the message verbatim.
-//
-// Field is always "relation_type" (the schema-validated surface
-// an edge write touches); Value carries the offending literal for
-// the operator's diagnostic.
-type ErrInvalidSchema struct {
-	Field string
-	Value string
-}
-
-func (e *ErrInvalidSchema) Error() string {
-	return fmt.Sprintf("invalid %s: %s", e.Field, e.Value)
-}

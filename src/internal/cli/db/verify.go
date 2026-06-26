@@ -21,7 +21,7 @@ func newVerifyCmd(env *cli.Env) *cobra.Command {
 		Short: "Verify migration checksums (exit 1 on mismatch)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			svc := migration.NewService(env.DB)
+			svc := migration.New(env.DB)
 			mismatches, err := svc.Verify(env.Ctx)
 			if err != nil {
 				return fmt.Errorf("verify: %w", err)

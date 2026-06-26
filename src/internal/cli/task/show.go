@@ -23,7 +23,7 @@ func newShowCmd(env *cli.Env) *cobra.Command {
 			if req.ID == "" {
 				return fmt.Errorf("id required")
 			}
-			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			entity, blocked, recovers, err := svc.Show(env.Ctx, req.ID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("show: %w", err)

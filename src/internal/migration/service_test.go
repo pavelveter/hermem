@@ -22,7 +22,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -34,7 +34,7 @@ func TestService_Status_ReturnsNonNilSlice(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	status, err := svc.Status(context.Background())
 	if err != nil {
 		t.Fatalf("Status: %v", err)
@@ -60,7 +60,7 @@ func TestService_Rollback_NoError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	// Rollback semantics pre-PHASE-3.2: returns (name, nil) where
 	// name is the rolled-back migration file, or ("", nil) when no
 	// migrations exist. After MemDB runs embedded migrations we
@@ -83,7 +83,7 @@ func TestService_Verify_NoMismatchOnConsistentDB(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	mismatches, err := svc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -109,7 +109,7 @@ func TestService_DryRun_ReturnsEmptyAfterMemDB(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	pending, err := svc.DryRun(context.Background())
 	if err != nil {
 		t.Fatalf("DryRun: %v", err)
@@ -128,7 +128,7 @@ func TestService_Schema_NoError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	report, err := svc.Schema(context.Background(), core.DefaultSchemaConfig(false))
 	if err != nil {
 		t.Fatalf("Schema: %v", err)

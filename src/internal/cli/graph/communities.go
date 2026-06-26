@@ -20,7 +20,7 @@ func newCommunitiesCmd(env *cli.Env) *cobra.Command {
 			// — Communities returns the unfiltered list to match the
 			// domain contract; CLI currently doesn't filter either,
 			// keeping pre-PHASE-3.1 behavior identical.
-			svc := graphsvc.NewService(env.DB)
+			svc := graphsvc.New(env.DB)
 			comms, globalQ, err := svc.Communities(env.Ctx, 50)
 			if err != nil {
 				return fmt.Errorf("communities: %w", err)

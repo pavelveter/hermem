@@ -15,7 +15,7 @@ func newDryRunCmd(env *cli.Env) *cobra.Command {
 		Short: "Show pending migrations without applying them",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			svc := migration.NewService(env.DB)
+			svc := migration.New(env.DB)
 			pending, err := svc.DryRun(env.Ctx)
 			if err != nil {
 				return fmt.Errorf("dry-run: %w", err)

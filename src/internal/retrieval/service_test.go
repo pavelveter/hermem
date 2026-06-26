@@ -50,7 +50,7 @@ func newSvcFixture(t *testing.T) *svcFixture {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := NewService(db, vi, svcStubEmbedder{})
+	svc := New(db, vi, svcStubEmbedder{})
 	return &svcFixture{svc: svc, db: db}
 }
 
@@ -79,7 +79,7 @@ func TestNewService_Success(t *testing.T) {
 	}
 	defer db.Close()
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := NewService(db, vi, svcStubEmbedder{})
+	svc := New(db, vi, svcStubEmbedder{})
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -129,7 +129,7 @@ func TestService_Search_PropagatesEmbedError(t *testing.T) {
 	}
 	defer db.Close()
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := NewService(db, vi, &svcErrEmbedder{msg: "embed-down"})
+	svc := New(db, vi, &svcErrEmbedder{msg: "embed-down"})
 
 	_, err = svc.Search(context.Background(), "hello", 5)
 	if err == nil {
@@ -217,7 +217,7 @@ func TestService_Query_PropagatesEmbedError(t *testing.T) {
 	}
 	defer db.Close()
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := NewService(db, vi, &svcErrEmbedder{msg: "query-embed-fail"})
+	svc := New(db, vi, &svcErrEmbedder{msg: "query-embed-fail"})
 	_, err = svc.Query(context.Background(), "anything", 0, core.RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected embed error, got nil")
@@ -264,7 +264,7 @@ func TestService_Explain_SwallowsEmbedError(t *testing.T) {
 	}
 	defer db.Close()
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := NewService(db, vi, &svcErrEmbedder{msg: "explain-embed-fail"})
+	svc := New(db, vi, &svcErrEmbedder{msg: "explain-embed-fail"})
 
 	result, err := svc.Explain(context.Background(), "anything", 0, core.RetrieveContextOptions{})
 	if err != nil {

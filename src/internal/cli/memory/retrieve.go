@@ -27,7 +27,7 @@ func newRetrieveCmd(env *cli.Env) *cobra.Command {
 			if req.MaxDepth <= 0 {
 				req.MaxDepth = retdomain.DefaultRetrieveMaxDepth
 			}
-			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+			svc := retdomain.New(env.DB, env.VI, env.Embedder)
 			opts := core.RetrieveContextOptions{
 				MaxDepth:          req.MaxDepth,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,

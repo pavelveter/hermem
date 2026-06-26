@@ -18,7 +18,7 @@ func newRollbackCmd(env *cli.Env) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			target, _ := cmd.Flags().GetString("target")
-			svc := migration.NewService(env.DB)
+			svc := migration.New(env.DB)
 			name, err := svc.Rollback(env.Ctx, target)
 			if err != nil {
 				return fmt.Errorf("rollback: %w", err)

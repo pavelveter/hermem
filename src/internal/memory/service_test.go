@@ -102,14 +102,14 @@ func TestMemoryService_Store_RejectsUnknownCategory(t *testing.T) {
 	req := core.StoreRequest{ID: "e2", Category: "bogus", Content: "x"}
 	err := f.svc.Store(context.Background(), req, core.DefaultSchemaConfig(false))
 	if err == nil {
-		t.Fatal("expected ErrInvalidSchema, got nil")
+		t.Fatal("expected DomainError, got nil")
 	}
-	var ise *ErrInvalidSchema
-	if !errors.As(err, &ise) {
-		t.Fatalf("want ErrInvalidSchema, got %T: %v", err, err)
+	var de *core.DomainError
+	if !errors.As(err, &de) {
+		t.Fatalf("want *core.DomainError, got %T: %v", err, err)
 	}
-	if ise.Field != "category" || ise.Value != "bogus" {
-		t.Fatalf("want {category, bogus}, got {%s, %s}", ise.Field, ise.Value)
+	if de.Code != core.CodeInvalidSchema || de.Field != "category" || !strings.Contains(de.Message, "category") {
+		t.Fatalf("want {code=invalid_schema, field=category}, got {code=%s, field=%s, msg=%s}", de.Code, de.Field, de.Message)
 	}
 }
 
@@ -168,7 +168,7 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 // src/internal/timeline/service_test.go. The HTTP shell route /timeline
 // moved from server/memory to server/timeline — URL contract unchanged.
 
-// --- ErrInvalidSchema ---
+// --- ErrInvalidSchema (now core.DomainError) ---
 //
 // PHASE 3.5: TestErrInvalidSchema_Error was removed from here because
 // the relation_type field case moved to edge.ErrInvalidSchema. The

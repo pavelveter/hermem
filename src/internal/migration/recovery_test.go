@@ -20,7 +20,7 @@ func TestRecovery_RollbackEmptyDB(t *testing.T) {
 	if _, err := db.Exec("DELETE FROM migration_checksums"); err != nil {
 		t.Fatalf("delete migration_checksums: %v", err)
 	}
-	svc := NewService(db)
+	svc := New(db)
 	name, err := svc.Rollback(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Rollback on empty DB: %v", err)
@@ -49,7 +49,7 @@ func TestRecovery_RollbackPartiallyApplied(t *testing.T) {
 		t.Fatalf("delete checksum: %v", err)
 	}
 	// DryRun should NOT show it as pending (it's in schema_migrations).
-	svc := NewService(db)
+	svc := New(db)
 	pending, err := svc.DryRun(context.Background())
 	if err != nil {
 		t.Fatalf("DryRun: %v", err)
@@ -108,7 +108,7 @@ func TestRecovery_RollbackToTarget(t *testing.T) {
 		t.Skip("need at least 2 applied migrations for target test")
 	}
 	target := versions[len(versions)-2] // second from last = first applied
-	svc := NewService(db)
+	svc := New(db)
 	for i := len(versions) - 1; i >= 0; i-- {
 		if versions[i] == target {
 			break

@@ -79,7 +79,7 @@ func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema core.
 		return fmt.Errorf("store: id, category, content required")
 	}
 	if !schema.AllowedCategories[req.Category] {
-		return &ErrInvalidSchema{Field: "category", Value: req.Category}
+		return core.NewInvalidSchemaError("category", req.Category)
 	}
 	entity := core.Entity{
 		ID:        req.ID,
@@ -110,20 +110,3 @@ func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schem
 	return nil
 }
 
-// ErrInvalidSchema is returned by Service.Store when a request violates
-// the supplied schema. HTTP shell maps it to 422 Unprocessable Entity;
-// CLI shell prints the message verbatim.
-//
-// Post-PHASE 3.5 only Store returns this from the memory domain
-// (the relation_type field side moved to edge.ErrInvalidSchema). The
-// struct is retained here — not collapsed into a shared core type —
-// because it is the memory-domain semantic envelope and dropping it
-// would push callers into importing edge for a non-edge operation.
-type ErrInvalidSchema struct {
-	Field string
-	Value string
-}
-
-func (e *ErrInvalidSchema) Error() string {
-	return fmt.Sprintf("invalid %s: %s", e.Field, e.Value)
-}

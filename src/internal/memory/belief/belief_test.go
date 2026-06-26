@@ -15,7 +15,7 @@ import (
 func TestService_CreateAndGet_HappyPath(t *testing.T) {
 	t.Parallel()
 	db := memDB(t)
-	svc := belief.NewService(db)
+	svc := belief.New(db)
 	ctx := context.Background()
 
 	b := &belief.Belief{
@@ -57,7 +57,7 @@ func TestService_CreateAndGet_HappyPath(t *testing.T) {
 
 func TestService_CreateBelief_ConfidenceBoundsRejected(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	ctx := context.Background()
 
 	if err := svc.CreateBelief(ctx, &belief.Belief{Content: "neg", Confidence: -0.1}); err == nil {
@@ -70,7 +70,7 @@ func TestService_CreateBelief_ConfidenceBoundsRejected(t *testing.T) {
 
 func TestService_NilBeliefRejected(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	if err := svc.CreateBelief(context.Background(), nil); err == nil {
 		t.Fatal("want error for nil Belief")
 	}
@@ -78,7 +78,7 @@ func TestService_NilBeliefRejected(t *testing.T) {
 
 func TestService_EmptyContentRejected(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	if err := svc.CreateBelief(context.Background(), &belief.Belief{}); err == nil {
 		t.Fatal("want error for empty Content")
 	}
@@ -86,7 +86,7 @@ func TestService_EmptyContentRejected(t *testing.T) {
 
 func TestService_DefaultConfidenceMagnitude(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	b := &belief.Belief{Content: "default-confidence case"}
 	if err := svc.CreateBelief(context.Background(), b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)
@@ -98,7 +98,7 @@ func TestService_DefaultConfidenceMagnitude(t *testing.T) {
 
 func TestService_ListBeliefsOrdered(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	ctx := context.Background()
 
 	for _, content := range []string{"alpha", "beta", "gamma"} {
@@ -125,7 +125,7 @@ func TestService_ListBeliefsOrdered(t *testing.T) {
 
 func TestService_UpdateConfidence(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	ctx := context.Background()
 
 	b := &belief.Belief{Content: "subject", Confidence: 0.5}
@@ -165,7 +165,7 @@ func TestService_UpdateConfidence(t *testing.T) {
 
 func TestService_MarkSuperseded(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	ctx := context.Background()
 
 	a := &belief.Belief{Content: "old", Confidence: 0.6}
@@ -213,7 +213,7 @@ func TestService_MarkSuperseded(t *testing.T) {
 
 func TestService_GetNotFound(t *testing.T) {
 	t.Parallel()
-	svc := belief.NewService(memDB(t))
+	svc := belief.New(memDB(t))
 	if _, err := svc.GetBelief(context.Background(), 99999); !errors.Is(err, belief.ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}

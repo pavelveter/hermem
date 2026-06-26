@@ -15,7 +15,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -27,7 +27,7 @@ func TestService_Components_EmptyDBReturnsEmpty(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	comps, err := svc.Components(context.Background(), 2)
 	if err != nil {
 		t.Fatalf("Components: %v", err)
@@ -46,7 +46,7 @@ func TestService_Components_MinSizeZeroSweepsAll(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	// minSize <= 0 means store returns all components regardless of size.
 	// Empty DB has zero components, so len == 0 matches the no-component
 	// case; the test pins zero-result normalization rather than the
@@ -69,7 +69,7 @@ func TestService_Communities_EmptyDBReturnsEmpty(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	comms, q, err := svc.Communities(context.Background(), 10)
 	if err != nil {
 		t.Fatalf("Communities: %v", err)
@@ -91,7 +91,7 @@ func TestService_Verify_EmptyDBReturnsClean(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	report, err := svc.Verify(context.Background(), core.DefaultSchemaConfig(false), 3)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)

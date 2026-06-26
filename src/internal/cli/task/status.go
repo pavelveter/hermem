@@ -25,7 +25,7 @@ func newStatusCmd(env *cli.Env) *cobra.Command {
 			}
 			// Construct per-call (six pointer assignments; cheap) so
 			// CLI never holds onto a stale Service ref between commands.
-			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			if err := svc.Status(env.Ctx, req.ID, req.Status, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("status: %w", err)
 			}

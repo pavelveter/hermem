@@ -30,7 +30,7 @@ func newDepCmd(env *cli.Env) *cobra.Command {
 			if err := env.Cfg.ValidateRelation(rel); err != nil {
 				return fmt.Errorf("invalid: %w", err)
 			}
-			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			// CLI behavior drift in PHASE 2.4: pre-PHASE-2.4 `task dep`
 			// returned an error on duplicate-edge AddEdge failures
 			// ("add: %w"). Post-PHASE-2.4 Service.Dep matches the HTTP

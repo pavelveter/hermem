@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // EventType is the closed enum of event categories. The CHECK
@@ -122,10 +124,7 @@ func (s *EventService) ListEventsByEpisode(ctx context.Context, episodeID string
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListEventsByEpisode rows: %w", err)
 	}
-	if out == nil {
-		out = []Event{}
-	}
-	return out, nil
+	return core.NormalizeSlice(out), nil
 }
 
 // ListEventsByType returns events of the given type across all
@@ -159,10 +158,7 @@ func (s *EventService) ListEventsByType(ctx context.Context, eventType EventType
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListEventsByType rows: %w", err)
 	}
-	if out == nil {
-		out = []Event{}
-	}
-	return out, nil
+	return core.NormalizeSlice(out), nil
 }
 
 // scanEvent reads one event row from a *sql.Rows iterator.

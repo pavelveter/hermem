@@ -27,7 +27,7 @@ func newExplainCmd(env *cli.Env) *cobra.Command {
 			if req.Query == "" {
 				return fmt.Errorf("query required")
 			}
-			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+			svc := retdomain.New(env.DB, env.VI, env.Embedder)
 			opts := core.RetrieveContextOptions{
 				MaxDepth:          2,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,

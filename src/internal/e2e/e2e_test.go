@@ -341,7 +341,7 @@ func TestE2E_GraphIntegrity(t *testing.T) {
 	}
 
 	// Verify graph — PHASE 3.9: moved from algo.VerifyGraph into graph.Service.Verify
-	report, err := graph.NewService(db).Verify(context.Background(), schema, 3)
+	report, err := graph.New(db).Verify(context.Background(), schema, 3)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestE2E_AgentLoop(t *testing.T) {
 
 	// First task (no blockers) should be executable. PHASE 2.4:
 	// retrieval.GetExecutableTasks migrated to internal/task/service.go.
-	tasks, err := taskdomain.NewService(db, nil, nil).Executable(context.Background(), "", schema)
+	tasks, err := taskdomain.New(db, nil, nil).Executable(context.Background(), "", schema)
 	if err != nil {
 		t.Fatalf("get executable: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestE2E_AgentLoop(t *testing.T) {
 	if err := store.SetStatus(db, schema, "al-task1", "completed"); err != nil {
 		t.Fatalf("set status: %v", err)
 	}
-	tasks2, err := taskdomain.NewService(db, nil, nil).Executable(context.Background(), "", schema)
+	tasks2, err := taskdomain.New(db, nil, nil).Executable(context.Background(), "", schema)
 	if err != nil {
 		t.Fatalf("get executable after complete: %v", err)
 	}
