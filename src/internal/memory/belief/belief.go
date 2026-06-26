@@ -78,10 +78,14 @@ func (s *service) CreateBelief(ctx context.Context, b *Belief) error {
 	if b.Status == "" {
 		b.Status = StatusActive
 	}
-	// CreateBelief silently defaults Confidence == 0 to 1.0 (a
-	// forgiving path for callers who do not care about confidence).
-	// UpdateConfidence applies the same [0,1] bounds STRICTLY: it
-	// stores 0 as 0. The asymmetry is intentional; documented here
+	// Asymmetric defaults across create vs update:
+	//
+	// - CreateBelief silently maps Confidence == 0 to 1.0 (warm, forgiving).
+	// - UpdateConfidence accepts 0 strictly (0 is a meaningful magnitude,
+	//   e.g. retracting a belief to zero confidence). Bounds are tight:
+	//   < 0 or > 1 is rejected; no silent default.
+	//
+	// The asymmetry is deliberate and documented to prevent drift.
 	// to prevent future drift into symmetric, but wrong, defaults.
 	if b.Confidence <= 0 {
 		b.Confidence = 1.0
