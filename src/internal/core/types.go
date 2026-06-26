@@ -15,7 +15,7 @@ type Entity struct {
 	Content        string     `json:"content"`
 	Embedding      []float32  `json:"embedding,omitempty"`
 	UpdatedAt      time.Time  `json:"updated_at"`
-	LastAccessedAt *time.Time `json:"last_accessed_at"`
+	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
 	Archived       bool       `json:"archived"`
 	Status         string     `json:"status,omitempty"`
 	Confidence     float32    `json:"confidence,omitempty"`

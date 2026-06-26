@@ -138,9 +138,11 @@ func TestWriteError_UsesErrorResponse(t *testing.T) {
 // downstream UIs use to highlight the offending input.
 func TestWriteErrorWithCode_IncludesField(t *testing.T) {
 	rr := httptest.NewRecorder()
-	WriteErrorWithCode(rr, http.StatusUnprocessableEntity, "missing", "required_field_missing", "email")
+	WriteErrorWithCode(rr, http.StatusUnprocessableEntity, &core.DomainError{
+		Code: "required_field_missing", Message: "missing", Field: "email",
+	})
 	body := rr.Body.String()
-	for _, want := range []string{`"error":"missing"`, `"code":"required_field_missing"`, `"field":"email"`} {
+	for _, want := range []string{`"error":"missing (email)"`, `"code":"required_field_missing"`, `"field":"email"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %s: %q", want, body)
 		}

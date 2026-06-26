@@ -45,9 +45,41 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, core.ErrorResponse{Error: msg})
 }
 
-// WriteErrorWithCode writes a structured error with code and field.
-func WriteErrorWithCode(w http.ResponseWriter, status int, msg, code, field string) {
-	WriteJSON(w, status, core.ErrorResponse{Error: msg, Code: code, Field: field})
+// WriteErrorWithCode writes a structured JSON error response from err.
+// When err is a *core.DomainError (or wraps one via fmt.Errorf %w),
+// the code + field JSON attributes are populated; otherwise the
+// response falls through to WriteError's bare-envelope shape
+// ({"error": err.Error()}). Replaces the pre-§7.2
+// (w, status, msg, code, field) 5-arg shape with this 3-arg form.
+//
+// Wire-byte preservation: when err IS a *core.DomainError, the
+// envelope uses err.Error() (NOT de.Error()) as the `error` field
+// so wrap-chain prefixes like "failed to parse payload:" survive
+// the round-trip — matching the pre-§7.2 base.go path which
+// explicitly chose err.Error() for the same reason. DomainError's
+// own "msg (field)" inline rendering is preserved when callers
+// pass a bare *core.DomainError literal (no wrap).
+//
+// Callers that already have a *core.DomainError (e.g. §3.2 Wrap,
+// §10 DecodeJSON[T]) just pass it through; callers with a plain
+// error pass it directly and get the bare-envelope fallback.
+// Inline-validation sites that previously hard-coded
+// (msg, code, field) tuples construct a DomainError literal at the
+// call site — the wire envelope gains the "(field)" suffix on the
+// message that DomainError.Error() renders, which is additive
+// (clients that parsed code/field separately keep working; human
+// readers see the field name inline).
+func WriteErrorWithCode(w http.ResponseWriter, status int, err error) {
+	var de *core.DomainError
+	if errors.As(err, &de) {
+		WriteJSON(w, status, core.ErrorResponse{
+			Error: err.Error(),
+			Code:  de.Code,
+			Field: de.Field,
+		})
+		return
+	}
+	WriteError(w, status, err.Error())
 }
 
 // DecodeStrict parses JSON while rejecting unknown fields and trailing data.

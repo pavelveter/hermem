@@ -24,9 +24,9 @@ func RejectSchemaConflict(w http.ResponseWriter, gen uint64, refs *serverstate.R
 		return false
 	}
 	m.IncSchemaConflict()
-	httputil.WriteErrorWithCode(w, http.StatusConflict,
-		"schema changed during request; retry",
-		"schema_conflict", "")
+	httputil.WriteErrorWithCode(w, http.StatusConflict, &core.DomainError{
+		Code: core.CodeSchemaConflict, Message: "schema changed during request; retry",
+	})
 	return true
 }
 

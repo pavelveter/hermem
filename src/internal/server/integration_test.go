@@ -90,7 +90,7 @@ func newTestFixture(t *testing.T) *testFixture {
 	retSvc := ret.New(retDom, metrics, refs)
 	taskDom := taskdomain.New(db, embed, vi)
 	taskSvc := tasksvc.New(taskDom, metrics, refs)
-	memDom := memdomain.New(db, vi, embed, nil) // nil extractor — ingest-only path verifies error envelope
+	memDom := memdomain.New(db, vi, embed) // post-§7.4: memory.Service no longer takes an extractor
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
 	// PHASE 3.5 fixture: edge HTTPService is constructed from a domain
 	// Service + metrics + refs (no DedupThreshold — edge has no extractor
@@ -143,7 +143,7 @@ func newTestFixture(t *testing.T) *testFixture {
 		healthdomain.VectorIndexProbe(vi, testVectorDim),
 		healthdomain.EmbedderProbe(embed),
 		healthdomain.ExtractorProbe(nil),
-	)
+	).WithMetrics(metrics)
 	healthShell := healthsrv.New(healthDom)
 	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, healthShell, metrics)
 
@@ -653,7 +653,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 		core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
 	metrics := metricspkg.New()
 	retDom := retdomain.New(db, vi, embed)
-	memDom := memdomain.New(db, vi, embed, nil)
+	memDom := memdomain.New(db, vi, embed)
 	cndDom := contradictdomain.New(db)
 	taskDom := taskdomain.New(db, embed, vi)
 	// PHASE 3.1: graph HTTPService in the API-key auth fixture too.
@@ -682,7 +682,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 		healthdomain.VectorIndexProbe(vi, testVectorDim),
 		healthdomain.EmbedderProbe(embed),
 		healthdomain.ExtractorProbe(nil),
-	)
+	).WithMetrics(metrics)
 	healthShell := healthsrv.New(healthDom)
 	// PHASE 3.4: API-key auth fixture also needs the ingest HTTPService
 	// threaded into NewServer to keep the call shape consistent with

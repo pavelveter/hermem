@@ -79,7 +79,7 @@ func (s *HTTPService) HandleStore(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if req.ID == "" || req.Category == "" || req.Content == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "id, category, content required", "invalid_input", "")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "id, category, content required", Field: ""})
 		return nil
 	}
 	state := s.Refs.Load()

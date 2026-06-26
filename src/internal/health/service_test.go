@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/health"
+	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -34,8 +35,56 @@ func TestNewService_Success(t *testing.T) {
 func TestHealth_ReturnsOk(t *testing.T) {
 	svc := newHealthFixture(t)
 	result := svc.Health()
-	if result["status"] != "ok" {
-		t.Fatalf("want status=ok, got %v", result)
+	if result.Status != "ok" {
+		t.Fatalf("want status=ok, got %+v", result)
+	}
+}
+
+// TestHealth_WithMetrics_PopulatesSnapshot verifies the §7.1 wire
+// contract: when a Service is constructed with WithMetrics, Health()
+// includes a metrics sub-map keyed by the same Prometheus metric
+// names that /metrics emits. A non-empty map after at least one
+// IncStore pins the snapshot path; nil-safe (no metrics wired) is
+// the inverse case asserted by the un-wired test above.
+func TestHealth_WithMetrics_PopulatesSnapshot(t *testing.T) {
+	svc := newHealthFixture(t)
+	m := metricspkg.New()
+	m.IncStore()
+	svc.WithMetrics(m)
+	result := svc.Health()
+	if result.Status != "ok" {
+		t.Fatalf("want status=ok, got %+v", result)
+	}
+	if result.Metrics == nil {
+		t.Fatal("want Metrics sub-map populated, got nil")
+	}
+	if got, want := result.Metrics["hermem_store_total"], uint64(1); got != want {
+		t.Fatalf("hermem_store_total: want %d, got %d", want, got)
+	}
+	// Pin a few unrelated counters at zero so a future refactor that
+	// accidentally drops a key from Snapshot() fails this assertion
+	// rather than silently passing a partial sub-map.
+	for _, k := range []string{
+		"hermem_search_total", "hermem_ingest_total", "hermem_errors_total",
+		"hermem_task_create_total", "hermem_retention_run_total",
+	} {
+		if _, ok := result.Metrics[k]; !ok {
+			t.Errorf("Snapshot missing key %q (sub-map: %+v)", k, result.Metrics)
+		}
+	}
+}
+
+// TestHealth_WithoutMetrics_OmitsSnapshot pins the nil-safe branch:
+// a Service built without WithMetrics() returns a HealthResponse
+// whose Metrics field is nil (the JSON `omitempty` tag strips it
+// from the wire). Pre-§7.1 the return type was map[string]string
+// so this assertion was implicit; post-§7.1 it's a struct field
+// that needs an explicit nil-check.
+func TestHealth_WithoutMetrics_OmitsSnapshot(t *testing.T) {
+	svc := newHealthFixture(t)
+	result := svc.Health()
+	if result.Metrics != nil {
+		t.Fatalf("want nil Metrics when no metrics wired, got %+v", result.Metrics)
 	}
 }
 

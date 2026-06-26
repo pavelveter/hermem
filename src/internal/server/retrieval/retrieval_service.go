@@ -89,7 +89,7 @@ func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if req.Query == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "query required", "invalid_input", "query")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "query required", Field: "query"})
 		return nil
 	}
 	results, err := s.Svc.Search(r.Context(), req.Query, req.TopK)
@@ -117,7 +117,7 @@ func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) err
 		// Defense-in-depth duplicate of domain validation. Pre-PHASE-2.2
 		// HTTP shell checked this inline so /retrieve clients see 400 on
 		// empty seeds without ever crossing into the domain.
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "seed_ids required", "invalid_input", "seed_ids")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "seed_ids required", Field: "seed_ids"})
 		return nil
 	}
 	if req.MaxDepth <= 0 {
@@ -148,7 +148,7 @@ func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if req.Query == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "query required", "invalid_input", "query")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "query required", Field: "query"})
 		return nil
 	}
 	opts := s.optsFromState()

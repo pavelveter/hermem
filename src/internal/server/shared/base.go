@@ -120,7 +120,7 @@ func (b *BaseHTTPService) Wrap(fn func(w http.ResponseWriter, r *http.Request) e
 				// call with err.Error() as the msg argument, so option
 				// (a) preserves wire bytes byte-for-byte rather than
 				// silently dropping wrap-chain context.
-				httputil.WriteErrorWithCode(w, status, err.Error(), de.Code, de.Field)
+				httputil.WriteErrorWithCode(w, status, de)
 				return
 			}
 			httputil.WriteError(w, status, msg)
