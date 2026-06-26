@@ -307,6 +307,9 @@ A task is considered completed only if:
 <!-- sub-agent-3: 6/6 retrieval-cleanup sub-points cleared in feat/retrieval-cleanup-stages -->
 <!-- sub-agent-1: 5/5 contradiction-engine sub-points complete in feat/contradiction-engine-2.0 -->
 <!-- sub-agent-2: 5/5 evaluation-framework sub-points complete in feat/evaluation-framework -->
+<!-- sub-agent-4: ops dashboards (Grafana dashboard + alert recommendations) shipped in feat/ops-dashboards -->
+<!-- sub-agent-5: bench CLI sub-command shipped in feat/bench-cmd -->
+<!-- sub-agent-6: memory evolution C1 (Belief abstraction) shipped in feat/memory-evolution -->
 
 <!-- sub-agent-7 -->
 <!-- sub-agent-8 -->
