@@ -281,7 +281,7 @@ the read-side API. The ingest-time pipeline imports the detector package.
 
 ---
 
-### [ ] 5.2 `evolution/` package is large and flat
+### [x] 5.2 `evolution/` package is large and flat
 
 **Files:** `aggregation.go`, `chains.go`, `history.go`, `propagation.go`,
 `queries.go`, `relationships.go`, `superseded.go`, `trust.go` (+ tests)
@@ -294,7 +294,7 @@ sub-packages. Or at minimum add a `doc.go` with package organization notes.
 
 ---
 
-### [ ] 5.3 `episodic/` duplicates P1 `episode/` service layer
+### [x] 5.3 `episodic/` duplicates P1 `episode/` service layer
 
 **Files:**
 - `src/internal/episodic/` — 7 files (episode, session, event, timeline,
