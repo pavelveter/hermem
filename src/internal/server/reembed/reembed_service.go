@@ -68,15 +68,13 @@ func (h *HTTPService) HandleReEmbed(w http.ResponseWriter, r *http.Request) erro
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req struct {
+	req, err := httputil.DecodeJSON[struct {
 		BatchSize int    `json:"batch_size"`
 		Dim       int    `json:"dim"`
 		Model     string `json:"model"`
-	}
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	}](w, r)
+	if err != nil {
+		return err
 	}
 	if req.BatchSize <= 0 {
 		req.BatchSize = 50

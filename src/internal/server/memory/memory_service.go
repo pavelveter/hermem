@@ -84,11 +84,9 @@ func (s *HTTPService) HandleStore(w http.ResponseWriter, r *http.Request) error 
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.StoreRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.StoreRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.ID == "" || req.Category == "" || req.Content == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "id, category, content required")

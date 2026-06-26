@@ -81,11 +81,9 @@ func (h *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) error
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.IngestRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.IngestRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.Dialog == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "dialog required")

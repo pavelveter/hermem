@@ -764,12 +764,20 @@ func TestTaskRollback_RejectsNoID(t *testing.T) {
 
 func TestTaskDep_RejectsMissingFields(t *testing.T) {
 	f := newTestFixture(t)
+	// §10 NOTE: Add is a bool field. Pre-§10 the original test sent
+	// "add":"true" (string) which pre-§10 decode-strict would reject as
+	// "invalid_type" → 400. The test's INTENT is to assert that missing
+	// SourceID/TargetID fields → 400 via the inline validation gate, so
+	// the body uses a well-typed `"add":true` (bool) to keep the
+	// validation gate the only failure mode. Without this, §10's
+	// DecodeJSON returns 422 instead of 400 because strict type-mismatch
+	// is in scope of §3.2's "normalize to 422" silent-bug fix.
 	tests := []struct {
 		name string
 		body interface{}
 	}{
-		{"no source", map[string]string{"target_id": "t2", "add": "true"}},
-		{"no target", map[string]string{"source_id": "s1", "add": "true"}},
+		{"no source", map[string]interface{}{"target_id": "t2", "add": true}},
+		{"no target", map[string]interface{}{"source_id": "s1", "add": true}},
 	}
 	for _, tc := range tests {
 		resp := f.post(t, "/task/dep", tc.body)
@@ -844,8 +852,14 @@ func TestStore_RejectsLargeBody(t *testing.T) {
 	largeContent := strings.Repeat("x", int(httputil.MaxBodyBytes+100))
 	body := map[string]string{"id": "large", "category": "world", "content": largeContent}
 	resp := f.post(t, "/store", body)
-	if resp.StatusCode != 413 && resp.StatusCode != 400 {
-		t.Fatalf("want 413 or 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	// §10 NOTE: pre-§10 this test asserted 413 (http.MaxBytesReader's
+	// own writeErr) or 400 (from pre-§10's DecodeStrict + WriteError).
+	// Post-§10 the DecodeJSON's internal MaxBytesReader routes the
+	// overflow through DecodeJSON's DomainError{Code: CodeInvalidInput,
+	// Message: ...} → Wrap → 422. The semantic ("oversized body
+	// rejected") is preserved; broaden the acceptable status.
+	if resp.StatusCode != 413 && resp.StatusCode != 422 {
+		t.Fatalf("want 413 or 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }
@@ -862,4 +876,52 @@ func TestConnectedComponents_WithMinSize(t *testing.T) {
 		t.Fatalf("want 200, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
+}
+
+// --- 422 wire contract (POST-§10) ---
+
+// TestStore_MalformedJSONReturns422WithCodeField is the §10
+// end-to-end wire-contract test. Asserts the cumulative path
+// (httputil.DecodeJSON → §3.2 Wrap → WriteErrorWithCode) drops a
+// strict-decode failure to 422 with {error, code} attributes. Pre-§10
+// this would have been 400 with a different envelope — the Phase 2 unit
+// test (TestWrapDomainErrorRoutedThroughWriteErrorWithCode) covers
+// the routing in isolation; this test pins the cumulative path on a
+// real POST handler so future regressions (e.g., a handler that
+// accidentally calls DecodeJSON without the `if err != nil { return err }`
+// guard) can be caught at the integration level.
+func TestStore_MalformedJSONReturns422WithCodeField(t *testing.T) {
+	f := newTestFixture(t)
+	// Truncated JSON → DecodeStrict returns ("bad_json", "", "invalid
+	// json: ...", false) which DecodeJSON wraps as *core.DomainError
+	// {Code: CodeInvalidInput}, surfaced by §3.2 Wrap → 422 + {error,
+	// code, field=""}.
+	truncated := `{"id":"a","category":"world","content":"hello"`
+	resp, err := f.ts.Client().Post(f.ts.URL+"/store", "application/json", strings.NewReader(truncated))
+	if err != nil {
+		t.Fatalf("POST /store: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	var envelope struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+		Field string `json:"field"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if envelope.Error == "" {
+		t.Fatalf("expected non-empty error message, got empty (envelope: %+v)", envelope)
+	}
+	// Pin the wire contract exactly: any future rename of
+	// core.CodeInvalidInput OR a routing regression that drops the
+	// code attribute will fail this assertion at the integration level
+	// rather than silently sliding past the looser non-empty check.
+	if envelope.Code != "invalid_input" {
+		t.Fatalf("want code=\"invalid_input\", got %q (envelope: %+v)", envelope.Code, envelope)
+	}
+	t.Logf("§10 422 envelope: code=%q field=%q error=%q", envelope.Code, envelope.Field, envelope.Error)
 }

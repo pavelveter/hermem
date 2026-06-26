@@ -136,11 +136,9 @@ func (s *HTTPService) HandleTaskList(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.TaskListRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.TaskListRequest](w, r)
+	if err != nil {
+		return err
 	}
 	state := s.Refs.Load()
 	tasks, err := s.Svc.List(r.Context(), req.Status, req.GoalID, state.Schema)
@@ -163,11 +161,9 @@ func (s *HTTPService) HandleTaskShow(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.TaskShowRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.TaskShowRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.ID == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "id required")
@@ -193,11 +189,9 @@ func (s *HTTPService) HandleTaskDep(w http.ResponseWriter, r *http.Request) erro
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.TaskDepRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.TaskDepRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.SourceID == "" || req.TargetID == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "source_id, target_id required")
@@ -228,11 +222,9 @@ func (s *HTTPService) HandleTaskRollback(w http.ResponseWriter, r *http.Request)
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.TaskRollbackRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.TaskRollbackRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.ID == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "id required")
@@ -255,11 +247,9 @@ func (s *HTTPService) HandleTaskTree(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.TaskTreeRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.TaskTreeRequest](w, r)
+	if err != nil {
+		return err
 	}
 	tree, err := s.Svc.Tree(r.Context(), req.GoalID, s.Refs.Load().Schema)
 	if err != nil {
@@ -281,11 +271,9 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.TaskCreateRequest
-	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return nil
+	req, err := httputil.DecodeJSON[core.TaskCreateRequest](w, r)
+	if err != nil {
+		return err
 	}
 	if req.Content == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "content required")
