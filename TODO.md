@@ -65,7 +65,7 @@ P0 — CONTRADICTION ENGINE 2.0
 [x] Create ContradictionDetector interface
 [x] Implement LexicalDetector
 [x] Implement EmbeddingDetector
-[ ] Implement LLMDetector
+[x] Implement LLMDetector
 [x] Add detector composition pipeline
 [x] Add contradiction confidence scoring
 [x] Add contradiction explanation output
