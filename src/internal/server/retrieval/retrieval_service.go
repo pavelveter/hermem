@@ -99,7 +99,7 @@ func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if req.Query == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "query required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "query required", "invalid_input", "query")
 		return nil
 	}
 	results, err := s.Svc.Search(r.Context(), req.Query, req.TopK)
@@ -127,7 +127,7 @@ func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) err
 		// Defense-in-depth duplicate of domain validation. Pre-PHASE-2.2
 		// HTTP shell checked this inline so /retrieve clients see 400 on
 		// empty seeds without ever crossing into the domain.
-		httputil.WriteError(w, http.StatusBadRequest, "seed_ids required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "seed_ids required", "invalid_input", "seed_ids")
 		return nil
 	}
 	if req.MaxDepth <= 0 {
@@ -158,7 +158,7 @@ func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if req.Query == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "query required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "query required", "invalid_input", "query")
 		return nil
 	}
 	opts := s.optsFromState()
