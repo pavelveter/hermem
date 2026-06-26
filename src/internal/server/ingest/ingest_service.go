@@ -10,6 +10,9 @@
 // per call — Service carries no long-lived worker, so SIGHUP races
 // with mid-call schema mutation simply cannot occur (PHASE 2.1
 // invariant preserved verbatim through the ownership split).
+//
+// §3.2 — embeds shared.BaseHTTPService; DedupThreshold stays as a
+// shell-local field (per-shell snapshot semantics).
 package ingest
 
 import (
@@ -19,6 +22,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/ingest"
 	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/server/shared"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
@@ -30,9 +34,8 @@ import (
 // duplication.
 type HTTPService struct {
 	Svc            *ingest.Service
-	Metrics        *metrics.Metrics
-	Refs           *serverstate.Ref
 	DedupThreshold float32
+	shared.BaseHTTPService
 }
 
 // New constructs an HTTPService. DedupThreshold is captured at boot
@@ -40,7 +43,14 @@ type HTTPService struct {
 // (matches pre-PHASE-3.4 memory_service shell behaviour — the per-shell
 // DedupThreshold is a config snapshot, not a state ref).
 func New(svc *ingest.Service, m *metrics.Metrics, refs *serverstate.Ref, dedupThreshold float32) *HTTPService {
-	return &HTTPService{Svc: svc, Metrics: m, Refs: refs, DedupThreshold: dedupThreshold}
+	return &HTTPService{
+		Svc:            svc,
+		DedupThreshold: dedupThreshold,
+		BaseHTTPService: shared.BaseHTTPService{
+			Metrics: m,
+			Refs:    refs,
+		},
+	}
 }
 
 // Routes returns the URL → handler mapping. Wired by Server in
@@ -53,8 +63,8 @@ func New(svc *ingest.Service, m *metrics.Metrics, refs *serverstate.Ref, dedupTh
 //	                       a future PHASE 3.x async-extraction lands.
 func (h *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/ingest":      h.HandleIngest,
-		"/ingest/jobs": h.HandleJobs,
+		"/ingest":      h.Wrap(h.HandleIngest),
+		"/ingest/jobs": h.Wrap(h.HandleJobs),
 	}
 }
 
@@ -62,33 +72,32 @@ func (h *HTTPService) Routes() map[string]http.HandlerFunc {
 // extractor and ingests all extracted entities + relations. Behaves
 // identically to the pre-PHASE-3.4 server/memory HandleIngest; only
 // the underlying domain Service pointer changed (memory → ingest).
-func (h *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) {
+//
+// §3.2 — error-returning handler. Transport-level rejections
+// (405, missing dialog) WriteError + return nil; domain errors
+// flow as err so h.Wrap fires the IncErr + mapStatus write.
+func (h *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req core.IngestRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return
+		return nil
 	}
-	// Pre-PHASE-3.4 the missing-field check happened inline at the HTTP
-	// layer — kept here verbatim so existing /ingest clients continue
-	// to see 400 for empty dialogs. The domain ingest.Service.Ingest
-	// also enforces the same field as defense-in-depth.
 	if req.Dialog == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "dialog required")
-		return
+		return nil
 	}
 	state := h.Refs.Load()
 	if err := h.Svc.Ingest(r.Context(), req.Dialog, h.DedupThreshold, state.Schema); err != nil {
-		h.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	h.Metrics.IncIngest()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	return nil
 }
 
 // jobsResponse is the /ingest/jobs envelope. Jobs is always an empty
@@ -114,14 +123,19 @@ type Job struct {
 // HandleJobs — GET /ingest/jobs. Returns the canonical empty-list
 // envelope. Future PHASE 3.x async-extraction work will populate the
 // ring buffer from ingestion.MemoryWorkerResilient's channel state.
-func (h *HTTPService) HandleJobs(w http.ResponseWriter, r *http.Request) {
+//
+// §3.2 — error-returning shape, but no domain-error path; only the
+// 405 method check may return err. Always-nil routes the response
+// through h.Wrap's no-op success branch.
+func (h *HTTPService) HandleJobs(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 	httputil.WriteJSON(w, http.StatusOK, jobsResponse{
 		Jobs:    []Job{},
 		Message: "no jobs tracked (sync ingest only)",
 	})
+	return nil
 }

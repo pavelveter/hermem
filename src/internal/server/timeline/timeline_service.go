@@ -13,7 +13,11 @@
 // This is the smallest HTTPService shape across the chain; the
 // absence of Refs is deliberate, not an oversight, since the daemon
 // has nothing to swap on timeline rows.
-package timeline_http
+//
+// §3.2 — embeds shared.BaseHTTPService; Refs is nil and handlers
+// don't read it. Wrap covers IncErr + WriteError so the handler
+// body shrinks to a single return path.
+package timeline
 
 import (
 	"net/http"
@@ -21,6 +25,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/server/shared"
 	"github.com/pavelveter/hermem/src/internal/timeline"
 )
 
@@ -28,23 +33,28 @@ import (
 // borrowed *timeline.Service pointer + observability. No Refs because
 // timeline is read-only and has no SIGHUP-raced mutation.
 type HTTPService struct {
-	Svc     *timeline.Service
-	Metrics *metrics.Metrics
+	Svc *timeline.Service
+	shared.BaseHTTPService
 }
 
 // New constructs a timeline HTTPService. Svc is required; the handler
 // returns 500 if nil is somehow dispatched (defensive against
 // future-zero-value wiring).
 func New(svc *timeline.Service, m *metrics.Metrics) *HTTPService {
-	return &HTTPService{Svc: svc, Metrics: m}
+	return &HTTPService{
+		Svc:             svc,
+		BaseHTTPService: shared.BaseHTTPService{Metrics: m},
+	}
 }
 
 // Routes returns the URL → handler mapping. Wired by Server in
 // src/internal/server/server.go via the per-service Routes() protocol.
 // /timeline GET moved here from the memory shell in PHASE 3.5.
+//
+// §3.2 — handler is wrapped so IncErr + WriteError(500,...) is folded.
 func (h *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/timeline": h.HandleTimeline,
+		"/timeline": h.Wrap(h.HandleTimeline),
 	}
 }
 
@@ -53,13 +63,11 @@ func (h *HTTPService) Routes() map[string]http.HandlerFunc {
 // Behaves identically to the pre-PHASE-3.5 server/memory
 // HandleTimeline; only the underlying domain Service pointer changed
 // (memory → timeline).
-func (h *HTTPService) HandleTimeline(w http.ResponseWriter, r *http.Request) {
+func (h *HTTPService) HandleTimeline(w http.ResponseWriter, r *http.Request) error {
 	limit := httputil.ParseIntParam(r, "limit", 50)
 	entries, err := h.Svc.Timeline(r.Context(), limit)
 	if err != nil {
-		h.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	h.Metrics.IncQuery()
 	// Wire-shape mirror of timeline.TimelineEntry. JSON tags live here
@@ -80,6 +88,7 @@ func (h *HTTPService) HandleTimeline(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	httputil.WriteJSON(w, http.StatusOK, out)
+	return nil
 }
 
 // timelineJSON is the wire-shape mirror of timeline.TimelineEntry.
