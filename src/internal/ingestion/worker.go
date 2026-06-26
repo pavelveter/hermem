@@ -9,6 +9,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -28,12 +29,12 @@ type IngestionWorker struct {
 // `detector` is the contradiction-checker used inside processOneItemOnce
 // to decide whether an incoming entity contradicts an existing match.
 // Pass nil to fall back to the default lexical detector
-// (contradiction.NewLexicalDetector()); production call sites pass an
+// (detectors.NewLexicalDetector()); production call sites pass an
 // explicit detector so wiring bugs surface at compile time and the
 // default-detector magic does not mask them.
 func NewIngestionWorker(db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, detector contradiction.ContradictionDetector) *IngestionWorker {
 	if detector == nil {
-		detector = contradiction.NewLexicalDetector()
+		detector = detectors.NewLexicalDetector()
 	}
 	return &IngestionWorker{db: db, vi: vi, extractor: extractor, embedder: embedder, dedupThresh: dedupThreshold, schema: schema, detector: detector}
 }

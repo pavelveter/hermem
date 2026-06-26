@@ -1,20 +1,5 @@
 // Package contradiction hosts the read-side domain logic for inspecting
 // pre-existing contradiction edges in the graph.
-//
-// PHASE 2.3 introduction — until this commit HandleContradictions lived
-// inside src/internal/server/retrieval/retrieval_service.go and reached
-// the underlying *sql.DB through a temporary accessor on retrieval.Service.
-// PHASE 2.3 moves the route into its own transport shell
-// (src/internal/server/contradiction) and removes the temporary
-// accessor. The Service here is a thin wrapper around
-// store.GetContradictions — its only job is to give the HTTP shell and
-// the CLI a uniform ctx-based API without each handler reaching
-// directly into the store pkg.
-//
-// Ingest-time contradiction detection (extractor.IsIngestionContradiction
-// in src/internal/ingestion/dialog.go) is a different concern entirely:
-// a text-based dedup heuristic used during ingest, not a read-side
-// query. It stays in the ingestion pkg and is NOT moved here.
 package contradiction
 
 import (

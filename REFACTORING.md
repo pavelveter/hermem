@@ -263,7 +263,7 @@ the code is genuinely non-obvious.
 
 ## 5. MEDIUM — Package Organization
 
-### [ ] 5.1 `contradiction/` package has mixed concerns
+### [x] 5.1 `contradiction/` package has mixed concerns
 
 **Files:**
 - `service.go` — read-side: list existing contradicts pairs (DB query)

@@ -1,4 +1,4 @@
-package contradiction
+package detectors
 
 import (
 	"testing"
@@ -8,11 +8,11 @@ import (
 
 func TestEmbeddingDetector(t *testing.T) {
 	cases := []struct {
-		name     string
-		existing core.Entity
-		incoming core.Entity
+		name      string
+		existing  core.Entity
+		incoming  core.Entity
 		threshold float32
-		want     bool
+		want      bool
 	}{
 		{
 			name:      "identical_embeddings_same_content_no_hit",
@@ -87,13 +87,13 @@ func TestEmbeddingDetector(t *testing.T) {
 					result.Detected, c.want, result.Reason, result.Confidence)
 			}
 			if result.Detected && result.Reason == "" {
-				t.Error("hit but reason empty — contract requires non-empty reason")
+				t.Error("hit but reason empty")
 			}
 			if !result.Detected && result.Reason != "" {
 				t.Errorf("miss but reason non-empty (%q)", result.Reason)
 			}
 			if result.Detected && result.Confidence <= 0 {
-				t.Errorf("hit but confidence=%v — want > 0", result.Confidence)
+				t.Errorf("hit but confidence=%v; want > 0", result.Confidence)
 			}
 		})
 	}

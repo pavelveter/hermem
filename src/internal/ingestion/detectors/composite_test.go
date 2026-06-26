@@ -1,15 +1,12 @@
-package contradiction
+package detectors
 
 import (
 	"testing"
 
+	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// stubDetector is a ContradictionDetector that returns a canned
-// DetectionResult. Use it to drive CompositeDetector's
-// short-circuit logic without coupling tests to the lexical
-// heuristic.
 type stubDetector struct {
 	detected   bool
 	reason     string
@@ -17,26 +14,11 @@ type stubDetector struct {
 	calls      int
 }
 
-func (s *stubDetector) Detect(_, _ core.Entity) DetectionResult {
+func (s *stubDetector) Detect(_, _ core.Entity) contradiction.DetectionResult {
 	s.calls++
-	return DetectionResult{Detected: s.detected, Reason: s.reason, Confidence: s.confidence}
+	return contradiction.DetectionResult{Detected: s.detected, Reason: s.reason, Confidence: s.confidence}
 }
 
-// TestCompositeDetector locks the pipeline semantics: ordered,
-// short-circuiting, defensive on empty input and nil entries, and
-// propagating the first hit's full DetectionResult verbatim
-// (including Confidence).
-//
-// The cases below map 1:1 to the plan's table:
-//
-//   - Empty pipeline → zero-value DetectionResult — defensive, no panic.
-//   - Single non-firing detector → zero-value DetectionResult — propagated miss.
-//   - Single firing detector → propagates the detector's full result.
-//   - Two detectors, second fires → second's full result (confidence included).
-//   - Two detectors, first fires → first wins (order matters; second
-//     must NOT be called — proves short-circuit, not just propagation).
-//   - Three-detector chain, middle fires → middle's result, third
-//     must NOT be called (short-circuit holds across chain).
 func TestCompositeDetector(t *testing.T) {
 	t.Run("empty_pipeline_returns_miss", func(t *testing.T) {
 		c := NewCompositeDetector()
@@ -114,10 +96,6 @@ func TestCompositeDetector(t *testing.T) {
 	})
 
 	t.Run("nil_entry_is_skipped", func(t *testing.T) {
-		// Defensive: a nil entry in the pipeline must NOT panic; it
-		// is skipped and the next detector is consulted. This
-		// prevents a misconfigured pipeline (e.g. an unset
-		// detector slot) from blowing up the whole ingest path.
 		hit := &stubDetector{detected: true, reason: "stub:after_nil", confidence: 1.0}
 		c := NewCompositeDetector(nil, hit)
 		result := c.Detect(core.Entity{Content: "a"}, core.Entity{Content: "b"})

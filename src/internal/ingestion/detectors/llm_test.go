@@ -1,4 +1,4 @@
-package contradiction
+package detectors
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// mockLLMChecker is a test double for LLMChecker.
 type mockLLMChecker struct {
 	contradicts bool
 	confidence  float32
@@ -55,7 +54,7 @@ func TestLLMDetector(t *testing.T) {
 			wantCalls: 1,
 		},
 		{
-		 name:      "nil_checker_returns_miss",
+			name:      "nil_checker_returns_miss",
 			existing:  core.Entity{Content: "a"},
 			incoming:  core.Entity{Content: "b"},
 			checker:   nil,
@@ -95,3 +94,6 @@ func TestLLMDetector(t *testing.T) {
 		})
 	}
 }
+
+// Ensure mockLLMChecker satisfies LLMChecker interface
+var _ LLMChecker = (*mockLLMChecker)(nil)

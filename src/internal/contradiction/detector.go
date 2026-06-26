@@ -1,6 +1,7 @@
-// Package contradiction also hosts the ingestion-time detection interface
-// (PHASE 2.4 — see detector.go). This file declares the contract only;
-// concrete detectors land in lexical.go and composite.go.
+// Package contradiction hosts the read-side domain logic for inspecting
+// pre-existing contradiction edges in the graph, plus the ingestion-time
+// detection interface (ContradictionDetector). Concrete detector
+// implementations live in ingestion/detectors/.
 package contradiction
 
 import "github.com/pavelveter/hermem/src/internal/core"

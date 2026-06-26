@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/mattn/go-sqlite3"
-	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -368,9 +368,9 @@ func isSQLiteBusyError(err error) bool {
 }
 
 // IsIngestionContradiction guards dedup by negation heuristic.
-// The real implementation lives in contradiction.LexicalDetector.
+// The real implementation lives in detectors.LexicalDetector.
 func IsIngestionContradiction(a, b string) bool {
-	return contradiction.NewLexicalDetector().Detect(
+	return detectors.NewLexicalDetector().Detect(
 		core.Entity{Content: a},
 		core.Entity{Content: b},
 	).Detected
@@ -389,7 +389,7 @@ func IsIngestionContradiction(a, b string) bool {
 // ProcessDialogWithProvenance and unwind themselves; the WaitGroup
 // barriers the function exit.
 func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ch <-chan core.MemoryMessage) {
-	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, contradiction.NewLexicalDetector())
+	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	const maxParallel = 8
 	sem := make(chan struct{}, maxParallel)
 	var wg sync.WaitGroup
@@ -440,7 +440,7 @@ func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extracto
 // Empty ckptPath / pendingPath skip the corresponding persistence step
 // — used by tests that don't need durable state.
 func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan core.MemoryMessage) {
-	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, contradiction.NewLexicalDetector())
+	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	if ckptPath == "" && pendingPath == "" {
 		slog.Warn("MemoryWorkerResilient: ckptPath and pendingPath both empty — no durability on cancel",
 			"worker_id", workerID)
