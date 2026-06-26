@@ -1,0 +1,57 @@
+groups:
+  - name: hermem-slo
+    rules:
+      - alert: IngestP95Saturation
+        expr: |
+          histogram_quantile(0.95, sum by (le, category)(rate(hermem_ingest_duration_seconds_bucket{category=~"^(observation|world|task|edge)$"}[5m]))) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Ingest P95 latency exceeds 5s"
+          description: "Category {{ $labels.category }} P95 ingest latency is {{ $value | humanizeDuration }} over the last 5m. Check LLM extractor provider health and network latency."
+
+      - alert: RetrievalP99Regression
+        expr: |
+          histogram_quantile(0.99, sum by (le, mode)(rate(hermem_retrieval_duration_seconds_bucket{mode=~"^(search|retrieve|query|response|query_explain|provenance)$"}[5m]))) > 8
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Retrieval P99 latency exceeds 8s"
+          description: "Mode {{ $labels.mode }} P99 retrieval latency is {{ $value | humanizeDuration }} over the last 5m. Check vector index health, embedder latency, and reranker timing."
+
+      - alert: RerankBudgetExceeded
+        expr: |
+          histogram_quantile(0.95, sum by (le, strategy)(rate(hermem_rerank_duration_seconds_bucket{strategy=~"^(llm_openai|llm_ollama)$"}[5m]))) > 60
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Rerank latency exceeds 60s"
+          description: "Strategy {{ $labels.strategy }} P95 rerank latency is {{ $value | humanizeDuration }} over the last 5m. The RerankerTimeout of 30s is being violated — check LLM provider health."
+
+      - alert: ContradictionDetectorStall
+        expr: |
+          rate(hermem_contradiction_duration_seconds_count{detector="composite"}[1h]) == 0
+        for: 1h
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Contradiction composite detector stalled"
+          description: "No composite contradiction detections in the last hour. The detector may be stuck or ingestion may have stopped entirely."
+
+      - alert: HermemScrapeTargetDown
+        expr: |
+          up{job="hermem"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Hermem scrape target is down"
+          description: "Hermem instance {{ $labels.instance }} has been unreachable for over 2 minutes. Check process health and network connectivity."
