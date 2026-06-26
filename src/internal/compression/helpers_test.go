@@ -2,13 +2,18 @@ package compression
 
 import (
 	"database/sql"
-	"testing"
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-func openTestDB(t *testing.T) *sql.DB {
+type testOrBench interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	Cleanup(func())
+}
+
+func openTestDB(t testOrBench) *sql.DB {
 	t.Helper()
 	db, err := store.MemDBRandom()
 	if err != nil {
@@ -18,7 +23,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func seedEntity(t *testing.T, db *sql.DB, id, category, content string) {
+func seedEntity(t testOrBench, db *sql.DB, id, category, content string) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO entities (id, category, content) VALUES (?, ?, ?)`, id, category, content)
 	if err != nil {
@@ -26,7 +31,7 @@ func seedEntity(t *testing.T, db *sql.DB, id, category, content string) {
 	}
 }
 
-func seedEntityFull(t *testing.T, db *sql.DB, id, category, content string, status string, updatedAt time.Time, embedding []float32) {
+func seedEntityFull(t testOrBench, db *sql.DB, id, category, content string, status string, updatedAt time.Time, embedding []float32) {
 	t.Helper()
 	var blob []byte
 	if len(embedding) > 0 {
