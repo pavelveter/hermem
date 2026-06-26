@@ -43,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **test(retrieval)**: 11 new tests covering stage refactor + rerank + tracing + backward compat.
   - **test(retrieval)**: 6 new rerank unit tests + 3 tracing tests pin the per-stage observability contract.
 
+- **P1 — Observability (Prometheus sprint, C1–C6)**:
+  - **feat(observability)**: `prometheus/client_golang` v1.21.0 wired against hermem-owned `*prometheus.Registry` (not the global default); four domain duration histograms — `hermem_ingest_duration_seconds`, `hermem_retrieval_duration_seconds`, `hermem_contradiction_duration_seconds`, `hermem_rerank_duration_seconds` — exposed on `/metrics` in Prometheus text exposition format alongside the existing `expvar` JSON.
+  - **feat(observability)**: `hIngest` → `*HistogramVec` labeled by `category` (`observation`, `world`, `task`, `edge`); pre-warmed with the `_init` sentinel so cold-start scrapes are zero-missing. `TestHermemPrefixContract_KnownCategoriesSet` regression test guards against label-domain drift.
+  - **feat(observability)**: `hRetrieval` → `*HistogramVec` labeled by `mode` (`vector_only`, `vector_plus_graph`, `vector_plus_rerank`, `vector_plus_graph_plus_rerank`); guarded by `TestHermemPrefixContract_KnownModesSet`.
+  - **feat(observability)**: `hContradiction` → `*HistogramVec` labeled by `detector` (`lexical`, `composite`; `semantic` reserved for phase 2.4). Guarded by `TestHermemPrefixContract_KnownDetectorsSet`.
+  - **feat(observability)**: `hRerank` → `*HistogramVec` labeled by `strategy` (`llm_openai`, `llm_ollama`, `noop`); bound by `RerankerTimeout` (default 30 s). Guarded by `TestHermemPrefixContract_KnownStrategiesSet`.
+  - **feat(server)**: `/metrics` registered by `Server.mount()` directly (after the AdminService dissolution); `X-API-Key` auth still applies when `[server] api_key` is set.
+  - **feat(docs)**: `docs/USAGE.md` § 19.1 documents the Prometheus endpoint, the four labeled series with their bounded label sets, a sample scrape config, and the per-Vec regression-test recipe.
+  - **ObserveRerankDuration(seconds)** signature is now **`ObserveRerankDuration(seconds, strategy)`** — the contract break is intentional and tracked alongside the other three `ObserveXxxDuration` calls.
+
 ## [v0.3.0] - 2026-06-25
 
 Six production-ready groups land together: scoped multi-key auth,
