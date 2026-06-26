@@ -33,7 +33,7 @@ func TestService_CreateAndGet_HappyPath(t *testing.T) {
 	if b.Status != belief.StatusActive {
 		t.Fatalf("want default status %q, got %q", belief.StatusActive, b.Status)
 	}
-	if b.CreatedAt.IsZero() || b.UpdatedAt.IsZero() {
+	if (b.CreatedAt == nil || b.CreatedAt.IsZero()) || (b.UpdatedAt == nil || b.UpdatedAt.IsZero()) {
 		t.Fatal("want created_at/updated_at populated")
 	}
 
@@ -145,7 +145,7 @@ func TestService_UpdateConfidence(t *testing.T) {
 	if got.LastAccessedAt == nil {
 		t.Fatal("want last_accessed_at populated")
 	}
-	if got.UpdatedAt.Equal(b.UpdatedAt) {
+	if got.UpdatedAt.Equal(*b.UpdatedAt) {
 		t.Fatal("want updated_at to bump on UpdateConfidence")
 	}
 

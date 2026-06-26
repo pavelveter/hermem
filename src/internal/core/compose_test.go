@@ -36,7 +36,7 @@ func TestCompose_FullRoundTrip(t *testing.T) {
 		Priority:  3,
 		// Belief band.
 		CreatedAt:      &earlier,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &later,
 		Archived:       false,
 		Degree:         7,
@@ -111,7 +111,7 @@ func TestCompose_RecoversFromPartial(t *testing.T) {
 	if e.CreatedAt != nil || e.LastAccessedAt != nil || e.Archived || e.Degree != 0 {
 		t.Errorf("Belief band not zero: %+v", e)
 	}
-	if !e.UpdatedAt.IsZero() {
+	if e.UpdatedAt != nil && !e.UpdatedAt.IsZero() {
 		t.Errorf("UpdatedAt not zero: %v", e.UpdatedAt)
 	}
 }

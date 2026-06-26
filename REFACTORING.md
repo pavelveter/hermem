@@ -344,7 +344,7 @@ that constructs all 12 services and returns the populated `*Server`.
 
 ## 7. LOW — Miscellaneous Improvements
 
-### [ ] 7.1 `health` HTTP shell has no `Metrics` field
+### [~] 7.1 `health` HTTP shell has no `Metrics` field
 
 **File:** `src/internal/server/health/health_service.go`
 
@@ -355,9 +355,13 @@ increment counters, so it's not a bug, but it's an inconsistency in the pattern.
 consistency, or document why health is intentionally different in the package
 doc comment.
 
+**Decision:** SKIPPED — health endpoints are read-only probes that don't need
+request counting. Adding Metrics with no-op increments adds complexity for no
+functional benefit.
+
 ---
 
-### [ ] 7.2 `httputil.WriteErrorWithCode` signature
+### [x] 7.2 `httputil.WriteErrorWithCode` signature
 
 **File:** `src/internal/httputil/httputil.go`
 
@@ -367,9 +371,11 @@ error code string. They're right next to each other and easily swapped.
 
 **Fix:** Use an options struct or reorder to `WriteError(w, status, msg, opts...)`.
 
+**Status:** Already implemented — current signature is `WriteErrorWithCode(w, status int, err error)`.
+
 ---
 
-### [ ] 7.3 Timestamp handling inconsistency
+### [x] 7.3 Timestamp handling inconsistency
 
 **Problem:** Some store functions use `time.Time`, others use `*time.Time`,
 others use `sql.NullTime`. The Entity struct has `UpdatedAt time.Time` but
@@ -380,9 +386,13 @@ NULL-time handling policy.
 sentinel, or always use `*time.Time` with `nil` as NULL. Pick one and apply
 uniformly.
 
+**Status:** Done — standardized on `*time.Time` everywhere. Added `core.TimePtr()`
+helper. Updated Entity, Belief, LineageEntry, SummaryNode, and all related structs.
+Updated scoring functions and all tests.
+
 ---
 
-### [ ] 7.4 Dead code: `memory.Service.extractor` field
+### [x] 7.4 Dead code: `memory.Service.extractor` field
 
 **File:** `src/internal/memory/service.go`
 
@@ -393,6 +403,8 @@ memory-write hooks."
 **Fix:** Either remove it (breaking the constructor signature, but that's
 what the refactoring PR is for) or use it in a meaningful way. Dead fields
 mislead readers.
+
+**Status:** Already removed — the extractor field is no longer present in memory.Service.
 
 ---
 

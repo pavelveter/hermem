@@ -25,7 +25,7 @@ func TestEntityToGoal_DropsUnrelated(t *testing.T) {
 		Source:         "operator-input",
 		SourceType:     "manual",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       false,
 		ValidFrom:      &now,
@@ -93,7 +93,7 @@ func TestGoalToEntity_ZerosUnrelated(t *testing.T) {
 	if e.Confidence != 0 || e.Source != "" || e.SourceType != "" {
 		t.Errorf("Evidence fields not zero: %+v", e)
 	}
-	if e.CreatedAt != nil || e.UpdatedAt != (time.Time{}) || e.LastAccessedAt != nil {
+	if e.CreatedAt != nil || e.UpdatedAt != nil || e.LastAccessedAt != nil {
 		t.Errorf("timestamp fields not zero/nil: %+v %+v %+v", e.CreatedAt, e.UpdatedAt, e.LastAccessedAt)
 	}
 	if e.Archived || e.Degree != 0 {
@@ -143,7 +143,7 @@ func TestEntityGoal_RoundTrip_Lossy(t *testing.T) {
 		Source:         "operator-input",
 		SourceType:     "manual",
 		CreatedAt:      &now,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &now,
 		Archived:       true,
 		ValidFrom:      &now,

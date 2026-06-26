@@ -37,7 +37,7 @@ import "time"
 type Belief struct {
 	Fact
 	CreatedAt      *time.Time `json:"created_at,omitempty"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	UpdatedAt      *time.Time `json:"updated_at"`
 	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
 	Archived       bool       `json:"archived,omitempty"`
 	Degree         int        `json:"degree,omitempty"`

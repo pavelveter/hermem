@@ -112,7 +112,7 @@ func makeFilledEntity() Entity {
 		Priority:  7,
 		// Belief band.
 		CreatedAt:      &earlier,
-		UpdatedAt:      now,
+		UpdatedAt:      &now,
 		LastAccessedAt: &later,
 		Archived:       true,
 		Degree:         42,

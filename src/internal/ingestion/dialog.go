@@ -236,7 +236,7 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 			ExtractedFrom:  prov.ExtractedFrom,
 			Source:         "dialog",
 			SourceType:     "extraction",
-			UpdatedAt:      time.Now().UTC(),
+			UpdatedAt:      core.TimePtr(time.Now().UTC()),
 		}
 		// Merge-prep: defensive post-commit Remove drops any stale vec
 		// entry for it.entity.ID from a prior aborted ingest; post-commit
