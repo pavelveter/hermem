@@ -256,12 +256,12 @@ func TestDurationHistograms(t *testing.T) {
 	// Deliberately distinct values: 0.3s (embed-like), 5s (LLM-fast),
 	// 25s (LLM-slow), 45s (LLM-extreme). All four span distinct buckets
 	// in the .05 .1 .5 1 2 5 10 15 30 60 layout.
-	m.ObserveIngestDuration(0.3)
+	m.ObserveIngestDuration(0.3, "observation")
 	m.ObserveRetrievalDuration(5)
 	m.ObserveContradictionDuration(25)
 	m.ObserveRerankDuration(45)
 	// Second observation on ingest to confirm count tracks multiple samples.
-	m.ObserveIngestDuration(0.7)
+	m.ObserveIngestDuration(0.7, "observation")
 
 	want := []struct {
 		name      string
@@ -333,4 +333,43 @@ func findMF(mfs []*dto.MetricFamily, name string) *dto.MetricFamily {
 		}
 	}
 	return nil
+}
+
+// TestHermemPrefixContract_KnownCategorySet enforces the bounded-value-set
+// contract on the hIngest `category` label. Adding a new ingest-side
+// category MUST extend knownCategories in metrics.go AND bump the
+// `want` slice below. Total time-series math: len(knownCategories) *
+// (11 buckets + _sum + _count) per scrape.
+func TestHermemPrefixContract_KnownCategorySet(t *testing.T) {
+	m := New()
+	// Each known category must materialize a labelled child on demand.
+	for _, cat := range []string{"observation", "world", "task", "edge"} {
+		m.ObserveIngestDuration(0.001, cat)
+	}
+	mfs, err := m.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	hMF := findMF(mfs, "hermem_ingest_duration_seconds")
+	if hMF == nil {
+		t.Fatal("hIngest MetricFamily missing despite pre-warm; Vec not registered")
+	}
+	seenLabels := map[string]bool{}
+	for _, child := range hMF.GetMetric() {
+		for _, lp := range child.GetLabel() {
+			if lp.GetName() == "category" {
+				seenLabels[lp.GetValue()] = true
+			}
+		}
+	}
+	wantCategories := []string{"_init", "observation", "world", "task", "edge"}
+	if len(seenLabels) != len(wantCategories) {
+		t.Errorf("expected %d category labels after prewarm+4 observations, got %d (labels: %v)",
+			len(wantCategories), len(seenLabels), seenLabels)
+	}
+	for _, want := range wantCategories {
+		if !seenLabels[want] {
+			t.Errorf("expected category=%q in registry, missing (got: %v)", want, seenLabels)
+		}
+	}
 }
