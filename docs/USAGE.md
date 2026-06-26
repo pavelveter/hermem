@@ -2268,3 +2268,79 @@ type EpisodeFilter struct {
 - **Nil embedder** in RetrievalService disables semantic rerank
   cleanly; the Service falls back to pure SQL filtering.
 
+## Compression API
+
+The `src/internal/compression/` package implements P2 — SEMANTIC
+COMPRESSION: entity clustering, summary generation, recursive
+recompression, and provenance tracking.
+
+### Types
+
+```go
+type SummaryNode struct {
+    ID             string     // unique summary node ID
+    Content        string     // the summary text (bulleted extraction output)
+    CompressedFrom []string   // source entity IDs (carried forward on recompress)
+    CompressedAt   time.Time  // when compression ran
+    Confidence     float32    // average confidence of source entities
+    Provenance     string     // human-readable provenance chain
+    Generation     int        // 1 = first compression, 2+ = recursive
+    ExtractorModel string     // model identifier (default "llm")
+    SupersededBy   string     // set when a newer recompression replaces this node
+    RegeneratedAt  *time.Time // set on Regenerate() calls
+}
+```
+
+### Clusterer
+
+```go
+cfg := compression.DefaultClustererConfig()
+cfg.SimilarityThreshold = 0.8  // default 0.75
+clusterer := compression.NewClusterer(db, cfg)
+clusters, err := clusterer.Cluster(ctx, entityIDs)
+```
+
+Greedy clustering: seed an entity, group all within cosine similarity
+threshold, remove from pool, repeat.
+
+### Compressor
+
+```go
+ext := /* core.LLMExtractor */
+cp := compression.NewCompressor(db, ext)
+
+// One-shot compression
+node, err := cp.Compress(ctx, entityIDs)
+
+// Batch over pre-computed clusters
+nodes, err := cp.CompressCluster(ctx, clusters)
+
+// Recursive — carries old summary ID + entities forward, Gen++
+recompressed, err := cp.Recompress(ctx, node.ID)
+
+// Regenerate — same source, same generation, refreshed content
+regenerated, err := cp.Regenerate(ctx, node.ID)
+```
+
+### Provenance
+
+- `CompressedFrom` holds the original entity IDs at generation 1.
+- On `Recompress`, the old summary ID is appended to `CompressedFrom`
+  and the original node's `SupersededBy` field points to the new node.
+- `Generation` increments on each recursive recompression (max depth = 3).
+
+### Metrics
+
+```go
+metrics := compression.NewMetrics()
+cp.WithMetrics(metrics)
+
+metrics.CompressCount()        // total Compress calls
+metrics.RecompressCount()      // total Recompress calls
+metrics.RegenerateCount()      // total Regenerate calls
+metrics.CompressedEntities()   // total entities passed to Compress/Recompress
+metrics.ClusterCount()         // clusters processed via CompressCluster
+metrics.TotalDuration()        // cumulative Compress duration
+metrics.RecompressDuration()   // cumulative Recompress duration
+```
+
