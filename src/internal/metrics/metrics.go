@@ -65,6 +65,14 @@ var durationBuckets = []float64{0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 30, 60}
 // bound; the tight figure is 52.
 var knownCategories = []string{"_init", "observation", "world", "task", "edge"}
 
+// knownModes is the bounded value-set for the hRetrieval `mode` label.
+// Pre-warm sentinel "_init" + the 6 retrieval endpoints wired in src/internal/server/retrieval:
+// "/search" / "/retrieve" / "/query" / "/response" / "/query/explain" / "/provenance".
+// Math: 7 Ã (10 durationBuckets + +Inf auto-added = 11 buckets) + _sum + _count
+//      = 7 Ã 13 = 91 time-series per scrape. Adding a new endpoint = extend this slice
+// + bump TestHermemPrefixContract_KnownModesSet.
+var knownModes = []string{"_init", "search", "retrieve", "query", "response", "query_explain", "provenance"}
+
 // Metrics is the hermem-wide counter + histogram bag.
 //
 // Migration cheat-sheet (when adding a new IncXxx counter):
@@ -157,7 +165,7 @@ type Metrics struct {
 	// (regex excluding "_init" sentinel) so the system-emitted zero-presence
 	// child never gets confused with a real category.
 	hIngest        *prometheus.HistogramVec
-	hRetrieval     prometheus.Histogram
+	hRetrieval     *prometheus.HistogramVec
 	hContradiction prometheus.Histogram
 	hRerank        prometheus.Histogram
 }
@@ -245,11 +253,11 @@ func New() *Metrics {
 		}, []string{"category"}),
 
 		// hRetrieval / hContradiction / hRerank remain as single Histograms.
-		hRetrieval: prometheus.NewHistogram(prometheus.HistogramOpts{
+		hRetrieval: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "hermem_retrieval_duration_seconds",
-			Help:    "End-to-end retrieval/search latency (request -> response). Includes embed + cosine + rerank overhead.",
+			Help:    "End-to-end retrieval/search latency (request -> response) labelled by retrieval mode (one of the 6 read-side endpoints). Includes embed + cosine + rerank overhead.",
 			Buckets: durationBuckets,
-		}),
+		}, []string{"mode"}),
 		hContradiction: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "hermem_contradiction_duration_seconds",
 			Help:    "Contradiction detection latency per scan (cosine pair-check + threshold walk).",
@@ -277,6 +285,7 @@ func New() *Metrics {
 	// scrapes (Grafana dashboards depend on the parent name being present).
 	// Callers MUST NOT pass category="_init" — it is a system-only sentinel.
 	m.hIngest.WithLabelValues(knownCategories[0]) // knownCategories[0] = "_init"
+	m.hRetrieval.WithLabelValues(knownModes[0]) // knownModes[0] = "_init"
 	return m
 }
 
@@ -328,7 +337,17 @@ func (m *Metrics) ObserveIngestDuration(seconds float64, category string) {
 	m.hIngest.WithLabelValues(category).Observe(seconds)
 }
 
-func (m *Metrics) ObserveRetrievalDuration(seconds float64) { m.hRetrieval.Observe(seconds) }
+// ObserveRetrievalDuration records end-to-end retrieval latency in seconds,
+// labelled by `mode` (one of the 6 read-side endpoints: search / retrieve /
+// query / response / query_explain / provenance). Caller MUST pass a value
+// from knownModes; "_init" is reserved for the system's pre-warm child.
+// Pre-C4 callers break intentionally at this commit boundary.
+//
+// Dashboard authors: filter mode=~"^(search|retrieve|query|response|query_explain|provenance)$"
+// to exclude the system "_init" sentinel.
+func (m *Metrics) ObserveRetrievalDuration(seconds float64, mode string) {
+	m.hRetrieval.WithLabelValues(mode).Observe(seconds)
+}
 func (m *Metrics) ObserveContradictionDuration(seconds float64) { m.hContradiction.Observe(seconds) }
 func (m *Metrics) ObserveRerankDuration(seconds float64) { m.hRerank.Observe(seconds) }
 
