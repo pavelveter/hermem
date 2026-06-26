@@ -3,13 +3,6 @@
 // show-with-relations, dependency edges, rollback lookup, tree
 // rendering, recovery-plan suggestion, and task creation with the
 // embed+store+link side effect.
-//
-// The embedded `vector.AutoLinkEdges` call inside Create is the only
-// reason this Service holds vi + embedder. All other handlers operate
-// purely on the relational schema and the task DAG via store.* funcs.
-// Matches memory.Service's pattern: per-call args include `schema
-// core.SchemaConfig`; no Refs field; the HTTP shell loads schema per
-// request and threads it here.
 package task
 
 import (
@@ -42,7 +35,7 @@ type Service struct {
 	vi       core.VectorIndex
 }
 
-// NewService constructs a Service. All three deps are required; passing
+// New constructs a Service. All three deps are required; passing
 // nil embedder makes Create fail with a domain error that the HTTP
 // shell maps to 500.
 func New(db *sql.DB, embedder core.Embedder, vi core.VectorIndex) *Service {
@@ -72,12 +65,10 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 // Executable returns currently-executable tasks (blockers all done).
 //
 // goalID narrows the search to a subtree; empty means "all stateful
-// categories, globally". The internal SQL pulls task entities in
-// pending state with no unfinished blocker via the blocked_by +
-// relation-blocking paths in the schema. Returns `[]Entity{}` (not
-// nil) on empty result so the HTTP envelope emits `[]` not `null`.
-func (s *Service) Executable(_ context.Context, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
-	tasks, err := getExecutable(s.db, schema, goalID)
+// categories, globally". Returns `[]Task{}` (not nil) on empty result
+// so the HTTP envelope emits `[]` not `null`.
+func (s *Service) Executable(ctx context.Context, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
+	tasks, err := store.GetExecutableTasks(ctx, s.db, schema, goalID)
 	if err != nil {
 		return nil, err
 	}
@@ -220,49 +211,4 @@ func (s *Service) RecoveryPlan(_ context.Context, id string, schema core.SchemaC
 		return nil, fmt.Errorf("recovery: %w", err)
 	}
 	return core.NormalizeSlice(tasks), nil
-}
-
-// --- internal helpers ---
-
-// getExecutable dispatches to goal-scoped vs global SQL. tree form
-// pre-PHASE-2.4 was retrieval.GetExecutableTasks + retrieval.
-// getExecutableForGoal + retrieval.getExecutableGlobal; PHASE 2.4
-// folds them into the task pkg and renames them to be unexported
-// (private to this domain).
-func getExecutable(db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
-	if !schema.StatefulEnabled || len(schema.StatefulCategories) == 0 || len(schema.ValidStateOrder) == 0 {
-		return []core.Task{}, nil
-	}
-	if goalID != "" {
-		return getExecutableForGoal(db, schema, goalID)
-	}
-	return getExecutableGlobal(db, schema)
-}
-
-func getExecutableForGoal(db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
-	catPH, catArgs := store.BoolMapInClause(schema.StatefulCategories)
-	args := append([]interface{}{goalID}, catArgs...)
-	args = append(args, schema.RelationBlocking)
-	args = append(args, catArgs...)
-	args = append(args, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking)
-	query := fmt.Sprintf(`WITH RECURSIVE dep_tree AS (SELECT e.id, e.category, e.content, e.status, e.updated_at FROM entities e WHERE e.id = ? AND e.category IN (%s) AND e.archived = 0 UNION ALL SELECT e.id, e.category, e.content, e.status, e.updated_at FROM dep_tree dt JOIN edges ed ON ed.source_id = dt.id AND ed.relation_type = ? JOIN entities e ON e.id = ed.target_id AND e.category IN (%s) AND e.archived = 0) SELECT dt.id, dt.category, dt.content, dt.status, dt.updated_at, COALESCE(e.priority, 0) FROM dep_tree dt JOIN entities e ON e.id = dt.id WHERE dt.status = ? AND NOT EXISTS (SELECT 1 FROM edges ed2 WHERE ed2.target_id = dt.id AND ed2.relation_type = ? AND EXISTS (SELECT 1 FROM entities e3 WHERE e3.id = ed2.source_id AND e3.status != ?)) ORDER BY COALESCE(e.priority, 0) DESC, dt.id`, catPH, catPH)
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("executable for goal: %w", err)
-	}
-	defer rows.Close()
-	return store.ScanTaskEntities(rows)
-}
-
-func getExecutableGlobal(db *sql.DB, schema core.SchemaConfig) ([]core.Task, error) {
-	catPH, catArgs := store.BoolMapInClause(schema.StatefulCategories)
-	args := append([]interface{}{}, catArgs...)
-	args = append(args, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking)
-	query := fmt.Sprintf(`SELECT e.id, e.category, e.content, e.status, e.updated_at, COALESCE(e.priority, 0) FROM entities e WHERE e.category IN (%s) AND e.status = ? AND e.archived = 0 AND NOT EXISTS (SELECT 1 FROM edges ed WHERE ed.target_id = e.id AND ed.relation_type = ? AND EXISTS (SELECT 1 FROM entities e2 WHERE e2.id = ed.source_id AND e2.status != ?)) ORDER BY COALESCE(e.priority, 0) DESC, e.id`, catPH)
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("executable: %w", err)
-	}
-	defer rows.Close()
-	return store.ScanTaskEntities(rows)
 }
