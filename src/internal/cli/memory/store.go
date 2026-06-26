@@ -36,9 +36,9 @@ func newStoreCmd(env *cli.Env) *cobra.Command {
 				}
 				req.Embedding = emb
 			}
-			// Construct per-call (six pointer assignments; cheap) so
+			// Construct per-call (three pointer assignments; cheap) so
 			// CLI never holds onto a stale Service ref between commands.
-			memSvc := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
+			memSvc := memdomain.New(env.DB, env.VI, env.Embedder)
 			if err := memSvc.Store(env.Ctx, req, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("store: %w", err)
 			}

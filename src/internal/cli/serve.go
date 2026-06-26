@@ -70,10 +70,11 @@ func runServe(env *clienv.Env, port string) error {
 	// PHASE 2.1: build the memory domain Service once and hand the HTTP shell
 	// (server/memory) a borrowed pointer. IngestionWorker was created
 	// inside Mem.Ingest per call pre-PHASE-3.4 (now constructed inside
-	// ingest.Service.Ingest). Embedder lives inside memdomain.Service;
-	// Extractor remains in memdomain for any future memory-write hook
-	// though unused since PHASE 3.4.
-	memSvc := memdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
+	// ingest.Service.Ingest). The LLM extractor is no longer threaded
+	// through memory.Service post-PHASE 3.4/3.5 — the dialog-pipeline
+	// extractor wiring lives in src/internal/ingest/, where it's actually
+	// consumed.
+	memSvc := memdomain.New(env.DB, env.VI, env.Embedder)
 	// PHASE 3.5: edge domain Service owns the relation-edge write API
 	// (AddEdge + auto-create dispatch). vi + embedder are held so the
 	// auto-create path can call vector.AddEdgeWithAutoCreate without
@@ -93,7 +94,7 @@ func runServe(env *clienv.Env, port string) error {
 		healthdomain.EmbedderProbe(env.Embedder),
 		healthdomain.ExtractorProbe(env.Extractor),
 		healthdomain.DiskSpaceProbe(env.Cfg.DBPath),
-	)
+	).WithMetrics(env.Metrics)
 	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
 	// PHASE 2.2: same shape for retrieval. The domain Service owns
 	// retrieval orchestration; HTTP shell delegates through RetSvc.

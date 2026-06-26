@@ -6,18 +6,18 @@
 // shell in server/memory/, CLI shell in cli/memory/) own all cross-cutting
 // plumbing and delegate here for the actual domain work.
 //
-// After PHASED 3.4 + 3.5 the memory domain is a thin CRUD shell: only
+// After PHASE 3.4 + 3.5 the memory domain is a thin CRUD shell: only
 // Store + StoreAndLink remain. The Ingest method moved to
 // src/internal/ingest/ (PHASE 3.4), AddEdge moved to src/internal/edge/
 // (PHASE 3.5), Timeline + TimelineEntry moved to src/internal/timeline/
-// (PHASE 3.5). The four Service fields (db, vi, embedder, extractor)
-// are kept for Store + StoreAndLink: db + vi are used by both Store
-// and StoreAndLink (via vector.AutoLinkEdges), embedder is used by
-// StoreAndLink for AutoLinkEdges, extractor is retained for future
-// memory-write hooks (currently unused; the domain Ingest is now in
-// src/internal/ingest/ exclusively).
+// (PHASE 3.5). The three Service fields (db, vi, embedder) cover
+// Store + StoreAndLink: db + vi persist the row + write to the vector
+// index, embedder is used by StoreAndLink's vector.AutoLinkEdges for
+// the related_to auto-discovery path. The LLM extractor is no longer
+// threaded through here — the dialog-pipeline extractor wiring lives
+// in src/internal/ingest/, where it's actually consumed.
 //
-// Construction is cheap (six pointer assignments) so callers may instantiate
+// Construction is cheap (three pointer assignments) so callers may instantiate
 // fresh per request, but in practice the lifecycle follows the surrounding
 // process — main.go builds once via clienv.Env.Service() and both transport
 // shells hold a borrowed pointer.
@@ -40,27 +40,29 @@ import (
 // reload path (SIGHUP) constructs a fresh Service binding against the
 // new schema without touching a stateful singleton.
 //
-// Post-PHASE 3.5 the Service struct field set is the same (db, vi,
-// embedder, extractor) even though extractor is no longer called by
-// any memory-domain method. Removing the field would force the
-// memory constructor signature to drift from the pre-PHASE-3.5
-// callers (cli/serve.go + integration_test.go); keeping the field
-// holds the door open for a future memory-write extractor hook
-// without breaking the constructor boilerplate at every caller.
+// Post-PHASE 3.5 the Service is a thin CRUD shell: only Store +
+// StoreAndLink remain. Ingest moved to src/internal/ingest/ (PHASE
+// 3.4), AddEdge moved to src/internal/edge/ (PHASE 3.5), Timeline
+// moved to src/internal/timeline/ (PHASE 3.5). The remaining three
+// Service fields (db, vi, embedder) are all used by Store + StoreAndLink:
+// db + vi persist the row + write to the vector index, embedder is
+// used by StoreAndLink's vector.AutoLinkEdges for the related_to
+// auto-discovery path. The LLM extractor is now owned exclusively
+// by src/internal/ingest/ — passing it here would be dead weight
+// (no memory-domain method calls it post-PHASE 3.4).
 type Service struct {
-	db        *sql.DB
-	vi        core.VectorIndex
-	embedder  core.Embedder
-	extractor core.LLMExtractor
+	db       *sql.DB
+	vi       core.VectorIndex
+	embedder core.Embedder
 }
 
-// New constructs a Service. All four deps are required; passing a nil
-// Extractor used to cause Ingest to fail with "ingest: no extractor
-// wired" — pre-PHASE 3.4 / 3.5 contract. Ingest now lives in
-// src/internal/ingest/ and the extractor field is retained on memory
-// for future memory-write hooks.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, extractor core.LLMExtractor) *Service {
-	return &Service{db: db, vi: vi, embedder: embedder, extractor: extractor}
+// New constructs a Service. db + vi + embedder are the only deps
+// needed for the post-PHASE 3.4/3.5 surface (Store + StoreAndLink).
+// The LLM extractor is no longer threaded through here — the
+// dialog-pipeline extractor wiring lives in src/internal/ingest/,
+// where it's actually consumed.
+func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
+	return &Service{db: db, vi: vi, embedder: embedder}
 }
 
 // Store persists one entity with its (caller-supplied) embedding.

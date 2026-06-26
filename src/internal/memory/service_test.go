@@ -12,18 +12,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// stubExtractor is a no-op LLM extractor used by tests that don't
-// exercise the ingest happy-path (which would need a real extractor
-// pulling JSON out of dialog). Tests that DO need a real extractor
-// pass &stubExtractor{} — every ExtractEntities call returns an
-// empty ExtractionResult, which is exactly what the IngestionWorker
-// short-circuits on (no entities = no-op pipeline).
-type stubExtractor struct{}
-
-func (stubExtractor) ExtractEntities(_ context.Context, _ string) (*core.ExtractionResult, error) {
-	return &core.ExtractionResult{}, nil
-}
-
 // stubEmbedder is a deterministic 3-dim embedder matching the
 // server/integration_test.go stubEmbedder shape so any test that
 // embeds entities lands on a known-good cosine surface.
@@ -55,7 +43,7 @@ func newMemFixture(t *testing.T) *memFixture {
 	t.Cleanup(func() { _ = db.Close() })
 
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := New(db, vi, stubEmbedder{}, stubExtractor{})
+	svc := New(db, vi, stubEmbedder{})
 	return &memFixture{svc: svc, db: db, vi: vi}
 }
 
@@ -73,7 +61,7 @@ func TestNewService_Success(t *testing.T) {
 	}
 	defer db.Close()
 	vi := vector.NewInMemoryVectorIndex(db)
-	svc := New(db, vi, stubEmbedder{}, stubExtractor{})
+	svc := New(db, vi, stubEmbedder{})
 	if svc == nil {
 		t.Fatal("New returned nil Service")
 	}

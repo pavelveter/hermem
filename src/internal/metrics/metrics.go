@@ -518,6 +518,44 @@ func (m *Metrics) WriteExposition(w io.Writer) error {
 	return err
 }
 
+// Snapshot returns a JSON-friendly map of the 20 atomic counter
+// values keyed by Prometheus metric name (e.g. "hermem_store_total").
+// Used by the health service to surface a compact process-metrics
+// view alongside the standard "status: ok" envelope without forcing
+// /health consumers to also parse /metrics. Counters are read
+// individually via atomic.Int64.Load(); the snapshot is a
+// point-in-time view, not transactionally consistent across the
+// 20 atomic loads — acceptable for monitoring, NOT for
+// arithmetic across counters (e.g. summing store + search).
+//
+// Named to match the Prometheus v0.0.4 text format that
+// WriteExposition emits so a consumer reading both surfaces sees
+// the same key names.
+func (m *Metrics) Snapshot() map[string]uint64 {
+	return map[string]uint64{
+		"hermem_store_total":          uint64(m.storeCount.Load()),
+		"hermem_search_total":         uint64(m.searchCount.Load()),
+		"hermem_retrieve_total":       uint64(m.retrieveCount.Load()),
+		"hermem_ingest_total":         uint64(m.ingestCount.Load()),
+		"hermem_query_total":          uint64(m.queryCount.Load()),
+		"hermem_edge_total":           uint64(m.edgeCount.Load()),
+		"hermem_errors_total":         uint64(m.errCount.Load()),
+		"hermem_schema_conflict_total": uint64(m.schemaConflictCount.Load()),
+		"hermem_task_status_total":    uint64(m.taskStatusCount.Load()),
+		"hermem_task_exec_total":      uint64(m.taskExecCount.Load()),
+		"hermem_task_list_total":      uint64(m.taskListCount.Load()),
+		"hermem_task_show_total":      uint64(m.taskShowCount.Load()),
+		"hermem_task_dep_total":       uint64(m.taskDepCount.Load()),
+		"hermem_task_rollback_total":  uint64(m.taskRollbackCount.Load()),
+		"hermem_task_tree_total":      uint64(m.taskTreeCount.Load()),
+		"hermem_task_create_total":    uint64(m.taskCreateCount.Load()),
+		"hermem_retention_run_total":  uint64(m.retentionRunCount.Load()),
+		"hermem_graph_components_total":  uint64(m.graphComponentsCount.Load()),
+		"hermem_graph_communities_total": uint64(m.graphCommunitiesCount.Load()),
+		"hermem_graph_verify_total":      uint64(m.graphVerifyCount.Load()),
+	}
+}
+
 // MetricsHandler returns the legacy expvar-style http.Handler that
 // emits Prometheus text-format from the atomic counters.
 // Preserved from e2aa722 verbatim so any /metrics-style endpoint that

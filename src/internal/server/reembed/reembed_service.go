@@ -11,6 +11,7 @@ package reembed
 import (
 	"net/http"
 
+	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/reembed"
@@ -72,7 +73,7 @@ func (h *HTTPService) HandleReEmbed(w http.ResponseWriter, r *http.Request) erro
 		req.BatchSize = 50
 	}
 	if req.Dim <= 0 {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "dim required", "invalid_input", "dim")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "dim required", Field: "dim"})
 		return nil
 	}
 	result, err := h.Svc.ReEmbedAll(r.Context(), req.Dim, req.BatchSize, req.Model)
