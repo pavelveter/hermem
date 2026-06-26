@@ -10,6 +10,7 @@ package graph
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	graphsvc "github.com/pavelveter/hermem/src/internal/graph"
@@ -62,6 +63,7 @@ func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 // as a raw JSON array. Matches the pre-PHASE-3.1 envelope exactly so
 // existing curl clients / dashboards are unchanged.
 func (s *HTTPService) HandleConnectedComponents(w http.ResponseWriter, r *http.Request) {
+	s.Metrics.IncGraphComponents()
 	minSize := httputil.ParseIntParam(r, "min_size", 2)
 	comps, err := s.Svc.Components(r.Context(), minSize)
 	if err != nil {
@@ -81,6 +83,9 @@ func (s *HTTPService) HandleConnectedComponents(w http.ResponseWriter, r *http.R
 // envelope can report total_communities AND filtered_communities side
 // by side. The domain Service returns the full list.
 func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) {
+	s.Metrics.IncGraphCommunities()
+	start := time.Now()
+	defer func() { s.Metrics.ObserveGraphCommunitiesDuration(time.Since(start).Seconds()) }()
 	minSize := httputil.ParseIntParam(r, "min_size", 2)
 	maxIter := httputil.ParseIntParam(r, "max_iterations", 50)
 	if maxIter <= 0 || maxIter > 200 {
@@ -116,6 +121,7 @@ func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) 
 // `len(report.Issues) == 0` so dashboards can decide red/green
 // without re-running the algorithm.
 func (s *HTTPService) HandleGraphVerify(w http.ResponseWriter, r *http.Request) {
+	s.Metrics.IncGraphVerify()
 	state := s.Refs.Load()
 	if state == nil {
 		s.Metrics.IncErr()
