@@ -680,9 +680,9 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 | **✅ DONE** | §2.1: Drop `_http` package suffix | Medium | ✅ DONE — all 4 `_http` suffixes dropped; 4 import aliases removed from server.go |
 | **HIGH** | §2.2-2.3: Naming conventions | Low | ✅ DONE — BOTH complete |
 | **HIGH** | §3.1-3.2: RouteProvider + BaseHTTPService | High | ✅ §3.1+§3.2 DONE — 12 for-loops collapsed + ~250 LOC via Wrap + mapStatus |
-| **HIGH** | §8: Entity decomposition | High | ~80 LOC eliminated, type safety |
+| **HIGH** | §8: Entity decomposition | High | 🟡 PARTIAL DONE — Type-Prep landed (5 slim types embed `core.Fact`; `core/slim_types_test.go` pins new wire shape; vet/build/race clean). §8.3 read-path switchover + §8.4 `AsEntity()` removal pending. Caller **note**: pre-§8.3, `t.AsEntity()` silently drops identity — see §8 NOTE/TODO godocs on the 5 slim types. |
 | **✅ DONE** | §9: AI client unification | Medium | ✅ DONE — 6 clients collapsed to httpClient.doPOST; ~23 net LOC after helper + 215 LOC of test coverage |
-| **HIGH** | §10: HTTP handler boilerplate | Medium | ~350 LOC eliminated |
+| **✅ DONE** | §10: HTTP handler boilerplate | Medium | ✅ DONE — httputil.DecodeJSON[T] + RespondJSON + §3.2 Wrap routes *core.DomainError through WriteErrorWithCode; 15 POST handlers across 6 shells collapsed; 1 new end-to-end 422 wire-contract test (TestStore_MalformedJSONReturns422WithCodeField) pins {error, code:"invalid_input"} envelope; 2 stale-test fixes (TestTaskDep missing-field test data + TestStore_RejectsLargeBody status assertion widened 400→422 per §3.2+§10 wire evolution) |
 | **HIGH** | §11: AMX CGo verification | Low | No code change, CI guard only |
 | **MEDIUM** | §4.1-4.2: Comment cleanup | Low | ~1500 LOC eliminated |
 | **MEDIUM** | §5.1-5.3: Package organization | Medium-High | Structure clarity |
@@ -711,13 +711,21 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 6. ~~**§9** — AI client unification (`httpClient` helper)~~ ✅ DONE
    (6 clients collapsed to httpClient.doPOST; ~23 net LOC + 215 LOC test coverage)
 
-7. **§10** — HTTP handler boilerplate (`DecodeJSON[T]` + `RespondJSON`)
-   (high payoff, depends on §2.1 + §3.1 for clean base)
+7. ~~**§10** — HTTP handler boilerplate (`DecodeJSON[T]` + `RespondJSON`)~~ ✅ DONE
+   (was high payoff, depended on §2.1 + §3.1 for clean base) — 15 POST handlers across 6 shells
+   (task, retrieval, memory, edge, ingest, reembed) collapsed to `httputil.DecodeJSON[T] + return err`.
+   Net LOC delta is small because the boilerplate was already compact, but the
+   wire contract is now unified: type-mismatch / unknown-field / MalformedJSON /
+   TrailingData / MaxBytes-overflow all drop to 422 with `{error, code:"invalid_input", field}`
+   via the §3.2 Wrap's `errors.As(*core.DomainError)` → `WriteErrorWithCode` path.
+   New regression test `TestStore_MalformedJSONReturns422WithCodeField` exercises
+   the cumulative DecodeJSON→Wrap→WriteErrorWithCode path on a real POST and
+   pins the `code="invalid_input"` envelope exactly.
 
 8. ~~**§3.2** — `BaseHTTPService` with `Wrap` pattern~~ ✅ DONE
    (depends on §10 for the handler simplification) — 11 shells + ~250 LOC eliminated, 9 shared tests pin regression coverage including the silent-bug CodeInvalidInput 400→422 fix.
 
-9. **§8** — Entity decomposition (switch `store/` to slim types)
+9. **§8** — Entity decomposition (switch `store/` to slim types) ~~🟡 PARTIAL DONE (Type-Prep landed)~~ ✅ §8.1+§8.2 (Type-Prep) DONE — anon-embed `core.Fact` in 5 slim types + new wire-shape regression test in `core/slim_types_test.go`. §8.3 read-path switchover and §8.4 `AsEntity()` removal still pending.
    (high effort but high payoff, structural change)
 
 10. **§4.1, §4.2** — Comment cleanup
@@ -1073,9 +1081,9 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 | **✅ DONE** | §2.1: Drop `_http` package suffix | Medium | ✅ DONE — all 4 `_http` suffixes dropped; 4 import aliases removed from server.go |
 | **HIGH** | §2.2-2.3: Naming conventions | Low | ✅ DONE — BOTH complete |
 | **HIGH** | §3.1-3.2: RouteProvider + BaseHTTPService | High | ✅ §3.1+§3.2 DONE — 12 for-loops collapsed + ~250 LOC via Wrap + mapStatus |
-| **HIGH** | §8: Entity decomposition | High | ~80 LOC eliminated, type safety |
+| **HIGH** | §8: Entity decomposition | High | 🟡 PARTIAL DONE — Type-Prep landed (5 slim types embed `core.Fact`; `core/slim_types_test.go` pins new wire shape; vet/build/race clean). §8.3 read-path switchover + §8.4 `AsEntity()` removal pending. Caller **note**: pre-§8.3, `t.AsEntity()` silently drops identity — see §8 NOTE/TODO godocs on the 5 slim types. |
 | **✅ DONE** | §9: AI client unification | Medium | ✅ DONE — 6 clients collapsed to httpClient.doPOST; ~23 net LOC after helper + 215 LOC of test coverage |
-| **HIGH** | §10: HTTP handler boilerplate | Medium | ~350 LOC eliminated |
+| **✅ DONE** | §10: HTTP handler boilerplate | Medium | ✅ DONE — httputil.DecodeJSON[T] + RespondJSON + §3.2 Wrap routes *core.DomainError through WriteErrorWithCode; 15 POST handlers across 6 shells collapsed; 1 new end-to-end 422 wire-contract test (TestStore_MalformedJSONReturns422WithCodeField) pins {error, code:"invalid_input"} envelope; 2 stale-test fixes (TestTaskDep missing-field test data + TestStore_RejectsLargeBody status assertion widened 400→422 per §3.2+§10 wire evolution) |
 | **HIGH** | §11: AMX CGo verification | Low | No code change, CI guard only |
 | **✅ DONE** | §12.2: Central error taxonomy | — | Eliminates string-matching in handlers |
 | **HIGH** | §12.5: Unified logging interface | Medium | ✅ DONE — core.Logger + SlogLogger + TestLogger |
@@ -1114,13 +1122,13 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 
 9. ~~**§9** — AI client unification (`httpClient` helper)~~ ✅ DONE — 6 clients collapsed; ~23 net LOC; +7 contract tests
 
-10. **§10** — HTTP handler boilerplate (`DecodeJSON[T]` + `RespondJSON`)
+10. ~~**§10** — HTTP handler boilerplate (`DecodeJSON[T]` + `RespondJSON`)~~ ✅ DONE — httputil.DecodeJSON[T] + RespondJSON collapsed 15 POST handlers; Wrap now routes `*core.DomainError` through WriteErrorWithCode; end-to-end 422 wire contract pinned by `TestStore_MalformedJSONReturns422WithCodeField`.
 
 11. ~~**§3.2** — `BaseHTTPService` with `Wrap` pattern~~ ✅ DONE — 11 shells + ~250 LOC eliminated; silent-bug fixed; 9 regression tests in `shared/base_test.go`.
 
 12. **§12.3** — Explicit layer markers + extract SQL from domain services
 
-13. **§8** — Entity decomposition (switch `store/` to slim types)
+13. **§8** — Entity decomposition (switch `store/` to slim types) ~~🟡 PARTIAL DONE (Type-Prep landed)~~ ✅ §8.1+§8.2 (Type-Prep) DONE — anon-embed `core.Fact` in 5 slim types + new wire-shape regression test in `core/slim_types_test.go`. §8.3 read-path switchover and §8.4 `AsEntity()` removal still pending.
 
 14. **§6** — `serve.go` wiring simplification (builder pattern)
 

@@ -12,6 +12,10 @@ import "time"
 //   - Degree — graph centrality (auto-maintained by SQL triggers on
 //     edges INSERT/DELETE; the ranker uses log10(1+degree))
 //
+// Identity (ID + Content + Category + Embedding) is supplied by the
+// embedded Fact so /belief/* endpoints can serialise Belief
+// directly without going through fat Entity (see §8 of REFACTORING.md).
+//
 // IMPORTANT: "Belief" in this codebase does NOT mean the philosophical
 // concept of a held claim. It means the persistent memory footprint
 // of a fact — the long-arc, graph-anchored, retention-tracked block
@@ -25,11 +29,13 @@ import "time"
 // derived Task-typed view (Goal). Entity stays as the umbrella
 // persistence-row type and the per-domain models compose into it.
 //
-// Pattern matches: minimal surface, Entity keeps all fields it already
-// has, conversion methods project and round-trip cleanly. Goal
-// (item #7) re-views Task's shape with intent; Belief here is a
-// primary 5-field projection, not a derived re-view.
+// Pattern matches: minimal surface, identity via embedded Fact,
+// persistence mechanics as the explicit struct fields. The AsBelief()
+// conversion keeps working for callers that prefer the per-domain-model
+// API; the projection becomes dead code once all consumers use slim
+// types directly (§8 Phase 4).
 type Belief struct {
+	Fact
 	CreatedAt      *time.Time `json:"created_at,omitempty"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
@@ -53,6 +59,12 @@ func (e Entity) AsBelief() Belief {
 // AsEntity lifts the 5 belief fields back into an Entity. The 14
 // non-belief fields are zeroed / nil. Callers that need them back
 // must merge from a domain-specific source (Fact/Evidence/Episode/Task).
+//
+// §8 NOTE: drops embedded Fact identity (ID/Category/Content/Embedding)
+// silently. Until §8 Phase 2 (read-path switchover) lands, callers
+// that round-trip through AsEntity lose identity — prefer consuming
+// the slim type directly when both identity and domain-specific
+// fields are needed.
 func (b Belief) AsEntity() Entity {
 	return Entity{
 		CreatedAt:      b.CreatedAt,
