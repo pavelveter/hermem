@@ -69,7 +69,7 @@ P0 — CONTRADICTION ENGINE 2.0
 [x] Add detector composition pipeline
 [x] Add contradiction confidence scoring
 [x] Add contradiction explanation output
-[ ] Add contradiction benchmark dataset
+[x] Add contradiction benchmark dataset
 [ ] Add contradiction evaluation metrics
 [ ] Add contradiction regression tests
 
