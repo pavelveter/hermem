@@ -1,11 +1,14 @@
 package httputil
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // TestDecodeStrict_Valid covers the happy path — well-formed JSON decodes
@@ -168,5 +171,194 @@ func TestParseIntParam_FallsBackOnGarbage(t *testing.T) {
 	r := httptest.NewRequest("GET", u.String(), nil)
 	if got := ParseIntParam(r, "n", 7); got != 7 {
 		t.Fatalf("garbage: want default 7, got %d", got)
+	}
+}
+
+// ---------------------------------------------------------------------
+// DecodeJSON[T] + RespondJSON (§10 helpers)
+// ---------------------------------------------------------------------
+
+type decodeJSONTestPayload struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// TestDecodeJSON_HappyPath verifies the §10 DecodeJSON[T] generic helper
+// successfully decodes a JSON body into a typed payload, surface the
+// zero value of T on error, and apply MaxBytesReader transparently.
+func TestDecodeJSON_HappyPath(t *testing.T) {
+	r := httptest.NewRequest("POST", "/x", strings.NewReader(`{"id":"abc","name":"widget"}`))
+	got, err := DecodeJSON[decodeJSONTestPayload](httptest.NewRecorder(), r)
+	if err != nil {
+		t.Fatalf("happy decode: want nil err, got %v", err)
+	}
+	if got.ID != "abc" || got.Name != "widget" {
+		t.Fatalf("payload: want {abc, widget}, got %+v", got)
+	}
+}
+
+// TestDecodeJSON_EmptyBodyReturnsDomainError verifies the §10 contract:
+// empty body surfaces as a *core.DomainError{Code: CodeInvalidInput,
+// Message: containing "empty"}. The error must NOT be a bare string.
+// §3.2 Wrap's mapStatus will recognise CodeInvalidInput and map to 422
+// instead of the 500 a plain error would produce.
+func TestDecodeJSON_EmptyBodyReturnsDomainError(t *testing.T) {
+	r := httptest.NewRequest("POST", "/x", strings.NewReader(""))
+	_, err := DecodeJSON[decodeJSONTestPayload](httptest.NewRecorder(), r)
+	if err == nil {
+		t.Fatal("empty body: want DomainError, got nil")
+	}
+	var de *core.DomainError
+	if !errors.As(err, &de) {
+		t.Fatalf("empty body: want *core.DomainError, got %T: %v", err, err)
+	}
+	if de.Code != core.CodeInvalidInput {
+		t.Fatalf("empty body code: want CodeInvalidInput, got %q", de.Code)
+	}
+	if !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty body message: want containing \"empty\", got %q", err.Error())
+	}
+}
+
+// TestDecodeJSON_MalformedReturnsDomainError — any non-empty/non-trailing
+// JSON garbage must surface as CodeInvalidInput (not the default 500).
+func TestDecodeJSON_MalformedReturnsDomainError(t *testing.T) {
+	r := httptest.NewRequest("POST", "/x", strings.NewReader("{garbage}"))
+	_, err := DecodeJSON[decodeJSONTestPayload](httptest.NewRecorder(), r)
+	if err == nil {
+		t.Fatal("malformed: want DomainError, got nil")
+	}
+	var de *core.DomainError
+	if !errors.As(err, &de) {
+		t.Fatalf("malformed: want *core.DomainError, got %T: %v", err, err)
+	}
+	if de.Code != core.CodeInvalidInput {
+		t.Fatalf("malformed code: want CodeInvalidInput, got %q", de.Code)
+	}
+}
+
+// TestDecodeJSON_UnknownFieldPopulatesFieldAnnotation verifies the §10
+// contract: an unknown field surfaces as CodeInvalidInput AND the
+// DomainError.Field carries the offending key. Wrap → mapStatus renders
+// this as "msg (field)" inline so the wire byte still tells the client
+// WHICH field was wrong. Without the field propagation the user could
+// not tell which input to fix.
+func TestDecodeJSON_UnknownFieldPopulatesFieldAnnotation(t *testing.T) {
+	r := httptest.NewRequest("POST", "/x", strings.NewReader(`{"id":"a","extra":"oops"}`))
+	_, err := DecodeJSON[decodeJSONTestPayload](httptest.NewRecorder(), r)
+	if err == nil {
+		t.Fatal("unknown field: want DomainError, got nil")
+	}
+	var de *core.DomainError
+	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+		t.Fatalf("unknown field: want CodeInvalidInput DomainError, got %T: %v", err, err)
+	}
+	if de.Field != "extra" {
+		t.Fatalf("unknown field DomainError.Field: want \"extra\", got %q", de.Field)
+	}
+	if !strings.Contains(err.Error(), "extra") {
+		t.Fatalf("err.Error() should embed field name; got %q", err.Error())
+	}
+}
+
+// TestDecodeJSON_TypeErrorPopulatesFieldAnnotation — a JSON type mismatch
+// on a typed field must surface as CodeInvalidInput with DomainError.Field
+// set to the offending JSON pointer. This is what makes a real client
+// able to pinpoint WHICH input is wrong.
+func TestDecodeJSON_TypeErrorPopulatesFieldAnnotation(t *testing.T) {
+	r := httptest.NewRequest("POST", "/x", strings.NewReader(`{"id":"abc","name":42}`))
+	_, err := DecodeJSON[decodeJSONTestPayload](httptest.NewRecorder(), r)
+	if err == nil {
+		t.Fatal("type error: want DomainError, got nil")
+	}
+	var de *core.DomainError
+	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+		t.Fatalf("type error: want CodeInvalidInput DomainError, got %T: %v", err, err)
+	}
+	if de.Field != "name" {
+		t.Fatalf("type error Field: want \"name\", got %q", de.Field)
+	}
+}
+
+// TestDecodeJSON_MaxBytesOverflowReturnsError verifies that a body larger
+// than the configured cap surfaces as an error from DecodeJSON rather than
+// silently consuming unbounded RAM. We don't care about the concrete
+// error type here — http.MaxBytesReader returns a *http.MaxBytesError —
+// only that the decode aborts before allocating the full payload.
+//
+// MaxBodyBytes is a var (not const) so this test can shrink the cap
+// locally and don't have to allocate a real 1 MiB body. t.Cleanup
+// restores the package value after the test finishes to avoid
+// contaminating other tests that rely on the default 1 MiB cap.
+func TestDecodeJSON_MaxBytesOverflowReturnsError(t *testing.T) {
+	orig := MaxBodyBytes
+	MaxBodyBytes = 64
+	t.Cleanup(func() { MaxBodyBytes = orig })
+	huge := strings.Repeat("a", 65)
+	r := httptest.NewRequest("POST", "/x", strings.NewReader(huge))
+	_, err := DecodeJSON[decodeJSONTestPayload](httptest.NewRecorder(), r)
+	if err == nil {
+		t.Fatal("overflow body: want error, got nil")
+	}
+}
+
+// TestDecodeJSON_TrailingDataReturnsDomainError — two JSON values
+// concatenated (without separator, e.g. `{"a":"b"}{"a":"c"}`) must
+// surface as CodeInvalidInput. Without this guard, hostile callers
+// could smuggle a second payload past strict decode.
+func TestDecodeJSON_TrailingDataReturnsDomainError(t *testing.T) {
+	r := httptest.NewRequest("POST", "/x", strings.NewReader(`{"id":"a"}{"id":"b"}`))
+	_, err := DecodeJSON[decodeJSONTestPayload](httptest.NewRecorder(), r)
+	if err == nil {
+		t.Fatal("trailing data: want DomainError, got nil")
+	}
+	var de *core.DomainError
+	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+		t.Fatalf("trailing data: want CodeInvalidInput DomainError, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "trailing") {
+		t.Fatalf("trailing data message: want containing \"trailing\", got %q", err.Error())
+	}
+}
+
+// TestDecodeJSON_NestedUnknownFieldReturnsDomainError — an unknown
+// field nested inside a struct field surfaces as CodeInvalidInput.
+// Belt-and-braces against any future relaxation of DisallowUnknownFields
+// on inner structs (since the constraint is enforced per-Decoder path).
+func TestDecodeJSON_NestedUnknownFieldReturnsDomainError(t *testing.T) {
+	type outer struct {
+		Inner struct {
+			OK string `json:"ok"`
+		} `json:"inner"`
+	}
+	r := httptest.NewRequest("POST", "/x", strings.NewReader(`{"inner":{"ok":"x","extra":"y"}}`))
+	_, err := DecodeJSON[outer](httptest.NewRecorder(), r)
+	if err == nil {
+		t.Fatal("nested unknown: want DomainError, got nil")
+	}
+	var de *core.DomainError
+	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+		t.Fatalf("nested unknown: want CodeInvalidInput DomainError, got %T: %v", err, err)
+	}
+	if de.Field != "extra" {
+		t.Fatalf("nested unknown Field: want \"extra\", got %q", de.Field)
+	}
+}
+
+// TestRespondJSON_DelegatesToWriteJSON pins the RespondJSON contract: same
+// header + status + body behaviour as WriteJSON. If WriteJSON is updated
+// (e.g., a future Content-Type negotiation), RespondJSON inherits the
+// change for free since it delegates.
+func TestRespondJSON_DelegatesToWriteJSON(t *testing.T) {
+	rr := httptest.NewRecorder()
+	RespondJSON(rr, http.StatusOK, map[string]string{"hello": "world"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("Content-Type: want application/json, got %q", ct)
+	}
+	if !strings.Contains(rr.Body.String(), `"hello":"world"`) {
+		t.Fatalf("body: want JSON containing hello=world, got %q", rr.Body.String())
 	}
 }

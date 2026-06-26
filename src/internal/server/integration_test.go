@@ -839,8 +839,9 @@ func TestEdge_AutoCreateSuccess(t *testing.T) {
 
 func TestStore_RejectsLargeBody(t *testing.T) {
 	f := newTestFixture(t)
-	// Create a payload larger than MaxBodyBytes
-	largeContent := strings.Repeat("x", httputil.MaxBodyBytes+100)
+	// Create a payload larger than MaxBodyBytes.
+	// MaxBodyBytes is int64-typed; strings.Repeat takes int, so cast.
+	largeContent := strings.Repeat("x", int(httputil.MaxBodyBytes+100))
 	body := map[string]string{"id": "large", "category": "world", "content": largeContent}
 	resp := f.post(t, "/store", body)
 	if resp.StatusCode != 413 && resp.StatusCode != 400 {

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -235,6 +236,50 @@ func TestWrapCustomBodyReturnNilPreservesBody(t *testing.T) {
 	}
 	if got != body {
 		t.Errorf("body mismatched: got %+v, want %+v (raw=%q)", got, body, string(raw))
+	}
+}
+
+// --- §10 Wrap routing -----------------------------------------------------
+
+// TestWrapDomainErrorRoutedThroughWriteErrorWithCode pins §10's
+// wire-contract preservation: when the handler returns
+// *core.DomainError, Wrap must route through WriteErrorWithCode so the
+// response carries {error, code, field} as top-level JSON attributes —
+// NOT collapse to {error: msg} via the legacy WriteError path. Status
+// 422 (CodeInvalidInput) + Field="email" + Message="required" verifies
+// the full envelope round-trips.
+//
+// This locks the fix for the §10 wire regression: pre-§10 inline
+// handlers emitted this exact envelope via
+// httputil.WriteErrorWithCode; the §3.2 Wrap alternation would have
+// flattened it without this routing branch.
+func TestWrapDomainErrorRoutedThroughWriteErrorWithCode(t *testing.T) {
+	base := &BaseHTTPService{Metrics: metrics.New()}
+	wrapped := base.Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		return &core.DomainError{
+			Code:    core.CodeInvalidInput,
+			Field:   "email",
+			Message: "required",
+			Err:     core.ErrInvalidInput,
+		}
+	})
+	rr := httptest.NewRecorder()
+	wrapped(rr, httptest.NewRequest(http.MethodPost, "/x", nil))
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status: want 422, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	// Wire envelope: err.Error() for *core.DomainError with Field="email"
+	// and Message="required" renders as "required (email)" — the
+	// pre-§10 inline WriteErrorWithCode shape that operator logs grep on.
+	for _, want := range []string{
+		`"error":"required (email)"`,
+		`"code":"invalid_input"`,
+		`"field":"email"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %s: %q", want, body)
+		}
 	}
 }
 
