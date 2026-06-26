@@ -1993,3 +1993,139 @@ hermem diagnose --json
 | --------- | ------------------------- |
 | 0         | All checks passed         |
 | 1         | One or more checks failed |
+
+## Evidence API
+
+`src/internal/memory/evidence/` (C2 of P2 MEMORY EVOLUTION on `feat/memory-evolution-c2`,
+merged into main via `--no-ff`) provides a first-class Evidence table bound to the Belief
+table via FK CASCADE. Each Evidence row represents a typed statement that *supports* or
+*refutes* one parent Belief.
+
+### Types
+
+- `evidence.Polarity` (string enum): `support` | `refute` (also constrained in SQL via
+  `CHECK(polarity IN ('support','refute'))`).
+- `evidence.Evidence` (struct): `ID int64`, `BeliefID int64`, `Polarity`, `Strength
+  float64` (absolute magnitude, 0..1), `Content string` (NON NULL), `SourceKind string`,
+  `SourceID string`, `CreatedAt`, `UpdatedAt`.
+
+### Service interface
+
+```go
+type Service interface {
+    CreateEvidence(ctx context.Context, e *Evidence) error
+    GetEvidence(ctx context.Context, id int64) (*Evidence, error)
+    ListForBelief(ctx context.Context, beliefID int64) ([]*Evidence, error)
+    UpdateStrength(ctx context.Context, id int64, newStrength float64) error
+    DeleteEvidence(ctx context.Context, id int64) error
+}
+```
+
+Construction: `evidence.NewService(db *sql.DB) Service`. The default fixture is
+`store.MemDB()`.
+
+### Semantics
+
+- **Asymmetric defaults across create vs update.** `CreateEvidence` silently maps
+  `Strength == 0` to `1.0` (warm, forgiving). `UpdateStrength` accepts 0 strictly
+  (0 is meaningful: e.g. retracting evidence to zero). Bounds are tight: < 0 or > 1
+  is rejected on either path.
+- **Polarity vs strength.** Strength is an absolute magnitude; whether it adds to or
+  subtracts from a Belief''s confidence is decided by an aggregator (C3 — Confidence
+  propagation, not yet shipped).
+- **Cascade.** `Evidence.belief_id REFERENCES beliefs(id) ON DELETE CASCADE`. Removing a
+  Belief removes the Evidence rows that reference it; this is enforced when SQLite is
+  loaded with `PRAGMA foreign_keys = ON`.
+
+### Migration
+
+`src/internal/store/migrations/009_add_evidence_table.sql` (idempotent
+`CREATE TABLE IF NOT EXISTS` + two indexes: `belief_id` and `(source_kind, source_id)`).
+Verify ordering with `migrate status` and confirm `9` is applied.
+
+### Tests
+
+`src/internal/memory/evidence/evidence_test.go` contains 14 race-safe unit tests including
+`TestService_CascadeDelete_WhenBeliefRemoved` (cascade verified via raw `db.Exec`) and
+`TestService_ConcurrentCreate_RaceSafe` (N=32 goroutines producing distinct IDs).
+
+---
+
+## Confidence Propagation
+
+Package `src/internal/evolution/propagation.go` (C3 of P2 MEMORY EVOLUTION).
+
+`PropagateConfidence(ctx, bSvc, eSvc, beliefID)` aggregates all evidence
+for a belief by polarity and updates the belief's confidence to the ratio
+of total support strength over total evidence strength.
+
+Formula: `confidence = clamp(supportSum / (supportSum + refuteSum), 0, 1)`
+When total evidence strength is zero, the existing confidence is preserved.
+
+## Evidence Aggregation
+
+Package `src/internal/evolution/aggregation.go` (C4 of P2 MEMORY EVOLUTION).
+
+`AggregateEvidence(all, selector)` groups evidence by polarity and returns
+aggregated strength values. Three selectors:
+- `AggregatorSum` — sum of strengths (default)
+- `AggregatorAvg` — average of strengths
+- `AggregatorMin` — minimum strength
+
+## Trust Scoring
+
+Package `src/internal/evolution/trust.go` (C5 of P2 MEMORY EVOLUTION).
+
+`TrustScore(confidence, sourceKind, updatedAt, weights)` computes a
+composite trust score as `confidence × sourceWeight × recencyFactor`.
+
+`TrustDefaults()` returns sensible source weights:
+- `user`: 1.0, `observation`: 0.9, `extraction`: 0.7, `inference`: 0.5, `external`: 0.3
+
+Recency factor uses exponential decay: `exp(-hoursSinceUpdate / halfLife)`.
+Default half-life: 720h (30 days). Unknown source kinds default to 0.5.
+
+## Belief Revision Chains
+
+Package `src/internal/evolution/chains.go` (C6 of P2 MEMORY EVOLUTION).
+
+`TraceRevisions(ctx, db, beliefID)` walks the `parent_chain_id` chain
+backward from a belief to its root ancestor using a single recursive CTE
+(N+1-safe). Returns an ordered list from oldest to latest. Bounded by
+`MaxChainDepth` (32) to prevent infinite loops.
+
+## Superseded Beliefs
+
+Package `src/internal/evolution/superseded.go` (C7 of P2 MEMORY EVOLUTION).
+
+`ListActiveBeliefs(ctx, db, includeSuperseded)` returns only beliefs with
+`status = 'Active'` by default. When `includeSuperseded=true`, returns all
+beliefs regardless of status (for reconciliation/audit).
+
+## Support/Refute Relationships
+
+Package `src/internal/evolution/relationships.go` (C8 of P2 MEMORY EVOLUTION).
+
+`GetSupportRefute(ctx, db, beliefID)` counts evidence rows by polarity in
+a single SQL query. Returns `RelationshipCounts` with support/refute
+counts, total, and percentage breakdown.
+
+## Belief History
+
+Package `src/internal/evolution/history.go` (C9 of P2 MEMORY EVOLUTION).
+
+- `RecordHistory(ctx, db, beliefID, confidence, status, reason)` — append-only INSERT into `belief_history` table.
+- `ListHistory(ctx, db, beliefID)` — returns all history entries ordered by `created_at ASC`.
+
+Migration `010_add_belief_history.sql` creates the table with FK CASCADE
+to `beliefs` and indexes on `belief_id` and `created_at`.
+
+## Evolution Queries
+
+Package `src/internal/evolution/queries.go` (C10 of P2 MEMORY EVOLUTION).
+
+- `GetSupersededBy(ctx, db, beliefID)` — returns the successor Belief ID or 0 if active/not found.
+- `StateAt(ctx, db, beliefID, timestamp)` — returns the belief's state as it existed at a point in time (most recent history entry before or at the timestamp).
+
+Both use JOIN-style single-SQL queries (N+1-safe). `StateAt` has a benchmark.
+
