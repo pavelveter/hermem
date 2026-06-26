@@ -64,14 +64,14 @@ P0 — CONTRADICTION ENGINE 2.0
 [x] Extract contradiction detection behind interface
 [x] Create ContradictionDetector interface
 [x] Implement LexicalDetector
-[ ] Implement EmbeddingDetector
-[ ] Implement LLMDetector
+[x] Implement EmbeddingDetector
+[x] Implement LLMDetector
 [x] Add detector composition pipeline
 [x] Add contradiction confidence scoring
 [x] Add contradiction explanation output
-[ ] Add contradiction benchmark dataset
-[ ] Add contradiction evaluation metrics
-[ ] Add contradiction regression tests
+[x] Add contradiction benchmark dataset
+[x] Add contradiction evaluation metrics
+[x] Add contradiction regression tests
 
 ==================================================
 P0 — RETRIEVAL EXPLAINABILITY
@@ -301,3 +301,4 @@ A task is considered completed only if:
 [ ] Commit pushed
 
 <!-- sub-agent-3: 6/6 retrieval-cleanup sub-points cleared in feat/retrieval-cleanup-stages -->
+<!-- sub-agent-1: 5/5 contradiction-engine sub-points complete in feat/contradiction-engine-2.0 -->
