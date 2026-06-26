@@ -165,8 +165,8 @@ P1 — OBSERVABILITY
 
 Phase 2 follow-ups (out of scope for C1–C6 of OBSERVABILITY sprint, feat/observability-prometheus → main @ a75bfc0):
 [ ] Add graph metrics
-[ ] Add Grafana dashboard
-[ ] Add alert recommendations
+[x] Add Grafana dashboard
+[x] Add alert recommendations
 
 History (Phase 1 of P1-OBSERVABILITY — shipped via C1–C6, merged into main @ a75bfc0):
 - C1 — prometheus/client_golang v1.21.0 + hermem-owned prometheus.Registry (not the global default).
@@ -186,7 +186,6 @@ P2 — MEMORY EVOLUTION
 Phase 1 (C1–C10, feat/memory-evolution branch):
 [x] Add Belief abstraction
 
-[x] Add Belief abstraction
 [x] Add Evidence abstraction
 [ ] Add confidence propagation
 [ ] Add evidence aggregation

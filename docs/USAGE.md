@@ -1993,3 +1993,59 @@ hermem diagnose --json
 | --------- | ------------------------- |
 | 0         | All checks passed         |
 | 1         | One or more checks failed |
+
+## Evidence API
+
+`src/internal/memory/evidence/` (C2 of P2 MEMORY EVOLUTION on `feat/memory-evolution-c2`,
+merged into main via `--no-ff`) provides a first-class Evidence table bound to the Belief
+table via FK CASCADE. Each Evidence row represents a typed statement that *supports* or
+*refutes* one parent Belief.
+
+### Types
+
+- `evidence.Polarity` (string enum): `support` | `refute` (also constrained in SQL via
+  `CHECK(polarity IN ('support','refute'))`).
+- `evidence.Evidence` (struct): `ID int64`, `BeliefID int64`, `Polarity`, `Strength
+  float64` (absolute magnitude, 0..1), `Content string` (NON NULL), `SourceKind string`,
+  `SourceID string`, `CreatedAt`, `UpdatedAt`.
+
+### Service interface
+
+```go
+type Service interface {
+    CreateEvidence(ctx context.Context, e *Evidence) error
+    GetEvidence(ctx context.Context, id int64) (*Evidence, error)
+    ListForBelief(ctx context.Context, beliefID int64) ([]*Evidence, error)
+    UpdateStrength(ctx context.Context, id int64, newStrength float64) error
+    DeleteEvidence(ctx context.Context, id int64) error
+}
+```
+
+Construction: `evidence.NewService(db *sql.DB) Service`. The default fixture is
+`store.MemDB()`.
+
+### Semantics
+
+- **Asymmetric defaults across create vs update.** `CreateEvidence` silently maps
+  `Strength == 0` to `1.0` (warm, forgiving). `UpdateStrength` accepts 0 strictly
+  (0 is meaningful: e.g. retracting evidence to zero). Bounds are tight: < 0 or > 1
+  is rejected on either path.
+- **Polarity vs strength.** Strength is an absolute magnitude; whether it adds to or
+  subtracts from a Belief''s confidence is decided by an aggregator (C3 — Confidence
+  propagation, not yet shipped).
+- **Cascade.** `Evidence.belief_id REFERENCES beliefs(id) ON DELETE CASCADE`. Removing a
+  Belief removes the Evidence rows that reference it; this is enforced when SQLite is
+  loaded with `PRAGMA foreign_keys = ON`.
+
+### Migration
+
+`src/internal/store/migrations/009_add_evidence_table.sql` (idempotent
+`CREATE TABLE IF NOT EXISTS` + two indexes: `belief_id` and `(source_kind, source_id)`).
+Verify ordering with `migrate status` and confirm `9` is applied.
+
+### Tests
+
+`src/internal/memory/evidence/evidence_test.go` contains 14 race-safe unit tests including
+`TestService_CascadeDelete_WhenBeliefRemoved` (cascade verified via raw `db.Exec`) and
+`TestService_ConcurrentCreate_RaceSafe` (N=32 goroutines producing distinct IDs).
+
