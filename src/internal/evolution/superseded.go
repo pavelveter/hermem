@@ -16,7 +16,7 @@ import (
 // explicitly set to opt into the full set (e.g. for reconciliation
 // or audit).
 func ListActiveBeliefs(ctx context.Context, db *sql.DB, includeSuperseded bool) ([]*belief.Belief, error) {
-	bSvc := belief.NewService(db)
+	bSvc := belief.New(db)
 
 	if includeSuperseded {
 		return bSvc.ListBeliefs(ctx)

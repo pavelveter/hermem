@@ -63,10 +63,7 @@ func (s *Service) List(_ context.Context, status, goalID string, schema core.Sch
 	if err != nil {
 		return nil, fmt.Errorf("goal: List: %w", err)
 	}
-	if goals == nil {
-		goals = []core.Entity{}
-	}
-	return goals, nil
+	return core.NormalizeSlice(goals), nil
 }
 
 // Get returns a single goal entity by ID. Returns an error wrapping

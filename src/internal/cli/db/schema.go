@@ -19,7 +19,7 @@ func newSchemaCmd(env *cli.Env) *cobra.Command {
 			// (transport-agnostic). Schema is fetched per call from
 			// env.Cfg so a SIGHUP-driven cfg Schema swap applies
 			// without reconstructing the service.
-			svc := migration.NewService(env.DB)
+			svc := migration.New(env.DB)
 			report, err := svc.Schema(env.Ctx, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("schema: %w", err)

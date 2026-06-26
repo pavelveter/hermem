@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // PlaybackFrame is one ordered narrative frame in an episode
@@ -74,9 +76,7 @@ func (p *PlaybackService) Playback(ctx context.Context, episodeID string) ([]Pla
 // envelope is a plain array — callers wrap with their own outer
 // keys (e.g. episode_id, generated_at) if they need context.
 func (p *PlaybackService) ExportJSON(frames []PlaybackFrame) ([]byte, error) {
-	if frames == nil {
-		frames = []PlaybackFrame{}
-	}
+	frames = core.NormalizeSlice(frames)
 	out, err := json.MarshalIndent(frames, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("episodic: ExportJSON marshal: %w", err)

@@ -95,10 +95,7 @@ func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source strin
 		}
 		out = append(out, e)
 	}
-	if out == nil {
-		out = []core.Entity{}
-	}
-	return out, rows.Err()
+	return core.NormalizeSlice(out), rows.Err()
 }
 
 // FindConnectedComponents finds all connected components via BFS.

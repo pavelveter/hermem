@@ -54,7 +54,7 @@ type Service struct {
 // NewService constructs a Service. embedder is required (Search/Query/
 // Response/Explain all reach for it); pass a no-op stub in tests that
 // don't exercise the embedding path.
-func NewService(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
+func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 

@@ -20,7 +20,7 @@ func newTreeCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
-			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			tree, err := svc.Tree(env.Ctx, req.GoalID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("tree: %w", err)

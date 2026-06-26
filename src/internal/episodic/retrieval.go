@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // EpisodeFilter narrows the candidate set before ranking. Zero
@@ -108,9 +110,7 @@ func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, fil
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: SearchEpisodes rows: %w", err)
 	}
-	if out == nil {
-		out = []Episode{}
-	}
+	out = core.NormalizeSlice(out)
 
 	// Semantic rerank — only when caller asks AND an embedder is wired.
 	if s.embedder != nil && query != "" {

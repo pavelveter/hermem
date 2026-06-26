@@ -20,7 +20,7 @@ func newVerifyCmd(env *cli.Env) *cobra.Command {
 		Short: "Verify graph integrity (orbits, embedding dim, FK consistency). Exit 1 on failure.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			svc := graphsvc.NewService(env.DB)
+			svc := graphsvc.New(env.DB)
 			// Verify takes (schema, dim) per call so SIGHUP-driven
 			// config reloads apply without reconstructing the service.
 			report, err := svc.Verify(env.Ctx, env.Cfg.Schema, env.Cfg.VectorDim)

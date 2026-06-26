@@ -17,7 +17,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -36,7 +36,7 @@ func TestService_List_EmptyDBReturnsEmptySlice(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	svc := NewService(db)
+	svc := New(db)
 
 	pairs, err := svc.List(context.Background(), "")
 	if err != nil {
@@ -66,7 +66,7 @@ func TestService_List_FiltersByEntityID(t *testing.T) {
 	seedEntities(t, db, "a", "b", "c", "d")
 	seedEdge(t, db, "a", "b", "contradicts")
 	seedEdge(t, db, "c", "d", "related_to")
-	svc := NewService(db)
+	svc := New(db)
 
 	pairsFiltered, err := svc.List(context.Background(), "a")
 	if err != nil {
@@ -104,7 +104,7 @@ func TestService_List_EmptyEntityIDReturnsAll(t *testing.T) {
 	defer db.Close()
 	seedEntities(t, db, "x", "y")
 	seedEdge(t, db, "x", "y", "contradicts")
-	svc := NewService(db)
+	svc := New(db)
 
 	pairs, err := svc.List(context.Background(), "")
 	if err != nil {
@@ -126,7 +126,7 @@ func TestService_List_PropagatesDBError(t *testing.T) {
 	// Close DB *before* calling List so the underlying *sql.DB returns
 	// "sql: database is closed" on first Query call.
 	_ = db.Close()
-	svc := NewService(db)
+	svc := New(db)
 
 	_, err = svc.List(context.Background(), "")
 	if err == nil {

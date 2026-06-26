@@ -112,8 +112,5 @@ func (s *Service) Timeline(ctx context.Context, limit int) ([]TimelineEntry, err
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("timeline rows: %w", err)
 	}
-	if entries == nil {
-		entries = []TimelineEntry{}
-	}
-	return entries, nil
+	return core.NormalizeSlice(entries), nil
 }

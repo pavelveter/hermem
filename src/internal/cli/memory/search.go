@@ -28,7 +28,7 @@ func newSearchCmd(env *cli.Env) *cobra.Command {
 			}
 			// Construct per-call (three pointer assignments; cheap) so
 			// CLI never holds a stale Service pointer between commands.
-			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+			svc := retdomain.New(env.DB, env.VI, env.Embedder)
 			results, err := svc.Search(env.Ctx, req.Query, req.TopK)
 			if err != nil {
 				return fmt.Errorf("search: %w", err)

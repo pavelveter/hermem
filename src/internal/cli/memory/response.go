@@ -27,7 +27,7 @@ func newResponseCmd(env *cli.Env) *cobra.Command {
 			if req.Query == "" {
 				return fmt.Errorf("query is required")
 			}
-			svc := retdomain.NewService(env.DB, env.VI, env.Embedder)
+			svc := retdomain.New(env.DB, env.VI, env.Embedder)
 			opts := core.RetrieveContextOptions{
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,

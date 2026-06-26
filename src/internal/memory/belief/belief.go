@@ -53,7 +53,7 @@ type Service interface {
 }
 
 // NewService returns a Service backed by the supplied SQLite database.
-func NewService(db *sql.DB) Service {
+func New(db *sql.DB) Service {
 	return &service{db: db}
 }
 

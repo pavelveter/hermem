@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -81,10 +82,7 @@ func (c *Clusterer) Cluster(ctx context.Context, entityIDs []string) ([][]string
 			clusters = append(clusters, members)
 		}
 	}
-	if clusters == nil {
-		return [][]string{}, nil
-	}
-	return clusters, nil
+	return core.NormalizeSlice(clusters), nil
 }
 
 func (c *Clusterer) loadEmbeddings(ctx context.Context, ids []string) (map[string][]float64, error) {

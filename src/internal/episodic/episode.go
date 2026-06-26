@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // ErrNotFound is returned by Get* / List* methods when the requested
@@ -137,10 +139,7 @@ func (s *Service) ListBySession(ctx context.Context, sessionID string, limit int
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListBySession rows: %w", err)
 	}
-	if out == nil {
-		out = []Episode{}
-	}
-	return out, nil
+	return core.NormalizeSlice(out), nil
 }
 
 // UpdateSummary overwrites the episode's summary column. Returns

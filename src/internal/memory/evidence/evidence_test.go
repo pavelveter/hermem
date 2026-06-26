@@ -16,7 +16,7 @@ var extCtx = context.Background()
 
 func TestService_CreateEvidence_Success(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	e := &evidence.Evidence{BeliefID: b, Polarity: evidence.PolaritySupport, Strength: 0.7, Content: "supporting", SourceKind: "test"}
 	if err := svc.CreateEvidence(extCtx, e); err != nil {
@@ -36,7 +36,7 @@ func TestService_CreateEvidence_Success(t *testing.T) {
 
 func TestService_CreateEvidence_RejectsNilOrEmpty(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	if err := svc.CreateEvidence(extCtx, nil); err == nil {
 		t.Fatal("expected nil-rejection")
 	}
@@ -48,7 +48,7 @@ func TestService_CreateEvidence_RejectsNilOrEmpty(t *testing.T) {
 
 func TestService_CreateEvidence_RejectsInvalidPolarity(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	err := svc.CreateEvidence(extCtx, &evidence.Evidence{BeliefID: b, Polarity: evidence.Polarity("garbage"), Content: "x", Strength: 0.5})
 	if !errors.Is(err, evidence.ErrInvalidPolarity) {
@@ -58,7 +58,7 @@ func TestService_CreateEvidence_RejectsInvalidPolarity(t *testing.T) {
 
 func TestService_CreateEvidence_RejectsOutOfBoundsStrength(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	if err := svc.CreateEvidence(extCtx, &evidence.Evidence{BeliefID: b, Polarity: evidence.PolaritySupport, Strength: 1.5, Content: "x"}); err == nil {
 		t.Fatal("expected >1 rejection")
@@ -70,7 +70,7 @@ func TestService_CreateEvidence_RejectsOutOfBoundsStrength(t *testing.T) {
 
 func TestService_CreateEvidence_ForgivingStrengthDefault(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	e := &evidence.Evidence{BeliefID: b, Polarity: evidence.PolarityRefute, Strength: 0, Content: "x"}
 	if err := svc.CreateEvidence(extCtx, e); err != nil {
@@ -83,7 +83,7 @@ func TestService_CreateEvidence_ForgivingStrengthDefault(t *testing.T) {
 
 func TestService_GetEvidence_Ok(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	e := mustCreateEvidence(t, svc, b, "sample")
 	got, err := svc.GetEvidence(extCtx, e.ID)
@@ -97,7 +97,7 @@ func TestService_GetEvidence_Ok(t *testing.T) {
 
 func TestService_GetEvidence_NotFound(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	if _, err := svc.GetEvidence(extCtx, 0); !errors.Is(err, evidence.ErrNotFound) {
 		t.Fatalf("expected NotFound on id<=0, got %v", err)
 	}
@@ -108,7 +108,7 @@ func TestService_GetEvidence_NotFound(t *testing.T) {
 
 func TestService_ListForBelief_OrdersByCreatedAt(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	c1 := mustCreateEvidenceContents(t, svc, b, "first")
 	time.Sleep(5 * time.Millisecond)
@@ -124,7 +124,7 @@ func TestService_ListForBelief_OrdersByCreatedAt(t *testing.T) {
 
 func TestService_ListForBelief_EmptyForMissingBelief(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	list, err := svc.ListForBelief(extCtx, 99999)
 	if err != nil {
 		t.Fatalf("expected nil err on missing belief, got %v", err)
@@ -136,7 +136,7 @@ func TestService_ListForBelief_EmptyForMissingBelief(t *testing.T) {
 
 func TestService_UpdateStrength_Success(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	e := mustCreateEvidence(t, svc, b, "fixed")
 	if err := svc.UpdateStrength(extCtx, e.ID, 0.42); err != nil {
@@ -150,7 +150,7 @@ func TestService_UpdateStrength_Success(t *testing.T) {
 
 func TestService_UpdateStrength_OutOfBoundsRejection(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	e := mustCreateEvidence(t, svc, b, "fixed")
 	if err := svc.UpdateStrength(extCtx, e.ID, -0.1); err == nil {
@@ -163,7 +163,7 @@ func TestService_UpdateStrength_OutOfBoundsRejection(t *testing.T) {
 
 func TestService_DeleteEvidence_Success(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	e := mustCreateEvidence(t, svc, b, "fix")
 	if err := svc.DeleteEvidence(extCtx, e.ID); err != nil {
@@ -176,7 +176,7 @@ func TestService_DeleteEvidence_Success(t *testing.T) {
 
 func TestService_DeleteEvidence_NotFound(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	if err := svc.DeleteEvidence(extCtx, 9999); !errors.Is(err, evidence.ErrNotFound) {
 		t.Fatalf("expected NotFound, got %v", err)
 	}
@@ -184,7 +184,7 @@ func TestService_DeleteEvidence_NotFound(t *testing.T) {
 
 func TestService_CascadeDelete_WhenBeliefRemoved(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	mustCreateEvidence(t, svc, b, "a")
 	mustCreateEvidence(t, svc, b, "b")
@@ -203,7 +203,7 @@ func TestService_CascadeDelete_WhenBeliefRemoved(t *testing.T) {
 
 func TestService_ConcurrentCreate_RaceSafe(t *testing.T) {
 	db, _ := store.MemDB()
-	svc := evidence.NewService(db)
+	svc := evidence.New(db)
 	b := mustCreateBeliefRow(t, db)
 	const N = 32
 	var wg sync.WaitGroup

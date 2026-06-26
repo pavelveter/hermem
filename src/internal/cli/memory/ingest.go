@@ -27,7 +27,7 @@ func newIngestCmd(env *cli.Env) *cobra.Command {
 			// PHASE 3.4: ingest orchestration moved to ingest.Service.Ingest;
 			// memory.Service.Ingest removed in PHASE 3.4. The dialog pipeline
 			// body is unchanged — only the domain Service constructor pointer.
-			ingestSvc := ingestdomain.NewService(env.DB, env.VI, env.Embedder, env.Extractor)
+			ingestSvc := ingestdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
 			if err := ingestSvc.Ingest(env.Ctx, req.Dialog, env.Cfg.DedupThreshold, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("ingest: %w", err)
 			}

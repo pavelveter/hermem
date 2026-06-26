@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // LinkRole is the default role used when callers pass an empty
@@ -125,10 +127,7 @@ func (s *LinkService) ListMemoriesForEpisode(ctx context.Context, episodeID stri
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListMemoriesForEpisode rows: %w", err)
 	}
-	if out == nil {
-		out = []MemoryRef{}
-	}
-	return out, nil
+	return core.NormalizeSlice(out), nil
 }
 
 // EpisodeRef is the slim projection of an episode returned by
@@ -169,10 +168,7 @@ func (s *LinkService) ListEpisodesForMemory(ctx context.Context, entityID string
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListEpisodesForMemory rows: %w", err)
 	}
-	if out == nil {
-		out = []EpisodeRef{}
-	}
-	return out, nil
+	return core.NormalizeSlice(out), nil
 }
 
 // joinRoles concatenates a slice of roles with comma separators —

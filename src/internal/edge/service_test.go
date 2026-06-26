@@ -119,14 +119,14 @@ func TestEdgeService_AddEdge_RejectsUnknownRelation(t *testing.T) {
 	req := core.EdgeRequest{SourceID: "edge-r-src", TargetID: "edge-r-tgt", RelationType: "nonexistent"}
 	err := svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false))
 	if err == nil {
-		t.Fatal("expected ErrInvalidSchema, got nil")
+		t.Fatal("expected DomainError, got nil")
 	}
-	var ise *edge.ErrInvalidSchema
-	if !errors.As(err, &ise) {
-		t.Fatalf("want edge.ErrInvalidSchema, got %T: %v", err, err)
+	var de *core.DomainError
+	if !errors.As(err, &de) {
+		t.Fatalf("want *core.DomainError, got %T: %v", err, err)
 	}
-	if ise.Field != "relation_type" || ise.Value != "nonexistent" {
-		t.Fatalf("want {relation_type, nonexistent}, got {%s, %s}", ise.Field, ise.Value)
+	if de.Code != core.CodeInvalidSchema || de.Field != "relation_type" {
+		t.Fatalf("want {code=invalid_schema, field=relation_type}, got {code=%s, field=%s}", de.Code, de.Field)
 	}
 }
 
@@ -148,11 +148,14 @@ func TestEdgeService_AddEdge_RejectsMissingFields(t *testing.T) {
 	}
 }
 
-// --- ErrInvalidSchema ---
+// --- DomainError (formerly ErrInvalidSchema) ---
 
-func TestErrInvalidSchema_Error(t *testing.T) {
-	e := &edge.ErrInvalidSchema{Field: "relation_type", Value: "nonexistent"}
-	if got := e.Error(); got != "invalid relation_type: nonexistent" {
-		t.Fatalf("want 'invalid relation_type: nonexistent', got %q", got)
+func TestDomainError_InvalidSchema(t *testing.T) {
+	de := core.NewInvalidSchemaError("relation_type", "nonexistent")
+	if de.Code != core.CodeInvalidSchema || de.Field != "relation_type" {
+		t.Fatalf("want {code=invalid_schema, field=relation_type}, got {code=%s, field=%s}", de.Code, de.Field)
+	}
+	if !strings.Contains(de.Error(), "invalid relation_type") {
+		t.Fatalf("Error() should mention field + value, got %q", de.Error())
 	}
 }

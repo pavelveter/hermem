@@ -34,7 +34,7 @@ func newExecutableCmd(env *cli.Env) *cobra.Command {
 			if err := cli.DecodeString(data, &req); err != nil {
 				return err
 			}
-			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			tasks, err := svc.Executable(env.Ctx, req.GoalID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("executable: %w", err)

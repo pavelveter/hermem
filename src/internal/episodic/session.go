@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // Session is the P2 EPISODIC MEMORY top-level container — a bounded
@@ -152,8 +154,5 @@ func (s *SessionService) ListSessions(ctx context.Context, limit int) ([]Session
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListSessions rows: %w", err)
 	}
-	if out == nil {
-		out = []Session{}
-	}
-	return out, nil
+	return core.NormalizeSlice(out), nil
 }

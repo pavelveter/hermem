@@ -35,7 +35,7 @@ type Service struct {
 }
 
 // NewService constructs a Service. db is required.
-func NewService(db *sql.DB) *Service {
+func New(db *sql.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -48,10 +48,7 @@ func (s *Service) Components(_ context.Context, minSize int) ([]core.ConnectedCo
 	if err != nil {
 		return nil, fmt.Errorf("components: %w", err)
 	}
-	if comps == nil {
-		comps = []core.ConnectedComponent{}
-	}
-	return comps, nil
+	return core.NormalizeSlice(comps), nil
 }
 
 // Communities runs Louvain-style community detection for up to maxIter
@@ -66,10 +63,7 @@ func (s *Service) Communities(_ context.Context, maxIter int) ([]core.Community,
 	if err != nil {
 		return nil, 0, fmt.Errorf("communities: %w", err)
 	}
-	if comms == nil {
-		comms = []core.Community{}
-	}
-	return comms, globalQ, nil
+	return core.NormalizeSlice(comms), globalQ, nil
 }
 
 // Verify runs a read-only integrity sweep over the graph and reports

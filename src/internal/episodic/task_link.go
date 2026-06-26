@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // TaskLinkService owns the many-to-many links between Episodes and
@@ -103,8 +105,5 @@ func (s *TaskLinkService) ListTasksForEpisode(ctx context.Context, episodeID str
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListTasksForEpisode rows: %w", err)
 	}
-	if out == nil {
-		out = []TaskRef{}
-	}
-	return out, nil
+	return core.NormalizeSlice(out), nil
 }

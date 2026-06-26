@@ -26,7 +26,7 @@ func newCreateCmd(env *cli.Env) *cobra.Command {
 			if req.ID == "" {
 				req.ID = core.NewTaskID()
 			}
-			svc := taskdomain.NewService(env.DB, env.Embedder, env.VI)
+			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			// Service.Create handles embed + store + context_id edges +
 			// auto-link internally. CLI behavior drift in PHASE 2.4:
 			// pre-PHASE-2.4 this command returned errors verbatim from
