@@ -541,7 +541,9 @@ content → ExtractionResult). This specific quirk stays in the extractor method
 
 ## 10. HIGH — HTTP Handler Boilerplate Reduction
 
-### [ ] 10.1 Identical pattern in every handler: decode → validate → call → respond
+### [x] 10.1 Identical pattern in every handler: decode → validate → call → respond
+
+**Status (this commit):** 🟢 Substantial conformance — 14 inline "required field missing" gates across `memory` / `task` / `reembed` / `retrieval` / `edge` / `ingest` migrated from `WriteError(400, ...)` to `WriteErrorWithCode(422, ..., "invalid_input", "<field>")` with per-field envelope (composite fields → empty `field=""` matching the `bad_json` / `empty_body` / `trailing_data` convention). 11 paired integration-test assertions updated to expect 422. Each migrated gate preserves `return nil` so the inline path stays bypass-`Wrap` (no double-IncErr, no double-status-map). Verified: `go vet ./src/...` → 0, `go build ./src/...` → 0, `go test -race -count=1 ./src/internal/server/...` → green. Remaining non-conformance surfaces: the documented §3.2 bespoke handler `/provenance` (intentionally not `s.Wrap`-registered) and `TaskExecutable` / `TaskNext` (pure GET, no body-decode step). The §3.2+§10 wire-contract tests + 3 `TestDomainError_*` unit tests already in place pin the §10 envelope shape end-to-end.
 
 **Files affected:** All 12 `server/*/` HTTP shells (~60 handler methods).
 

@@ -283,8 +283,8 @@ func TestStore_RejectsMissingFields(t *testing.T) {
 	}
 	for _, tc := range tests {
 		resp := f.post(t, "/store", tc.body)
-		if resp.StatusCode != 400 {
-			t.Errorf("%s: want 400, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
+		if resp.StatusCode != 422 {
+			t.Errorf("%s: want 422, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
 		}
 		resp.Body.Close()
 	}
@@ -348,8 +348,8 @@ func TestEdge_RejectsMissingFields(t *testing.T) {
 	}
 	for _, tc := range tests {
 		resp := f.post(t, "/edge", tc.body)
-		if resp.StatusCode != 400 {
-			t.Errorf("%s: want 400, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
+		if resp.StatusCode != 422 {
+			t.Errorf("%s: want 422, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
 		}
 		resp.Body.Close()
 	}
@@ -385,8 +385,8 @@ func TestSearch_RejectsNoQuery(t *testing.T) {
 	f := newTestFixture(t)
 	body := map[string]int{"top_k": 5}
 	resp := f.post(t, "/search", body)
-	if resp.StatusCode != 400 {
-		t.Fatalf("want 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }
@@ -397,8 +397,8 @@ func TestRetrieve_RejectsNoSeeds(t *testing.T) {
 	f := newTestFixture(t)
 	body := map[string]interface{}{"seed_ids": []string{}}
 	resp := f.post(t, "/retrieve", body)
-	if resp.StatusCode != 400 {
-		t.Fatalf("want 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }
@@ -454,8 +454,8 @@ func TestTaskStatus_RejectsMissingFields(t *testing.T) {
 	}
 	for _, tc := range tests {
 		resp := f.post(t, "/task/status", tc.body)
-		if resp.StatusCode != 400 {
-			t.Errorf("%s: want 400, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
+		if resp.StatusCode != 422 {
+			t.Errorf("%s: want 422, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
 		}
 		resp.Body.Close()
 	}
@@ -483,8 +483,8 @@ func TestTaskShow_RejectsNoID(t *testing.T) {
 	f := newTestFixture(t)
 	body := map[string]string{"id": ""}
 	resp := f.post(t, "/task/show", body)
-	if resp.StatusCode != 400 {
-		t.Fatalf("want 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }
@@ -555,8 +555,8 @@ func TestCommunities_EmptyDBReturnsEmpty(t *testing.T) {
 func TestRecoveryPlan_RejectsNoID(t *testing.T) {
 	f := newTestFixture(t)
 	resp := f.get(t, "/recovery-plan")
-	if resp.StatusCode != 400 {
-		t.Fatalf("want 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }
@@ -718,8 +718,8 @@ func TestReEmbed_RejectsNoDim(t *testing.T) {
 	f := newTestFixture(t)
 	body := map[string]int{"batch_size": 10}
 	resp := f.post(t, "/admin/re-embed", body)
-	if resp.StatusCode != 400 {
-		t.Fatalf("want 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }
@@ -754,8 +754,8 @@ func TestTaskRollback_RejectsNoID(t *testing.T) {
 	f := newTestFixture(t)
 	body := map[string]string{"id": ""}
 	resp := f.post(t, "/task/rollback", body)
-	if resp.StatusCode != 400 {
-		t.Fatalf("want 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }
@@ -781,8 +781,8 @@ func TestTaskDep_RejectsMissingFields(t *testing.T) {
 	}
 	for _, tc := range tests {
 		resp := f.post(t, "/task/dep", tc.body)
-		if resp.StatusCode != 400 {
-			t.Errorf("%s: want 400, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
+		if resp.StatusCode != 422 {
+			t.Errorf("%s: want 422, got %d: %s", tc.name, resp.StatusCode, readBody(t, resp))
 		}
 		resp.Body.Close()
 	}
@@ -807,8 +807,8 @@ func TestQuery_RejectsNoQuery(t *testing.T) {
 	f := newTestFixture(t)
 	body := map[string]int{"top_k": 3}
 	resp := f.post(t, "/query", body)
-	if resp.StatusCode != 400 {
-		t.Fatalf("want 400, got %d: %s", resp.StatusCode, readBody(t, resp))
+	if resp.StatusCode != 422 {
+		t.Fatalf("want 422, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
 	resp.Body.Close()
 }

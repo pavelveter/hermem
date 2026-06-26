@@ -92,11 +92,11 @@ func (s *HTTPService) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req core.TaskStatusRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, msg, code, field)
 		return
 	}
 	if req.ID == "" || req.Status == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "id, status required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "id, status required", "invalid_input", "")
 		return
 	}
 	state := s.Refs.Load()
@@ -166,7 +166,7 @@ func (s *HTTPService) HandleTaskShow(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	if req.ID == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "id required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "id required", "invalid_input", "id")
 		return nil
 	}
 	state := s.Refs.Load()
@@ -194,7 +194,7 @@ func (s *HTTPService) HandleTaskDep(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	if req.SourceID == "" || req.TargetID == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "source_id, target_id required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "source_id, target_id required", "invalid_input", "")
 		return nil
 	}
 	state := s.Refs.Load()
@@ -227,7 +227,7 @@ func (s *HTTPService) HandleTaskRollback(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	if req.ID == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "id required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "id required", "invalid_input", "id")
 		return nil
 	}
 	rollbackID, err := s.Svc.Rollback(r.Context(), req.ID, s.Refs.Load().Schema)
@@ -276,7 +276,7 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 	if req.Content == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "content required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "content required", "invalid_input", "content")
 		return nil
 	}
 	if req.ID == "" {
@@ -298,7 +298,7 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 func (s *HTTPService) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) error {
 	id := r.URL.Query().Get("id")
 	if id == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "id required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "id required", "invalid_input", "id")
 		return nil
 	}
 	plan, err := s.Svc.RecoveryPlan(r.Context(), id, s.Refs.Load().Schema)

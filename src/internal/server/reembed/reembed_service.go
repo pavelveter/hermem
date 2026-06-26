@@ -80,7 +80,7 @@ func (h *HTTPService) HandleReEmbed(w http.ResponseWriter, r *http.Request) erro
 		req.BatchSize = 50
 	}
 	if req.Dim <= 0 {
-		httputil.WriteError(w, http.StatusBadRequest, "dim required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "dim required", "invalid_input", "dim")
 		return nil
 	}
 	result, err := h.Svc.ReEmbedAll(r.Context(), req.Dim, req.BatchSize, req.Model)

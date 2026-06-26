@@ -81,7 +81,7 @@ func (h *HTTPService) HandleEdge(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "source_id, target_id, relation_type required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "source_id, target_id, relation_type required", "invalid_input", "")
 		return nil
 	}
 	state := h.Refs.Load()

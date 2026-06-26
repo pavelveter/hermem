@@ -86,7 +86,7 @@ func (h *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if req.Dialog == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "dialog required")
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, "dialog required", "invalid_input", "dialog")
 		return nil
 	}
 	state := h.Refs.Load()
