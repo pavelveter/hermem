@@ -28,9 +28,9 @@ func newCreateCmd(env *cli.Env) *cobra.Command {
 			}
 			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			// Service.Create handles embed + store + context_id edges +
-			// auto-link internally. CLI behavior drift in PHASE 2.4:
-			// pre-PHASE-2.4 this command returned errors verbatim from
-			// embed / StoreEntityWithEmbedding. Post-PHASE-2.4 the
+			// auto-link internally. CLI behavior drift in :
+			// this command returned errors verbatim from
+			// embed / StoreEntityWithEmbedding. the
 			// domain wraps everything in "create: <err>" prefix; the
 			// shape mirrors HTTP shell's 500 envelope so terminal
 			// surface stays consistent across transports.

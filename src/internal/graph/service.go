@@ -1,10 +1,10 @@
 // Package graph hosts the transport-agnostic graph analytics domain
 // service — connected components, community detection, and integrity
-// verification. PHASE 3.1 extracts these out of:
-//   - src/internal/server/admin_service.go (god-object: /connected-
-//     components + /communities HTTP routes)
-//   - src/internal/cli/graph/{components,communities,verify}.go
-//     (CLI handlers hitting store.* / algo.* directly)
+// verification. extracts these out of:
+// - src/internal/server/admin_service.go (god-object: /connected-
+// components + /communities HTTP routes)
+// - src/internal/cli/graph/{components,communities,verify}.go
+// (CLI handlers hitting store.* / algo.* directly)
 //
 // Mirrors the PHASE 2.x shape: flat pkg + transport-agnostic Service
 // with per-call args for runtime-varying config (schema, dim) so the
@@ -22,7 +22,7 @@ import (
 
 // Service is the transport-agnostic graph analytics domain service.
 //
-// One dep at construction — db — matches the PHASE 2.3 contradiction
+// One dep at construction — db — matches the contradiction
 // precedent. Schema + dim are passed per call so a SIGHUP reload that
 // swaps cfg.Schema / cfg.VectorDim does not require reconstructing the
 // service, and so the algorithm SQL picks up the active schema without
@@ -72,7 +72,7 @@ func (s *Service) Communities(_ context.Context, maxIter int) ([]core.Community,
 // dim*4 bytes is flagged. Returns a VerifyReport whose Pass() method
 // controls CLI exit-1 semantics.
 //
-// PHASE 3.9: inlined from algo.VerifyGraph (now deleted from algo/verify.go).
+// : inlined from algo.VerifyGraph (now deleted from algo/verify.go).
 func (s *Service) Verify(_ context.Context, schema core.SchemaConfig, vectorDim int) (core.VerifyReport, error) {
 	var report core.VerifyReport
 	rows, err := s.db.Query(`SELECT ed.source_id, ed.target_id, ed.relation_type FROM edges ed LEFT JOIN entities e1 ON ed.source_id = e1.id LEFT JOIN entities e2 ON ed.target_id = e2.id WHERE e1.id IS NULL OR e2.id IS NULL`)

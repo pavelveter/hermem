@@ -1,8 +1,8 @@
 // Package reembed owns the transport-agnostic re-embedding orchestrator.
 //
-// PHASE 3.6 lifts ReEmbedAll out of src/internal/algo/reembed.go (which
+// lifts ReEmbedAll out of src/internal/algo/reembed.go (which
 // is deleted in this phase) into its own flat pkg following the
-// PHASE 2.x + PHASE 3.1 + 3.2 + 3.3 + 3.4 + 3.5 precedent: flat pkg,
+// PHASE 2.x + precedent: flat pkg,
 // stateless Service, per-call args for things that change request-time
 // (configuredDim, batchSize, modelName), no HTTP / CLI coupling. The
 // HTTP shell lives in src/internal/server/reembed/.
@@ -27,7 +27,7 @@ import (
 )
 
 // embedWork is a work item for ReEmbedAll. Moved from algo/reembed.go
-// in PHASE 3.6; stays private — only ReEmbedAll constructs it.
+// in ; stays private — only ReEmbedAll constructs it.
 type embedWork struct {
 	id, content string
 }
@@ -51,7 +51,7 @@ func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
 }
 
 // NeedsReEmbed checks if dimension drift requires re-embedding.
-// Moved from algo/reembed.go in PHASE 3.6; no changes — the SQL
+// Moved from algo/reembed.go in ; no changes — the SQL
 // query reads the meta table exactly as before.
 func (s *Service) NeedsReEmbed(ctx context.Context, configuredDim int) (needs bool, oldDim int, err error) {
 	var old sql.NullInt64
@@ -67,7 +67,7 @@ func (s *Service) NeedsReEmbed(ctx context.Context, configuredDim int) (needs bo
 }
 
 // ReEmbedAll re-embeds all entities with the current embedder.
-// Moved from algo/reembed.go in PHASE 3.6. The function signature
+// Moved from algo/reembed.go in . The function signature
 // drops db, vi, embedder (now Service fields) and keeps only the
 // per-call args: configuredDim, batchSize, modelName.
 func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize int, modelName string) (core.ReEmbedResult, error) {
@@ -121,7 +121,7 @@ func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize i
 }
 
 // processReEmbedBatch is the per-batch worker lifted from
-// algo/reembed.go in PHASE 3.6. Stays as a private method because
+// algo/reembed.go in . Stays as a private method because
 // the only caller is ReEmbedAll.
 func (s *Service) processReEmbedBatch(ctx context.Context, items []embedWork, dim int, result *core.ReEmbedResult) error {
 	result.Batches++

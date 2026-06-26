@@ -47,7 +47,7 @@ func newMemFixture(t *testing.T) *memFixture {
 	return &memFixture{svc: svc, db: db, vi: vi}
 }
 
-// PHASE 3.5: seedEntity was previously used by AddEdge + Timeline tests
+// : seedEntity was previously used by AddEdge + Timeline tests
 // (now migrated to edge/ + timeline/ pkgs). No remaining tests in this
 // file need it. Helper removed to avoid an unused-symbol lint flag;
 // future tests that need raw-row seeding should inline the insert.
@@ -129,7 +129,7 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 
 // --- Ingest ---
 //
-// PHASE 3.4: Ingest method lifted to src/internal/ingest.Service. The
+// : Ingest method lifted to src/internal/ingest.Service. The
 // three Ingest_* tests that used to live here have moved to
 // src/internal/ingest/service_test.go (TestService_Ingest_EmptyDialogReturnsError,
 // TestService_Ingest_NilExtractorReturnsError, TestService_Ingest_HappyPath_NoEntities,
@@ -139,7 +139,7 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 
 // --- AddEdge ---
 //
-// PHASE 3.5: AddEdge method lifted to src/internal/edge.Service. The
+// : AddEdge method lifted to src/internal/edge.Service. The
 // four AddEdge_* tests (OK, AutoCreate_OK, RejectsUnknownRelation,
 // RejectsMissingFields) that used to live here have moved to
 // src/internal/edge/service_test.go. The HTTP shell route /edge moved
@@ -150,7 +150,7 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 
 // --- Timeline ---
 //
-// PHASE 3.5: Timeline method + TimelineEntry type lifted to
+// : Timeline method + TimelineEntry type lifted to
 // src/internal/timeline.Service. The two Timeline_* tests
 // (EmptyDB, WithLimitAndOrder) that used to live here have moved to
 // src/internal/timeline/service_test.go. The HTTP shell route /timeline
@@ -158,7 +158,7 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 
 // --- ErrInvalidSchema (now core.DomainError) ---
 //
-// PHASE 3.5: TestErrInvalidSchema_Error was removed from here because
+// : TestErrInvalidSchema_Error was removed from here because
 // the relation_type field case moved to edge.ErrInvalidSchema. The
 // category field case is exercised by the Store tests above (see
 // TestMemoryService_Store_RejectsUnknownCategory) so the Error() string
