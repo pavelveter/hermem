@@ -70,7 +70,7 @@ P0 — CONTRADICTION ENGINE 2.0
 [x] Add contradiction confidence scoring
 [x] Add contradiction explanation output
 [x] Add contradiction benchmark dataset
-[ ] Add contradiction evaluation metrics
+[x] Add contradiction evaluation metrics
 [ ] Add contradiction regression tests
 
 ==================================================
