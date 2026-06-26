@@ -514,6 +514,72 @@ func TestProvenance_EmptyDBReturnsEmpty(t *testing.T) {
 	resp.Body.Close()
 }
 
+// TestProvenance_RejectsAllEmptyFilterTriple pins the §3.2 documented
+// bespoke-400 contract for retrieval_service.go's HandleProvenance (see
+// its godoc "§3.2 DELIBERATE EXCEPTION to s.Wrap" — that's the source-of-truth
+// rationale this test guards). The filter triple
+// (conversation_id, message_id, source) requires at least ONE
+// non-empty value per the at-least-one-filter rule
+// (src/internal/retrieval/service_test.go::TestService_Provenance_RequiresAtLeastOneFilter).
+// A request with all three params blank triggers "provenance filter
+// required" from store.GetEntitiesByProvenance. HandleProvenance
+// (Routes() registers it WITHOUT s.Wrap) catches the error and writes
+// WriteError(400, err.Error()) — bare envelope, no Code/Field attrs.
+//
+// §3.2 calls this out as a DELIBERATE EXCEPTION: Wrap+mapStatus would
+// route CodeInvalidInput → 422, regressing the wire contract silently.
+// This test pins BOTH halves of the contract so a future Wrap-migration
+// lands as a failing test rather than a silent client-wire regression:
+//
+//  1. Status MUST be 400 (not 422 from Wrap+mapStatus, not 500 from
+//     generic fallthrough, not 200 from a lenient default).
+//  2. Envelope MUST be bare {"error": "..."} WITHOUT `code` or `field`
+//     JSON attrs — WriteError produces this; WriteErrorWithCode attaches
+//     code/field. A future migration to WriteErrorWithCode (or to
+//     s.Wrap+return err) would fail this assertion by populating
+//     `code` with "invalid_input".
+//
+// Test request is the minimal trigger (no URL params at all); the
+// at-least-one-filter validator was audited in service_test.go so this
+// path is deterministic — not flaky around partial triples like
+// `?conversation_id=X&message_id=` which DO succeed (one of three is
+// sufficient per the rule).
+func TestProvenance_RejectsAllEmptyFilterTriple(t *testing.T) {
+	f := newTestFixture(t)
+	// No URL params — all three filter fields are empty. The
+	// at-least-one-filter rule rejects this; store.GetEntitiesByProvenance
+	// returns "provenance filter required"; HandleProvenance's bespoke
+	// path maps the error to 400 + bare envelope.
+	resp := f.get(t, "/provenance")
+	if resp.StatusCode != 400 {
+		t.Fatalf("want 400 (bespoke contract), got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	body := readBody(t, resp)
+	// Parse envelope — the bespoke-400 path writes bare {error:"..."}
+	// via httputil.WriteError (NOT WriteErrorWithCode), so the
+	// code+field attrs must be absent. A future Wrap-migration would
+	// route CodeInvalidInput → 422 + populated code attr → this
+	// assertion fails loudly.
+	var envelope struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+		Field string `json:"field"`
+	}
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil {
+		t.Fatalf("parse envelope: %v (raw: %s)", err, body)
+	}
+	if envelope.Error == "" {
+		t.Fatalf("non-empty Error (raw: %s)", body)
+	}
+	if envelope.Code != "" {
+		t.Fatalf("bespoke-400 envelope must NOT carry `code` attr (signals a Wrap-422 regression); got code=%q (raw: %s)", envelope.Code, body)
+	}
+	if envelope.Field != "" {
+		t.Fatalf("bespoke-400 envelope must NOT carry `field` attr (signals a Wrap-422 regression); got field=%q (raw: %s)", envelope.Field, body)
+	}
+	t.Logf("§3.2 bespoke-400 envelope: error=%q", envelope.Error)
+}
+
 // --- Contradictions ---
 
 func TestContradictions_EmptyDBReturnsEmpty(t *testing.T) {
