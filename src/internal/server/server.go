@@ -67,19 +67,19 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
-	"github.com/pavelveter/hermem/src/internal/retention"
+	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
-	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
+	"github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	healthsrv "github.com/pavelveter/hermem/src/internal/server/health"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
-	reembedsrv "github.com/pavelveter/hermem/src/internal/server/reembed"
-	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
+	"github.com/pavelveter/hermem/src/internal/server/reembed"
+	"github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
-	tlsrv "github.com/pavelveter/hermem/src/internal/server/timeline"
+	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
@@ -96,14 +96,14 @@ type Server struct {
 	Retrieval     *ret.HTTPService
 	Task          *tasksvc.HTTPService
 	Memory        *mem.HTTPService
-	Edge          *edgesrv.HTTPService
-	Timeline      *tlsrv.HTTPService
+	Edge          *edge.HTTPService
+	Timeline      *timeline.HTTPService
 	Ingest        *ingsrv.HTTPService
 	Contradiction *cnd.HTTPService
 	Graph         *graphsrv.HTTPService
 	Migration     *migrsrv.HTTPService
-	Retention     *retsrv.HTTPService
-	Reembed       *reembedsrv.HTTPService
+	Retention     *retention.HTTPService
+	Reembed       *reembed.HTTPService
 	Health        *healthsrv.HTTPService
 	Metrics       *metrics.Metrics
 	mux           *http.ServeMux
@@ -117,20 +117,20 @@ type Server struct {
 // registered directly from the Metrics field. 5 phases of extraction
 // (3.1–3.5 initially from the god-object, then 3.6 reembed, 3.7 health,
 // 3.8 metrics) eliminate AdminService entirely.
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edge *edgesrv.HTTPService, timeline *tlsrv.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retention *retsrv.HTTPService, reembed *reembedsrv.HTTPService, health *healthsrv.HTTPService, m *metrics.Metrics) *Server {
+func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edgeSvc *edge.HTTPService, timelineSvc *timeline.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retentionSvc *retention.HTTPService, reembedSvc *reembed.HTTPService, health *healthsrv.HTTPService, m *metrics.Metrics) *Server {
 	s := &Server{
 		Refs:          refs,
 		Retrieval:     retrieval,
 		Task:          task,
 		Memory:        memory,
-		Edge:          edge,
-		Timeline:      timeline,
+		Edge:          edgeSvc,
+		Timeline:      timelineSvc,
 		Ingest:        ingest,
 		Contradiction: contradiction,
 		Graph:         graph,
 		Migration:     migration,
-		Retention:     retention,
-		Reembed:       reembed,
+		Retention:     retentionSvc,
+		Reembed:       reembedSvc,
 		Health:        health,
 		Metrics:       m,
 	}
@@ -138,45 +138,42 @@ func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.
 	return s
 }
 
-// mount wires every URL on the standard mux. /task/executable and /task/next
-// both route to HandleTaskExecutable — both keys are distinct so both register.
+// mount wires every URL on the standard mux. Each typed shell is a
+// RouteProvider; iterating the typed Server fields into a local
+// []providerSlot lets a single registrations loop handle every shell
+// while still naming each shell in the slog.Warn below. Adding a 13th
+// shell requires: (a) add field to Server, (b) add arg to NewServer,
+// (c) add entry below. Pre-§3.1 step (c) was a copy-pasted 3-line
+// for-range; now it's one line.
+//
+// Nil providers warn + skip — never silently. A misconfigured
+// deployment would otherwise boot with a half-wired mux and serve 404s
+// on missing endpoints with no error. Production wiring that omits a
+// shell logs an explicit warning so the operator catches the bug.
 func (s *Server) mount() {
 	mux := http.NewServeMux()
-	for path, hf := range s.Retrieval.Routes() {
-		mux.HandleFunc(path, hf)
+	slots := []providerSlot{
+		{"Retrieval", s.Retrieval},
+		{"Task", s.Task},
+		{"Memory", s.Memory},
+		{"Edge", s.Edge},
+		{"Timeline", s.Timeline},
+		{"Ingest", s.Ingest},
+		{"Contradiction", s.Contradiction},
+		{"Graph", s.Graph},
+		{"Migration", s.Migration},
+		{"Retention", s.Retention},
+		{"Reembed", s.Reembed},
+		{"Health", s.Health},
 	}
-	for path, hf := range s.Task.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Memory.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Edge.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Timeline.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Ingest.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Contradiction.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Graph.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Migration.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Retention.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Reembed.Routes() {
-		mux.HandleFunc(path, hf)
-	}
-	for path, hf := range s.Health.Routes() {
-		mux.HandleFunc(path, hf)
+	for _, slot := range slots {
+		if slot.p == nil {
+			slog.Warn("server: shell not wired, routes will be missing", "shell", slot.name)
+			continue
+		}
+		for path, hf := range slot.p.Routes() {
+			mux.HandleFunc(path, hf)
+		}
 	}
 	// PHASE 3.8: /metrics registered directly — AdminService dissolved.
 	mux.Handle("/metrics", s.Metrics.MetricsHandler()) // mux.Handle (NOT HandleFunc): MetricsHandler() returns http.Handler, while HandleFunc expects a func(http.ResponseWriter, *http.Request) value. Passing the method value without invocation would also type-mismatch.
@@ -231,7 +228,7 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	// propagate retention policy changes. The retention.Service is
 	// constructed fresh inside the goroutine because nothing about
 	// its state needs to persist beyond a single Run loop.
-	go func() { svc := retention.NewService(cfg.DB, cfg.VI); svc.Run(gcCtx, cfg.Retention); close(gcDone) }()
+	go func() { svc := retentiondomain.New(cfg.DB, cfg.VI); svc.Run(gcCtx, cfg.Retention); close(gcDone) }()
 
 	// Canonical middleware order (outer → inner; each line wraps the
 	// previous, so the LAST wrap is the OUTERMOST):

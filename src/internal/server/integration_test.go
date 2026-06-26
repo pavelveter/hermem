@@ -27,17 +27,17 @@ import (
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
-	edgesrv "github.com/pavelveter/hermem/src/internal/server/edge"
+	"github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
 	healthsrv "github.com/pavelveter/hermem/src/internal/server/health"
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
-	reembedsrv "github.com/pavelveter/hermem/src/internal/server/reembed"
-	retsrv "github.com/pavelveter/hermem/src/internal/server/retention"
+	"github.com/pavelveter/hermem/src/internal/server/reembed"
+	"github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
-	tlsrv "github.com/pavelveter/hermem/src/internal/server/timeline"
+	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
@@ -86,9 +86,9 @@ func newTestFixture(t *testing.T) *testFixture {
 	refs := serverstate.NewRef(state)
 
 	metrics := metricspkg.New()
-	retDom := retdomain.NewService(db, vi, embed)
+	retDom := retdomain.New(db, vi, embed)
 	retSvc := ret.New(retDom, metrics, refs)
-	taskDom := taskdomain.NewService(db, embed, vi)
+	taskDom := taskdomain.New(db, embed, vi)
 	taskSvc := tasksvc.New(taskDom, metrics, refs)
 	memDom := memdomain.New(db, vi, embed, nil) // nil extractor — ingest-only path verifies error envelope
 	memSvc := mem.New(memDom, metrics, refs, 0.88)
@@ -97,44 +97,44 @@ func newTestFixture(t *testing.T) *testFixture {
 	// or LLM hook). nil embedder is fine here because the fixture's
 	// /edge tests use AutoCreate=false (no embedder path).
 	edgeDom := edgedomain.New(db, vi, embed)
-	edgeSvc := edgesrv.New(edgeDom, metrics, refs)
+	edgeSvc := edge.New(edgeDom, metrics, refs)
 	// PHASE 3.5 fixture: timeline HTTPService is constructed from a
 	// domain Service + metrics only (no Refs — timeline is read-only
 	// with no SIGHUP-raced mutation).
 	timelineDom := timelinedomain.New(db)
-	timelineSvc := tlsrv.New(timelineDom, metrics)
+	timelineSvc := timeline.New(timelineDom, metrics)
 	// PHASE 3.4 fixture: ingest HTTPService is constructed from a domain
 	// Service + metrics + refs + DedupThreshold. The nil extractor on
 	// ingestDom forces the ingest domain layer to fail with
 	// "ingest: no extractor wired" — the integration /ingest route
 	// inherits the error envelope shape from the pre-PHASE-3.4
 	// server/memory shell (memo); the URL is identical.
-	ingestDom := ingestdomain.NewService(db, vi, embed, nil)
+	ingestDom := ingestdomain.New(db, vi, embed, nil)
 	ingestSvc := ingsrv.New(ingestDom, metrics, refs, 0.88)
-	cndDom := contradictdomain.NewService(db)
+	cndDom := contradictdomain.New(db)
 	cndSvc := cnd.New(cndDom, metrics)
 	// PHASE 3.1 fixture: graph HTTPService is constructed from a domain
 	// Service + metrics + refs + VectorDim. VectorDim is 3 here to match
 	// the test schema used by stubEmbedder + seedEntityWithEmb.
-	graphDom := graphdomain.NewService(db)
+	graphDom := graphdomain.New(db)
 	graphSvc := graphsrv.New(graphDom, metrics, refs, testVectorDim)
 	// PHASE 3.2 fixture: migration HTTPService is constructed from a
 	// domain Service + metrics + refs. Refs is required because the
 	// /db/schema handler loads the live schema per request from refs.
-	migrDom := migrationdomain.NewService(db)
+	migrDom := migrationdomain.New(db)
 	migrSvc := migrsrv.New(migrDom, metrics, refs)
 	// PHASE 3.3 fixture: retention HTTPService is constructed from a
 	// domain Service + metrics + refs + a RetentionPolicy. Default
 	// policy matches the production defaults so the lightweight
 	// archive sweep is benign on the integration test critical path.
-	retentionDom := retentiondomain.NewService(db, vi)
+	retentionDom := retentiondomain.New(db, vi)
 	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
-	retentionShell := retsrv.New(retentionDom, metrics, refs, retentionPolicy)
+	retentionShell := retention.New(retentionDom, metrics, refs, retentionPolicy)
 	// PHASE 3.6 fixture: reembed HTTPService holds domain Service
 	// + metrics only (no Refs — reembed reads all entities directly
 	// from DB, no schema gates).
 	reembedDom := reembeddomain.New(db, vi, embed)
-	reembedShell := reembedsrv.New(reembedDom, metrics)
+	reembedShell := reembed.New(reembedDom, metrics)
 	// PHASE 3.7 fixture: health HTTPService wraps the health-probe
 	// domain Service with probe checks for every dependency.
 	// PHASE 3.8: /metrics registered directly from metrics — no AdminService arg.
@@ -586,28 +586,28 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	refs := serverstate.NewRef(serverstate.New(core.DefaultSchemaConfig(false), 0, 100,
 		core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
 	metrics := metricspkg.New()
-	retDom := retdomain.NewService(db, vi, embed)
+	retDom := retdomain.New(db, vi, embed)
 	memDom := memdomain.New(db, vi, embed, nil)
-	cndDom := contradictdomain.NewService(db)
-	taskDom := taskdomain.NewService(db, embed, vi)
+	cndDom := contradictdomain.New(db)
+	taskDom := taskdomain.New(db, embed, vi)
 	// PHASE 3.1: graph HTTPService in the API-key auth fixture too.
 	// Uses VectorDim=3 because the stubEmbedder + dim-checking tests in
 	// this fixture file are 3-dim.
-	graphDom := graphdomain.NewService(db)
+	graphDom := graphdomain.New(db)
 	graphSvc := graphsrv.New(graphDom, metrics, refs, testVectorDim)
 	// PHASE 3.2 fixture: API-key auth fixture also needs the migration
 	// HTTPService wired in the NewServer call.
-	migrDom := migrationdomain.NewService(db)
+	migrDom := migrationdomain.New(db)
 	migrSvc := migrsrv.New(migrDom, metrics, refs)
 	// PHASE 3.3 fixture: API-key auth fixture also needs the retention
 	// HTTPService threaded into NewServer to keep the call shape
 	// consistent with the production sign call site.
-	retentionDom := retentiondomain.NewService(db, vi)
+	retentionDom := retentiondomain.New(db, vi)
 	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	// PHASE 3.6: API-key auth fixture also needs the reembed
 	// HTTPService threaded into NewServer.
 	reembedDom := reembeddomain.New(db, vi, embed)
-	reembedShell := reembedsrv.New(reembedDom, metrics)
+	reembedShell := reembed.New(reembedDom, metrics)
 	// PHASE 3.7: API-key auth fixture also needs the health
 	// HTTPService threaded into NewServer. Use nil embedder
 	// to verify warning-level probe doesn't block startup.
@@ -621,7 +621,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// PHASE 3.4: API-key auth fixture also needs the ingest HTTPService
 	// threaded into NewServer to keep the call shape consistent with
 	// the production sign call site.
-	ingestDom := ingestdomain.NewService(db, vi, embed, nil)
+	ingestDom := ingestdomain.New(db, vi, embed, nil)
 	// PHASE 3.5: API-key auth fixture also needs the edge + timeline
 	// HTTPService threaded into NewServer to keep the call shape
 	// consistent with the production serve(cmd) call site.
@@ -629,10 +629,10 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	timelineDom := timelinedomain.New(db)
 	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
 		mem.New(memDom, metrics, refs, 0.88),
-		edgesrv.New(edgeDom, metrics, refs), tlsrv.New(timelineDom, metrics),
+		edge.New(edgeDom, metrics, refs), timeline.New(timelineDom, metrics),
 		ingsrv.New(ingestDom, metrics, refs, 0.88),
 		cnd.New(cndDom, metrics), graphSvc, migrSvc,
-		retsrv.New(retentionDom, metrics, refs, retentionPolicy),
+		retention.New(retentionDom, metrics, refs, retentionPolicy),
 		reembedShell, healthShell,
 		metrics)
 

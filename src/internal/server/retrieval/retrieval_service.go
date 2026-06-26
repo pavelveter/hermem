@@ -9,60 +9,72 @@
 // this HTTP shell's Routes() registry.
 //
 // Following the same pattern as PHASE 2.1's MemoryService extraction:
-// HTTPService is a thin shell — parse → validate → call RetSvc.* →
+// HTTPService is a thin shell — parse → validate → call Svc.* →
 // write envelope. The domain service has no knowledge of HTTP,
 // httputil, serverstate.Ref, or metrics.
+//
+// §3.2 — embeds shared.BaseHTTPService. Five of six handlers route
+// through s.Wrap so the IncErr + WriteError(500,...) boilerplate is
+// collapsed. /provenance is the deliberate exception: its pre-§3.2
+// contract mapped ALL domain errors to 400 (a quirk to preserve
+// clients — domain errors actually mean "your filter params are
+// incomplete"), so HandleProvenance stays inline and Registers as a
+// raw handler without s.Wrap.
 package retrieval
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
+	"github.com/pavelveter/hermem/src/internal/server/shared"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
 // HTTPService is the transport shell for the read-side domain.
 //
-// Holds the domain Service (RetSvc), the metrics counters (Metrics),
-// and the serverstate.Ref for state-conflict reads (state.Load() at
-// request time to seed RetrieveContextOptions per the SIGHUP path).
+// Holds the domain Service (Svc) + the embedded BaseHTTPService
+// (Metrics, Refs promoted). Field-promotion keeps `s.Metrics.*` and
+// `s.Refs.Load()` working unchanged in handler code.
 type HTTPService struct {
-	RetSvc  *retrieval.Service
-	Metrics *metrics.Metrics
-	Refs    *serverstate.Ref
+	Svc *retrieval.Service
+	shared.BaseHTTPService
 }
 
-// New constructs an HTTPService. RetSvc is non-nil in production —
-// wired by cli/serve.go via retrieval.NewService(env.DB, env.VI,
+// New constructs an HTTPService. Svc is non-nil in production —
+// wired by cli/serve.go via retrieval.New(env.DB, env.VI,
 // env.Embedder). Tests pass a freshly-constructed domain Service to
 // avoid sharing state across parallel test bodies.
-func New(retSvc *retrieval.Service, m *metrics.Metrics, refs *serverstate.Ref) *HTTPService {
-	return &HTTPService{RetSvc: retSvc, Metrics: m, Refs: refs}
+func New(svc *retrieval.Service, m *metrics.Metrics, refs *serverstate.Ref) *HTTPService {
+	return &HTTPService{
+		Svc: svc,
+		BaseHTTPService: shared.BaseHTTPService{
+			Metrics: m,
+			Refs:    refs,
+		},
+	}
 }
 
 // Routes returns the URL → handler mapping for this service.
 //
 // /contradictions moved to src/internal/server/contradiction in
-// PHASE 2.3 (ContradictionService extraction). It is no longer
-// registered here.
+// PHASE 2.3. §3.2 wraps 5/6 handlers via s.Wrap. /provenance is the
+// deliberate inline exception (see HandleProvenance for rationale).
 func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/search":        s.HandleSearch,
-		"/retrieve":      s.HandleRetrieve,
-		"/query":         s.HandleQuery,
-		"/response":      s.HandleResponse,
-		"/query/explain": s.HandleQueryExplain,
-		"/provenance":    s.HandleProvenance,
+		"/search":        s.Wrap(s.HandleSearch),
+		"/retrieve":      s.Wrap(s.HandleRetrieve),
+		"/query":         s.Wrap(s.HandleQuery),
+		"/response":      s.Wrap(s.HandleResponse),
+		"/query/explain": s.Wrap(s.HandleQueryExplain),
+		"/provenance":    s.HandleProvenance, // NOT wrapped — bespoke 400 contract
 	}
 }
 
-// optsFromState builds a per-request RetrieveContextOptions seeded from
-// the atomic *serverstate.State. Callers add per-request fields
-// (QueryText, QueryEmbedding, Ctx, MaxDepth, Explain) after this
-// returns.
+// optsFromState — unchanged from pre-§3.2 (helper, not a handler).
 func (s *HTTPService) optsFromState() core.RetrieveContextOptions {
 	state := s.Refs.Load()
 	return core.RetrieveContextOptions{
@@ -75,50 +87,52 @@ func (s *HTTPService) optsFromState() core.RetrieveContextOptions {
 
 // HandleSearch — POST /search. Embed the query, return top-K
 // nearest neighbours.
-func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) {
+//
+// §3.2 — error-returning handler.
+func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req core.SearchRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return
+		return nil
 	}
 	if req.Query == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "query required")
-		return
+		return nil
 	}
-	results, err := s.RetSvc.Search(r.Context(), req.Query, req.TopK)
+	results, err := s.Svc.Search(r.Context(), req.Query, req.TopK)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	s.Metrics.IncSearch()
 	httputil.WriteJSON(w, http.StatusOK, results)
+	return nil
 }
 
-// HandleRetrieve — POST /retrieve. Graph-walk from explicit seed IDs
-// (no embedding step — caller already chose the seeds).
-func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
+// HandleRetrieve — POST /retrieve.
+//
+// §3.2 — error-returning handler.
+func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req core.RetrieveRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return
+		return nil
 	}
 	if len(req.SeedIDs) == 0 {
 		// Defense-in-depth duplicate of domain validation. Pre-PHASE-2.2
 		// HTTP shell checked this inline so /retrieve clients see 400 on
 		// empty seeds without ever crossing into the domain.
 		httputil.WriteError(w, http.StatusBadRequest, "seed_ids required")
-		return
+		return nil
 	}
 	if req.MaxDepth <= 0 {
 		req.MaxDepth = retrieval.DefaultRetrieveMaxDepth
@@ -126,51 +140,53 @@ func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) {
 	opts := s.optsFromState()
 	opts.MaxDepth = req.MaxDepth
 	opts.Ctx = r.Context()
-	result, err := s.RetSvc.Retrieve(r.Context(), req.SeedIDs, opts)
+	result, err := s.Svc.Retrieve(r.Context(), req.SeedIDs, opts)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	s.Metrics.IncRetrieve()
 	httputil.WriteJSON(w, http.StatusOK, result)
+	return nil
 }
 
-// HandleQuery — POST /query. Embed → vector search → graph walk →
-// Markdown context blob.
-func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) {
+// HandleQuery — POST /query.
+//
+// §3.2 — error-returning handler.
+func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req core.SearchRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return
+		return nil
 	}
 	if req.Query == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "query required")
-		return
+		return nil
 	}
 	opts := s.optsFromState()
 	opts.QueryText = req.Query
-	markdown, err := s.RetSvc.Query(r.Context(), req.Query, req.TopK, opts)
+	markdown, err := s.Svc.Query(r.Context(), req.Query, req.TopK, opts)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	s.Metrics.IncQuery()
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"context": markdown})
+	return nil
 }
 
-// HandleResponse — POST /response. Generate a natural-language answer
-// from the retrieved graph context.
-func (s *HTTPService) HandleResponse(w http.ResponseWriter, r *http.Request) {
+// HandleResponse — POST /response.
+//
+// §3.2 — error-returning handler. The "response generation failed: "
+// message prefix is preserved by wrapping the domain error before
+// returning; mapStatus falls through to 500 default.
+func (s *HTTPService) HandleResponse(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req struct {
@@ -179,61 +195,68 @@ func (s *HTTPService) HandleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return
+		return nil
 	}
 	if req.Query == "" {
 		httputil.WriteError(w, http.StatusUnprocessableEntity, "query is required")
-		return
+		return nil
 	}
 	opts := s.optsFromState()
 	if req.MaxDepth > 0 {
 		opts.MaxDepth = req.MaxDepth
 	}
-	out, err := s.RetSvc.Response(r.Context(), req.Query, opts)
+	out, err := s.Svc.Response(r.Context(), req.Query, opts)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, "response generation failed: "+err.Error())
-		return
+		// Wrap with the pre-§3.2 "response generation failed: " prefix
+		// so the wire contract (message text + status 500) survives.
+		// fmt.Errorf with %w preserves errors.Is / errors.As unwrap
+		// semantics — mapStatus walks the chain if needed.
+		return fmt.Errorf("response generation failed: %w", err)
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"response": out})
+	return nil
 }
 
-// HandleQueryExplain — POST /query/explain. Same pipeline as /query
-// but with Explain=true so the returned RetrievalResult carries the
-// per-hop ranking reasoning.
-func (s *HTTPService) HandleQueryExplain(w http.ResponseWriter, r *http.Request) {
+// HandleQueryExplain — POST /query/explain.
+//
+// §3.2 — error-returning handler.
+func (s *HTTPService) HandleQueryExplain(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req core.SearchRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
 		httputil.WriteErrorWithCode(w, http.StatusBadRequest, msg, code, field)
-		return
+		return nil
 	}
 	opts := s.optsFromState()
 	opts.QueryText = req.Query
-	result, err := s.RetSvc.Explain(r.Context(), req.Query, req.TopK, opts)
+	result, err := s.Svc.Explain(r.Context(), req.Query, req.TopK, opts)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	s.Metrics.IncQuery()
 	httputil.WriteJSON(w, http.StatusOK, result)
+	return nil
 }
 
 // HandleProvenance — GET /provenance[?conversation=X&message=Y&source=Z&limit=N].
-// 400 is intentional for empty-triple + missing filters (matches
-// pre-PHASE-2.2 contract — slightly counterintuitive but preserves
-// clients).
+//
+// §3.2 DELIBERATE EXCEPTION to s.Wrap. Pre-§3.2 contract maps ALL
+// domain errors to 400 (slightly counterintuitive — domain errors
+// from /provenance actually mean "your filter triple is incomplete" —
+// but preserves clients). This contract is NOT preserved by
+// server.mapStatus' default 500 mapping, so HandleProvenance stays
+// inline and Routes() registers it WITHOUT s.Wrap. Wire bytes
+// identical to pre-§3.2.
 func (s *HTTPService) HandleProvenance(w http.ResponseWriter, r *http.Request) {
 	convID := r.URL.Query().Get("conversation_id")
 	msgID := r.URL.Query().Get("message_id")
 	source := r.URL.Query().Get("source")
 	limit := httputil.ParseIntParam(r, "limit", 50)
-	entities, err := s.RetSvc.Provenance(r.Context(), convID, msgID, source, limit)
+	entities, err := s.Svc.Provenance(r.Context(), convID, msgID, source, limit)
 	if err != nil {
 		s.Metrics.IncErr()
 		httputil.WriteError(w, http.StatusBadRequest, err.Error())
@@ -243,5 +266,4 @@ func (s *HTTPService) HandleProvenance(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleContradictions moved to src/internal/server/contradiction in
-// PHASE 2.3 (ContradictionService extraction). The route is no longer
-// registered in this HTTPService.
+// PHASE 2.3.

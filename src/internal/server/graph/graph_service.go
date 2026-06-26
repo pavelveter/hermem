@@ -4,8 +4,11 @@
 // pattern established by PHASE 2.x. The shell lifts two routes out of
 // the central AdminService (/connected-components, /communities) and
 // adds one NEW route (/graph/verify) that exposes algo.VerifyGraph over
-// HTTP. AdminService retains /health/*, /metrics, and /admin/re-embed,
+// HTTP. AdminService retained /health/*, /metrics, and /admin/re-embed,
 // which are out of the graph domain.
+//
+// §3.2 — embeds shared.BaseHTTPService; Dim stays as a shell-local
+// field (construction-time VecDim snapshot, not part of the base).
 package graph
 
 import (
@@ -16,6 +19,7 @@ import (
 	graphsvc "github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/server/shared"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
@@ -30,15 +34,21 @@ import (
 //     handler doesn't need to thread Cfg.VectorDim through routing;
 //     the runtime loads it once from cfg and passes it via New()
 type HTTPService struct {
-	Svc     *graphsvc.Service
-	Metrics *metrics.Metrics
-	Refs    *serverstate.Ref
-	Dim     int
+	Svc *graphsvc.Service
+	Dim int
+	shared.BaseHTTPService
 }
 
 // New constructs an HTTPService. All four deps are required.
 func New(svc *graphsvc.Service, m *metrics.Metrics, refs *serverstate.Ref, dim int) *HTTPService {
-	return &HTTPService{Svc: svc, Metrics: m, Refs: refs, Dim: dim}
+	return &HTTPService{
+		Svc: svc,
+		Dim: dim,
+		BaseHTTPService: shared.BaseHTTPService{
+			Metrics: m,
+			Refs:    refs,
+		},
+	}
 }
 
 // Routes returns the URL → handler mapping for this shell.
@@ -50,39 +60,37 @@ func New(svc *graphsvc.Service, m *metrics.Metrics, refs *serverstate.Ref, dim i
 //
 // Pre-PHASE-3.1 /connected-components and /communities lived in
 // AdminService.Routes(). They are removed there.
+//
+// §3.2 — all three handlers route through s.Wrap.
 func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/connected-components": s.HandleConnectedComponents,
-		"/communities":          s.HandleCommunities,
-		"/graph/verify":         s.HandleGraphVerify,
+		"/connected-components": s.Wrap(s.HandleConnectedComponents),
+		"/communities":          s.Wrap(s.HandleCommunities),
+		"/graph/verify":         s.Wrap(s.HandleGraphVerify),
 	}
 }
 
 // HandleConnectedComponents — GET /connected-components[?min_size=N].
-// Returns the connected-component list (size ≥ min_size, default 2)
-// as a raw JSON array. Matches the pre-PHASE-3.1 envelope exactly so
-// existing curl clients / dashboards are unchanged.
-func (s *HTTPService) HandleConnectedComponents(w http.ResponseWriter, r *http.Request) {
+//
+// §3.2 — error-returning handler.
+func (s *HTTPService) HandleConnectedComponents(w http.ResponseWriter, r *http.Request) error {
 	s.Metrics.IncGraphComponents()
 	minSize := httputil.ParseIntParam(r, "min_size", 2)
 	comps, err := s.Svc.Components(r.Context(), minSize)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	httputil.WriteJSON(w, http.StatusOK, comps)
+	return nil
 }
 
 // HandleCommunities — GET /communities[?min_size=N&max_iterations=N].
-// Runs Louvain detection (default 50 iterations, clamped ≤200) and
-// returns the total / filtered envelope so callers can compare
-// unfiltered counts against min_size-filtered counts.
 //
-// minSize filtering lives HERE (not in the domain Service) so the
-// envelope can report total_communities AND filtered_communities side
-// by side. The domain Service returns the full list.
-func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) {
+// §3.2 — error-returning handler. The minSize filter + envelope
+// composition stay in the shell (they're transport-layer concerns),
+// while the Svc.Communities error path returns err so s.Wrap fires
+// IncErr + WriteError after the observe duration is recorded.
+func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) error {
 	s.Metrics.IncGraphCommunities()
 	start := time.Now()
 	defer func() { s.Metrics.ObserveGraphCommunitiesDuration(time.Since(start).Seconds()) }()
@@ -93,9 +101,7 @@ func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) 
 	}
 	all, globalQ, err := s.Svc.Communities(r.Context(), maxIter)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	var filtered []core.Community
 	for _, c := range all {
@@ -103,40 +109,44 @@ func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) 
 			filtered = append(filtered, c)
 		}
 	}
-	if filtered == nil {
-		filtered = []core.Community{}
-	}
+	filtered = core.NormalizeSlice(filtered)
 	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"communities":          filtered,
 		"global_modularity":    globalQ,
 		"total_communities":    len(all),
 		"filtered_communities": len(filtered),
 	})
+	return nil
 }
 
-// HandleGraphVerify — GET /graph/verify. Returns a JSON envelope that
-// mirrors the cli verify contract: {pass:bool, issues:[], rendered:
-// "human-readable report"}. PHASE 3.1 NEW route — exposes alg_o.
-// VerifyGraph over HTTP. The `pass` boolean derives from
-// `len(report.Issues) == 0` so dashboards can decide red/green
-// without re-running the algorithm.
-func (s *HTTPService) HandleGraphVerify(w http.ResponseWriter, r *http.Request) {
+// HandleGraphVerify — GET /graph/verify.
+//
+// §3.2 — error-returning handler. The "no server state" pre-check
+// was a transport-side concern pre-§3.2; defer it to mapStatus by
+// returning a sentinel error wrapping the literal message. The
+// serverstate-is-nil condition should not occur in production but
+// is kept as a defensive 500 path.
+func (s *HTTPService) HandleGraphVerify(w http.ResponseWriter, r *http.Request) error {
 	s.Metrics.IncGraphVerify()
 	state := s.Refs.Load()
 	if state == nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, "no server state")
-		return
+		// Defense-in-depth: production should always have a state
+		// loaded; mapStatus falls back to 500 with err.Error().
+		return shared.ErrNoServerState
 	}
 	report, err := s.Svc.Verify(r.Context(), state.Schema, s.Dim)
 	if err != nil {
-		s.Metrics.IncErr()
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"pass":     report.Pass(),
 		"issues":   report.Issues,
 		"rendered": report.String(),
 	})
+	return nil
 }
+
+// HandleGraphVerify's defensive state==nil branch returns
+// shared.ErrNoServerState so that mapStatus routes to (500, "no
+// server state") — identical wire bytes to the pre-§3.2 inline
+// WriteError(500, ...) branch.
