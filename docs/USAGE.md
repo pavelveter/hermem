@@ -1947,3 +1947,49 @@ edgeSvc   := edgedomain.New(env.DB, env.VI, env.Embedder)
 
 For the full dependency graph, HTTP shell wiring matrix, and data flow
 diagram, see **[docs/service-dependencies.md](docs/service-dependencies.md)**.
+
+---
+
+## 21. Diagnose Command
+
+`hermem diagnose` runs a self-check of the database and memory subsystem
+and emits a structured health report.
+
+### Usage
+
+```bash
+# Human-readable output (default)
+hermem diagnose
+
+# Machine-readable JSON (for ops dashboards / CI gates)
+hermem diagnose --json
+```
+
+### Checks performed
+
+| Check           | What it inspects                                          |
+| --------------- | --------------------------------------------------------- |
+| Schema          | PRAGMA foreign_key_check, orphan edge count, PRAGMA integrity_check |
+| Vector index    | id_map row count, embedding dimension consistency (meta vs configured) |
+| Memory          | entity count, embedding density overall and by category, beliefs table by status |
+| Retention       | archived entity count and percentage                      |
+| Recent errors   | best-effort tail (currently returns a note — no persisted error log) |
+
+### JSON output shape (top-level fields)
+
+```json
+{
+  "schema":      { "foreign_keys_ok": true, "orphan_edges": 0, "integrity_ok": true },
+  "vector":      { "total_rows": 1500, "config_dim": 768, "stored_dim": 768, "dim_mismatch": false },
+  "memory":      { "total_entities": 1500, "entities_with_embedding": 1200, "embedding_density_pct": 80.0, "density_by_category": {...}, "belief_counts_by_status": {...} },
+  "retention":   { "archived_entities": 50, "total_entities": 1500, "archived_pct": 3.33 },
+  "errors":      { "note": "slog ERROR entries are not persisted to a queryable store..." }
+}
+```
+
+### Exit codes
+
+| Exit code | Meaning                   |
+| --------- | ------------------------- |
+| 0         | All checks passed         |
+| 1         | One or more checks failed |

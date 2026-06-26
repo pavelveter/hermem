@@ -12,6 +12,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/bench"
 	"github.com/pavelveter/hermem/src/internal/cli/agent"
 	"github.com/pavelveter/hermem/src/internal/cli/db"
+	"github.com/pavelveter/hermem/src/internal/cli/diagnose"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/cli/graph"
 	"github.com/pavelveter/hermem/src/internal/cli/memory"
@@ -41,6 +42,7 @@ Group layout:
   agent      loop
   db         migrate / rollback / verify / schema
   profile    cpu / heap / goroutine / trace
+  diagnose   self-check of database and memory subsystem
   (group --help shows only its own subcommands.)
 
 All commands that take a JSON payload read it from stdin. Optional flags
@@ -110,6 +112,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		db.NewCmd(env),
 		profile.NewCmd(env),
 		bench.NewCmd(env),
+		diagnose.NewCmd(env),
 	)
 	adminops.Register(root, env)
 	root.SetContext(env.Ctx)

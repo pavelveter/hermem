@@ -161,6 +161,8 @@ P1 — OBSERVABILITY
 [x] Add contradiction metrics
 [x] Add reranker metrics
 
+[x] Add hermem diagnose CLI for self-diagnostics
+
 Phase 2 follow-ups (out of scope for C1–C6 of OBSERVABILITY sprint, feat/observability-prometheus → main @ a75bfc0):
 [ ] Add graph metrics
 [ ] Add Grafana dashboard
