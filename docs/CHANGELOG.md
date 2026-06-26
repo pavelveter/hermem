@@ -7,16 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **feat(cli)**: `hermem diagnose` self-check subcommand — 5 check families (schema integrity, vector index, memory subsystem, retention, errors tail) against `src/internal/cli/diagnose/`. Human or `--json` output. 7 race-safe tests.
+- **P1 — MIGRATION SYSTEM HARDENING**: Hardens the SQLite migration subsystem with dry-run mode, out-of-order detection, content-drift detection, concurrent-apply guards, schema snapshotting, down-migration test harness, and race-safe concurrent tests. New exported functions: `RunDry`, `DetectOutOfOrder`, `DetectContentDrift`, `CaptureSchemaHash`, `MigrationFiles`, `applyOneMigration`. Tests: +14 unit/race cases in `migration_test.go`.
 
 - **P2 — MEMORY EVOLUTION (C1)**: `feat/memory-evolution` introduces the first-class `belief` package (`src/internal/memory/belief/`) plus migration `008_add_beliefs_table.sql`. `Belief.Service` exposes `CreateBelief`, `GetBelief`, `ListBeliefs`, `UpdateConfidence`, `MarkSuperseded` against a dedicated `beliefs` SQLite table (id, content, confidence [0,1], source_kind, source_id, status enum, timestamps, FK columns for superseded_by / parent_chain_id). The legacy thin `core.Belief` projection off `core.Entity` is preserved untouched for backward compatibility. Race-safe unit tests (8 cases) in `belief_test.go` exercise happy path, nil/empty rejection, default confidence, ordered listing, confidence bounds + ErrNotFound + id<=0 short-circuit, transactional MarkSuperseded + missing-target rollback.
 
 
 ### Fixed
 
-- `src/internal/memory/evidence`: first-class Evidence abstraction with support/refute polarity, absolute strength [0,1], and FK CASCADE into `beliefs.id`. Package boundary stays independent of `belief`; aggregates in C3 (Confidence propagation). 14 race-safe unit tests against `store.MemDB()` fixture; migration `009_add_evidence_table.sql` is idempotent (CREATE TABLE IF NOT EXISTS).
 - **ci**: Zig pin in `.github/workflows/{ci,release}.yml` repaired. `mlugg/setup-zig@v2` was pinned to `version: v2.12.2` (Zig 2.x has never shipped — every mirror responded 404) and `release.yml` used `version: latest` (silently drift-prone). Both files now pin to stable `0.16.0` via a shared `env.ZIG_VERSION` (mirrors the existing `env.GO_VERSION` precedent) and request `use-tool-cache: true` so the toolchain tarball is cached across matrix jobs. No code change; CI / release builds resume on the next push.
 - **cross-compile**: Windows build targets fixed. `src/internal/health/probes.go` referenced `syscall.Statfs_t` / `syscall.Statfs` (Unix-only — undefined on `GOOS=windows`), which broke `windows/amd64` and `windows/arm64` matrix builds. Split into per-OS files mirroring the existing `src/internal/vector/cosine{,_darwin}.go` convention: `disk_unix.go` (`//go:build !windows`) keeps the `syscall.Statfs` path; `disk_windows.go` (`//go:build windows`) returns `nil` with `Severity: "warning"` so `/health/ready` stays operational. No new dependency (verified `golang.org/x/sys` absence in `go.mod` / `go.sum`). Both Windows builds resume.
 
