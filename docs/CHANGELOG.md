@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **P2 — SEMANTIC COMPRESSION**: `feat/semantic-compression` completes all 9 P2 SEMANTIC COMPRESSION items via the new `src/internal/compression/` package and migration `012_create_summary_nodes.sql`. All 909 tests pass race-safe. All 9 TODO.md items now [x].
+  - **feat(compression)**: `SummaryNode` domain type + `summary` category registered in `DefaultSchemaConfig`. Conversion methods: `AsEntity()` and `EntityAsSummaryNode()`.
+  - **feat(compression)**: `Clusterer` with greedy cosine-similarity clustering (configurable threshold/min/max); loads embeddings from SQLite entities table directly.
+  - **feat(compression)**: `Compressor` with `Compress`/`CompressCluster`/`Recompress`/`Regenerate` methods. Uses `core.LLMExtractor` for LLM-backed summary generation.
+  - **feat(compression)**: Recursive summarization with `Recompress` (Generation++, provenance chain preserved, max depth = 3 guard).
+  - **feat(compression)**: Provenance preservation: `CompressedFrom` carries original entity IDs + old summary ID forward on recompression; `SupersededBy` edge tracks replacement.
+  - **feat(compression)**: `Regenerate` refreshes summary content at same generation (same source set, updated content).
+  - **migration**: `012_create_summary_nodes.sql` — `summary_nodes` table with content, compressed_from (JSON), compressed_at, confidence, provenance, generation, extractor_model, superseded_by FK, regenerated_at.
+  - **test(compression)**: 4 cluster tests, 6 generate tests (compress, recompress, regenerate, provenance), 1 integration test (10 entities → cluster → compress → recompress → regenerate), 3 benchmarks (cluster/compress/recompress).
+  - **feat(compression)**: Zero-dep `Metrics` struct with atomic counters for compress/recompress/regenerate calls, compressed entities, cluster sizes, duration tracking.
+  - **docs**: TODO.md 9 items flipped + sub-agent-12 provenance comment added; CHANGELOG.md updated; USAGE.md `## Compression API` section added.
+
 - **P2 — EPISODIC MEMORY**: `feat/episodic-memory` completes all 10 P2 EPISODIC MEMORY items via the new `src/internal/episodic/` package and migration `011_create_episodes_events.sql`. All 105 tests pass race-safe. All 10 TODO.md items now [x].
   - **feat(episodic)**: migration 011 — `episodes` (session/conversation FKs, title, summary, started_at, ended_at, JSON metadata), `events` (CHECK-constrained type: message | action | observation | system), `episode_memories` junction (with role), `episode_tasks` junction.
   - **feat(episodic)**: `Episode` domain type + `Service` (Create/Get/ListBySession/UpdateSummary/EndEpisode) — flat-package + stateless pattern.
