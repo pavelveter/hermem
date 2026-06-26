@@ -11,34 +11,10 @@ import (
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
-	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
-	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
-	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
-	healthdomain "github.com/pavelveter/hermem/src/internal/health"
-	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
-	memdomain "github.com/pavelveter/hermem/src/internal/memory"
-	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
-	reembeddomain "github.com/pavelveter/hermem/src/internal/reembed"
-	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
-	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
-	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
-	"github.com/pavelveter/hermem/src/internal/server/edge"
-	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
-	healthsrv "github.com/pavelveter/hermem/src/internal/server/health"
-	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
-	mem "github.com/pavelveter/hermem/src/internal/server/memory"
-	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
-	"github.com/pavelveter/hermem/src/internal/server/reembed"
-	"github.com/pavelveter/hermem/src/internal/server/retention"
-	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
-	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
-	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
-	taskdomain "github.com/pavelveter/hermem/src/internal/task"
-	timelinedomain "github.com/pavelveter/hermem/src/internal/timeline"
 	"github.com/pavelveter/hermem/src/internal/util/safego"
 )
 
@@ -67,101 +43,7 @@ func runServe(env *clienv.Env, port string) error {
 	)
 
 	refs := serverstate.NewRef(buildState(env.Cfg, env.Reranker))
-	// : build the memory domain Service once and hand the HTTP shell
-	// (server/memory) a borrowed pointer. IngestionWorker was created
-	// inside Mem.Ingest per call (now constructed inside
-	// ingest.Service.Ingest). The LLM extractor is no longer threaded
-	// through memory.Service — the dialog-pipeline
-	// extractor wiring lives in src/internal/ingest/, where it's actually
-	// consumed.
-	memSvc := memdomain.New(env.DB, env.VI, env.Embedder)
-	// : edge domain Service owns the relation-edge write API
-	// (AddEdge + auto-create dispatch). vi + embedder are held so the
-	// auto-create path can call vector.AddEdgeWithAutoCreate without
-	// constructor branching on each invocation.
-	edgeSvc := edgedomain.New(env.DB, env.VI, env.Embedder)
-	// : timeline domain Service owns the read-only time-ordered
-	// entity projection. db-only — no embedder, no vector index, no
-	// schema gates (read surface, not write surface).
-	timelineSvc := timelinedomain.New(env.DB)
-	// : reembed domain Service owns the batch re-embedding
-
-	// The three deps (db, vi, embedder) are Service fields; per-call
-	// args (dim, batchSize, model) come from the request.
-	healthSvc := healthdomain.New(
-		healthdomain.DBProbe(env.DB),
-		healthdomain.VectorIndexProbe(env.VI, env.Cfg.VectorDim),
-		healthdomain.EmbedderProbe(env.Embedder),
-		healthdomain.ExtractorProbe(env.Extractor),
-		healthdomain.DiskSpaceProbe(env.Cfg.DBPath),
-	).WithMetrics(env.Metrics)
-	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
-	// : same shape for retrieval. The domain Service owns
-	// retrieval orchestration; HTTP shell delegates through RetSvc.
-	retSvc := retdomain.New(env.DB, env.VI, env.Embedder)
-	// : contradiction domain Service is read-only and
-	// DB-only (no vector index / embedder / schema); same shape as
-	// retrieval/memory but slimmer dependencies.
-	cndSvc := contradictdomain.New(env.DB)
-	// : task domain Service holds db + embedder + vi. The
-	// embedded AutoLinkEdges inside Service.Create is the only call
-	// path that uses embedder + vi; all other methods are pure SQL.
-	// The HTTP shell (server/task) takes a borrowed pointer to this
-	// Service and threads it into the 10-endpoint mux.
-	taskSvc := taskdomain.New(env.DB, env.Embedder, env.VI)
-	// : graph domain Service is read-only and DB-only
-	// (same shape as contradiction's precedent). The
-	// HTTP shell mounts /connected-components + /communities
-	// (moved from AdminService) plus the NEW /graph/verify. Dim
-	// is loaded once from cfg at boot — VectorDim is a static
-	// dimensional commitment for the lifetime of the daemon.
-	graphSvc := graphdomain.New(env.DB)
-	// : migration domain Service covers schema / migration
-	// inspection (db/migrate / db/rollback / db/verify / db/schema).
-	// OUT OF SCOPE: store.RunMigrations + store.StoreSchemaFingerprint
-	// stay in store/ — they are bootstrapping mutating hooks called
-	// from main.go boot and cli/serve.go's SIGHUP loop, not
-	// request-time reads. The HTTP shell exposes 4 NEW routes that
-	// previously had no HTTP surface (only CLI subcommands).
-	migrSvc := migrationdomain.New(env.DB)
-	// : ingest domain Service owns the synchronous dialog
-	// pipeline orchestration (extraction -> embed -> dedup -> upsert
-	// -> edges). Constructs an IngestionWorker PER CALL inside
-	// Ingest() — preserves the SIGHUP-race-free invariant.
-	// The HTTP shell replaces the previously-on-server/memory-shell
-	// HandleIngest route; the URL stays at /ingest. /ingest/jobs GET
-	// endpoint is NEW.
-	ingestSvc := ingestdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
-	// : retention domain Service owns the archive sweep
-	// (RunOnce + Run loop). DefaultPolicy is captured at construction
-	// from cfg.Retention and passed to the HTTP shell; SIGHUP does not
-	// propagate policy changes (matches closure-capture
-	// behaviour inside server.Server.Serve). The long-lived Run
-	// goroutine is wired by server.Server.Serve directly — cli/serve.go
-	// is only responsible for constructing the domain Service + HTTP
-	// shell here.
-	// NOTE: variable name `retentionSvc` (NOT `retSvc`) to avoid a
-	// name collision with the retrieval domain Service declared
-	// further up; both have the type prefix `*Service` so a single
-	// short name would shadow.
-	retentionSvc := retentiondomain.New(env.DB, env.VI)
-
-	srv := server.NewServer(
-		refs,
-		ret.New(retSvc, env.Metrics, refs),
-		tasksvc.New(taskSvc, env.Metrics, refs),
-		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
-		edge.New(edgeSvc, env.Metrics, refs),
-		timeline.New(timelineSvc, env.Metrics),
-		ingsrv.New(ingestSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
-		cnd.New(cndSvc, env.Metrics),
-		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
-		migrsrv.New(migrSvc, env.Metrics, refs),
-		retention.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
-		reembed.New(reembedSvc, env.Metrics),
-		healthsrv.New(healthSvc),
-		env.Metrics,
-	)
+	srv := wireAll(env, refs)
 
 	// SIGHUP reload loop — separate from HTTP lifecycle so we can re-validate
 	// config without restarting. srv.ReloadState atomically swaps the State

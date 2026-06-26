@@ -311,7 +311,7 @@ should not exist as a separate package.
 
 ---
 
-## 6. [ ] MEDIUM — Reduce `serve.go` Wiring Boilerplate
+## 6. [x] MEDIUM — Reduce `serve.go` Wiring Boilerplate
 
 **File:** `src/internal/cli/serve.go`
 

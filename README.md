@@ -854,6 +854,17 @@ Benchmarked on Apple M1 Pro (768D embeddings, `topK=10`, 3 runs, medians):
 
 ## Testing
 
+A project-wide **pre-push hook** lives at `.githooks/pre-push` and mirrors
+CI gates locally — architecture guardrails, `gofmt`, `go vet`, `go build`,
+`go test -race -count=1 -timeout 10m`, optional `golangci-lint`, and the
+AMX Apple-Accelerate guard on Darwin. Activate on a fresh clone with:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Bypass with `git push --no-verify` if needed.
+
 ```bash
 go test -count=1 ./src                     # full suite (~3s)
 go test -v -count=1 -run TestServer ./...  # strict-decode table only
