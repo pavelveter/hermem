@@ -286,9 +286,11 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 
 // HandleRecoveryPlan — GET /recovery-plan[?id=X].
 //
-// §3.2 — error-returning handler. §8.1: wire shape is the slim Task
-// JSON (8 fields) — same as /task/list + /task/executable. Clients
-// consuming /recovery-plan should switch to the slim Task schema.
+// §3.2 — error-returning handler.
+//
+// §8.1: wire shape is the slim Task JSON (8 fields) — same as
+// /task/list + /task/executable. Clients consuming /recovery-plan
+// should switch to the slim Task schema.
 func (s *HTTPService) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) error {
 	id := r.URL.Query().Get("id")
 	if id == "" {

@@ -247,7 +247,7 @@ Move PHASE archaeology to one `docs/ARCHITECTURE.md` file.
 
 ---
 
-### [ ] 4.2 Overly verbose inline comments
+### [x] 4.2 Overly verbose inline comments
 
 **Problem:** Comments like:
 > "Pre-PHASE-2.1 the missing-field check happened inline at the HTTP layer —
@@ -398,7 +398,9 @@ mislead readers.
 
 ## 8. HIGH — Domain Model Slimming (Entity Decomposition)
 
-### [ ] 8.1 Fat `core.Entity` (19 fields) vs slim domain types
+### [x] 8.1 Fat `core.Entity` (19 fields) vs slim domain types
+
+**Status (this commit, commits `88887ea` + `6839053`):** §8.1 Task+Goal MVP landed atomically. The store/ layer's 7 Task-store funcs (`ListTasks`, `GetTaskByID`, `GetTasksByIDs`, `GetRootTasks`, `GetTaskTree`, `GetTaskWithRelations`, `ScanTaskEntities`) all return slim `core.Task` instead of fat `*core.Entity`; `store.GenerateRecoveryPlan` returns `[]core.Task`. Service-layer shell/services (`task.Service`, `goal.Service`) thin-pass-through unchanged. `orchestrator.Service.ExecutionPlan + resolveExecutableTasks` return `[]core.Task`; `AgentLoop` keeps its `execFunc(core.Entity)` callback contract via the new `core.ComposeFromTask(t)` helper (NOT for HTTP wire). Wire-format: `core.TaskExecutableResponse.Tasks: []Task` and `core.TaskShowResponse.Entity: Task` — `/task/list`, `/task/executable`, `/task/show`, `/recovery-plan` shrink from 19-field Entity JSON to 8-field Task JSON. Test helpers in `e2e/e2e_test.go` updated (`taskIDs([]core.Task)`, `containsEntity([]core.Task)`). `go vet`, `go build`, `go test -race ./src/...` clean end-to-end. Downstream slices (Belief/Episode/Evidence/Fact) remain future follow-ups. The Priority Matrix already marked §8 DONE in a prior commit; this row corrects the inconsistent `[ ]` checkbox.
 
 **File:** `src/internal/core/types.go`
 
@@ -466,7 +468,7 @@ non-existent `Goal.AsTask()` / `Task.AsGoal()` methods — now corrected).
 
 ## 9. HIGH — AI Client Unification
 
-### [ ] 9.1 Duplicated HTTP request plumbing in `ai/embedder.go`, `extractor.go`, `reranker.go`
+### [x] 9.1 Duplicated HTTP request plumbing in `ai/embedder.go`, `extractor.go`, `reranker.go`
 
 **Files:**
 - `src/internal/ai/embedder.go` — `OllamaEmbedder` + `OpenAIEmbedder`
@@ -706,7 +708,7 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 | **✅ DONE** | §9: AI client unification | Medium | ✅ DONE — 6 clients collapsed to httpClient.doPOST; ~23 net LOC after helper + 215 LOC of test coverage |
 | **✅ DONE** | §10: HTTP handler boilerplate | Medium | ✅ DONE — httputil.DecodeJSON[T] + RespondJSON + §3.2 Wrap routes *core.DomainError through WriteErrorWithCode; 15 POST handlers across 6 shells collapsed; 1 new end-to-end 422 wire-contract test (TestStore_MalformedJSONReturns422WithCodeField) pins {error, code:"invalid_input"} envelope; 2 stale-test fixes (TestTaskDep missing-field test data + TestStore_RejectsLargeBody status assertion widened 400→422 per §3.2+§10 wire evolution) |
 | **HIGH** | §11: AMX CGo verification | Low | ✅ DONE — new `src/internal/vector/cosine_amx_guard_test.go` (build tag `darwin && cgo`) adds `TestBatchDot_AMXGuard` (wall-time assertion: 1024×768 batched dot must complete in <2ms per call; 4-10× above AMX-fast ~0.3ms, 2.5-7.5× below pure-Go ~5-15ms) + `BenchmarkBatchDot_AMX` (ns/op + custom `dot/sec` metric for trend dashboards). New `.github/workflows/ci-amx.yml` runs on `macos-latest` with `CGO_ENABLED=1` and gates PRs on the wall-time assertion. The existing `bench.yml` (ubuntu-latest) is unchanged — it would skip the darwin+cgo build tag, so the new macos job is the only place the guard actually fires. CGo preamble byte-verified: build tag `//go:build darwin && cgo` exact, no blank line between `*/` and `import "C"`, LDFLAGS `-framework Accelerate` present. Both `install.sh` and `Dockerfile` already enforce CGO_ENABLED=1. |
-| **MEDIUM** | §4.1-4.2: Comment cleanup | Low | 🟡 PARTIAL DONE — §4.1 server-side pkg-doc trim landed (11 server/*/* shells + server.go route registry: archaeology removed; §3.2+§8+§10 anchors preserved). §4.1 domain-side + §4.2 inline archaeology still pending. |
+| **MEDIUM** | §4.1-4.2: Comment cleanup | Low | ✅ DONE — §4.1 server-side pkg-doc trim landed; §4.2 inline-archaeology polish landed in commit f939bb8. Load-bearing “what” anchors preserved (§ 3.1 atomicity contract; § 3.2 wire-contract refs; AutoLinkEdges-only-reason paragraph; MemoryWorker Concurrency-bounded-by-semaphore + ctx-cancel clauses; build-inline-per-call rationale on cli/memory/*). |
 | **MEDIUM** | §5.1-5.3: Package organization | Medium-High | Structure clarity |
 | **MEDIUM** | §6: serve.go wiring | Medium | ~50 LOC eliminated |
 | **LOW** | §7.1-7.4: Misc | Low | Minor improvements |
@@ -750,7 +752,7 @@ assembly using NEON intrinsics would be strictly slower for matrix operations.
 9. **§8** — Entity decomposition (switch `store/` to slim types) ✅ §8.1+§8.2 (Type-Prep) DONE — anon-embed `core.Fact` in 5 slim types + new wire-shape regression test in `core/slim_types_test.go`. ✅ §8.3 (read-path switchover) DONE — audit confirmed zero non-test callers of the `X.AsEntity()` roundtrip pattern. ✅ §8.4 (AsEntity() removal) DONE — the 5 unsafe `X.AsEntity()` bridges (Task/Goal/Episode/Evidence/Belief) deleted; `core.Fact.AsEntity()` and `compression.SummaryNode.AsEntity()` preserved (lossless on identity); 21 test asserts migrated to `core.Compose` across 6 test files; 7 godoc updates land the §8.4 annotation; `goal.go` struct godoc updated to remove the fictional `Goal.AsTask()` / `Task.AsGoal()` method references. Slim→Entity reassembly is now exclusively via `core.Compose(…)`.
    (high effort but high payoff, structural change)
 
-10. **§4.1** ✅ — Comment cleanup (server-side pkg-doc trim landed; see spec-body + matrix row) | **§4.2** 🟡 PENDING — Comment cleanup (inline archaeology; defer to followup)
+10. **§4.1** ✅ — Comment cleanup (server-side pkg-doc trim landed) | **§4.2** ✅ — Comment cleanup (inline archaeology landed in commit f939bb8)
     (safe, improves readability)
 
 11. **§5.1** — Split contradiction detectors
@@ -1109,7 +1111,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 | **✅ DONE** | §12.2: Central error taxonomy | — | Eliminates string-matching in handlers |
 | **HIGH** | §12.5: Unified logging interface | Medium | ✅ DONE — core.Logger + SlogLogger + TestLogger |
 | **HIGH** | §12.6: Component lifecycle | High | Predictable start/stop, less signal-handling boilerplate |
-| **MEDIUM** | §4.1-4.2: Comment cleanup | Low | 🟡 PARTIAL DONE — §4.1 server-side pkg-doc trim landed (11 server/*/* shells + server.go route registry: archaeology removed; §3.2+§8+§10 anchors preserved). §4.1 domain-side + §4.2 inline archaeology still pending. |
+| **MEDIUM** | §4.1-4.2: Comment cleanup | Low | ✅ DONE — §4.1 server-side pkg-doc trim landed; §4.2 inline-archaeology polish landed in commit f939bb8. Load-bearing “what” anchors preserved (§ 3.1 atomicity contract; § 3.2 wire-contract refs; AutoLinkEdges-only-reason paragraph; MemoryWorker Concurrency-bounded-by-semaphore + ctx-cancel clauses; build-inline-per-call rationale on cli/memory/*). |
 | **MEDIUM** | §5.1-5.3: Package organization | Medium-High | Structure clarity |
 | **MEDIUM** | §6: serve.go wiring | Medium | ~50 LOC eliminated |
 | **MEDIUM** | §12.3: Explicit layer boundaries | Medium | Enforced import direction |
@@ -1153,7 +1155,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 
 14. **§6** — `serve.go` wiring simplification (builder pattern)
 
-15. **§4.1** ✅ — Comment cleanup (server-side pkg-doc trim landed; see spec-body + matrix row) | **§4.2** 🟡 PENDING — Comment cleanup (inline archaeology; defer to followup)
+15. **§4.1** ✅ — Comment cleanup (server-side pkg-doc trim landed) | **§4.2** ✅ — Comment cleanup (inline archaeology landed in commit f939bb8)
 
 16. **§5.1** — Split contradiction detectors
 
