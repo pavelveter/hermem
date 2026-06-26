@@ -185,7 +185,7 @@ Phase 1 (C1–C10, feat/memory-evolution branch):
 [x] Add Belief abstraction
 
 [x] Add Belief abstraction
-[ ] Add Evidence abstraction
+[x] Add Evidence abstraction
 [ ] Add confidence propagation
 [ ] Add evidence aggregation
 [ ] Add trust scoring
@@ -306,3 +306,5 @@ A task is considered completed only if:
 <!-- sub-agent-3: 6/6 retrieval-cleanup sub-points cleared in feat/retrieval-cleanup-stages -->
 <!-- sub-agent-1: 5/5 contradiction-engine sub-points complete in feat/contradiction-engine-2.0 -->
 <!-- sub-agent-2: 5/5 evaluation-framework sub-points complete in feat/evaluation-framework -->
+
+<!-- sub-agent-7 -->
