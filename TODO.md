@@ -200,16 +200,16 @@ Phase 1 (C1–C10, feat/memory-evolution branch):
 P2 — EPISODIC MEMORY
 ==================================================
 
-[ ] Create Episode entities
-[ ] Create Session entities
-[ ] Create Event entities
-[ ] Link memories to episodes
-[ ] Link tasks to episodes
-[ ] Add timeline reconstruction
-[ ] Add episode retrieval
-[ ] Add episode summarization
-[ ] Add historical playback support
-[ ] Add episodic memory tests
+[x] Create Episode entities
+[x] Create Session entities
+[x] Create Event entities
+[x] Link memories to episodes
+[x] Link tasks to episodes
+[x] Add timeline reconstruction
+[x] Add episode retrieval
+[x] Add episode summarization
+[x] Add historical playback support
+[x] Add episodic memory tests
 
 ==================================================
 P2 — SEMANTIC COMPRESSION
@@ -307,8 +307,12 @@ A task is considered completed only if:
 <!-- sub-agent-3: 6/6 retrieval-cleanup sub-points cleared in feat/retrieval-cleanup-stages -->
 <!-- sub-agent-1: 5/5 contradiction-engine sub-points complete in feat/contradiction-engine-2.0 -->
 <!-- sub-agent-2: 5/5 evaluation-framework sub-points complete in feat/evaluation-framework -->
+<!-- sub-agent-4: ops dashboards (Grafana dashboard + alert recommendations) shipped in feat/ops-dashboards -->
+<!-- sub-agent-5: bench CLI sub-command shipped in feat/bench-cmd -->
+<!-- sub-agent-6: memory evolution C1 (Belief abstraction) shipped in feat/memory-evolution -->
 
 <!-- sub-agent-7 -->
 <!-- sub-agent-8 -->
 <!-- sub-agent-9 -->
 <!-- sub-agent-10 -->
+<!-- sub-agent-11 -->
