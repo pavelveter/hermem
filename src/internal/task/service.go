@@ -76,7 +76,7 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 // pending state with no unfinished blocker via the blocked_by +
 // relation-blocking paths in the schema. Returns `[]Entity{}` (not
 // nil) on empty result so the HTTP envelope emits `[]` not `null`.
-func (s *Service) Executable(_ context.Context, goalID string, schema core.SchemaConfig) ([]core.Entity, error) {
+func (s *Service) Executable(_ context.Context, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
 	tasks, err := getExecutable(s.db, schema, goalID)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func (s *Service) Executable(_ context.Context, goalID string, schema core.Schem
 // Empty filters mean "no filter on that dimension" — both empty =
 // list ALL stateful-category tasks globally. Nil→empty normalization
 // promotes the downstream envelope contract.
-func (s *Service) List(_ context.Context, status, goalID string, schema core.SchemaConfig) ([]core.Entity, error) {
+func (s *Service) List(_ context.Context, status, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
 	tasks, err := store.ListTasks(s.db, schema, status, goalID)
 	if err != nil {
 		return nil, fmt.Errorf("list: %w", err)
@@ -101,18 +101,18 @@ func (s *Service) List(_ context.Context, status, goalID string, schema core.Sch
 //
 // Errors: returns core.NewNotFoundError if the entity doesn't exist;
 // other store errors are wrapped as-is.
-func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (core.Entity, []core.Edge, []core.Edge, error) {
+func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (core.Task, []core.Edge, []core.Edge, error) {
 	if id == "" {
-		return core.Entity{}, nil, nil, core.NewInvalidInputError("id required")
+		return core.Task{}, nil, nil, core.NewInvalidInputError("id required")
 	}
-	entity, blocked, recovers, err := store.GetTaskWithRelations(s.db, schema, id)
+	task, blocked, recovers, err := store.GetTaskWithRelations(s.db, schema, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return core.Entity{}, nil, nil, core.NewNotFoundError(err.Error())
+			return core.Task{}, nil, nil, core.NewNotFoundError(err.Error())
 		}
-		return core.Entity{}, nil, nil, fmt.Errorf("show: %w", err)
+		return core.Task{}, nil, nil, fmt.Errorf("show: %w", err)
 	}
-	return entity, blocked, recovers, nil
+	return task, blocked, recovers, nil
 }
 
 // Dep adds or removes a dependency edge between two tasks. The HTTP
@@ -211,15 +211,15 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 // RecoveryPlan returns the list of recovery entities for a task that's
 // in blocked state. Nil→empty normalization so the envelope emits `[]`
 // not `null` on empty plan.
-func (s *Service) RecoveryPlan(_ context.Context, id string, schema core.SchemaConfig) ([]core.Entity, error) {
+func (s *Service) RecoveryPlan(_ context.Context, id string, schema core.SchemaConfig) ([]core.Task, error) {
 	if id == "" {
 		return nil, fmt.Errorf("recovery: id required")
 	}
-	plan, err := store.GenerateRecoveryPlan(s.db, schema, id)
+	tasks, err := store.GenerateRecoveryPlan(s.db, schema, id)
 	if err != nil {
 		return nil, fmt.Errorf("recovery: %w", err)
 	}
-	return core.NormalizeSlice(plan), nil
+	return core.NormalizeSlice(tasks), nil
 }
 
 // --- internal helpers ---
@@ -229,9 +229,9 @@ func (s *Service) RecoveryPlan(_ context.Context, id string, schema core.SchemaC
 // getExecutableForGoal + retrieval.getExecutableGlobal; PHASE 2.4
 // folds them into the task pkg and renames them to be unexported
 // (private to this domain).
-func getExecutable(db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Entity, error) {
+func getExecutable(db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
 	if !schema.StatefulEnabled || len(schema.StatefulCategories) == 0 || len(schema.ValidStateOrder) == 0 {
-		return []core.Entity{}, nil
+		return []core.Task{}, nil
 	}
 	if goalID != "" {
 		return getExecutableForGoal(db, schema, goalID)
@@ -239,7 +239,7 @@ func getExecutable(db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.
 	return getExecutableGlobal(db, schema)
 }
 
-func getExecutableForGoal(db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Entity, error) {
+func getExecutableForGoal(db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
 	catPH, catArgs := store.BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{goalID}, catArgs...)
 	args = append(args, schema.RelationBlocking)
@@ -254,7 +254,7 @@ func getExecutableForGoal(db *sql.DB, schema core.SchemaConfig, goalID string) (
 	return store.ScanTaskEntities(rows)
 }
 
-func getExecutableGlobal(db *sql.DB, schema core.SchemaConfig) ([]core.Entity, error) {
+func getExecutableGlobal(db *sql.DB, schema core.SchemaConfig) ([]core.Task, error) {
 	catPH, catArgs := store.BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{}, catArgs...)
 	args = append(args, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking)

@@ -291,7 +291,7 @@ func TestScanTaskEntities_PriorityScanned(t *testing.T) {
 
 // --- local helpers ---
 
-func taskIDs(xs []core.Entity) []string {
+func taskIDs(xs []core.Task) []string {
 	ids := make([]string, len(xs))
 	for i, x := range xs {
 		ids[i] = x.ID

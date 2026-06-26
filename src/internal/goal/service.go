@@ -58,7 +58,7 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 // subtree root. Empty filters mean "no filter on that dimension".
 // Nil→empty slice normalization promotes the downstream envelope
 // contract (JSON `[]` not `null`).
-func (s *Service) List(_ context.Context, status, goalID string, schema core.SchemaConfig) ([]core.Entity, error) {
+func (s *Service) List(_ context.Context, status, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
 	goals, err := store.ListTasks(s.db, schema, status, goalID)
 	if err != nil {
 		return nil, fmt.Errorf("goal: List: %w", err)
@@ -69,13 +69,13 @@ func (s *Service) List(_ context.Context, status, goalID string, schema core.Sch
 // Get returns a single goal entity by ID. Returns an error wrapping
 // the store-level "task not found" message so callers can
 // errors.Is-check the sentinel if needed.
-func (s *Service) Get(_ context.Context, id string, schema core.SchemaConfig) (core.Entity, error) {
+func (s *Service) Get(_ context.Context, id string, schema core.SchemaConfig) (core.Task, error) {
 	if id == "" {
-		return core.Entity{}, fmt.Errorf("goal: Get: id required")
+		return core.Task{}, fmt.Errorf("goal: Get: id required")
 	}
-	e, err := store.GetTaskByID(s.db, schema, id)
+	t, err := store.GetTaskByID(s.db, schema, id)
 	if err != nil {
-		return core.Entity{}, fmt.Errorf("goal: Get: %w", err)
+		return core.Task{}, fmt.Errorf("goal: Get: %w", err)
 	}
-	return e, nil
+	return t, nil
 }

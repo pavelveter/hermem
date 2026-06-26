@@ -52,7 +52,7 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 						slog.Error("agent loop: exec panic", "task_id", task.ID, "recover", rec)
 					}
 				}()
-				if err := execFunc(ctx, task); err != nil {
+				if err := execFunc(ctx, core.Compose(task.Fact, core.Evidence{}, core.Episode{}, task, core.Belief{})); err != nil {
 					slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
 				}
 			}()
@@ -66,14 +66,14 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 }
 
 // ExecutionPlan returns executable tasks for a goal in topological order.
-func (s *Service) ExecutionPlan(ctx context.Context, schema core.SchemaConfig, goalID string) ([]core.Entity, error) {
+func (s *Service) ExecutionPlan(ctx context.Context, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
 	return s.resolveExecutableTasks(ctx, schema, goalID)
 }
 
 // resolveExecutableTasks queries the task domain for tasks that are
 // unblocked and ready to execute. PHASE 2.4 redirection: previously
 // called retrieval.GetExecutableTasks (now in taskdomain.Service.Executable).
-func (s *Service) resolveExecutableTasks(ctx context.Context, schema core.SchemaConfig, goalID string) ([]core.Entity, error) {
+func (s *Service) resolveExecutableTasks(ctx context.Context, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
 	// taskdomain.NewService requires an embedder + vi; AgentLoop +
 	// ExecutionPlan don't read either, so we pass nil. Service.Executable
 	// never touches embedder or vi internally.
