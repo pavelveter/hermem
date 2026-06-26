@@ -179,7 +179,7 @@ func (s *Server) mount() {
 		mux.HandleFunc(path, hf)
 	}
 	// PHASE 3.8: /metrics registered directly — AdminService dissolved.
-	mux.HandleFunc("/metrics", s.Metrics.MetricsHandler)
+	mux.Handle("/metrics", s.Metrics.MetricsHandler()) // mux.Handle (NOT HandleFunc): MetricsHandler() returns http.Handler, while HandleFunc expects a func(http.ResponseWriter, *http.Request) value. Passing the method value without invocation would also type-mismatch.
 	// Opt-in Go runtime profiling. Off by default — see RegisterPprof.
 	RegisterPprof(mux)
 	s.mux = mux
