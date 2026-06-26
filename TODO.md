@@ -181,7 +181,10 @@ History (Phase 1 of P1-OBSERVABILITY — shipped via C1–C6, merged into main @
 P2 — MEMORY EVOLUTION
 ==================================================
 
-[ ] Add Belief abstraction
+Phase 1 (C1–C10, feat/memory-evolution branch):
+[x] Add Belief abstraction
+
+[x] Add Belief abstraction
 [ ] Add Evidence abstraction
 [ ] Add confidence propagation
 [ ] Add evidence aggregation

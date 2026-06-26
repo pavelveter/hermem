@@ -5,7 +5,8 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]- **P2 — MEMORY EVOLUTION (C1)**: `feat/memory-evolution` introduces the first-class `belief` package (`src/internal/memory/belief/`) plus migration `008_add_beliefs_table.sql`. `Belief.Service` exposes `CreateBelief`, `GetBelief`, `ListBeliefs`, `UpdateConfidence`, `MarkSuperseded` against a dedicated `beliefs` SQLite table (id, content, confidence [0,1], source_kind, source_id, status enum, timestamps, FK columns for superseded_by / parent_chain_id). The legacy thin `core.Belief` projection off `core.Entity` is preserved untouched for backward compatibility. Race-safe unit tests (8 cases) in `belief_test.go` exercise happy path, nil/empty rejection, default confidence, ordered listing, confidence bounds + ErrNotFound + id<=0 short-circuit, transactional MarkSuperseded + missing-target rollback.
+
 
 ### Fixed
 
