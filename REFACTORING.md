@@ -73,9 +73,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 ## Sprint 4 — Observability & Quality
 
 ### 4.1 Structured logging for HTTP handlers
-- [ ] Create slog middleware that injects request_id from context
-- [ ] Add duration, status_code, method, path to all handler logs
-- [ ] Replace scattered `slog.Info/Error` with structured calls
+- [x] Create slog middleware that injects request_id from context
+- [x] Add duration, status_code, method, path to all handler logs
+- [x] Replace scattered `slog.Info/Error` with structured calls
 
 ### 4.2 Benchmark CI integration
 - [ ] Add benchstat comparison to bench.yml workflow
