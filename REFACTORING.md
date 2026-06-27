@@ -76,10 +76,10 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 ## §R4. Medium: Code Quality
 
 ### §R4.1 Externalize hardcoded negation words
-- [ ] Create `assets/negations_en.txt` and `assets/negations_ru.txt`
-- [ ] Load at init time via `go:embed` or config
-- [ ] Remove hardcoded strings from `detectors/lexical.go`
-- [ ] Verify 971 tests pass
+- [x] Create `assets/negations_en.txt` and `assets/negations_ru.txt`
+- [x] Load at init time via `go:embed` or config
+- [x] Remove hardcoded strings from `detectors/lexical.go`
+- [x] Verify 971 tests pass
 
 ### §R4.2 Introduce `RouteProvider` registry
 - [ ] Refactor `Server` to hold `[]RouteProvider` instead of 13 explicit fields
