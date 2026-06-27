@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
 // TimelineEntryKind is the closed enum of frame sources in a
@@ -19,15 +21,16 @@ const (
 )
 
 // TimelineEntry is one row of a reconstructed episode timeline.
-// Kind discriminates the source so callers can render / filter by
-// origin. Timestamp is the per-source time anchor:
+// Kind discriminates the source so callers can render / filter
+// by origin. Timestamp is the per-source time anchor:
 //
-//	event  → events.timestamp
-//	memory → episode_memories.linked_at
-//	task   → episode_tasks.linked_at
+//	event  → events.timestamp_ms        (INTEGER unix ms, UTC)
+//	memory → episode_memories.linked_at_ms (INTEGER unix ms, UTC)
+//	task   → episode_tasks.linked_at_ms    (INTEGER unix ms, UTC)
 //
-// All three use the same time.Time type so chronological merging
-// is a direct comparison.
+// All three are converted to time.Time via hermemtime so the
+// chronological merge in ReconstructTimeline can compare them
+// uniformly. Migration 013 introduced the *_ms columns.
 type TimelineEntry struct {
 	Kind      TimelineEntryKind `json:"kind"`
 	SourceID  string            `json:"source_id"` // event id / entity id / task id
@@ -63,12 +66,13 @@ func NewTimelineService(db *sql.DB) *TimelineService {
 // Empty episode_id is rejected. An episode with no events and no
 // links returns a non-nil empty slice.
 //
-// The implementation runs three SELECTs (events, episode_memories,
-// episode_tasks) and merges in Go — each query is small (scoped
+// The implementation runs three SELECTs (events on timestamp_ms,
+// episode_memories on linked_at_ms, episode_tasks on
+// linked_at_ms) and merges in Go — each query is small (scoped
 // to one episode) and the in-memory merge keeps the chronological
 // ordering simple. If a future caller hits perf issues on huge
 // episodes, the merge can be pushed to SQL via UNION ALL with a
-// shared ORDER BY.
+// shared ORDER BY on the ms columns.
 func (s *TimelineService) ReconstructTimeline(ctx context.Context, episodeID string) ([]TimelineEntry, error) {
 	if episodeID == "" {
 		return nil, fmt.Errorf("episodic: ReconstructTimeline: episode_id required")
@@ -114,13 +118,17 @@ func entryLess(a, b TimelineEntry) bool {
 }
 
 // eventsForEpisode returns event-typed TimelineEntry rows for the
-// episode, ordered by timestamp ASC, id ASC. Each event contributes
-// one row regardless of its Type.
+// episode, ordered by timestamp_ms ASC, id ASC. Each event
+// contributes one row regardless of its Type. The stored column
+// is INTEGER Unix milliseconds (UTC) introduced by migration 013
+// — converted back to time.Time here so the merge in
+// ReconstructTimeline can chronological-sort across all three
+// sources uniformly.
 func (s *TimelineService) eventsForEpisode(ctx context.Context, episodeID string) ([]TimelineEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, type, content, timestamp FROM events
+		`SELECT id, type, content, timestamp_ms FROM events
 		 WHERE episode_id = ?
-		 ORDER BY timestamp ASC, id ASC`, episodeID)
+		 ORDER BY timestamp_ms ASC, id ASC`, episodeID)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: eventsForEpisode: %w", err)
 	}
@@ -128,11 +136,13 @@ func (s *TimelineService) eventsForEpisode(ctx context.Context, episodeID string
 	var out []TimelineEntry
 	for rows.Next() {
 		var e TimelineEntry
-		if err := rows.Scan(&e.SourceID, &e.Type, &e.Content, &e.Timestamp); err != nil {
+		var timestampMs int64
+		if err := rows.Scan(&e.SourceID, &e.Type, &e.Content, &timestampMs); err != nil {
 			return nil, fmt.Errorf("episodic: eventsForEpisode scan: %w", err)
 		}
 		e.Kind = TimelineEvent
 		e.EpisodeID = episodeID
+		e.Timestamp = hermemtime.TimeFromUnixMillis(timestampMs)
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -143,14 +153,16 @@ func (s *TimelineService) eventsForEpisode(ctx context.Context, episodeID string
 
 // memoriesForEpisode returns memory-typed TimelineEntry rows for
 // the episode (one per link; the same entity can appear multiple
-// times if linked under different roles).
+// times if linked under different roles). Reads
+// episode_memories.linked_at_ms (INTEGER unix ms, UTC) via the
+// hermemtime helper.
 func (s *TimelineService) memoriesForEpisode(ctx context.Context, episodeID string) ([]TimelineEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT e.id, e.content, em.role, em.linked_at
+		`SELECT e.id, e.content, em.role, em.linked_at_ms
 		 FROM episode_memories em
 		 JOIN entities e ON e.id = em.entity_id
 		 WHERE em.episode_id = ?
-		 ORDER BY em.linked_at ASC, em.entity_id ASC`, episodeID)
+		 ORDER BY em.linked_at_ms ASC, em.entity_id ASC`, episodeID)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: memoriesForEpisode: %w", err)
 	}
@@ -158,11 +170,13 @@ func (s *TimelineService) memoriesForEpisode(ctx context.Context, episodeID stri
 	var out []TimelineEntry
 	for rows.Next() {
 		var e TimelineEntry
-		if err := rows.Scan(&e.SourceID, &e.Content, &e.Type, &e.Timestamp); err != nil {
+		var linkedAtMs int64
+		if err := rows.Scan(&e.SourceID, &e.Content, &e.Type, &linkedAtMs); err != nil {
 			return nil, fmt.Errorf("episodic: memoriesForEpisode scan: %w", err)
 		}
 		e.Kind = TimelineMemory
 		e.EpisodeID = episodeID
+		e.Timestamp = hermemtime.TimeFromUnixMillis(linkedAtMs)
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -172,14 +186,15 @@ func (s *TimelineService) memoriesForEpisode(ctx context.Context, episodeID stri
 }
 
 // tasksForEpisode returns task-typed TimelineEntry rows for the
-// episode, one per link.
+// episode, one per link. Reads episode_tasks.linked_at_ms
+// (INTEGER unix ms, UTC) via the hermemtime helper.
 func (s *TimelineService) tasksForEpisode(ctx context.Context, episodeID string) ([]TimelineEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT e.id, e.content, COALESCE(e.status, ''), et.linked_at
+		`SELECT e.id, e.content, COALESCE(e.status, ''), et.linked_at_ms
 		 FROM episode_tasks et
 		 JOIN entities e ON e.id = et.task_id
 		 WHERE et.episode_id = ?
-		 ORDER BY et.linked_at ASC, et.task_id ASC`, episodeID)
+		 ORDER BY et.linked_at_ms ASC, et.task_id ASC`, episodeID)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: tasksForEpisode: %w", err)
 	}
@@ -187,11 +202,13 @@ func (s *TimelineService) tasksForEpisode(ctx context.Context, episodeID string)
 	var out []TimelineEntry
 	for rows.Next() {
 		var e TimelineEntry
-		if err := rows.Scan(&e.SourceID, &e.Content, &e.Type, &e.Timestamp); err != nil {
+		var linkedAtMs int64
+		if err := rows.Scan(&e.SourceID, &e.Content, &e.Type, &linkedAtMs); err != nil {
 			return nil, fmt.Errorf("episodic: tasksForEpisode scan: %w", err)
 		}
 		e.Kind = TimelineTask
 		e.EpisodeID = episodeID
+		e.Timestamp = hermemtime.TimeFromUnixMillis(linkedAtMs)
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {

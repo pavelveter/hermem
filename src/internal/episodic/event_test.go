@@ -22,26 +22,25 @@ func openEventTestDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS sessions (
-			id TEXT PRIMARY KEY,
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
-			metadata TEXT DEFAULT '{}'
-		)`,
+		id TEXT PRIMARY KEY,
+		started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		ended_at DATETIME,
+		metadata TEXT DEFAULT '{}'
+	)`,
 		`CREATE TABLE IF NOT EXISTS conversations (
-			id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			summary TEXT DEFAULT '',
-			metadata TEXT DEFAULT '{}'
-		)`,
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		summary TEXT DEFAULT '',
+		metadata TEXT DEFAULT '{}')`,
 		`CREATE TABLE IF NOT EXISTS episodes (
 			id TEXT PRIMARY KEY,
 			session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
 			conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
 			title TEXT NOT NULL DEFAULT '',
 			summary TEXT NOT NULL DEFAULT '',
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
+			started_at_ms INTEGER NOT NULL DEFAULT 0,
+			ended_at_ms INTEGER,
 			metadata TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE TABLE IF NOT EXISTS events (
@@ -49,7 +48,7 @@ func openEventTestDB(t *testing.T) *sql.DB {
 			episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
 			type TEXT NOT NULL CHECK(type IN ('message', 'action', 'observation', 'system')),
 			content TEXT NOT NULL DEFAULT '',
-			timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			timestamp_ms INTEGER NOT NULL DEFAULT 0,
 			metadata TEXT NOT NULL DEFAULT '{}'
 		)`,
 	}
@@ -90,7 +89,7 @@ func TestEventService_CreateEvent_DefaultsTimestampAndMetadata(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want 1 event, got %d", len(got))
 	}
-	if got[0].Timestamp.Before(before) || got[0].Timestamp.After(time.Now().Add(time.Second)) {
+	if got[0].Timestamp.Before(before.Add(-time.Millisecond)) || got[0].Timestamp.After(time.Now().Add(time.Second)) {
 		t.Fatalf("Timestamp default out of range: %v", got[0].Timestamp)
 	}
 	if got[0].Metadata == nil || len(got[0].Metadata) != 0 {

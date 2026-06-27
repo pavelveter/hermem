@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
 // openRetrievalTestDB returns an in-memory SQLite with the
@@ -22,26 +23,25 @@ func openRetrievalTestDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS sessions (
-			id TEXT PRIMARY KEY,
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
-			metadata TEXT DEFAULT '{}'
-		)`,
+		id TEXT PRIMARY KEY,
+		started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		ended_at DATETIME,
+		metadata TEXT DEFAULT '{}'
+	)`,
 		`CREATE TABLE IF NOT EXISTS conversations (
-			id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			summary TEXT DEFAULT '',
-			metadata TEXT DEFAULT '{}'
-		)`,
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		summary TEXT DEFAULT '',
+		metadata TEXT DEFAULT '{}')`,
 		`CREATE TABLE IF NOT EXISTS episodes (
 			id TEXT PRIMARY KEY,
 			session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
 			conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
 			title TEXT NOT NULL DEFAULT '',
 			summary TEXT NOT NULL DEFAULT '',
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
+			started_at_ms INTEGER NOT NULL DEFAULT 0,
+			ended_at_ms INTEGER,
 			metadata TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE TABLE IF NOT EXISTS entities (
@@ -53,7 +53,7 @@ func openRetrievalTestDB(t *testing.T) *sql.DB {
 			episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
 			entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
 			role TEXT NOT NULL DEFAULT 'extracted',
-			linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			linked_at_ms INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (episode_id, entity_id, role)
 		)`,
 	}
@@ -85,12 +85,18 @@ func (s *stubEmbedder) Ping(_ context.Context) error {
 }
 
 // seedEpisodeWithMeta inserts an episode with explicit metadata
-// (must be valid JSON).
+// (must be valid JSON). The startedAt time.Time is converted to
+// INTEGER Unix milliseconds (UTC) for storage in
+// episodes.started_at_ms (migration 013 schema). Tests construct
+// time.Time values for readability — the .UTC() + ms conversion
+// is encapsulated here so the wire-side ms invariant is enforced
+// at every test seed boundary.
 func seedEpisodeWithMeta(t *testing.T, db *sql.DB, id, sessionID, summary string, startedAt time.Time, meta string) {
 	t.Helper()
+	startedAtMs := hermemtime.UnixMillisFromTime(startedAt)
 	if _, err := db.Exec(
-		`INSERT INTO episodes (id, session_id, summary, started_at, metadata) VALUES (?, ?, ?, ?, ?)`,
-		id, sql.NullString{String: sessionID, Valid: sessionID != ""}, summary, startedAt, meta,
+		`INSERT INTO episodes (id, session_id, summary, started_at_ms, metadata) VALUES (?, ?, ?, ?, ?)`,
+		id, sql.NullString{String: sessionID, Valid: sessionID != ""}, summary, startedAtMs, meta,
 	); err != nil {
 		t.Fatalf("seed episode %s: %v", id, err)
 	}

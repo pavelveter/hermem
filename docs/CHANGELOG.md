@@ -140,6 +140,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **feat(docs)**: `docs/USAGE.md` § 19.1 documents the Prometheus endpoint, the four labeled series with their bounded label sets, a sample scrape config, and the per-Vec regression-test recipe.
   - **ObserveRerankDuration(seconds)** signature is now **`ObserveRerankDuration(seconds, strategy)`** — the contract break is intentional and tracked alongside the other three `ObserveXxxDuration` calls.
 
+### Refactoring — Temporal TZ hardening (migration 013)
+
+- **feat(util/time)**: new `NowUTCUnixMillis()`, `UnixMillisFromTime(t)`, `TimeFromUnixMillis(ms)` helpers in `src/internal/util/time/`. All three normalise through `.UTC()` before serialising, so a non-UTC value cannot land in storage. Tests cover round-trip + explicit non-UTC input handling.
+- **migration(013)**: NEW `013_episodic_timestamps_unix_ms.sql` converts `episodes.started_at` / `ended_at`, `events.timestamp`, `episode_memories.linked_at`, `episode_tasks.linked_at` from SQLite `DATETIME` (TZ-naive, ambiguous under container TZ drift) to `INTEGER` Unix milliseconds (UTC). Per-table flow: `ADD COLUMN *_ms INTEGER` → `UPDATE *_ms = CAST((julianday(col) - 2440587.5) * 86400000 AS INTEGER)` → `DROP INDEX` (required before DROP COLUMN on SQLite ≥ 3.35) → `DROP COLUMN` → `CREATE INDEX *_ms`. UTC-backfill caveat documented at file head (pre-existing rows assumed UTC-formatted).
+- **refactor(episodic)**: `episode.go`, `event.go`, `linking.go`, `task_link.go`, `timeline.go`, `retrieval.go` migrated to the `_ms INTEGER` columns. Writes flow through `hermemtime.UnixMillisFromTime`; reads through `hermemtime.TimeFromUnixMillis`. Storage invariant: every persisted ms value carried `.UTC()` at insert time, so readers can rely on UTC without re-checking.
+- **BREAKING (JSON wire)**: `MemoryRef.LinkedAt`, `EpisodeRef.LinkedAt`, and any future link-table projections are now `int64` Unix milliseconds, no longer `time.Time`-shaped strings or RFC3339 timestamps. API + CLI consumers must update their JSON parsers accordingly.
+- **test(store)**: `TestApplyAllThenRevertAll` drops the P2 episodic tables (`episodes`, `events`, `episode_memories`, `episode_tasks`) after the row-only migration rollback, before the re-apply step. 013 mutates the schema via irreversible `DROP COLUMN`, so a fresh slate is the only way to reproduce the post-apply schema hash on the second apply.
+- **test(episodic)**: `episode_test.go` + `event_test.go` `DefaultsStartedAtAndMetadata` / `DefaultsTimestampAndMetadata` widened their time-range bounds by `time.Millisecond` tolerance — the writer's `UnixMillisFromTime(time.Now())` floors sub-millisecond precision, so round-tripped values can be up to 1ms earlier than wall-clock `before`.
+
 ## [v0.3.0] - 2026-06-25
 
 Six production-ready groups land together: scoped multi-key auth,
