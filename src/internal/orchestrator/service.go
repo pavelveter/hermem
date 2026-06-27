@@ -29,7 +29,16 @@ func New(db *sql.DB) *Service {
 }
 
 // AgentLoop executes tasks in a goal's dependency tree in topological order.
+// Uses exponential backoff (50ms → 1s) when no tasks are ready, instead of
+// a fixed 500ms busy-wait. The loop breaks immediately once all tasks are
+// done or the context is cancelled.
 func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalID string, execFunc func(context.Context, core.Entity) error) error {
+	const (
+		initBackoff = 50 * time.Millisecond
+		maxBackoff  = 1 * time.Second
+	)
+	backoff := initBackoff
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -43,6 +52,7 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 		if len(tasks) == 0 {
 			break
 		}
+		backoff = initBackoff // reset after successful execution
 		for _, task := range tasks {
 			func() {
 				defer func() {
@@ -58,7 +68,17 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 				return fmt.Errorf("agent loop: set status %s: %w", task.ID, err)
 			}
 		}
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
 	}
 	return nil
 }
