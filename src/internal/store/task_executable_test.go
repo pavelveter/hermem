@@ -55,33 +55,17 @@ type claimResult struct {
 //	    that saw no work before the M-th claim would have reduced
 //	    claimed count below M, failing invariant (1))
 //
-// KNOWN-BROKEN: t.Skip-ed until src/internal/store/task_executable.go is
-// fixed. Same convention as src/internal/retrieval/walk_test.go:211 for
-// the analogous "not enough args to execute query" bug.
-//
-// The bug: ClaimNextTask's global branch does
-//
-//	catPH, _ := BoolMapInClause(schema.StatefulCategories)
-//	...query uses catPH which becomes N "?,?,..." placeholders...
-//	args = []interface{}{processingStatus, schema.ValidStateOrder[0],
-//	    schema.RelationBlocking, schema.StateUnblocking}  // ← N args missing
-//
-// For a single-category schema (e.g. statefulSchema() with
-// StatefulCategories = {"task": true}), the SQL carries 1 placeholder
-// from catPH + 4 more = 5 placeholders, but args has 4. Driver returns
-// "not enough args to execute query: want 5 got 4" at bind time, before
-// any UPDATE matches. The goal-subtree branch has the same shape with a
-// 3× multiplier (3 catPH appear in the WHERE-in-subquery recursion).
-//
-// Fix-forward path: change `catPH, _ := ...` to `catPH, catArgs := ...`
-// in both branches (global + goal-subtree) and prepend `catArgs...` to
-// args so the catPH placeholders are bound first, matching their
-// position in the SQL.
-// TODO(store/task_executable.go): fix the placeholder/args mismatch in
-// both branches of ClaimNextTask; once fixed, drop the t.Skip below and
-// the two subtests run cleanly under -race.
+// Historical note: this scaffold was t.Skip-ed earlier in the session
+// after a regression surfaced a 5-vs-4 placeholder/args mismatch in
+// ClaimNextTask's global branch (catArgs was discarded via `_` and
+// only the 4 fixed positions were populated, so mattn/go-sqlite3 refused
+// to bind the query). The same shape appeared in the goal-subtree
+// branch at a 3× multiplier (catPH appears 3 times in the WHERE-in-
+// subquery recursion). Both branches are fixed in commit that lands
+// alongside this test un-skip — cat Args are now spread into the
+// args slice at every cat-placeholder position so SQLite's positional
+// bind lines up with the SQL.
 func TestClaimNextTask_ConcurrentAtomicClaim(t *testing.T) {
-	t.Skip("ClaimNextTask binds fewer args than SQL placeholders — see KNOWN-BROKEN header above; unskip when fixed")
 	t.Run("exact_one_to_one", func(t *testing.T) {
 		t.Parallel()
 		runClaimConcurrent(t, 8, 8)

@@ -45,7 +45,7 @@ func ClaimNextTask(ctx context.Context, db *sql.DB, schema core.SchemaConfig, go
 		return nil, nil
 	}
 
-	catPH, _ := BoolMapInClause(schema.StatefulCategories)
+	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	processingStatus := schema.ValidStateOrder[0]
 	if len(schema.ValidStateOrder) > 1 {
 		processingStatus = schema.ValidStateOrder[1]
@@ -56,6 +56,16 @@ func ClaimNextTask(ctx context.Context, db *sql.DB, schema core.SchemaConfig, go
 
 	if goalID != "" {
 		// Atomic claim within a goal subtree
+		//
+		// SQL has 6 fixed placeholders + 3 * N_cat cat placeholders (= 9
+		// for the 1-category statefulSchema; 12 for a hypothetical 2-cat
+		// schema). Args below mirror that ordering exactly: SET status,
+		// cat #1, status guard, goalID, cat #2, blocker relation, cat #3,
+		// blocker relation (NOT EXISTS), state-unblocking guard. Prior to
+		// the §1 audit-closure fix, catArgs was discarded via `_` and the
+		// outer append populated only the fixed positions — mattn/go-sqlite3
+		// then refused to bind with "not enough args to execute query:
+		// want 9 got 6".
 		query = fmt.Sprintf(`UPDATE entities
 			SET status = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id IN (
@@ -78,9 +88,23 @@ func ClaimNextTask(ctx context.Context, db *sql.DB, schema core.SchemaConfig, go
 				LIMIT 1
 			)
 			RETURNING id, category, content, status, COALESCE(priority, 0)`, catPH, catPH, catPH)
-		args = []interface{}{processingStatus, schema.ValidStateOrder[0], goalID, schema.RelationBlocking, schema.RelationBlocking, schema.StateUnblocking}
+		args = []interface{}{processingStatus}
+		args = append(args, catArgs...) // cat #1: outer WHERE category IN
+		args = append(args, schema.ValidStateOrder[0], goalID)
+		args = append(args, catArgs...) // cat #2: dt subquery seed branch
+		args = append(args, schema.RelationBlocking)
+		args = append(args, catArgs...) // cat #3: dt subquery descendants branch
+		args = append(args, schema.RelationBlocking, schema.StateUnblocking)
 	} else {
 		// Global atomic claim
+		//
+		// SQL has 4 fixed placeholders + N_cat cat placeholders (= 5 for
+		// the 1-category statefulSchema; 6 for a 2-cat schema). Args below
+		// mirror that ordering: SET status, cat, status guard, blocker
+		// relation, state-unblocking guard. Prior to the §1 audit-closure
+		// fix, catArgs was discarded via `_` and the outer append built
+		// only the 4 fixed positions — the driver refused to bind with
+		// "not enough args to execute query: want 5 got 4".
 		query = fmt.Sprintf(`UPDATE entities
 			SET status = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id IN (
@@ -94,7 +118,11 @@ func ClaimNextTask(ctx context.Context, db *sql.DB, schema core.SchemaConfig, go
 				LIMIT 1
 			)
 			RETURNING id, category, content, status, COALESCE(priority, 0)`, catPH)
-		args = []interface{}{processingStatus, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking}
+		args = []interface{}{processingStatus}
+		args = append(args, catArgs...) // cat: outer WHERE category IN
+		args = append(args, schema.ValidStateOrder[0])
+		args = append(args, schema.RelationBlocking)
+		args = append(args, schema.StateUnblocking)
 	}
 
 	var task core.Task
