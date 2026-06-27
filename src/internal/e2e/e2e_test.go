@@ -7,6 +7,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/graph"
+	"github.com/pavelveter/hermem/src/internal/graph/community"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
@@ -332,9 +333,13 @@ func TestE2E_GraphIntegrity(t *testing.T) {
 	}
 
 	// Communities (Louvain)
-	communities, _, err := store.DetectCommunities(db, 10)
+	g, err := community.LoadGraph(context.Background(), db)
 	if err != nil {
-		t.Fatalf("communities: %v", err)
+		t.Fatalf("communities load graph: %v", err)
+	}
+	var communities []core.Community
+	if g != nil {
+		communities, _ = community.DetectCommunities(g, 10)
 	}
 	if len(communities) == 0 {
 		t.Fatal("expected at least 1 community")

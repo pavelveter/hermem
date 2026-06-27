@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/graph/community"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -50,11 +51,15 @@ func (s *Service) Components(_ context.Context, minSize int) ([]core.ConnectedCo
 // side-by-side.
 //
 // Returns `[]Community{}` (not nil) on empty result.
-func (s *Service) Communities(_ context.Context, maxIter int) ([]core.Community, float64, error) {
-	comms, globalQ, err := store.DetectCommunities(s.db, maxIter)
+func (s *Service) Communities(ctx context.Context, maxIter int) ([]core.Community, float64, error) {
+	g, err := community.LoadGraph(ctx, s.db)
 	if err != nil {
 		return nil, 0, fmt.Errorf("communities: %w", err)
 	}
+	if g == nil {
+		return core.NormalizeSlice([]core.Community{}), 0, nil
+	}
+	comms, globalQ := community.DetectCommunities(g, maxIter)
 	return core.NormalizeSlice(comms), globalQ, nil
 }
 
