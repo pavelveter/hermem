@@ -116,7 +116,10 @@ func ReadStdin() (string, error) {
 	if (stat.Mode() & os.ModeCharDevice) != 0 {
 		return "", ErrStdinRequired
 	}
-	data, _ := io.ReadAll(os.Stdin)
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", fmt.Errorf("read stdin: %w", err)
+	}
 	return strings.TrimSpace(string(data)), nil
 }
 
