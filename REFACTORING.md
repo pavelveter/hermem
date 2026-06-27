@@ -37,16 +37,16 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 ## §R2. Critical: Parameter Explosion
 
 ### §R2.1 Introduce `MemoryWorkerConfig` struct (9 params → 2)
-- [ ] Define `type MemoryWorkerConfig struct { DB, VI, Extractor, Embedder, DedupThreshold, Schema, CkptPath, PendingPath, WorkerID }`
-- [ ] Change `MemoryWorkerResilient` signature to `(ctx, cfg, ch)`
-- [ ] Update all callers (tests + orchestrator)
-- [ ] Verify 971 tests pass
+- [x] Define `type MemoryWorkerConfig struct { DB, VI, Extractor, Embedder, DedupThreshold, Schema, CkptPath, PendingPath, WorkerID }`
+- [x] Change `MemoryWorkerResilient` signature to `(ctx, cfg, ch)`
+- [x] Update all callers (tests + orchestrator)
+- [x] Verify 971 tests pass
 
 ### §R2.2 Introduce `IngestionWorkerConfig` struct (7 params → 2)
-- [ ] Define `type IngestionWorkerConfig struct { DB, VI, Extractor, Embedder, DedupThreshold, Schema, Detector }`
-- [ ] Change `NewIngestionWorker` signature
-- [ ] Update all 6 callers
-- [ ] Verify 971 tests pass
+- [x] Define `type IngestionWorkerConfig struct { DB, VI, Extractor, Embedder, DedupThreshold, Schema, Detector }`
+- [x] Change `NewIngestionWorker` signature
+- [x] Update all 6 callers
+- [x] Verify 971 tests pass
 
 ### §R2.3 Introduce `ServerDeps` struct (14 params → 1)
 - [ ] Define `type ServerDeps struct { Refs, Retrieval, Task, Memory, Edge, Timeline, Ingest, Contradiction, Graph, Migration, Retention, Reembed, Health, Metrics }`
