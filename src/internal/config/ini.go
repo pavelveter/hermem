@@ -16,29 +16,7 @@ import (
 
 // LoadConfig parses hermem.ini from path. A missing file returns defaults (no error).
 func LoadConfig(path string) (*Config, error) {
-	cfg := &Config{
-		Provider:           "ollama",
-		URL:                "http://localhost:11434",
-		Model:              "nomic-embed-text",
-		DBPath:             "hermem.db",
-		ExtractModel:       "qwen2.5-coder:7b",
-		ExtractTemperature: 0.1,
-		DedupThreshold:     0.88,
-		MaxDepthCeiling:    5,
-		MaxRetrievedNodes:  100,
-		VectorBackend:      "in-memory",
-		VectorDim:          768,
-		EmbedderTimeout:    30 * time.Second,
-		ExtractTimeout:     300 * time.Second,
-		Retention: core.RetentionPolicy{
-			ObservationTTL:  90 * 24 * time.Hour,
-			RunInterval:     1 * time.Hour,
-			DeleteBatchSize: 500,
-		},
-		Ranking:         core.RankingWeight{}, // numeric defaults live in (RankingWeight).WithDefaults — applied below after INI parsing
-		RerankerTimeout: 30 * time.Second,
-		Schema:          core.DefaultSchemaConfig(false),
-	}
+	cfg := defaultConfig()
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -105,6 +83,49 @@ func LoadConfig(path string) (*Config, error) {
 		return ParseCSVList(k.String())
 	}
 
+	applyINIFields(cfg, getStr, getInt, getFloat32, getDuration, getList, sec, path)
+
+	return cfg, nil
+}
+
+// defaultConfig returns the default configuration.
+func defaultConfig() *Config {
+	return &Config{
+		Provider:           "ollama",
+		URL:                "http://localhost:11434",
+		Model:              "nomic-embed-text",
+		DBPath:             "hermem.db",
+		ExtractModel:       "qwen2.5-coder:7b",
+		ExtractTemperature: 0.1,
+		DedupThreshold:     0.88,
+		MaxDepthCeiling:    5,
+		MaxRetrievedNodes:  100,
+		VectorBackend:      "in-memory",
+		VectorDim:          768,
+		EmbedderTimeout:    30 * time.Second,
+		ExtractTimeout:     300 * time.Second,
+		Retention: core.RetentionPolicy{
+			ObservationTTL:  90 * 24 * time.Hour,
+			RunInterval:     1 * time.Hour,
+			DeleteBatchSize: 500,
+		},
+		Ranking:         core.RankingWeight{},
+		RerankerTimeout: 30 * time.Second,
+		Schema:          core.DefaultSchemaConfig(false),
+	}
+}
+
+// getStrFunc, getIntFunc, etc. are function types for reading INI values.
+type getStrFunc func(section, key string) (string, bool)
+type getIntFunc func(section, key string, defaultVal, minVal int) int
+type getFloat32Func func(section, key string, defaultVal float32) float32
+type getDurationFunc func(section, key string, defaultVal time.Duration) time.Duration
+type getListFunc func(section, key string) []string
+type secFunc func(name string) *ini.Section
+
+// applyINIFields applies all INI field mappings to the config.
+func applyINIFields(cfg *Config, getStr getStrFunc, getInt getIntFunc, getFloat32 getFloat32Func, getDuration getDurationFunc, getList getListFunc, sec secFunc, path string) {
+	// Embedder section
 	if v, ok := getStr("embedder", "provider"); ok {
 		cfg.Provider = strings.ToLower(v)
 	}
@@ -117,15 +138,22 @@ func LoadConfig(path string) (*Config, error) {
 	if v, ok := getStr("embedder", "model"); ok {
 		cfg.Model = v
 	}
+	cfg.EmbedderTimeout = getDuration("embedder", "timeout", cfg.EmbedderTimeout)
+
+	// Embedding section
 	if v, ok := getStr("embedding", "model_path"); ok {
 		cfg.ModelPath = v
 	}
+
+	// Database section
 	if v, ok := getStr("database", "path"); ok {
 		cfg.DBPath = v
 	}
 	if v, ok := getStr("database", "backend"); ok {
 		cfg.VectorBackend = strings.ToLower(v)
 	}
+
+	// Server section
 	if v, ok := getStr("server", "api_key"); ok {
 		cfg.APIKey = v
 	}
@@ -146,8 +174,10 @@ func LoadConfig(path string) (*Config, error) {
 		}
 	}
 
+	// Vector section
 	cfg.VectorDim = getInt("vector", "dim", cfg.VectorDim, 1)
 
+	// Extraction section
 	if v, ok := getStr("extraction", "provider"); ok {
 		cfg.ExtractProvider = strings.ToLower(v)
 	}
@@ -161,15 +191,23 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.ExtractModel = v
 	}
 	cfg.ExtractTemperature = getFloat32("extraction", "temperature", cfg.ExtractTemperature)
+	cfg.ExtractTimeout = getDuration("extraction", "timeout", cfg.ExtractTimeout)
+	cfg.ExtraCategories = getList("extraction", "extra_categories")
+	cfg.ExtraRelationTypes = getList("extraction", "extra_relation_types")
+
+	// Ingestion section
 	cfg.DedupThreshold = getFloat32("ingestion", "dedup_threshold", cfg.DedupThreshold)
+
+	// Retrieval section
 	cfg.MaxDepthCeiling = getInt("retrieval", "depth_ceiling", cfg.MaxDepthCeiling, 0)
 	cfg.MaxRetrievedNodes = getInt("retrieval", "max_nodes", cfg.MaxRetrievedNodes, 0)
+
+	// Retention section
 	cfg.Retention.ObservationTTL = getDuration("retention", "observation_ttl", cfg.Retention.ObservationTTL)
 	cfg.Retention.RunInterval = getDuration("retention", "run_interval", cfg.Retention.RunInterval)
 	cfg.Retention.DeleteBatchSize = getInt("retention", "batch_size", cfg.Retention.DeleteBatchSize, 0)
-	cfg.EmbedderTimeout = getDuration("embedder", "timeout", cfg.EmbedderTimeout)
-	cfg.ExtractTimeout = getDuration("extraction", "timeout", cfg.ExtractTimeout)
 
+	// Ranking section
 	cfg.Ranking.VectorWeight = getFloat32("ranking", "vector_weight", cfg.Ranking.VectorWeight)
 	cfg.Ranking.RecencyWeight = getFloat32("ranking", "recency_weight", cfg.Ranking.RecencyWeight)
 	cfg.Ranking.DepthPenalty = getFloat32("ranking", "depth_penalty", cfg.Ranking.DepthPenalty)
@@ -177,11 +215,9 @@ func LoadConfig(path string) (*Config, error) {
 	cfg.Ranking.TemporalWeight = getFloat32("ranking", "temporal_weight", cfg.Ranking.TemporalWeight)
 	cfg.Ranking.TemporalHalfLifeHours = getFloat32("ranking", "temporal_half_life_hours", cfg.Ranking.TemporalHalfLifeHours)
 	cfg.Ranking.CentralityWeight = getFloat32("ranking", "centrality_weight", cfg.Ranking.CentralityWeight)
-
-	// Single source of truth for ranking-weight defaults. Both this site and
-	// retrieval/walk.go call WithDefaults so the two paths can never drift.
 	cfg.Ranking = cfg.Ranking.WithDefaults()
 
+	// Reranker section
 	if v, ok := getStr("reranker", "provider"); ok {
 		cfg.RerankerProvider = strings.ToLower(v)
 	}
@@ -196,17 +232,13 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	cfg.RerankerTimeout = getDuration("reranker", "timeout", cfg.RerankerTimeout)
 
-	cfg.ExtraCategories = getList("extraction", "extra_categories")
-	cfg.ExtraRelationTypes = getList("extraction", "extra_relation_types")
+	// Schema section
 	if schemaSection := sec("schema"); schemaSection != nil {
 		schema, err := ParseSchemaSection(schemaSection, path)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			cfg.Schema = schema
 		}
-		cfg.Schema = schema
 	}
-
-	return cfg, nil
 }
 
 // Validate checks config invariants.
