@@ -14,7 +14,6 @@ type Metrics struct {
 	clusterSizes         []int64
 	totalDurationNS      atomic.Int64
 	recompressDurationNS atomic.Int64
-	mu                   atomic.Int64
 }
 
 func NewMetrics() *Metrics {

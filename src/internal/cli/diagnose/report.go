@@ -52,6 +52,9 @@ type ErrorsReport struct {
 
 // JSON returns the report as indented JSON bytes.
 func (r *Report) JSON() []byte {
-	b, _ := json.MarshalIndent(r, "", "  ")
+	b, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return []byte("{}")
+	}
 	return b
 }

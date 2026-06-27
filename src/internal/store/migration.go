@@ -446,7 +446,10 @@ func migrationNum(name string) int {
 	if len(m) < 2 {
 		return 0
 	}
-	n, _ := strconv.Atoi(m[1])
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0
+	}
 	return n
 }
 
@@ -538,76 +541,6 @@ func DetectContentDrift(db *sql.DB) ([]DriftedMigration, error) {
 // applying them.
 func MigrationFiles() ([]string, error) {
 	return migrationFiles()
-}
-
-// applyOneMigration applies a single migration file inside a BEGIN
-// IMMEDIATE transaction. BEGIN IMMEDIATE serializes concurrent callers
-// so two processes cannot interleave partial schema changes.
-func applyOneMigration(db *sql.DB, name string) error {
-	sqlBytes, err := migrationFS.ReadFile("migrations/" + name)
-	if err != nil {
-		return fmt.Errorf("read migration %s: %w", name, err)
-	}
-	stmts := splitSQL(string(sqlBytes))
-	if len(stmts) == 0 {
-		slog.Info("migration applied (empty)", "migration", name)
-		return nil
-	}
-
-	tx, err := db.Begin() //nolint:govet // SQLite single-writer; BEGIN IMMEDIATE is applied below via PRAGMA
-	if err != nil {
-		return fmt.Errorf("begin tx for %s: %w", name, err)
-	}
-
-	// Concurrent-apply guard: BEGIN IMMEDIATE ensures the connection
-	// acquires a RESERVED lock immediately, blocking other BEGIN
-	// IMMEDIATE callers until this tx commits or rolls back.
-	if _, err := tx.Exec("PRAGMA busy_timeout = 10000"); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("set busy_timeout for %s: %w", name, err)
-	}
-
-	var hardErr error
-	for _, stmt := range stmts {
-		if _, err := tx.Exec(stmt); err != nil {
-			if isIdempotentMigrationError(err) {
-				trim := strings.SplitN(stmt, "\n", 2)[0]
-				slog.Info("migration statement skipped (already applied)",
-					"migration", name, "stmt", trim, "err", err.Error())
-				continue
-			}
-			_ = tx.Rollback()
-			hardErr = fmt.Errorf("apply migration %s: %w", name, err)
-			break
-		}
-	}
-	if hardErr != nil {
-		return hardErr
-	}
-
-	if _, err := tx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", name); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("record migration %s: %w", name, err)
-	}
-	checksum, err := MigrationChecksum(name)
-	if err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("checksum %s: %w", name, err)
-	}
-	checksumSHA256, err := MigrationChecksumSHA256(name)
-	if err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("checksum sha256 %s: %w", name, err)
-	}
-	if _, err := tx.Exec("INSERT INTO migration_checksums (version, checksum, checksum_sha256) VALUES (?, ?, ?)", name, checksum, checksumSHA256); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("record checksum %s: %w", name, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit migration %s: %w", name, err)
-	}
-	slog.Info("migration applied", "migration", name)
-	return nil
 }
 
 // CaptureSchemaHash queries SQLite's internal schema representation and

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -169,11 +168,4 @@ func (s *LinkService) ListEpisodesForMemory(ctx context.Context, entityID string
 		return nil, fmt.Errorf("episodic: ListEpisodesForMemory rows: %w", err)
 	}
 	return core.NormalizeSlice(out), nil
-}
-
-// joinRoles concatenates a slice of roles with comma separators —
-// useful for error messages and debug logs. Kept package-private
-// because no caller outside linking.go needs it today.
-func joinRoles(roles []string) string {
-	return strings.Join(roles, ",")
 }

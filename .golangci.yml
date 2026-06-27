@@ -64,7 +64,7 @@ linters:
         text: 'Error return value of `.*fmt\.Fprint(f|ln)?` is not checked.*'
       - path: src/internal/cli/.*\.go
         linters: [errcheck]
-        text: 'Error return value of `(f\.WriteString?|w\.Flush|os\.Stdin\.Stat|.*\.GetString|io\.ReadAll)` is not checked.*'
+        text: 'Error return value of `(f\.WriteString?|w\.Flush|os\.Stdin\.Stat|.*\.GetString|io\.ReadAll|os\.Stdout\.Write)` is not checked.*'
       # Server: best-effort body drain and auth-error JSON encode.
       - path: src/internal/server/.*\.go
         linters: [errcheck]
@@ -72,14 +72,18 @@ linters:
       # AI: retry-drain body + best-effort JSON encode/Decode + async test helper.
       - path: src/internal/ai/.*\.go
         linters: [errcheck]
-        text: 'Error return value of `(io\.Copy|json\.Marshal|io\.ReadAll|.*json\.Decoder.*Decode)` is not checked.*'
+        text: 'Error return value of `(io\.Copy|json\.Marshal|io\.ReadAll|.*json\.Decoder.*Decode|.*json\.Encoder.*Encode)` is not checked.*'
       - path: src/internal/ai/.*_test\.go
         linters: [errcheck]
-        text: 'Error return value of `c\.Do` is not checked.*'
+        text: 'Error return value of `(c\.Do|.*json\.Encoder.*Encode)` is not checked.*'
       # Metrics worker: best-effort stdout writes + async db.Exec flush.
       - path: src/internal/metrics/.*\.go
         linters: [errcheck]
-        text: 'Error return value of `(fmt\.Fprintf|db\.Exec)` is not checked.*'
+        text: 'Error return value of `(fmt\.Fprintf|db\.Exec|.*\.WriteExposition)` is not checked.*'
+      # CLI metrics command: best-effort exposition write.
+      - path: src/internal/cli/metrics\.go$
+        linters: [errcheck]
+        text: 'Error return value of `.*\.WriteExposition` is not checked.*'
       # httputil: best-effort JSON encoding onto already-locked response.
       - path: src/internal/httputil/.*\.go
         linters: [errcheck]
