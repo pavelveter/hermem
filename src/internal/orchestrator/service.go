@@ -37,9 +37,8 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 		initBackoff = 50 * time.Millisecond
 		maxBackoff  = 1 * time.Second
 	)
-	backoff := initBackoff
 
-	for {
+	for backoff := initBackoff; ; {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
