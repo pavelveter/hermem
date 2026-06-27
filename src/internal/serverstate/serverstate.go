@@ -42,8 +42,21 @@ func NewRef(s *State) *Ref {
 }
 
 // Load returns the current State. Always non-nil after NewRef.
+//
+// Thread-safety: Load is safe for concurrent use. It uses atomic.Pointer
+// which provides a consistent snapshot — a concurrent Store either
+// completes before or after Load, never during. The returned *State
+// must not be mutated by the caller; use Ref.Store to replace.
+//
+// Nil-safety: After NewRef, Load never returns nil (Store rejects nil).
+// If Load returns nil, it means NewRef was never called — a programmer
+// error. We panic in debug builds to surface this early.
 func (r *Ref) Load() *State {
-	return r.ptr.Load()
+	s := r.ptr.Load()
+	if s == nil {
+		panic("serverstate: Load called on nil Ref (NewRef never called?)")
+	}
+	return s
 }
 
 // Store atomically replaces the State and stamps the incoming State with
