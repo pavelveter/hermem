@@ -2,9 +2,11 @@ package compression
 
 import (
 	"database/sql"
+	"testing"
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/testutil"
 )
 
 type testOrBench interface {
@@ -15,12 +17,9 @@ type testOrBench interface {
 
 func openTestDB(t testOrBench) *sql.DB {
 	t.Helper()
-	db, err := store.MemDBRandom()
-	if err != nil {
-		t.Fatalf("memdb: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	// Use the shared helper via a type assertion.
+	tb := t.(testing.TB)
+	return testutil.OpenTestDB(tb)
 }
 
 func seedEntity(t testOrBench, db *sql.DB, id, category, content string) {

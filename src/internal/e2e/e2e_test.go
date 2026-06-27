@@ -10,17 +10,13 @@ import (
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
+	"github.com/pavelveter/hermem/src/internal/testutil"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := store.MemDB()
-	if err != nil {
-		t.Fatalf("memdb: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return testutil.OpenTestDBSimple(t)
 }
 
 func newVectorIndex(db *sql.DB) *vector.InMemoryVectorIndex {

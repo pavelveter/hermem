@@ -5,17 +5,13 @@ import (
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/store"
+	"github.com/pavelveter/hermem/src/internal/testutil"
 )
 
 // openTestDB returns an in-memory SQLite for retrieval tests.
 func openTestDB(tb testing.TB) *sql.DB {
 	tb.Helper()
-	db, err := store.MemDB()
-	if err != nil {
-		tb.Fatalf("memdb: %v", err)
-	}
-	tb.Cleanup(func() { db.Close() })
-	return db
+	return testutil.OpenTestDBSimple(tb)
 }
 
 // seedEntity inserts a minimal entity row. (Reuses store schema.)
