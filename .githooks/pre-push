@@ -64,8 +64,17 @@ section "go vet ./src/..."
 go vet ./src/...
 ok "go vet"
 
-# 4. go build.
+# 4. go build — create placeholder files if bin/ is missing so go:embed succeeds.
 section "go build ./src/..."
+BIN_DIR="src/internal/ai/bin"
+if [ ! -d "$BIN_DIR" ]; then
+    warn "bin/ not found — creating placeholder for go:embed"
+    mkdir -p "$BIN_DIR/llama-libs"
+    echo "placeholder" > "$BIN_DIR/llama-embedding"
+    for lib in libllama-common.0.dylib libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib; do
+        touch "$BIN_DIR/llama-libs/$lib"
+    done
+fi
 go build ./src/...
 ok "go build"
 
