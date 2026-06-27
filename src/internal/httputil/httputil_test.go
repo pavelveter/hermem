@@ -1,12 +1,16 @@
 package httputil
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -362,5 +366,281 @@ func TestRespondJSON_DelegatesToWriteJSON(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), `"hello":"world"`) {
 		t.Fatalf("body: want JSON containing hello=world, got %q", rr.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------
+// §2 audit closure: SafeStreamFetch
+// ---------------------------------------------------------------------
+
+// TestSafeStreamFetch_HappyPath pins the success path: 2xx body is
+// returned verbatim (capped at maxBytes). The response body is the
+// canonical "hello world" JSON envelope. This is the path every new
+// outbound GET caller (a future admin RPC, an external health probe,
+// etc.) goes through on the happy case.
+func TestSafeStreamFetch_HappyPath(t *testing.T) {
+	body := []byte(`{"hello":"world"}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method: want GET, got %s", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	got, err := SafeStreamFetch(t.Context(), srv.URL, 1<<20)
+	if err != nil {
+		t.Fatalf("happy: want nil err, got %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("body: want %q, got %q", body, got)
+	}
+}
+
+// TestSafeStreamFetch_4xxFailFast pins the 4xx path: 4xx surfaces as
+// fmt.Errorf("%d: %s", status, body-snippet) in a single attempt
+// (NO retry — 4xx is terminal). The body snippet is included so callers
+// can surface the provider's error JSON to the user.
+func TestSafeStreamFetch_4xxFailFast(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad model"}`))
+	}))
+	defer srv.Close()
+
+	_, err := SafeStreamFetch(t.Context(), srv.URL, 1<<20)
+	if err == nil {
+		t.Fatal("4xx: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Fatalf("4xx error: want containing \"400\", got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "bad model") {
+		t.Fatalf("4xx error: want snippet containing \"bad model\", got %q", err.Error())
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("4xx attempts: want 1 (no retry), got %d", got)
+	}
+}
+
+// TestSafeStreamFetch_5xxRetriesThenSucceeds pins the retry-then-success
+// path: a 5xx on attempt #1 triggers retry with jittered backoff. After
+// 3 attempts total, the 4th attempt returns 2xx + body, which the
+// helper returns. The test uses a 1ms backoff ladder so it runs in
+// milliseconds (the production ladder is 200ms / 500ms / 1s / 2s).
+func TestSafeStreamFetch_5xxRetriesThenSucceeds(t *testing.T) {
+	origBackoffs := safeStreamFetchBackoffs
+	safeStreamFetchBackoffs = []time.Duration{1 * time.Millisecond, 1 * time.Millisecond, 1 * time.Millisecond}
+	t.Cleanup(func() { safeStreamFetchBackoffs = origBackoffs })
+
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	got, err := SafeStreamFetch(t.Context(), srv.URL, 1<<20)
+	if err != nil {
+		t.Fatalf("retry-then-success: want nil err, got %v", err)
+	}
+	if string(got) != "ok" {
+		t.Fatalf("body: want %q, got %q", "ok", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Fatalf("calls: want 3 (1 initial + 2 retries before success), got %d", got)
+	}
+}
+
+// TestSafeStreamFetch_5xxAttemptsExhausted pins the failure path when
+// every retry returns 5xx: after 4 attempts total (1 + 3 backoffs), the
+// helper returns the last transient error "HTTP 502 (transient)". A
+// caller should map this to a 502 Bad Gateway upstream.
+func TestSafeStreamFetch_5xxAttemptsExhausted(t *testing.T) {
+	origBackoffs := safeStreamFetchBackoffs
+	safeStreamFetchBackoffs = []time.Duration{1 * time.Millisecond, 1 * time.Millisecond, 1 * time.Millisecond}
+	t.Cleanup(func() { safeStreamFetchBackoffs = origBackoffs })
+
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	_, err := SafeStreamFetch(t.Context(), srv.URL, 1<<20)
+	if err == nil {
+		t.Fatal("5xx exhausted: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Fatalf("exhausted error: want containing \"502\", got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "transient") {
+		t.Fatalf("exhausted error: want containing \"transient\" (retryable tag), got %q", err.Error())
+	}
+	if got := atomic.LoadInt32(&calls); got != 4 {
+		t.Fatalf("calls: want 4 (1 initial + 3 retries = len(safeStreamFetchBackoffs)+1), got %d", got)
+	}
+}
+
+// TestSafeStreamFetch_TooLargeReturnsErrResponseTooLarge pins the
+// body-cap path: when the response body exceeds maxBytes, the helper
+// reads maxBytes+1 bytes to detect overflow, then returns
+// ErrResponseTooLarge (wrapped with %w). The partial body is
+// discarded so a hostile 1 GB payload cannot amplify RAM.
+func TestSafeStreamFetch_TooLargeReturnsErrResponseTooLarge(t *testing.T) {
+	// Use a custom *http.Client with no timeout so the test cannot be
+	// gated by safeStreamFetchMaxBodyTimeout. 1 MiB body is below
+	// MaxResponseBodyBytes so without the helper's own cap the test
+	// would succeed.
+	client := &http.Client{Timeout: 30 * time.Second}
+	huge := bytes.Repeat([]byte("a"), 1<<20) // 1 MiB body, 1 KiB cap
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(huge)
+	}))
+	defer srv.Close()
+
+	_, err := safeStreamFetch(t.Context(), client, srv.URL, 1024) // 1 KiB cap
+	if err == nil {
+		t.Fatal("cap exceeded: want error, got nil")
+	}
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("cap exceeded: want errors.Is(err, ErrResponseTooLarge)=true, got %v", err)
+	}
+	// The wrapped error also reports the actual size and the cap — useful
+	// for logs / metrics when an upstream starts streaming a larger body
+	// than expected.
+	if !strings.Contains(err.Error(), "cap=1024") {
+		t.Fatalf("cap exceeded: want error containing \"cap=1024\", got %q", err.Error())
+	}
+}
+
+// TestSafeStreamFetch_SnippetCappedAt16KiB pins the 4xx body-snippet
+// cap: even a hostile 1 MB 4xx body produces an error whose snippet
+// is itself capped at safeStreamFetchSnippetBytes (16 KiB). Without
+// this guard, a malicious provider could ship a 100 MB 4xx body that
+// the helper would dutifully read into RAM for the error message.
+func TestSafeStreamFetch_SnippetCappedAt16KiB(t *testing.T) {
+	huge4xx := bytes.Repeat([]byte("X"), 1<<20) // 1 MiB body
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write(huge4xx)
+	}))
+	defer srv.Close()
+
+	_, err := SafeStreamFetch(t.Context(), srv.URL, 1<<20)
+	if err == nil {
+		t.Fatal("oversized 4xx body: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Fatalf("4xx snippet: want containing \"403\", got %q", err.Error())
+	}
+	// The included snippet is bounded — substring count of "X" should
+	// be exactly safeStreamFetchSnippetBytes (16 KiB), not the full 1 MiB.
+	snippetLen := strings.Count(err.Error(), "X")
+	if snippetLen != int(safeStreamFetchSnippetBytes) {
+		t.Fatalf("4xx snippet length: want %d (cap), got %d (helper amplified the malicious body)",
+			safeStreamFetchSnippetBytes, snippetLen)
+	}
+}
+
+// TestSafeStreamFetch_MaxBytesLEZeroDiscardsBody pins the "probe-only"
+// path: when the caller passes maxBytes <= 0, the body is read-and-
+// discarded; an empty []byte{} + nil is returned. Useful for callers
+// implementing a reachability check without needing the payload.
+func TestSafeStreamFetch_MaxBytesLEZeroDiscardsBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("this body should NEVER reach the caller"))
+	}))
+	defer srv.Close()
+
+	got, err := SafeStreamFetch(t.Context(), srv.URL, 0)
+	if err != nil {
+		t.Fatalf("probe-only: want nil err, got %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("probe-only: want empty []byte, got %q", got)
+	}
+}
+
+// TestSafeStreamFetch_CtxCancelPreAttempt pins the ctx-cancellation
+// path: a pre-cancelled ctx surfaces ctx.Err() on the very first
+// attempt rather than burning an HTTP round-trip.
+func TestSafeStreamFetch_CtxCancelPreAttempt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("would have succeeded"))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := SafeStreamFetch(ctx, srv.URL, 1<<20)
+	if err == nil {
+		t.Fatal("pre-cancelled: want error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-cancelled: want errors.Is(ctx.Canceled), got %T: %v", err, err)
+	}
+}
+
+// TestSafeStreamFetch_CtxCancelMidRetry pins the ctx-cancellation
+// path during the inter-attempt backoff: when retry sleeps are in
+// progress and ctx fires, the helper exits with ctx.Err() rather
+// than completing all attempts.
+func TestSafeStreamFetch_CtxCancelMidRetry(t *testing.T) {
+	origBackoffs := safeStreamFetchBackoffs
+	safeStreamFetchBackoffs = []time.Duration{500 * time.Millisecond, 500 * time.Millisecond, 500 * time.Millisecond}
+	t.Cleanup(func() { safeStreamFetchBackoffs = origBackoffs })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		// Cancel once the first retry-backoff starts. Timing
+		// slack of ~75ms lets the first attempt + its drain complete.
+		time.Sleep(75 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err := SafeStreamFetch(ctx, srv.URL, 1<<20)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("mid-retry cancel: want error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("mid-retry cancel: want ctx.Canceled, got %T: %v", err, err)
+	}
+	// Elapsed should be well under the full 1.5s ladder since the
+	// first attempt's backoff is interrupted by cancel.
+	if elapsed > 1*time.Second {
+		t.Fatalf("mid-retry cancel: took %v — exit path is not honouring ctx (full ladder is 1.5s)", elapsed)
+	}
+}
+
+// TestErrResponseTooLargeExported pins the exported sentinel error:
+// callers reference it via errors.Is so a custom client wrapping
+// SafeStreamFetch's output can branch on it ("the body exceeded our
+// cap, log + 502 to upstream"). Renaming the var must break this
+// test loudly.
+func TestErrResponseTooLargeExported(t *testing.T) {
+	if ErrResponseTooLarge == nil {
+		t.Fatal("ErrResponseTooLarge must be a non-nil sentinel so callers can errors.Is against it")
+	}
+	if ErrResponseTooLarge.Error() == "" {
+		t.Fatal("ErrResponseTooLarge.Error() must be non-empty")
 	}
 }

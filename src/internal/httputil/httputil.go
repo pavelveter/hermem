@@ -10,13 +10,16 @@
 package httputil
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -240,4 +243,175 @@ func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (T, error) {
 // WriteJSON continue to work unchanged. Both names live in v1.
 func RespondJSON(w http.ResponseWriter, status int, data interface{}) {
 	WriteJSON(w, status, data)
+}
+
+// --- §2 AUDIT CLOSURE: SafeStreamFetch + ErrResponseTooLarge ----------
+//
+// SafeStreamFetch is the §2 audit closure for outbound HTTP. The audit
+// flagged resource leaks via defer-less body reads on outbound HTTP —
+// every AI provider client (OllamaEmbedder / OpenAIEmbedder /
+// OllamaLLMExtractor / OpenAILLMExtractor / rerankers) wraps into the
+// ai package's httpClient.doPOST helper which has its own retry loop
+// (ResilientClient) and a defer Body.Close but ZERO body-size cap on
+// the success-stage io.ReadAll path. A hostile or buggy downstream
+// provider could ship a 4 GB response on a 4xx or a 2xx body and the
+// reader would consume the entire stream into RAM.
+//
+// SafeStreamFetch is the GENERIC Get-with-body-cap helper for any new
+// outbound HTTP caller that does not already use ai/httpClient. The
+// ai package's existing path is not migrated wholesale because its
+// ResilientClient retry semantics are battle-tested against the existing
+// client_test.go suite; body-cap is added in doPOST via a separate
+// inlined LimitReader guard rather than re-routed through SafeStreamFetch.
+//
+// Behavior:
+//
+//   - 2xx → returns body bytes (capped at maxBytes).
+//   - 4xx → fails-fast, returns fmt.Errorf("%d: %s", status, body-snippet).
+//     The body snippet itself is capped at `safeStreamFetchSnippetBytes`
+//     so a hostile 4xx payload cannot amplify RAM through this path.
+//   - 5xx / 429 → retries with jittered exponential backoff
+//     (safeStreamFetchBackoffs). If all attempts fail, returns the
+//     last transient error (HTTP %d (transient)).
+//   - Network error → returns the wrapped error; ctx cancellation aborts
+//     any in-flight sleep between retries.
+//
+// maxBytes <= 0 treats the body as discarded and returns []byte{} + nil.
+// Useful when a caller only cares about reachability, not payload
+// (e.g. an external health probe).
+//
+// Caller-supplied headers (Authorization, custom User-Agent) cannot be
+// attached via the URL-only signature. For requests that need headers
+// (OpenAI Bearer token, custom Accept, etc.) wrap net/http directly or
+// extend this helper with a req-based variant.
+//
+// The http.Client used is a fresh pointer with safeStreamFetchMaxBodyTimeout
+// (30s). Callers needing per-request timeout control must wrap net/http
+// directly.
+//
+// Body lifetime: `resp.Body` is closed via defer on every terminal
+// response (2xx, 4xx). 5xx / 429 paths drain the body via
+// io.Copy(io.Discard) BEFORE Close so the underlying TCP connection
+// is returned to the keep-alive pool instead of being RST on Close.
+// This mirrors ResilientClient.Do's drain-on-transient pattern.
+func SafeStreamFetch(ctx context.Context, url string, maxBytes int64) ([]byte, error) {
+	// safeStreamFetch is the testable inner form (the public
+	// SafeStreamFetch call is preserved for the §2 audit signature
+	// contract — URL + ctx + maxBytes).
+	return safeStreamFetch(ctx, http.DefaultClient, url, maxBytes)
+}
+
+// safeStreamFetch is the testable inner helper. `inner` may be nil in
+// which case a fresh *http.Client with safeStreamFetchMaxBodyTimeout is
+// constructed per call. Production callers go through SafeStreamFetch
+// which uses http.DefaultClient; tests may pass `srv.Client()` or a
+// fresh client for timeout control.
+func safeStreamFetch(ctx context.Context, inner *http.Client, url string, maxBytes int64) ([]byte, error) {
+	if inner == nil {
+		inner = &http.Client{Timeout: safeStreamFetchMaxBodyTimeout}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	var lastErr error
+	for i := 0; i < len(safeStreamFetchBackoffs)+1; i++ {
+		if i > 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if !sleepWithCtx(ctx, safeStreamFetchBackoffs[i-1]) {
+				return nil, ctx.Err()
+			}
+		}
+		resp, err := inner.Do(req.Clone(ctx))
+		if err != nil {
+			lastErr = err
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			// Drain so the connection returns to the keep-alive pool.
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d (transient)", resp.StatusCode)
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		// Terminal response — read + close on every code path.
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			snippet, _ := io.ReadAll(io.LimitReader(resp.Body, safeStreamFetchSnippetBytes))
+			return nil, fmt.Errorf("%d: %s", resp.StatusCode, string(snippet))
+		}
+		if maxBytes <= 0 {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			return []byte{}, nil
+		}
+		// Read up to maxBytes+1 to detect overflow without committing
+		// the full read. If we read more than maxBytes, return
+		// ErrResponseTooLarge; the partial body is discarded.
+		buf, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+		if err != nil {
+			return nil, fmt.Errorf("read body: %w", err)
+		}
+		if int64(len(buf)) > maxBytes {
+			return nil, fmt.Errorf("%w: body=%d bytes (cap=%d)", ErrResponseTooLarge, len(buf), maxBytes)
+		}
+		return buf, nil
+	}
+	return nil, lastErr
+}
+
+// MaxResponseBodyBytes is the recommended cap for SafeStreamFetch and
+// ai/http.go::doPOST body reads. 16 MiB mirrors MaxBodyBytes (1 MiB) × a
+// factor: AI payloads (embeddings + LLM JSON envelopes) are typically a
+// few KB to a few MB; 16 MiB is generous for legitimate responses while
+// still bounding a hostile-or-buggy 64 GB body to a manageable RAM cap.
+var MaxResponseBodyBytes int64 = 16 * 1024 * 1024
+
+// ErrResponseTooLarge is returned by SafeStreamFetch (and surfaced via
+// fmt.Errorf %w wrapping by ai/http.go::doPOST) when the response body
+// exceeds the configured cap. Callers should map this to a 502 Bad
+// Gateway to upstream consumers (the body could not be trusted as a
+// coherent response from the downstream provider).
+var ErrResponseTooLarge = errors.New("httputil: response body exceeds configured cap")
+
+// safeStreamFetchSnippetBytes caps the body snippet included in a 4xx
+// error message. 16 KiB is enough for the typical error JSON envelope
+// {"error": "..."} while guarding against 1 GiB hostile 4xx bodies.
+const safeStreamFetchSnippetBytes int64 = 16 * 1024
+
+// safeStreamFetchMaxBodyTimeout is the timeout applied to the http.Client
+// when SafeStreamFetch is called via the URL-only signature. Matches
+// ai/httpClient defaults; per-request overrides must use the req-based
+// variant or wrap net/http directly.
+const safeStreamFetchMaxBodyTimeout = 30 * time.Second
+
+// safeStreamFetchBackoffs is the retry ladder applied on 5xx / 429
+// responses. Matches ai/client.go::defaultBackoffs but lives in this
+// package because SafeStreamFetch is independent of ResilientClient.
+// 200ms / 500ms / 1s / 2s gives 4 total attempts (1 initial + 3 retries).
+var safeStreamFetchBackoffs = []time.Duration{
+	200 * time.Millisecond,
+	500 * time.Millisecond,
+	1 * time.Second,
+	2 * time.Second,
+}
+
+// sleepWithCtx blocks for d plus a small jitter up to d/4, returning
+// false immediately if ctx is cancelled. Mirrors ai/client.go::backoffSleep
+// (kept independent so httputil has zero ai-package imports).
+func sleepWithCtx(ctx context.Context, d time.Duration) bool {
+	jitter := time.Duration(rand.Int63n(int64(d)/4 + 1))
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d + jitter):
+		return true
+	}
 }

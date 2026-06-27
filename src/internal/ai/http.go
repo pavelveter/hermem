@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/httputil"
 )
 
 // httpClient is the internal unified HTTP client for every AI provider
@@ -80,6 +82,26 @@ func newHTTPClient(baseURL, apiKey string, timeout time.Duration, attempts int) 
 // prefixes ("ollama embed: build request: …" vs "ollama embed decode: …");
 // the wire text differs only in the tail word ("build request" / "decode"),
 // which was never load-bearing for any caller.
+//
+// §2 AUDIT CLOSURE: the response-body read paths are io.LimitReader-capped
+// at httputil.MaxResponseBodyBytes (16 MiB) for the 2xx decode path and at
+// httputil's internal 4xx-snippet cap for the non-2xx path. A hostile or
+// buggy downstream provider shipping a 4 GB body would otherwise allocate
+// the entire stream into RAM before the helper could react. The 16 MiB
+// cap is generous for legitimate AI provider responses (single embedding
+// vector + LLM JSON envelope stay well below) while bounding the worst
+// case to a manageable allocation. See httputil.SafeStreamFetch
+// documentation for the parallel helper that owns the URL+ctx signature.
+// maxErrorSnippetBytes caps the body fragment included in the non-2xx
+// error message returned from doPOST. Mirrors httputil's internal
+// safeStreamFetchSnippetBytes but is duplicated here so ai/http.go has
+// no behavioral dependency on a private symbol of httputil. A hostile
+// downstream provider shipping a 100 MB 4xx body would otherwise be
+// dutifully read-and-included into the error message, amplifying RAM.
+// 16 KiB comfortably holds the typical error JSON envelope
+// ({"error": "..."} on Ollama/OpenAI).
+const maxErrorSnippetBytes int64 = 16 * 1024
+
 func (c *httpClient) doPOST(ctx context.Context, path string, reqBody, dst any) error {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -104,10 +126,24 @@ func (c *httpClient) doPOST(ctx context.Context, path string, reqBody, dst any) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+		// 4xx / 5xx snippet: cap at a constant so a hostile provider
+		// cannot amplify RAM through the error-message read.
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorSnippetBytes))
 		return fmt.Errorf("%d: %s", resp.StatusCode, string(b))
 	}
-	return json.NewDecoder(resp.Body).Decode(dst)
+	// 2xx path: read with body-cap via LimitReader, then check
+	// overflow against httputil.MaxResponseBodyBytes before
+	// json.Unmarshal. If cap exceeded, return httputil.ErrResponseTooLarge
+	// wrapped so callers can errors.Is against the sentinel.
+	maxBytes := httputil.MaxResponseBodyBytes
+	bodyBuf, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return fmt.Errorf("read response body: %w", err)
+	}
+	if int64(len(bodyBuf)) > maxBytes {
+		return fmt.Errorf("%w: body=%d bytes (cap=%d)", httputil.ErrResponseTooLarge, len(bodyBuf), maxBytes)
+	}
+	return json.Unmarshal(bodyBuf, dst)
 }
 
 // doGET issues a GET to baseURL+path and returns the response. On a non-2xx
