@@ -17,7 +17,6 @@ linters:
   settings:
     cyclop:
       max-complexity: 25
-      skip-tests: true
     forbidigo:
       forbid:
         - pattern: ActiveSchema
