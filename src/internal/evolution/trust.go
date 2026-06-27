@@ -19,7 +19,7 @@ type TrustWeights struct {
 func TrustDefaults() TrustWeights {
 	return TrustWeights{
 		SourceTrust: map[string]float64{
-			"user":       1.0,
+			"user":        1.0,
 			"observation": 0.9,
 			"extraction":  0.7,
 			"inference":   0.5,

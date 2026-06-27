@@ -39,8 +39,8 @@ type MemoryReport struct {
 
 // RetentionReport captures archive state.
 type RetentionReport struct {
-	ArchivedEntities int `json:"archived_entities"`
-	TotalEntities    int `json:"total_entities"`
+	ArchivedEntities int     `json:"archived_entities"`
+	TotalEntities    int     `json:"total_entities"`
 	ArchivedPct      float64 `json:"archived_pct"`
 }
 

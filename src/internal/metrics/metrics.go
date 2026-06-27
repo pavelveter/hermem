@@ -69,7 +69,9 @@ var knownCategories = []string{"_init", "observation", "world", "task", "edge"}
 // Pre-warm sentinel "_init" + the 6 retrieval endpoints wired in src/internal/server/retrieval:
 // "/search" / "/retrieve" / "/query" / "/response" / "/query/explain" / "/provenance".
 // Math: 7 Ã (10 durationBuckets + +Inf auto-added = 11 buckets) + _sum + _count
-//      = 7 Ã 13 = 91 time-series per scrape. Adding a new endpoint = extend this slice
+//
+//	= 7 Ã 13 = 91 time-series per scrape. Adding a new endpoint = extend this slice
+//
 // + bump TestHermemPrefixContract_KnownModesSet.
 var knownModes = []string{"_init", "search", "retrieve", "query", "response", "query_explain", "provenance"}
 
@@ -82,14 +84,17 @@ var knownModes = []string{"_init", "search", "retrieve", "query", "response", "q
 // value-set until it lands. When the semantic detector commits, extend this
 // slice + bump TestHermemPrefixContract_KnownDetectorsSet.
 // Math: 3 Ã (10 durationBuckets + +Inf = 11 buckets + _sum + _count)
-//      = 3 Ã 13 = 39 time-series per scrape.
+//
+//	= 3 Ã 13 = 39 time-series per scrape.
 var knownDetectors = []string{"_init", "lexical", "composite"}
 
 // knownStrategies is the bounded value-set for the hRerank `strategy` label.
 // Three strategies today (per src/internal/ai/reranker.go verification):
-//   "cross_encoder" — future cross-encoder rerank (not yet implemented)
-//   "llm"          — LLM-based rerank (NewOpenAIReranker / NewOllamaReranker)
-//   "cosine_only"  — NoopReranker / raw-cosine order, no actual rerank call
+//
+//	"cross_encoder" — future cross-encoder rerank (not yet implemented)
+//	"llm"          — LLM-based rerank (NewOpenAIReranker / NewOllamaReranker)
+//	"cosine_only"  — NoopReranker / raw-cosine order, no actual rerank call
+//
 // Pre-warm sentinel "_init" sits at index 0 as in C3-C5. Math: 4 ×
 // (10 durationBuckets + +Inf = 11 buckets + _sum + _count) = 4 × 13 = 52
 // time-series per scrape. Add a new strategy = extend + bump TestKnownStrategiesSet.
@@ -132,49 +137,49 @@ type Metrics struct {
 	// atomic.Int64 fields preserved from e2aa722 verbatim (16, not 17 —
 	// see commit 1/8 for the full restore). Keep server-side callers
 	// byte-compatible.
-	storeCount          atomic.Int64
-	searchCount         atomic.Int64
-	retrieveCount       atomic.Int64
-	ingestCount         atomic.Int64
-	queryCount          atomic.Int64
-	edgeCount           atomic.Int64
-	errCount            atomic.Int64
-	schemaConflictCount atomic.Int64
-	taskStatusCount     atomic.Int64
-	taskExecCount       atomic.Int64
-	taskListCount       atomic.Int64
-	taskShowCount       atomic.Int64
-	taskDepCount        atomic.Int64
-	taskRollbackCount   atomic.Int64
-	taskTreeCount       atomic.Int64
-	taskCreateCount     atomic.Int64
-	retentionRunCount   atomic.Int64
+	storeCount            atomic.Int64
+	searchCount           atomic.Int64
+	retrieveCount         atomic.Int64
+	ingestCount           atomic.Int64
+	queryCount            atomic.Int64
+	edgeCount             atomic.Int64
+	errCount              atomic.Int64
+	schemaConflictCount   atomic.Int64
+	taskStatusCount       atomic.Int64
+	taskExecCount         atomic.Int64
+	taskListCount         atomic.Int64
+	taskShowCount         atomic.Int64
+	taskDepCount          atomic.Int64
+	taskRollbackCount     atomic.Int64
+	taskTreeCount         atomic.Int64
+	taskCreateCount       atomic.Int64
+	retentionRunCount     atomic.Int64
 	graphComponentsCount  atomic.Int64
 	graphCommunitiesCount atomic.Int64
 	graphVerifyCount      atomic.Int64
 
 	// Prometheus counters (OBSERVABILITY commit 1/8).
-	promReg         *prometheus.Registry
-	pStore          prometheus.Counter
-	pSearch         prometheus.Counter
-	pRetrieve       prometheus.Counter
-	pIngest         prometheus.Counter
-	pQuery          prometheus.Counter
-	pEdge           prometheus.Counter
-	pErr            prometheus.Counter
-	pSchemaConflict prometheus.Counter
-	pTaskStatus     prometheus.Counter
-	pTaskExec       prometheus.Counter
-	pTaskList       prometheus.Counter
-	pTaskShow       prometheus.Counter
-	pTaskDep        prometheus.Counter
-	pTaskRollback   prometheus.Counter
-	pTaskTree       prometheus.Counter
-	pTaskCreate     prometheus.Counter
-	pRetentionRun   prometheus.Counter
-	pGraphComponents   prometheus.Counter
-	pGraphCommunities  prometheus.Counter
-	pGraphVerify       prometheus.Counter
+	promReg           *prometheus.Registry
+	pStore            prometheus.Counter
+	pSearch           prometheus.Counter
+	pRetrieve         prometheus.Counter
+	pIngest           prometheus.Counter
+	pQuery            prometheus.Counter
+	pEdge             prometheus.Counter
+	pErr              prometheus.Counter
+	pSchemaConflict   prometheus.Counter
+	pTaskStatus       prometheus.Counter
+	pTaskExec         prometheus.Counter
+	pTaskList         prometheus.Counter
+	pTaskShow         prometheus.Counter
+	pTaskDep          prometheus.Counter
+	pTaskRollback     prometheus.Counter
+	pTaskTree         prometheus.Counter
+	pTaskCreate       prometheus.Counter
+	pRetentionRun     prometheus.Counter
+	pGraphComponents  prometheus.Counter
+	pGraphCommunities prometheus.Counter
+	pGraphVerify      prometheus.Counter
 
 	// Prometheus histograms (OBSERVABILITY commits 2-3/8). hIngest was
 	// promoted to *HistogramVec at C3; hRetrieval / hContradiction / hRerank
@@ -192,10 +197,10 @@ type Metrics struct {
 	// Dashboard authors: filter `category=~"^(observation|world|task|edge)$"`
 	// (regex excluding "_init" sentinel) so the system-emitted zero-presence
 	// child never gets confused with a real category.
-	hIngest        *prometheus.HistogramVec
-	hRetrieval     *prometheus.HistogramVec
-	hContradiction *prometheus.HistogramVec
-	hRerank        *prometheus.HistogramVec
+	hIngest           *prometheus.HistogramVec
+	hRetrieval        *prometheus.HistogramVec
+	hContradiction    *prometheus.HistogramVec
+	hRerank           *prometheus.HistogramVec
 	hGraphCommunities prometheus.Histogram
 }
 
@@ -333,10 +338,10 @@ func New() *Metrics {
 	// sentinel keeps the parent MetricFamily visible on cold-start /metrics
 	// scrapes (Grafana dashboards depend on the parent name being present).
 	// Callers MUST NOT pass category="_init" — it is a system-only sentinel.
-	m.hIngest.WithLabelValues(knownCategories[0]) // knownCategories[0] = "_init"
-	m.hRetrieval.WithLabelValues(knownModes[0]) // knownModes[0] = "_init"
+	m.hIngest.WithLabelValues(knownCategories[0])       // knownCategories[0] = "_init"
+	m.hRetrieval.WithLabelValues(knownModes[0])         // knownModes[0] = "_init"
 	m.hContradiction.WithLabelValues(knownDetectors[0]) // knownDetectors[0] = "_init"
-	m.hRerank.WithLabelValues(knownStrategies[0]) // knownStrategies[0] = "_init"
+	m.hRerank.WithLabelValues(knownStrategies[0])       // knownStrategies[0] = "_init"
 	return m
 }
 
@@ -357,23 +362,23 @@ func (m *Metrics) PrometheusHandler() http.Handler {
 // the legacy expvar-style counters did. Each pair is byte-compatible
 // with pre-OBSERVABILITY callers.
 
-func (m *Metrics) IncStore()          { m.storeCount.Add(1); m.pStore.Inc() }
-func (m *Metrics) IncSearch()         { m.searchCount.Add(1); m.pSearch.Inc() }
-func (m *Metrics) IncRetrieve()       { m.retrieveCount.Add(1); m.pRetrieve.Inc() }
-func (m *Metrics) IncIngest()         { m.ingestCount.Add(1); m.pIngest.Inc() }
-func (m *Metrics) IncQuery()          { m.queryCount.Add(1); m.pQuery.Inc() }
-func (m *Metrics) IncEdge()           { m.edgeCount.Add(1); m.pEdge.Inc() }
-func (m *Metrics) IncErr()            { m.errCount.Add(1); m.pErr.Inc() }
-func (m *Metrics) IncSchemaConflict() { m.schemaConflictCount.Add(1); m.pSchemaConflict.Inc() }
-func (m *Metrics) IncTaskStatus()     { m.taskStatusCount.Add(1); m.pTaskStatus.Inc() }
-func (m *Metrics) IncTaskExec()       { m.taskExecCount.Add(1); m.pTaskExec.Inc() }
-func (m *Metrics) IncTaskList()       { m.taskListCount.Add(1); m.pTaskList.Inc() }
-func (m *Metrics) IncTaskShow()       { m.taskShowCount.Add(1); m.pTaskShow.Inc() }
-func (m *Metrics) IncTaskDep()        { m.taskDepCount.Add(1); m.pTaskDep.Inc() }
-func (m *Metrics) IncTaskRollback()   { m.taskRollbackCount.Add(1); m.pTaskRollback.Inc() }
-func (m *Metrics) IncTaskTree()       { m.taskTreeCount.Add(1); m.pTaskTree.Inc() }
-func (m *Metrics) IncTaskCreate()     { m.taskCreateCount.Add(1); m.pTaskCreate.Inc() }
-func (m *Metrics) IncRetentionRun()   { m.retentionRunCount.Add(1); m.pRetentionRun.Inc() }
+func (m *Metrics) IncStore()            { m.storeCount.Add(1); m.pStore.Inc() }
+func (m *Metrics) IncSearch()           { m.searchCount.Add(1); m.pSearch.Inc() }
+func (m *Metrics) IncRetrieve()         { m.retrieveCount.Add(1); m.pRetrieve.Inc() }
+func (m *Metrics) IncIngest()           { m.ingestCount.Add(1); m.pIngest.Inc() }
+func (m *Metrics) IncQuery()            { m.queryCount.Add(1); m.pQuery.Inc() }
+func (m *Metrics) IncEdge()             { m.edgeCount.Add(1); m.pEdge.Inc() }
+func (m *Metrics) IncErr()              { m.errCount.Add(1); m.pErr.Inc() }
+func (m *Metrics) IncSchemaConflict()   { m.schemaConflictCount.Add(1); m.pSchemaConflict.Inc() }
+func (m *Metrics) IncTaskStatus()       { m.taskStatusCount.Add(1); m.pTaskStatus.Inc() }
+func (m *Metrics) IncTaskExec()         { m.taskExecCount.Add(1); m.pTaskExec.Inc() }
+func (m *Metrics) IncTaskList()         { m.taskListCount.Add(1); m.pTaskList.Inc() }
+func (m *Metrics) IncTaskShow()         { m.taskShowCount.Add(1); m.pTaskShow.Inc() }
+func (m *Metrics) IncTaskDep()          { m.taskDepCount.Add(1); m.pTaskDep.Inc() }
+func (m *Metrics) IncTaskRollback()     { m.taskRollbackCount.Add(1); m.pTaskRollback.Inc() }
+func (m *Metrics) IncTaskTree()         { m.taskTreeCount.Add(1); m.pTaskTree.Inc() }
+func (m *Metrics) IncTaskCreate()       { m.taskCreateCount.Add(1); m.pTaskCreate.Inc() }
+func (m *Metrics) IncRetentionRun()     { m.retentionRunCount.Add(1); m.pRetentionRun.Inc() }
 func (m *Metrics) IncGraphComponents()  { m.graphComponentsCount.Add(1); m.pGraphComponents.Inc() }
 func (m *Metrics) IncGraphCommunities() { m.graphCommunitiesCount.Add(1); m.pGraphCommunities.Inc() }
 func (m *Metrics) IncGraphVerify()      { m.graphVerifyCount.Add(1); m.pGraphVerify.Inc() }
@@ -402,6 +407,7 @@ func (m *Metrics) ObserveIngestDuration(seconds float64, category string) {
 func (m *Metrics) ObserveRetrievalDuration(seconds float64, mode string) {
 	m.hRetrieval.WithLabelValues(mode).Observe(seconds)
 }
+
 // ObserveContradictionDuration records contradiction-detection latency per
 // scan, labelled by `detector` (one of: exact / embedding / temporal / rule).
 // Caller MUST pass a value from knownDetectors; "_init" is reserved for the
@@ -413,6 +419,7 @@ func (m *Metrics) ObserveRetrievalDuration(seconds float64, mode string) {
 func (m *Metrics) ObserveContradictionDuration(seconds float64, detector string) {
 	m.hContradiction.WithLabelValues(detector).Observe(seconds)
 }
+
 // ObserveRerankDuration records reranker latency per candidate batch,
 // labelled by `strategy`. Caller MUST pass a value from knownStrategies;
 // "_init" is reserved for the system's pre-warm child. Pre-C6 callers
@@ -533,23 +540,23 @@ func (m *Metrics) WriteExposition(w io.Writer) error {
 // the same key names.
 func (m *Metrics) Snapshot() map[string]uint64 {
 	return map[string]uint64{
-		"hermem_store_total":          uint64(m.storeCount.Load()),
-		"hermem_search_total":         uint64(m.searchCount.Load()),
-		"hermem_retrieve_total":       uint64(m.retrieveCount.Load()),
-		"hermem_ingest_total":         uint64(m.ingestCount.Load()),
-		"hermem_query_total":          uint64(m.queryCount.Load()),
-		"hermem_edge_total":           uint64(m.edgeCount.Load()),
-		"hermem_errors_total":         uint64(m.errCount.Load()),
-		"hermem_schema_conflict_total": uint64(m.schemaConflictCount.Load()),
-		"hermem_task_status_total":    uint64(m.taskStatusCount.Load()),
-		"hermem_task_exec_total":      uint64(m.taskExecCount.Load()),
-		"hermem_task_list_total":      uint64(m.taskListCount.Load()),
-		"hermem_task_show_total":      uint64(m.taskShowCount.Load()),
-		"hermem_task_dep_total":       uint64(m.taskDepCount.Load()),
-		"hermem_task_rollback_total":  uint64(m.taskRollbackCount.Load()),
-		"hermem_task_tree_total":      uint64(m.taskTreeCount.Load()),
-		"hermem_task_create_total":    uint64(m.taskCreateCount.Load()),
-		"hermem_retention_run_total":  uint64(m.retentionRunCount.Load()),
+		"hermem_store_total":             uint64(m.storeCount.Load()),
+		"hermem_search_total":            uint64(m.searchCount.Load()),
+		"hermem_retrieve_total":          uint64(m.retrieveCount.Load()),
+		"hermem_ingest_total":            uint64(m.ingestCount.Load()),
+		"hermem_query_total":             uint64(m.queryCount.Load()),
+		"hermem_edge_total":              uint64(m.edgeCount.Load()),
+		"hermem_errors_total":            uint64(m.errCount.Load()),
+		"hermem_schema_conflict_total":   uint64(m.schemaConflictCount.Load()),
+		"hermem_task_status_total":       uint64(m.taskStatusCount.Load()),
+		"hermem_task_exec_total":         uint64(m.taskExecCount.Load()),
+		"hermem_task_list_total":         uint64(m.taskListCount.Load()),
+		"hermem_task_show_total":         uint64(m.taskShowCount.Load()),
+		"hermem_task_dep_total":          uint64(m.taskDepCount.Load()),
+		"hermem_task_rollback_total":     uint64(m.taskRollbackCount.Load()),
+		"hermem_task_tree_total":         uint64(m.taskTreeCount.Load()),
+		"hermem_task_create_total":       uint64(m.taskCreateCount.Load()),
+		"hermem_retention_run_total":     uint64(m.retentionRunCount.Load()),
 		"hermem_graph_components_total":  uint64(m.graphComponentsCount.Load()),
 		"hermem_graph_communities_total": uint64(m.graphCommunitiesCount.Load()),
 		"hermem_graph_verify_total":      uint64(m.graphVerifyCount.Load()),

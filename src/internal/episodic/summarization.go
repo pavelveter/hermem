@@ -36,13 +36,13 @@ func NewSummarizer(db *sql.DB, extractor core.LLMExtractor) *Summarizer {
 // second GetEpisode round-trip.
 //
 // Pipeline:
-//   1. Load the episode (ErrNotFound if missing).
-//   2. Load every event on the episode (ORDER BY timestamp ASC).
-//   3. Load every linked memory (one row per (episode, entity, role)).
-//   4. Stitch events + memories into a synthetic dialog.
-//   5. Hand the dialog to extractor.ExtractEntities.
-//   6. Format the extracted entities as a bulleted summary.
-//   7. Persist via UpdateSummary on the episode.
+//  1. Load the episode (ErrNotFound if missing).
+//  2. Load every event on the episode (ORDER BY timestamp ASC).
+//  3. Load every linked memory (one row per (episode, entity, role)).
+//  4. Stitch events + memories into a synthetic dialog.
+//  5. Hand the dialog to extractor.ExtractEntities.
+//  6. Format the extracted entities as a bulleted summary.
+//  7. Persist via UpdateSummary on the episode.
 //
 // Errors at any step propagate up with a wrapped context.
 func (s *Summarizer) SummarizeEpisode(ctx context.Context, episodeID string) (string, error) {

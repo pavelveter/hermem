@@ -7,9 +7,9 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/pavelveter/hermem/src/internal/bench"
 	"github.com/pavelveter/hermem/src/internal/cli/admin"
 	"github.com/pavelveter/hermem/src/internal/cli/adminops"
-	"github.com/pavelveter/hermem/src/internal/bench"
 	"github.com/pavelveter/hermem/src/internal/cli/agent"
 	"github.com/pavelveter/hermem/src/internal/cli/db"
 	"github.com/pavelveter/hermem/src/internal/cli/diagnose"

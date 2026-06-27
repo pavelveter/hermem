@@ -4,9 +4,9 @@ package evaluation
 // RankedDoc is one candidate document with a human-assigned relevance
 // label (0 = irrelevant, 1 = marginally relevant, 2 = relevant).
 type RankedDoc struct {
-	DocID      string
-	Content    string
-	Relevance  int // 0, 1, or 2
+	DocID     string
+	Content   string
+	Relevance int // 0, 1, or 2
 }
 
 // RerankerQuery bundles a query with its candidate documents and

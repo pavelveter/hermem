@@ -55,4 +55,3 @@ func (e Entity) AsBelief() Belief {
 		Degree:         e.Degree,
 	}
 }
-

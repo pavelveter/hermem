@@ -66,14 +66,14 @@ type BaseHTTPService struct {
 //  2. Map err → (HTTP status, message) via mapStatus. Behaviour
 //     aligns with the explicit inline error→status checks the
 //     shells used pre-§3.2:
-//       - core.DomainError{Code: CodeNotFound}          → 400
-//       - core.DomainError{Code: CodeInvalidInput}      → 422
-//       - core.DomainError{Code: CodeSchemaConflict}    → 409
-//       - core.DomainError{Code: CodeInvalidSchema}     → 422
-//       - core.DomainError{Code: CodeUnauthorized}      → 401
-//       - core.ErrInvalidInput  (uncoded)               → 422
-//       - core.ErrSchemaConflict (uncoded)              → 409
-//       - everything else                                → 500
+//     - core.DomainError{Code: CodeNotFound}          → 400
+//     - core.DomainError{Code: CodeInvalidInput}      → 422
+//     - core.DomainError{Code: CodeSchemaConflict}    → 409
+//     - core.DomainError{Code: CodeInvalidSchema}     → 422
+//     - core.DomainError{Code: CodeUnauthorized}      → 401
+//     - core.ErrInvalidInput  (uncoded)               → 422
+//     - core.ErrSchemaConflict (uncoded)              → 409
+//     - everything else                                → 500
 //  3. Write the standard JSON error envelope (httputil.WriteError).
 //
 // CodeNotFound is intentionally mapped to 400 (not 404). Pre-§3.2
@@ -148,7 +148,9 @@ func (noServerStateError) Error() string { return "no server state" }
 // identical status codes for the same error return.
 //
 // CodeNotFound → 400 (matches the explicit
-//   `if errors.Is(err, core.ErrNotFound) { httputil.WriteError(w, 400, ...) }`
+//
+//	`if errors.Is(err, core.ErrNotFound) { httputil.WriteError(w, 400, ...) }`
+//
 // mapping in task.HandleTaskStatus / HandleTaskShow). Preserves the
 // pre-§3.2 wire contract.
 //
@@ -158,7 +160,8 @@ func (noServerStateError) Error() string { return "no server state" }
 // the wiring into Wrap closes the gap).
 //
 // CodeSchemaConflict → 409 (Matches httputil.MapError; shells that
-//   used shared.RejectSchemaConflict wrote 409 independently).
+//
+//	used shared.RejectSchemaConflict wrote 409 independently).
 func mapStatus(err error) (int, string) {
 	if err == nil {
 		return http.StatusOK, ""

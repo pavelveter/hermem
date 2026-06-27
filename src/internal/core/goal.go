@@ -43,4 +43,3 @@ func (e Entity) AsGoal() Goal {
 		Priority:  e.Priority,
 	}
 }
-

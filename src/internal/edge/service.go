@@ -73,4 +73,3 @@ func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema core
 	}
 	return nil
 }
-

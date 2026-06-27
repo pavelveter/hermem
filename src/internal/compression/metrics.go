@@ -51,10 +51,12 @@ func (m *Metrics) ObserveRecompressDuration(d time.Duration) {
 	m.recompressDurationNS.Add(d.Nanoseconds())
 }
 
-func (m *Metrics) CompressCount() int64        { return m.compressionCount.Load() }
-func (m *Metrics) RecompressCount() int64      { return m.recompressCount.Load() }
-func (m *Metrics) RegenerateCount() int64      { return m.regenerateCount.Load() }
-func (m *Metrics) CompressedEntities() int64   { return m.compressedEntities.Load() }
-func (m *Metrics) ClusterCount() int64         { return m.clusterCount.Load() }
+func (m *Metrics) CompressCount() int64         { return m.compressionCount.Load() }
+func (m *Metrics) RecompressCount() int64       { return m.recompressCount.Load() }
+func (m *Metrics) RegenerateCount() int64       { return m.regenerateCount.Load() }
+func (m *Metrics) CompressedEntities() int64    { return m.compressedEntities.Load() }
+func (m *Metrics) ClusterCount() int64          { return m.clusterCount.Load() }
 func (m *Metrics) TotalDuration() time.Duration { return time.Duration(m.totalDurationNS.Load()) }
-func (m *Metrics) RecompressDuration() time.Duration { return time.Duration(m.recompressDurationNS.Load()) }
+func (m *Metrics) RecompressDuration() time.Duration {
+	return time.Duration(m.recompressDurationNS.Load())
+}

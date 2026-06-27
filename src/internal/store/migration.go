@@ -489,8 +489,8 @@ func DetectOutOfOrder(db *sql.DB) ([]string, error) {
 // from the checksum recorded at apply time (i.e. a developer edited a
 // historical migration file after it was already applied).
 type DriftedMigration struct {
-	Name           string `json:"name"`
-	StoredChecksum string `json:"stored_checksum"`
+	Name            string `json:"name"`
+	StoredChecksum  string `json:"stored_checksum"`
 	CurrentChecksum string `json:"current_checksum"`
 }
 

@@ -111,4 +111,3 @@ func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schem
 	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, req.ID, req.Embedding) //nolint:errcheck // best-effort: shadow auto-link; not a Save failure
 	return nil
 }
-

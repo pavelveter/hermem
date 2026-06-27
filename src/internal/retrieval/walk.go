@@ -17,8 +17,8 @@ import (
 //
 //  1. expandGraph       — SQL CTE walk; returns raw []GraphNode rows.
 //  2. scoreAndRank      — applies the composite scorer (or ScoreComponents
-//                         on the Explain path) per row; collects depth-0
-//                         seeds; sorts by RankingScore DESC.
+//     on the Explain path) per row; collects depth-0
+//     seeds; sorts by RankingScore DESC.
 //  3. bucketize         — content-level dedup + per-category fan-out.
 //  4. logRetrievalExplanation — one structured INFO per explain call.
 //

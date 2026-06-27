@@ -76,9 +76,9 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		if i > 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
-			}				// Refresh the body before retrying. Without GetBody we
-				// can't replay a consumed Body, so callers must supply
-				// a GetBody closure on their *http.Request.
+			} // Refresh the body before retrying. Without GetBody we
+			// can't replay a consumed Body, so callers must supply
+			// a GetBody closure on their *http.Request.
 			if req.GetBody != nil {
 				body, err := req.GetBody()
 				if err != nil {
@@ -147,4 +147,3 @@ func backoffSleep(ctx context.Context, d time.Duration) bool {
 		return true
 	}
 }
-

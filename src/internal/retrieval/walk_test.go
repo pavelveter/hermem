@@ -707,8 +707,8 @@ func attrsMap(r *slog.Record) map[string]string {
 // stubReranker records every Rerank call and reverses the input slice
 // so tests can assert bucket contents change after the stage runs.
 type stubReranker struct {
-	calls   []stubRerankerCall
-	failOn  string // bucket name to error on; "" = never
+	calls    []stubRerankerCall
+	failOn   string // bucket name to error on; "" = never
 	reversed bool
 }
 
@@ -805,8 +805,8 @@ func TestApplyReranker_ReverseBucketContents(t *testing.T) {
 
 func TestApplyReranker_ErrorPropagates(t *testing.T) {
 	r := &core.RetrievalResult{
-		WorldFacts:  []core.RetrievedFact{{Content: "trigger"}},
-		Opinions:    []core.RetrievedFact{{Content: "after"}},
+		WorldFacts: []core.RetrievedFact{{Content: "trigger"}},
+		Opinions:   []core.RetrievedFact{{Content: "after"}},
 	}
 	stub := &stubReranker{failOn: "trigger"}
 	err := applyReranker(r, stub, context.Background(), "q")
@@ -842,8 +842,8 @@ func TestRetrieveContext_RerankerIsInvokedAfterBucketize(t *testing.T) {
 
 	stub := &stubReranker{reversed: true}
 	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
-		MaxDepth: 1,
-		Reranker: stub,
+		MaxDepth:  1,
+		Reranker:  stub,
 		QueryText: "any",
 	})
 	if err != nil {
@@ -878,9 +878,9 @@ func (t *stubTracer) StartSpan(_ context.Context, name string) (context.Context,
 	t.spans = append(t.spans, s)
 	return context.Background(), s
 }
-func (s *stubSpan) End()                                { s.Ended = true }
-func (s *stubSpan) SetAttribute(k string, v any)        { s.Attrs[k] = v }
-func (s *stubSpan) RecordError(e error)                 { s.Err = e }
+func (s *stubSpan) End()                         { s.Ended = true }
+func (s *stubSpan) SetAttribute(k string, v any) { s.Attrs[k] = v }
+func (s *stubSpan) RecordError(e error)          { s.Err = e }
 
 func (t *stubTracer) spanNames() []string {
 	out := make([]string, len(t.spans))
@@ -936,9 +936,9 @@ func TestRetrieveContext_TracesRerankWhenSet(t *testing.T) {
 	ctx := tracing.WithTracer(context.Background(), tracer)
 
 	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
-		MaxDepth: 1,
-		Ctx:      ctx,
-		Reranker: &stubReranker{},
+		MaxDepth:  1,
+		Ctx:       ctx,
+		Reranker:  &stubReranker{},
 		QueryText: "q",
 	}); err != nil {
 		t.Fatalf("err: %v", err)
