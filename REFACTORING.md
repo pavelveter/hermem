@@ -18,12 +18,12 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 - [x] Verify 971 tests pass
 
 ### §R1.2 Reduce `processOneItemOnce` complexity (cognitive: 19 → target < 15)
-- [ ] Extract `handleContradiction(existing, incoming) (action, archiveID)`
-- [ ] Extract `mergeEntity(ctx, existing, incoming, prov) (*core.Entity, error)`
-- [ ] Extract `createNewItem(ctx, it, prov) error`
-- [ ] Keep transaction orchestration in `processOneItemOnce`
+- [x] Extract `handleContradiction(existing, incoming) (action, archiveID)`
+- [x] Extract `mergeEntity(ctx, existing, incoming, prov) (*core.Entity, error)`
+- [x] Extract `createNewItem(ctx, it, prov) error`
+- [x] Keep transaction orchestration in `processOneItemOnce`
 - [ ] Add tests for contradiction handling paths
-- [ ] Verify 971 tests pass
+- [x] Verify 971 tests pass
 
 ### §R1.3 Refactor `LoadConfig` repetitive pattern (cognitive: 43 → target < 20)
 - [ ] Define `type configMapping struct { section, key string; apply func(*Config, string) }`
@@ -89,9 +89,9 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 - [ ] Verify 971 tests pass
 
 ### §R4.3 Define named type for anonymous struct in `processOneItemOnce`
-- [ ] Create `type processInput struct { Entity core.ExtractedEntity; Embedding []float32 }`
-- [ ] Replace anonymous struct parameter
-- [ ] Verify 971 tests pass
+- [x] Create `type processInput struct { Entity core.ExtractedEntity; Embedding []float32 }`
+- [x] Replace anonymous struct parameter
+- [x] Verify 971 tests pass
 
 ---
 
