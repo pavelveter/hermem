@@ -83,7 +83,7 @@ func TestSummarizer_RequiresEpisodeID(t *testing.T) {
 	db := openSummarizationTestDB(t)
 	ext := &stubExtractor{}
 	s := NewSummarizer(db, ext)
-	_, err := s.SummarizeEpisode(context.Background(), "")
+	_, err := s.SummarizeEpisode(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSummarizer_EpisodeNotFound(t *testing.T) {
 	db := openSummarizationTestDB(t)
 	ext := &stubExtractor{}
 	s := NewSummarizer(db, ext)
-	_, err := s.SummarizeEpisode(context.Background(), "missing")
+	_, err := s.SummarizeEpisode(t.Context(), "missing")
 	if err == nil {
 		t.Fatal("want error for missing episode, got nil")
 	}
@@ -109,7 +109,7 @@ func TestSummarizer_EmptyEpisodePersistsEmptySummary(t *testing.T) {
 	}
 	ext := &stubExtractor{}
 	s := NewSummarizer(db, ext)
-	summary, err := s.SummarizeEpisode(context.Background(), "ep-empty")
+	summary, err := s.SummarizeEpisode(t.Context(), "ep-empty")
 	if err != nil {
 		t.Fatalf("SummarizeEpisode: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestSummarizer_EmptyEpisodePersistsEmptySummary(t *testing.T) {
 		t.Fatalf("extractor should not be called for empty dialog, got %d", len(ext.dialogs))
 	}
 	// And the summary column was persisted (even if empty).
-	ep, err := New(db).GetEpisode(context.Background(), "ep-empty")
+	ep, err := New(db).GetEpisode(t.Context(), "ep-empty")
 	if err != nil {
 		t.Fatalf("GetEpisode: %v", err)
 	}
@@ -143,19 +143,19 @@ func TestSummarizer_BuildsDialogFromEventsAndMemories(t *testing.T) {
 		{ID: "e1", EpisodeID: "ep-1", Type: EventMessage, Content: "hello"},
 		{ID: "e2", EpisodeID: "ep-1", Type: EventMessage, Content: "world"},
 	} {
-		if err := evSvc.CreateEvent(context.Background(), e); err != nil {
+		if err := evSvc.CreateEvent(t.Context(), e); err != nil {
 			t.Fatalf("CreateEvent: %v", err)
 		}
 	}
 	linkSvc := NewLinkService(db)
-	if err := linkSvc.LinkMemory(context.Background(), "ep-1", "m1", "extracted"); err != nil {
+	if err := linkSvc.LinkMemory(t.Context(), "ep-1", "m1", "extracted"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
 	ext := &stubExtractor{result: &core.ExtractionResult{
 		Entities: []core.ExtractedEntity{{Category: "world", Content: "summary fact"}},
 	}}
 	s := NewSummarizer(db, ext)
-	summary, err := s.SummarizeEpisode(context.Background(), "ep-1")
+	summary, err := s.SummarizeEpisode(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("SummarizeEpisode: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestSummarizer_PersistsSummaryToEpisode(t *testing.T) {
 	}
 	// Seed one event so the dialog is non-empty and the extractor
 	// actually runs (empty episodes short-circuit before extraction).
-	if err := NewEventService(db).CreateEvent(context.Background(), Event{
+	if err := NewEventService(db).CreateEvent(t.Context(), Event{
 		ID: "e1", EpisodeID: "ep-1", Type: EventMessage, Content: "seed",
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
@@ -196,11 +196,11 @@ func TestSummarizer_PersistsSummaryToEpisode(t *testing.T) {
 		},
 	}}
 	s := NewSummarizer(db, ext)
-	_, err := s.SummarizeEpisode(context.Background(), "ep-1")
+	_, err := s.SummarizeEpisode(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("SummarizeEpisode: %v", err)
 	}
-	ep, _ := New(db).GetEpisode(context.Background(), "ep-1")
+	ep, _ := New(db).GetEpisode(t.Context(), "ep-1")
 	if !strings.Contains(ep.Summary, "[world] alpha") {
 		t.Errorf("persisted summary missing first entity: %q", ep.Summary)
 	}
@@ -218,13 +218,13 @@ func TestSummarizer_PropagatesExtractorError(t *testing.T) {
 		t.Fatalf("seed entity: %v", err)
 	}
 	linkSvc := NewLinkService(db)
-	if err := linkSvc.LinkMemory(context.Background(), "ep-1", "m1", "extracted"); err != nil {
+	if err := linkSvc.LinkMemory(t.Context(), "ep-1", "m1", "extracted"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
 	sentinel := errors.New("llm-down")
 	ext := &stubExtractor{err: sentinel}
 	s := NewSummarizer(db, ext)
-	_, err := s.SummarizeEpisode(context.Background(), "ep-1")
+	_, err := s.SummarizeEpisode(t.Context(), "ep-1")
 	if err == nil {
 		t.Fatal("want extractor error to propagate, got nil")
 	}
@@ -232,7 +232,7 @@ func TestSummarizer_PropagatesExtractorError(t *testing.T) {
 		t.Fatalf("want sentinel error in chain, got %v", err)
 	}
 	// And the summary must NOT have been persisted on error.
-	ep, _ := New(db).GetEpisode(context.Background(), "ep-1")
+	ep, _ := New(db).GetEpisode(t.Context(), "ep-1")
 	if ep.Summary != "" {
 		t.Fatalf("on error: want empty summary, got %q", ep.Summary)
 	}
@@ -245,14 +245,14 @@ func TestSummarizer_EmptyExtractionRendersPlaceholder(t *testing.T) {
 	}
 	// Seed one event so the dialog is non-empty and the extractor
 	// actually runs (empty episodes short-circuit before extraction).
-	if err := NewEventService(db).CreateEvent(context.Background(), Event{
+	if err := NewEventService(db).CreateEvent(t.Context(), Event{
 		ID: "e1", EpisodeID: "ep-1", Type: EventMessage, Content: "seed",
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
 	ext := &stubExtractor{result: &core.ExtractionResult{Entities: nil}}
 	s := NewSummarizer(db, ext)
-	summary, err := s.SummarizeEpisode(context.Background(), "ep-1")
+	summary, err := s.SummarizeEpisode(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("SummarizeEpisode: %v", err)
 	}

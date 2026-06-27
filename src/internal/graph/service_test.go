@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -28,7 +27,7 @@ func TestService_Components_EmptyDBReturnsEmpty(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	comps, err := svc.Components(context.Background(), 2)
+	comps, err := svc.Components(t.Context(), 2)
 	if err != nil {
 		t.Fatalf("Components: %v", err)
 	}
@@ -51,7 +50,7 @@ func TestService_Components_MinSizeZeroSweepsAll(t *testing.T) {
 	// Empty DB has zero components, so len == 0 matches the no-component
 	// case; the test pins zero-result normalization rather than the
 	// minSize semantics.
-	comps, err := svc.Components(context.Background(), 0)
+	comps, err := svc.Components(t.Context(), 0)
 	if err != nil {
 		t.Fatalf("Components: %v", err)
 	}
@@ -70,7 +69,7 @@ func TestService_Communities_EmptyDBReturnsEmpty(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	comms, q, err := svc.Communities(context.Background(), 10)
+	comms, q, err := svc.Communities(t.Context(), 10)
 	if err != nil {
 		t.Fatalf("Communities: %v", err)
 	}
@@ -92,7 +91,7 @@ func TestService_Verify_EmptyDBReturnsClean(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	report, err := svc.Verify(context.Background(), core.DefaultSchemaConfig(false), 3)
+	report, err := svc.Verify(t.Context(), core.DefaultSchemaConfig(false), 3)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}

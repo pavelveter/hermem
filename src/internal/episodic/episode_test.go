@@ -1,7 +1,6 @@
 package episodic
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"strings"
@@ -74,14 +73,14 @@ func TestService_CreateEpisode_DefaultsStartedAtAndMetadata(t *testing.T) {
 	svc := New(db)
 
 	before := time.Now()
-	if err := svc.CreateEpisode(context.Background(), Episode{
+	if err := svc.CreateEpisode(t.Context(), Episode{
 		ID:    "ep-1",
 		Title: "first episode",
 	}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
 
-	got, err := svc.GetEpisode(context.Background(), "ep-1")
+	got, err := svc.GetEpisode(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("GetEpisode: %v", err)
 	}
@@ -105,7 +104,7 @@ func TestService_CreateEpisode_PreservesMetadata(t *testing.T) {
 		"count":  float64(42), // JSON round-trips numbers as float64
 		"active": true,
 	}
-	if err := svc.CreateEpisode(context.Background(), Episode{
+	if err := svc.CreateEpisode(t.Context(), Episode{
 		ID:        "ep-2",
 		Title:     "metadata test",
 		Metadata:  meta,
@@ -114,7 +113,7 @@ func TestService_CreateEpisode_PreservesMetadata(t *testing.T) {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
 
-	got, err := svc.GetEpisode(context.Background(), "ep-2")
+	got, err := svc.GetEpisode(t.Context(), "ep-2")
 	if err != nil {
 		t.Fatalf("GetEpisode: %v", err)
 	}
@@ -132,7 +131,7 @@ func TestService_CreateEpisode_PreservesMetadata(t *testing.T) {
 func TestService_CreateEpisode_RequiresID(t *testing.T) {
 	db := openTestDB(t)
 	svc := New(db)
-	err := svc.CreateEpisode(context.Background(), Episode{Title: "no id"})
+	err := svc.CreateEpisode(t.Context(), Episode{Title: "no id"})
 	if err == nil {
 		t.Fatal("want error for empty id, got nil")
 	}
@@ -144,7 +143,7 @@ func TestService_CreateEpisode_RequiresID(t *testing.T) {
 func TestService_GetEpisode_NotFound(t *testing.T) {
 	db := openTestDB(t)
 	svc := New(db)
-	_, err := svc.GetEpisode(context.Background(), "missing")
+	_, err := svc.GetEpisode(t.Context(), "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
@@ -153,16 +152,16 @@ func TestService_GetEpisode_NotFound(t *testing.T) {
 func TestService_UpdateSummary_Persists(t *testing.T) {
 	db := openTestDB(t)
 	svc := New(db)
-	if err := svc.CreateEpisode(context.Background(), Episode{
+	if err := svc.CreateEpisode(t.Context(), Episode{
 		ID:    "ep-3",
 		Title: "summary test",
 	}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
-	if err := svc.UpdateSummary(context.Background(), "ep-3", "new summary"); err != nil {
+	if err := svc.UpdateSummary(t.Context(), "ep-3", "new summary"); err != nil {
 		t.Fatalf("UpdateSummary: %v", err)
 	}
-	got, err := svc.GetEpisode(context.Background(), "ep-3")
+	got, err := svc.GetEpisode(t.Context(), "ep-3")
 	if err != nil {
 		t.Fatalf("GetEpisode: %v", err)
 	}
@@ -174,7 +173,7 @@ func TestService_UpdateSummary_Persists(t *testing.T) {
 func TestService_UpdateSummary_NotFound(t *testing.T) {
 	db := openTestDB(t)
 	svc := New(db)
-	err := svc.UpdateSummary(context.Background(), "missing", "x")
+	err := svc.UpdateSummary(t.Context(), "missing", "x")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
@@ -185,16 +184,16 @@ func TestService_EndEpisode_StampsEndedAt(t *testing.T) {
 	svc := New(db)
 	started := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)
-	if err := svc.CreateEpisode(context.Background(), Episode{
+	if err := svc.CreateEpisode(t.Context(), Episode{
 		ID:        "ep-4",
 		StartedAt: started,
 	}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
-	if err := svc.EndEpisode(context.Background(), "ep-4", end); err != nil {
+	if err := svc.EndEpisode(t.Context(), "ep-4", end); err != nil {
 		t.Fatalf("EndEpisode: %v", err)
 	}
-	got, err := svc.GetEpisode(context.Background(), "ep-4")
+	got, err := svc.GetEpisode(t.Context(), "ep-4")
 	if err != nil {
 		t.Fatalf("GetEpisode: %v", err)
 	}
@@ -209,7 +208,7 @@ func TestService_EndEpisode_StampsEndedAt(t *testing.T) {
 func TestService_EndEpisode_NotFound(t *testing.T) {
 	db := openTestDB(t)
 	svc := New(db)
-	err := svc.EndEpisode(context.Background(), "missing", time.Now())
+	err := svc.EndEpisode(t.Context(), "missing", time.Now())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
@@ -227,12 +226,12 @@ func TestService_ListBySession_OrdersByStartedAt(t *testing.T) {
 		{ID: "ep-b", SessionID: "sess-1", StartedAt: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Title: "second"},
 	}
 	for _, e := range eps {
-		if err := svc.CreateEpisode(context.Background(), e); err != nil {
+		if err := svc.CreateEpisode(t.Context(), e); err != nil {
 			t.Fatalf("CreateEpisode %s: %v", e.ID, err)
 		}
 	}
 
-	got, err := svc.ListBySession(context.Background(), "sess-1", 0)
+	got, err := svc.ListBySession(t.Context(), "sess-1", 0)
 	if err != nil {
 		t.Fatalf("ListBySession: %v", err)
 	}
@@ -258,12 +257,12 @@ func TestService_ListBySession_FiltersBySession(t *testing.T) {
 		{ID: "ep-2", SessionID: "sess-1", StartedAt: time.Now(), Title: "two"},
 		{ID: "ep-3", SessionID: "sess-2", StartedAt: time.Now(), Title: "three"},
 	} {
-		if err := svc.CreateEpisode(context.Background(), e); err != nil {
+		if err := svc.CreateEpisode(t.Context(), e); err != nil {
 			t.Fatalf("CreateEpisode %s: %v", e.ID, err)
 		}
 	}
 
-	got, err := svc.ListBySession(context.Background(), "sess-1", 0)
+	got, err := svc.ListBySession(t.Context(), "sess-1", 0)
 	if err != nil {
 		t.Fatalf("ListBySession: %v", err)
 	}
@@ -281,7 +280,7 @@ func TestService_ListBySession_EmptyReturnsEmptySlice(t *testing.T) {
 	db := openTestDB(t)
 	seedSession(t, db, "sess-empty")
 	svc := New(db)
-	got, err := svc.ListBySession(context.Background(), "sess-empty", 0)
+	got, err := svc.ListBySession(t.Context(), "sess-empty", 0)
 	if err != nil {
 		t.Fatalf("ListBySession: %v", err)
 	}
@@ -296,7 +295,7 @@ func TestService_ListBySession_EmptyReturnsEmptySlice(t *testing.T) {
 func TestService_ListBySession_RequiresSessionID(t *testing.T) {
 	db := openTestDB(t)
 	svc := New(db)
-	_, err := svc.ListBySession(context.Background(), "", 0)
+	_, err := svc.ListBySession(t.Context(), "", 0)
 	if err == nil {
 		t.Fatal("want error for empty session_id, got nil")
 	}
@@ -308,7 +307,7 @@ func TestService_ListBySession_Limit(t *testing.T) {
 	svc := New(db)
 	for i := 0; i < 5; i++ {
 		id := []string{"e1", "e2", "e3", "e4", "e5"}[i]
-		if err := svc.CreateEpisode(context.Background(), Episode{
+		if err := svc.CreateEpisode(t.Context(), Episode{
 			ID:        id,
 			SessionID: "sess-1",
 			StartedAt: time.Date(2026, 1, i+1, 0, 0, 0, 0, time.UTC),
@@ -317,7 +316,7 @@ func TestService_ListBySession_Limit(t *testing.T) {
 			t.Fatalf("CreateEpisode %s: %v", id, err)
 		}
 	}
-	got, err := svc.ListBySession(context.Background(), "sess-1", 2)
+	got, err := svc.ListBySession(t.Context(), "sess-1", 2)
 	if err != nil {
 		t.Fatalf("ListBySession: %v", err)
 	}

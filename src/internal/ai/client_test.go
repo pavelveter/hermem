@@ -24,7 +24,7 @@ func TestResilientClient_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	resp, err := c.Do(context.Background(), req)
+	resp, err := c.Do(t.Context(), req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestResilientClient_Retries5xxThenSucceeds(t *testing.T) {
 		Backoffs: []time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond},
 	}
 	req, _ := http.NewRequest("GET", srv.URL, nil)
-	resp, err := c.Do(context.Background(), req)
+	resp, err := c.Do(t.Context(), req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestResilientClient_AttemptsExhaustedReturnsLastErr(t *testing.T) {
 		Backoffs: []time.Duration{1 * time.Millisecond},
 	}
 	req, _ := http.NewRequest("GET", srv.URL, nil)
-	resp, err := c.Do(context.Background(), req)
+	resp, err := c.Do(t.Context(), req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -98,7 +98,7 @@ func TestResilientClient_DefaultsKickInWhenZero(t *testing.T) {
 	req, _ := http.NewRequest("GET", "http://127.0.0.1:1/healthz", nil)
 	// Don't care what happens — we just need the call to not panic and
 	// prove the zero-value configuration path is reachable.
-	_, _ = c.Do(context.Background(), req)
+	_, _ = c.Do(t.Context(), req)
 }
 
 func TestResilientClient_CtxCancelAbortsRetries(t *testing.T) {
@@ -112,7 +112,7 @@ func TestResilientClient_CtxCancelAbortsRetries(t *testing.T) {
 		Attempts: 5,
 		Backoffs: []time.Duration{50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond},
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancelled
 	req, _ := http.NewRequest("GET", srv.URL, nil)
 	if _, err := c.Do(ctx, req); err == nil {

@@ -1,7 +1,6 @@
 package evolution
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 
 func TestGetSupersededBy_Active(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence, status) VALUES (1, 'active', 1.0, 'Active')`); err != nil {
 		t.Fatalf("insert: %v", err)
@@ -28,7 +27,7 @@ func TestGetSupersededBy_Active(t *testing.T) {
 
 func TestGetSupersededBy_Superseded(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'old', 0.5), (2, 'new', 0.8)`); err != nil {
 		t.Fatalf("insert beliefs: %v", err)
@@ -48,7 +47,7 @@ func TestGetSupersededBy_Superseded(t *testing.T) {
 
 func TestGetSupersededBy_NotFound(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	id, err := GetSupersededBy(ctx, db, 999)
 	if err != nil {
@@ -61,7 +60,7 @@ func TestGetSupersededBy_NotFound(t *testing.T) {
 
 func TestStateAt_BeforeHistory(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'test', 1.0)`); err != nil {
 		t.Fatalf("insert: %v", err)
@@ -82,7 +81,7 @@ func TestStateAt_BeforeHistory(t *testing.T) {
 
 func TestStateAt_AfterHistory(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'test', 1.0)`); err != nil {
 		t.Fatalf("insert: %v", err)
@@ -116,7 +115,7 @@ func openDBBench(b *testing.B) *sql.DB {
 
 func BenchmarkStateAt(b *testing.B) {
 	db := openDBBench(b)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'bench', 1.0)`); err != nil {
 		b.Fatalf("insert: %v", err)

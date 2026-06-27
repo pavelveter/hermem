@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -170,7 +169,7 @@ func TestMaxBytesMiddleware_AllowsShortBody(t *testing.T) {
 // entered with, never retroactively update on concurrent Reload.
 func TestRuntimeMiddleware_BindsSnapshotAndGetRuntimeReturnsIt(t *testing.T) {
 	original := &clienv.Env{
-		Ctx:   context.Background(),
+		Ctx:   t.Context(),
 		Cfg:   &config.Config{},
 		Build: clienv.BuildInfo{Version: "1.0.0"},
 	}
@@ -211,8 +210,8 @@ func TestRuntimeMiddleware_BindsSnapshotAndGetRuntimeReturnsIt(t *testing.T) {
 // cfg.Validate, so the test isolates snapshot semantics from
 // config-validation behaviour (covered separately by cli/env tests).
 func TestRuntimeMiddleware_MidRequestReloadDoesNotRetroactivelySwap(t *testing.T) {
-	gen1 := &clienv.Env{Ctx: context.Background(), Cfg: &config.Config{}, Build: clienv.BuildInfo{Version: "1"}}
-	gen2 := &clienv.Env{Ctx: context.Background(), Cfg: &config.Config{}, Build: clienv.BuildInfo{Version: "2"}}
+	gen1 := &clienv.Env{Ctx: t.Context(), Cfg: &config.Config{}, Build: clienv.BuildInfo{Version: "1"}}
+	gen2 := &clienv.Env{Ctx: t.Context(), Cfg: &config.Config{}, Build: clienv.BuildInfo{Version: "2"}}
 	mgr := clienv.NewEnvManager(gen1)
 
 	var seenBuild string
@@ -270,7 +269,7 @@ var silentLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func TestAuthMiddleware_NoAuthEnabled_Passes(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{},
 	})
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -284,7 +283,7 @@ func TestAuthMiddleware_NoAuthEnabled_Passes(t *testing.T) {
 
 func TestAuthMiddleware_HealthBypass(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{APIKey: "secret"},
 	})
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -303,7 +302,7 @@ func TestAuthMiddleware_HealthBypass(t *testing.T) {
 
 func TestAuthMiddleware_ValidKey_ReadScope(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{
 			APIKeys: []auth.Key{{Value: "key-a", Scope: auth.ScopeRead}},
 		},
@@ -321,7 +320,7 @@ func TestAuthMiddleware_ValidKey_ReadScope(t *testing.T) {
 
 func TestAuthMiddleware_InsufficientScope_Returns403(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{
 			APIKeys: []auth.Key{{Value: "key-read", Scope: auth.ScopeRead}},
 		},
@@ -342,7 +341,7 @@ func TestAuthMiddleware_InsufficientScope_Returns403(t *testing.T) {
 
 func TestAuthMiddleware_AdminCanAccessAll(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{
 			APIKeys: []auth.Key{{Value: "key-admin", Scope: auth.ScopeAdmin}},
 		},
@@ -362,7 +361,7 @@ func TestAuthMiddleware_AdminCanAccessAll(t *testing.T) {
 
 func TestAuthMiddleware_MissingKey_Returns401(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{
 			APIKeys: []auth.Key{{Value: "secret", Scope: auth.ScopeAdmin}},
 		},
@@ -378,7 +377,7 @@ func TestAuthMiddleware_MissingKey_Returns401(t *testing.T) {
 
 func TestAuthMiddleware_WriteScopeCanRead(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{
 			APIKeys: []auth.Key{{Value: "key-write", Scope: auth.ScopeWrite}},
 		},
@@ -396,7 +395,7 @@ func TestAuthMiddleware_WriteScopeCanRead(t *testing.T) {
 
 func TestAuthMiddleware_LegacySingleKey_ScopeAdmin(t *testing.T) {
 	mgr := clienv.NewEnvManager(&clienv.Env{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: &config.Config{APIKey: "legacy-secret"},
 	})
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })

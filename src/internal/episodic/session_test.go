@@ -1,7 +1,6 @@
 package episodic
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"strings"
@@ -37,10 +36,10 @@ func TestSessionService_CreateSession_DefaultsStartedAtAndMetadata(t *testing.T)
 	svc := NewSessionService(db)
 
 	before := time.Now()
-	if err := svc.CreateSession(context.Background(), Session{ID: "s-1"}); err != nil {
+	if err := svc.CreateSession(t.Context(), Session{ID: "s-1"}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	got, err := svc.GetSession(context.Background(), "s-1")
+	got, err := svc.GetSession(t.Context(), "s-1")
 	if err != nil {
 		t.Fatalf("GetSession: %v", err)
 	}
@@ -60,14 +59,14 @@ func TestSessionService_CreateSession_PreservesMetadata(t *testing.T) {
 	svc := NewSessionService(db)
 
 	meta := map[string]any{"user": "alice", "role": float64(7)}
-	if err := svc.CreateSession(context.Background(), Session{
+	if err := svc.CreateSession(t.Context(), Session{
 		ID:        "s-meta",
 		Metadata:  meta,
 		StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	got, _ := svc.GetSession(context.Background(), "s-meta")
+	got, _ := svc.GetSession(t.Context(), "s-meta")
 	if got.Metadata["user"] != "alice" {
 		t.Errorf("metadata.user: want alice, got %v", got.Metadata["user"])
 	}
@@ -79,7 +78,7 @@ func TestSessionService_CreateSession_PreservesMetadata(t *testing.T) {
 func TestSessionService_CreateSession_RequiresID(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
-	err := svc.CreateSession(context.Background(), Session{})
+	err := svc.CreateSession(t.Context(), Session{})
 	if err == nil {
 		t.Fatal("want error for empty id, got nil")
 	}
@@ -91,7 +90,7 @@ func TestSessionService_CreateSession_RequiresID(t *testing.T) {
 func TestSessionService_GetSession_NotFound(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
-	_, err := svc.GetSession(context.Background(), "missing")
+	_, err := svc.GetSession(t.Context(), "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
@@ -101,13 +100,13 @@ func TestSessionService_EndSession_StampsEndedAt(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
 	end := time.Date(2026, 6, 1, 17, 0, 0, 0, time.UTC)
-	if err := svc.CreateSession(context.Background(), Session{ID: "s-end"}); err != nil {
+	if err := svc.CreateSession(t.Context(), Session{ID: "s-end"}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if err := svc.EndSession(context.Background(), "s-end", end); err != nil {
+	if err := svc.EndSession(t.Context(), "s-end", end); err != nil {
 		t.Fatalf("EndSession: %v", err)
 	}
-	got, _ := svc.GetSession(context.Background(), "s-end")
+	got, _ := svc.GetSession(t.Context(), "s-end")
 	if got.EndedAt == nil {
 		t.Fatal("EndedAt: want non-nil after EndSession")
 	}
@@ -119,14 +118,14 @@ func TestSessionService_EndSession_StampsEndedAt(t *testing.T) {
 func TestSessionService_EndSession_ZeroTimeMeansNow(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
-	if err := svc.CreateSession(context.Background(), Session{ID: "s-now"}); err != nil {
+	if err := svc.CreateSession(t.Context(), Session{ID: "s-now"}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 	before := time.Now()
-	if err := svc.EndSession(context.Background(), "s-now", time.Time{}); err != nil {
+	if err := svc.EndSession(t.Context(), "s-now", time.Time{}); err != nil {
 		t.Fatalf("EndSession: %v", err)
 	}
-	got, _ := svc.GetSession(context.Background(), "s-now")
+	got, _ := svc.GetSession(t.Context(), "s-now")
 	if got.EndedAt == nil {
 		t.Fatal("EndedAt: want non-nil after zero-time EndSession")
 	}
@@ -138,7 +137,7 @@ func TestSessionService_EndSession_ZeroTimeMeansNow(t *testing.T) {
 func TestSessionService_EndSession_NotFound(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
-	err := svc.EndSession(context.Background(), "missing", time.Now())
+	err := svc.EndSession(t.Context(), "missing", time.Now())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
@@ -148,14 +147,14 @@ func TestSessionService_ListSessions_OrdersByStartedAtDesc(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
 	for i, id := range []string{"a", "b", "c"} {
-		if err := svc.CreateSession(context.Background(), Session{
+		if err := svc.CreateSession(t.Context(), Session{
 			ID:        id,
 			StartedAt: time.Date(2026, 1, i+1, 0, 0, 0, 0, time.UTC),
 		}); err != nil {
 			t.Fatalf("CreateSession %s: %v", id, err)
 		}
 	}
-	got, err := svc.ListSessions(context.Background(), 0)
+	got, err := svc.ListSessions(t.Context(), 0)
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)
 	}
@@ -171,14 +170,14 @@ func TestSessionService_ListSessions_Limit(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
 	for i, id := range []string{"s1", "s2", "s3", "s4", "s5"} {
-		if err := svc.CreateSession(context.Background(), Session{
+		if err := svc.CreateSession(t.Context(), Session{
 			ID:        id,
 			StartedAt: time.Date(2026, 1, i+1, 0, 0, 0, 0, time.UTC),
 		}); err != nil {
 			t.Fatalf("CreateSession %s: %v", id, err)
 		}
 	}
-	got, err := svc.ListSessions(context.Background(), 3)
+	got, err := svc.ListSessions(t.Context(), 3)
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)
 	}
@@ -193,7 +192,7 @@ func TestSessionService_ListSessions_Limit(t *testing.T) {
 func TestSessionService_ListSessions_EmptyReturnsEmptySlice(t *testing.T) {
 	db := openSessionTestDB(t)
 	svc := NewSessionService(db)
-	got, err := svc.ListSessions(context.Background(), 0)
+	got, err := svc.ListSessions(t.Context(), 0)
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)
 	}

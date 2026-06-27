@@ -2,7 +2,6 @@
 package goal
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -78,10 +77,10 @@ func TestService_Status_RejectsEmptyFields(t *testing.T) {
 	defer db.Close()
 	svc := New(db)
 	schema := core.SchemaConfig{StatefulEnabled: true}
-	if err := svc.Status(context.Background(), "", "running", schema); err == nil {
+	if err := svc.Status(t.Context(), "", "running", schema); err == nil {
 		t.Fatal("expected error for empty id")
 	}
-	if err := svc.Status(context.Background(), "g1", "", schema); err == nil {
+	if err := svc.Status(t.Context(), "g1", "", schema); err == nil {
 		t.Fatal("expected error for empty status")
 	}
 }
@@ -90,7 +89,7 @@ func TestService_Status_Transitions(t *testing.T) {
 	svc, db, schema := newGoalFixture(t)
 	defer db.Close()
 	seedGoal(t, db, "g1", "write tests", "pending")
-	if err := svc.Status(context.Background(), "g1", "running", schema); err != nil {
+	if err := svc.Status(t.Context(), "g1", "running", schema); err != nil {
 		t.Fatalf("Status pending→running: %v", err)
 	}
 }
@@ -98,7 +97,7 @@ func TestService_Status_Transitions(t *testing.T) {
 func TestService_Status_NotFound(t *testing.T) {
 	svc, db, schema := newGoalFixture(t)
 	defer db.Close()
-	err := svc.Status(context.Background(), "no-such-goal", "running", schema)
+	err := svc.Status(t.Context(), "no-such-goal", "running", schema)
 	if err == nil {
 		t.Fatal("expected error for nonexistent goal")
 	}
@@ -107,7 +106,7 @@ func TestService_Status_NotFound(t *testing.T) {
 func TestService_List_EmptyDBReturnsEmptySlice(t *testing.T) {
 	svc, db, schema := newGoalFixture(t)
 	defer db.Close()
-	goals, err := svc.List(context.Background(), "", "", schema)
+	goals, err := svc.List(t.Context(), "", "", schema)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -125,7 +124,7 @@ func TestService_List_ReturnsFiltered(t *testing.T) {
 	seedGoal(t, db, "g1", "goal one", "pending")
 	seedGoal(t, db, "g2", "goal two", "running")
 
-	goals, err := svc.List(context.Background(), "pending", "", schema)
+	goals, err := svc.List(t.Context(), "pending", "", schema)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -140,7 +139,7 @@ func TestService_List_ReturnsFiltered(t *testing.T) {
 func TestService_Get_RejectsEmptyID(t *testing.T) {
 	svc, db, schema := newGoalFixture(t)
 	defer db.Close()
-	_, err := svc.Get(context.Background(), "", schema)
+	_, err := svc.Get(t.Context(), "", schema)
 	if err == nil {
 		t.Fatal("expected error for empty id")
 	}
@@ -149,7 +148,7 @@ func TestService_Get_RejectsEmptyID(t *testing.T) {
 func TestService_Get_NotFound(t *testing.T) {
 	svc, db, schema := newGoalFixture(t)
 	defer db.Close()
-	_, err := svc.Get(context.Background(), "no-such-goal", schema)
+	_, err := svc.Get(t.Context(), "no-such-goal", schema)
 	if err == nil {
 		t.Fatal("expected error for nonexistent goal")
 	}
@@ -159,7 +158,7 @@ func TestService_Get_ReturnsGoal(t *testing.T) {
 	svc, db, schema := newGoalFixture(t)
 	defer db.Close()
 	seedGoal(t, db, "g1", "learn Go", "pending")
-	e, err := svc.Get(context.Background(), "g1", schema)
+	e, err := svc.Get(t.Context(), "g1", schema)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

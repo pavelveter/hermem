@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -33,7 +32,7 @@ func TestHTTPClient_DoPOSTHappyPath(t *testing.T) {
 
 	c := newHTTPClient(srv.URL, "", 5*time.Second, 1)
 	var resp map[string]string
-	if err := c.doPOST(context.Background(), "/api/test", map[string]string{"k": "v"}, &resp); err != nil {
+	if err := c.doPOST(t.Context(), "/api/test", map[string]string{"k": "v"}, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
 	}
 	if resp["hello"] != "world" {
@@ -59,7 +58,7 @@ func TestHTTPClient_DoPOSTNon200(t *testing.T) {
 
 	c := newHTTPClient(srv.URL, "", 5*time.Second, 1)
 	var resp map[string]string
-	err := c.doPOST(context.Background(), "/api/test", nil, &resp)
+	err := c.doPOST(t.Context(), "/api/test", nil, &resp)
 	if err == nil {
 		t.Fatal("expected error on 404, got nil")
 	}
@@ -83,7 +82,7 @@ func TestHTTPClient_DoPOSTAuthHeaderWithKey(t *testing.T) {
 
 	c := newHTTPClient(srv.URL, "sk-test-key", 5*time.Second, 1)
 	var resp map[string]string
-	if err := c.doPOST(context.Background(), "/x", nil, &resp); err != nil {
+	if err := c.doPOST(t.Context(), "/x", nil, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
 	}
 	if gotAuth != "Bearer sk-test-key" {
@@ -104,7 +103,7 @@ func TestHTTPClient_DoPOSTAuthHeaderNoKey(t *testing.T) {
 
 	c := newHTTPClient(srv.URL, "", 5*time.Second, 1)
 	var resp map[string]string
-	if err := c.doPOST(context.Background(), "/x", nil, &resp); err != nil {
+	if err := c.doPOST(t.Context(), "/x", nil, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
 	}
 	if gotAuthSeen {
@@ -132,7 +131,7 @@ func TestHTTPClient_DoPOSTPathConcatenation(t *testing.T) {
 	trimmedURL := srv.URL + "/"
 	c := newHTTPClient(trimmedURL, "", 5*time.Second, 1)
 	var resp map[string]string
-	if err := c.doPOST(context.Background(), "/api/foo", nil, &resp); err != nil {
+	if err := c.doPOST(t.Context(), "/api/foo", nil, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
 	}
 	if gotPath != "/api/foo" {
@@ -173,7 +172,7 @@ func TestHTTPClient_DoPOSTRetryReplaysBody(t *testing.T) {
 
 	c := newHTTPClient(srv.URL, "", 5*time.Second, 3) // 1 + 2 retries
 	var resp map[string]string
-	if err := c.doPOST(context.Background(), "/retry", map[string]string{"k": "v"}, &resp); err != nil {
+	if err := c.doPOST(t.Context(), "/retry", map[string]string{"k": "v"}, &resp); err != nil {
 		t.Fatalf("doPOST: %v (retry contract likely broken)", err)
 	}
 	if got := calls.Load(); got != 2 {
@@ -206,7 +205,7 @@ func TestHTTPClient_DoPOSTTimeoutPropagates(t *testing.T) {
 	c := newHTTPClient(srv.URL, "", 50*time.Millisecond, 1)
 	var resp map[string]string
 	start := time.Now()
-	err := c.doPOST(context.Background(), "/hang", nil, &resp)
+	err := c.doPOST(t.Context(), "/hang", nil, &resp)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("expected timeout error from hung handler, got nil")

@@ -17,7 +17,7 @@ func TestGo_PanicIsRecovered(t *testing.T) {
 			t.Fatalf("safego failed to contain panic: leaked %v", r)
 		}
 	}()
-	Go(context.Background(), "panic-source", func(_ context.Context) {
+	Go(t.Context(), "panic-source", func(_ context.Context) {
 		panic("kaboom")
 	})
 	// Give the goroutine a moment to actually run + recover.
@@ -28,7 +28,7 @@ func TestGo_PanicIsRecovered(t *testing.T) {
 // must run before the parent observes the flag (after a generous wait).
 func TestGo_NormalFnRuns(t *testing.T) {
 	var ran atomic.Bool
-	Go(context.Background(), "normal", func(_ context.Context) {
+	Go(t.Context(), "normal", func(_ context.Context) {
 		ran.Store(true)
 	})
 	deadline := time.Now().Add(time.Second)
@@ -45,7 +45,7 @@ func TestGo_NormalFnRuns(t *testing.T) {
 // and assert fn observes ctx.Err(). Documents the contract that fn
 // owns ctx cancellation, so a future regression there is caught.
 func TestGo_PassesCtx(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancelled
 	var seen error
 	var done atomic.Bool
@@ -78,7 +78,7 @@ func TestGo_DistinctNames(t *testing.T) {
 			t.Fatalf("leaked panic: %v", r)
 		}
 	}()
-	Go(context.Background(), "src-a", func(_ context.Context) { panic("a") })
-	Go(context.Background(), "src-b", func(_ context.Context) { panic("b") })
+	Go(t.Context(), "src-a", func(_ context.Context) { panic("a") })
+	Go(t.Context(), "src-b", func(_ context.Context) { panic("b") })
 	time.Sleep(50 * time.Millisecond)
 }

@@ -100,7 +100,7 @@ func TestRetrievalService_SearchEpisodes_NoFiltersReturnsAllOrderedDesc(t *testi
 	db := openRetrievalTestDB(t)
 	epSvc := New(db)
 	for i, id := range []string{"ep-1", "ep-2", "ep-3"} {
-		if err := epSvc.CreateEpisode(context.Background(), Episode{
+		if err := epSvc.CreateEpisode(t.Context(), Episode{
 			ID:        id,
 			StartedAt: time.Date(2026, 1, i+1, 0, 0, 0, 0, time.UTC),
 		}); err != nil {
@@ -108,7 +108,7 @@ func TestRetrievalService_SearchEpisodes_NoFiltersReturnsAllOrderedDesc(t *testi
 		}
 	}
 	svc := NewRetrievalService(db, nil)
-	got, err := svc.SearchEpisodes(context.Background(), "", EpisodeFilter{})
+	got, err := svc.SearchEpisodes(t.Context(), "", EpisodeFilter{})
 	if err != nil {
 		t.Fatalf("SearchEpisodes: %v", err)
 	}
@@ -137,12 +137,12 @@ func TestRetrievalService_SearchEpisodes_FilterBySessionID(t *testing.T) {
 		{ID: "ep-2", SessionID: "sess-1", StartedAt: time.Now()},
 		{ID: "ep-3", SessionID: "sess-2", StartedAt: time.Now()},
 	} {
-		if err := epSvc.CreateEpisode(context.Background(), e); err != nil {
+		if err := epSvc.CreateEpisode(t.Context(), e); err != nil {
 			t.Fatalf("CreateEpisode %s: %v", e.ID, err)
 		}
 	}
 	svc := NewRetrievalService(db, nil)
-	got, err := svc.SearchEpisodes(context.Background(), "", EpisodeFilter{SessionID: "sess-1"})
+	got, err := svc.SearchEpisodes(t.Context(), "", EpisodeFilter{SessionID: "sess-1"})
 	if err != nil {
 		t.Fatalf("SearchEpisodes: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestRetrievalService_SearchEpisodes_FilterByTimeRange(t *testing.T) {
 	db := openRetrievalTestDB(t)
 	epSvc := New(db)
 	for i, id := range []string{"jan", "feb", "mar"} {
-		if err := epSvc.CreateEpisode(context.Background(), Episode{
+		if err := epSvc.CreateEpisode(t.Context(), Episode{
 			ID:        id,
 			StartedAt: time.Date(2026, time.Month(i+1), 1, 0, 0, 0, 0, time.UTC),
 		}); err != nil {
@@ -168,7 +168,7 @@ func TestRetrievalService_SearchEpisodes_FilterByTimeRange(t *testing.T) {
 		}
 	}
 	svc := NewRetrievalService(db, nil)
-	got, err := svc.SearchEpisodes(context.Background(), "", EpisodeFilter{
+	got, err := svc.SearchEpisodes(t.Context(), "", EpisodeFilter{
 		TimeFrom: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
 		TimeTo:   time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
 	})
@@ -183,17 +183,17 @@ func TestRetrievalService_SearchEpisodes_FilterByTimeRange(t *testing.T) {
 func TestRetrievalService_SearchEpisodes_FilterHasSummary(t *testing.T) {
 	db := openRetrievalTestDB(t)
 	epSvc := New(db)
-	if err := epSvc.CreateEpisode(context.Background(), Episode{ID: "ep-summary", StartedAt: time.Now()}); err != nil {
+	if err := epSvc.CreateEpisode(t.Context(), Episode{ID: "ep-summary", StartedAt: time.Now()}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
-	if err := epSvc.UpdateSummary(context.Background(), "ep-summary", "has summary"); err != nil {
+	if err := epSvc.UpdateSummary(t.Context(), "ep-summary", "has summary"); err != nil {
 		t.Fatalf("UpdateSummary: %v", err)
 	}
-	if err := epSvc.CreateEpisode(context.Background(), Episode{ID: "ep-empty", StartedAt: time.Now()}); err != nil {
+	if err := epSvc.CreateEpisode(t.Context(), Episode{ID: "ep-empty", StartedAt: time.Now()}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
 	svc := NewRetrievalService(db, nil)
-	got, err := svc.SearchEpisodes(context.Background(), "", EpisodeFilter{HasSummary: true})
+	got, err := svc.SearchEpisodes(t.Context(), "", EpisodeFilter{HasSummary: true})
 	if err != nil {
 		t.Fatalf("SearchEpisodes: %v", err)
 	}
@@ -211,18 +211,18 @@ func TestRetrievalService_SearchEpisodes_FilterHasLinkedMemories(t *testing.T) {
 		t.Fatalf("seed entity: %v", err)
 	}
 	epSvc := New(db)
-	if err := epSvc.CreateEpisode(context.Background(), Episode{ID: "ep-linked", StartedAt: time.Now()}); err != nil {
+	if err := epSvc.CreateEpisode(t.Context(), Episode{ID: "ep-linked", StartedAt: time.Now()}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
-	if err := epSvc.CreateEpisode(context.Background(), Episode{ID: "ep-unlinked", StartedAt: time.Now()}); err != nil {
+	if err := epSvc.CreateEpisode(t.Context(), Episode{ID: "ep-unlinked", StartedAt: time.Now()}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
 	linkSvc := NewLinkService(db)
-	if err := linkSvc.LinkMemory(context.Background(), "ep-linked", "m1", "extracted"); err != nil {
+	if err := linkSvc.LinkMemory(t.Context(), "ep-linked", "m1", "extracted"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
 	svc := NewRetrievalService(db, nil)
-	got, err := svc.SearchEpisodes(context.Background(), "", EpisodeFilter{HasLinkedMemories: true})
+	got, err := svc.SearchEpisodes(t.Context(), "", EpisodeFilter{HasLinkedMemories: true})
 	if err != nil {
 		t.Fatalf("SearchEpisodes: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestRetrievalService_SearchEpisodes_Limit(t *testing.T) {
 	db := openRetrievalTestDB(t)
 	epSvc := New(db)
 	for i := 0; i < 5; i++ {
-		if err := epSvc.CreateEpisode(context.Background(), Episode{
+		if err := epSvc.CreateEpisode(t.Context(), Episode{
 			ID:        []string{"a", "b", "c", "d", "e"}[i],
 			StartedAt: time.Date(2026, 1, i+1, 0, 0, 0, 0, time.UTC),
 		}); err != nil {
@@ -246,7 +246,7 @@ func TestRetrievalService_SearchEpisodes_Limit(t *testing.T) {
 		}
 	}
 	svc := NewRetrievalService(db, nil)
-	got, err := svc.SearchEpisodes(context.Background(), "", EpisodeFilter{Limit: 2})
+	got, err := svc.SearchEpisodes(t.Context(), "", EpisodeFilter{Limit: 2})
 	if err != nil {
 		t.Fatalf("SearchEpisodes: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestRetrievalService_SearchEpisodes_SemanticRerank(t *testing.T) {
 
 	emb := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
 	svc := NewRetrievalService(db, emb)
-	got, err := svc.SearchEpisodes(context.Background(), "anything", EpisodeFilter{})
+	got, err := svc.SearchEpisodes(t.Context(), "anything", EpisodeFilter{})
 	if err != nil {
 		t.Fatalf("SearchEpisodes: %v", err)
 	}
@@ -285,13 +285,13 @@ func TestRetrievalService_SearchEpisodes_SemanticRerank(t *testing.T) {
 func TestRetrievalService_SearchEpisodes_NoEmbedderIsPureSQL(t *testing.T) {
 	db := openRetrievalTestDB(t)
 	epSvc := New(db)
-	if err := epSvc.CreateEpisode(context.Background(), Episode{ID: "ep-1", StartedAt: time.Now()}); err != nil {
+	if err := epSvc.CreateEpisode(t.Context(), Episode{ID: "ep-1", StartedAt: time.Now()}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
 	}
 	svc := NewRetrievalService(db, nil) // nil embedder
 	// Passing a non-empty query with nil embedder should NOT error
 	// — it just falls back to pure SQL ordering.
-	got, err := svc.SearchEpisodes(context.Background(), "anything", EpisodeFilter{})
+	got, err := svc.SearchEpisodes(t.Context(), "anything", EpisodeFilter{})
 	if err != nil {
 		t.Fatalf("SearchEpisodes with nil embedder: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestRetrievalService_SearchEpisodes_NoEmbedderIsPureSQL(t *testing.T) {
 func TestRetrievalService_EmptyResultReturnsEmptySlice(t *testing.T) {
 	db := openRetrievalTestDB(t)
 	svc := NewRetrievalService(db, nil)
-	got, err := svc.SearchEpisodes(context.Background(), "", EpisodeFilter{})
+	got, err := svc.SearchEpisodes(t.Context(), "", EpisodeFilter{})
 	if err != nil {
 		t.Fatalf("SearchEpisodes: %v", err)
 	}

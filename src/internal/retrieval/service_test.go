@@ -73,7 +73,7 @@ func seedSvcEntity(t *testing.T, svc *Service, id, content string) {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := svc.vi.Store(context.Background(), id, emb); err != nil {
+	if err := svc.vi.Store(t.Context(), id, emb); err != nil {
 		t.Fatalf("vi.Store: %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestNewService_Success(t *testing.T) {
 func TestService_Search_OK_DefaultTopK(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "s1", "hello world")
-	results, err := f.svc.Search(context.Background(), "hello", 0)
+	results, err := f.svc.Search(t.Context(), "hello", 0)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestService_Search_OK_DefaultTopK(t *testing.T) {
 func TestService_Search_OK_TopKExplicit(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "s1", "hello")
-	results, err := f.svc.Search(context.Background(), "hello", 1)
+	results, err := f.svc.Search(t.Context(), "hello", 1)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestService_Search_OK_TopKExplicit(t *testing.T) {
 
 func TestService_Search_RejectsEmptyQuery(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Search(context.Background(), "", 5)
+	_, err := f.svc.Search(t.Context(), "", 5)
 	if err == nil {
 		t.Fatal("expected empty-query error, got nil")
 	}
@@ -139,7 +139,7 @@ func TestService_Search_PropagatesEmbedError(t *testing.T) {
 	vi := vector.NewInMemoryVectorIndex(db)
 	svc := New(db, vi, &svcErrEmbedder{msg: "embed-down"})
 
-	_, err = svc.Search(context.Background(), "hello", 5)
+	_, err = svc.Search(t.Context(), "hello", 5)
 	if err == nil {
 		t.Fatal("expected embed error, got nil")
 	}
@@ -161,8 +161,8 @@ func TestService_Retrieve_OK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed edge: %v", err)
 	}
-	opts := core.RetrieveContextOptions{Ctx: context.Background()}
-	result, err := f.svc.Retrieve(context.Background(), []string{"ra"}, opts)
+	opts := core.RetrieveContextOptions{Ctx: t.Context()}
+	result, err := f.svc.Retrieve(t.Context(), []string{"ra"}, opts)
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestService_Retrieve_OK(t *testing.T) {
 
 func TestService_Retrieve_RejectsEmptySeeds(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Retrieve(context.Background(), nil, core.RetrieveContextOptions{})
+	_, err := f.svc.Retrieve(t.Context(), nil, core.RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected empty-seeds error, got nil")
 	}
@@ -185,7 +185,7 @@ func TestService_Retrieve_RejectsEmptySeeds(t *testing.T) {
 func TestService_Retrieve_AutoFillsCtx(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "ctx-1", "ctx alpha")
-	result, err := f.svc.Retrieve(context.Background(), []string{"ctx-1"}, core.RetrieveContextOptions{})
+	result, err := f.svc.Retrieve(t.Context(), []string{"ctx-1"}, core.RetrieveContextOptions{})
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -199,8 +199,8 @@ func TestService_Retrieve_AutoFillsCtx(t *testing.T) {
 func TestService_Query_OK_ReturnsMarkdown(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "qa", "alpha query")
-	opts := core.RetrieveContextOptions{Ctx: context.Background()}
-	md, err := f.svc.Query(context.Background(), "alpha", 0, opts)
+	opts := core.RetrieveContextOptions{Ctx: t.Context()}
+	md, err := f.svc.Query(t.Context(), "alpha", 0, opts)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestService_Query_OK_ReturnsMarkdown(t *testing.T) {
 
 func TestService_Query_RejectsEmptyQuery(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Query(context.Background(), "", 0, core.RetrieveContextOptions{})
+	_, err := f.svc.Query(t.Context(), "", 0, core.RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected empty-query error, got nil")
 	}
@@ -226,7 +226,7 @@ func TestService_Query_PropagatesEmbedError(t *testing.T) {
 	defer db.Close()
 	vi := vector.NewInMemoryVectorIndex(db)
 	svc := New(db, vi, &svcErrEmbedder{msg: "query-embed-fail"})
-	_, err = svc.Query(context.Background(), "anything", 0, core.RetrieveContextOptions{})
+	_, err = svc.Query(t.Context(), "anything", 0, core.RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected embed error, got nil")
 	}
@@ -236,7 +236,7 @@ func TestService_Query_PropagatesEmbedError(t *testing.T) {
 
 func TestService_Response_RejectsEmptyQuery(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Response(context.Background(), "", core.RetrieveContextOptions{})
+	_, err := f.svc.Response(t.Context(), "", core.RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected empty-query rejection, got nil")
 	}
@@ -250,8 +250,8 @@ func TestService_Response_RejectsEmptyQuery(t *testing.T) {
 func TestService_Explain_OK(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "ea", "explain alpha")
-	opts := core.RetrieveContextOptions{Ctx: context.Background()}
-	result, err := f.svc.Explain(context.Background(), "alpha", 0, opts)
+	opts := core.RetrieveContextOptions{Ctx: t.Context()}
+	result, err := f.svc.Explain(t.Context(), "alpha", 0, opts)
 	if err != nil {
 		t.Fatalf("Explain: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestService_Explain_SwallowsEmbedError(t *testing.T) {
 	vi := vector.NewInMemoryVectorIndex(db)
 	svc := New(db, vi, &svcErrEmbedder{msg: "explain-embed-fail"})
 
-	result, err := svc.Explain(context.Background(), "anything", 0, core.RetrieveContextOptions{})
+	result, err := svc.Explain(t.Context(), "anything", 0, core.RetrieveContextOptions{})
 	if err != nil {
 		t.Fatalf("Explain should swallow embed error, got: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestService_Provenance_OK_DefaultLimit(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	entities, err := f.svc.Provenance(context.Background(), "conv-seed", "", "", 0)
+	entities, err := f.svc.Provenance(t.Context(), "conv-seed", "", "", 0)
 	if err != nil {
 		t.Fatalf("Provenance: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestService_Provenance_OK_DefaultLimit(t *testing.T) {
 // in the wrapper; here we just verify the service-level signal.
 func TestService_Provenance_RequiresAtLeastOneFilter(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Provenance(context.Background(), "", "", "", 0)
+	_, err := f.svc.Provenance(t.Context(), "", "", "", 0)
 	if err == nil {
 		t.Fatal("expected empty-filter rejection, got nil")
 	}

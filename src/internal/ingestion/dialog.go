@@ -222,7 +222,7 @@ type processInput struct {
 
 // executeItemTx runs the database transaction for creating or merging an entity.
 func (w *IngestionWorker) executeItemTx(ctx context.Context, targetID string, entity core.ExtractedEntity, embedding []float32, prov core.Provenance, merged *core.Entity, archiveID string) error {
-	itemTx, err := w.db.BeginTx(ctx, nil)
+	itemTx, err := w.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin tx failed: %w", err)
 	}

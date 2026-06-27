@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"embed"
@@ -57,7 +58,7 @@ func RunMigrations(db *sql.DB) error {
 			continue
 		}
 
-		tx, err := db.Begin()
+		tx, err := db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 		if err != nil {
 			return fmt.Errorf("begin tx for %s: %w", name, err)
 		}

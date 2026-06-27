@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -64,7 +63,7 @@ func seedIntegrityCheckDB(t *testing.T, missingEmbeddings, danglingEdges int, ar
 func TestIntegrityChecker_CleanDB(t *testing.T) {
 	db := seedIntegrityCheckDB(t, 0, 0, false)
 	ic := NewIntegrityChecker(db)
-	report, err := ic.Check(context.Background())
+	report, err := ic.Check(t.Context())
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -76,7 +75,7 @@ func TestIntegrityChecker_CleanDB(t *testing.T) {
 func TestIntegrityChecker_MissingEmbeddings(t *testing.T) {
 	db := seedIntegrityCheckDB(t, 1, 0, false)
 	ic := NewIntegrityChecker(db)
-	report, err := ic.Check(context.Background())
+	report, err := ic.Check(t.Context())
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -98,7 +97,7 @@ func TestIntegrityChecker_MissingEmbeddings(t *testing.T) {
 func TestIntegrityChecker_DanglingEdge(t *testing.T) {
 	db := seedIntegrityCheckDB(t, 0, 1, false)
 	ic := NewIntegrityChecker(db)
-	report, err := ic.Check(context.Background())
+	report, err := ic.Check(t.Context())
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -117,7 +116,7 @@ func TestIntegrityChecker_DanglingEdge(t *testing.T) {
 func TestIntegrityChecker_ArchivedWithEmbedding(t *testing.T) {
 	db := seedIntegrityCheckDB(t, 0, 0, true)
 	ic := NewIntegrityChecker(db)
-	report, err := ic.Check(context.Background())
+	report, err := ic.Check(t.Context())
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -136,7 +135,7 @@ func TestIntegrityChecker_ArchivedWithEmbedding(t *testing.T) {
 func TestIntegrityChecker_ManyMissingEmbeddingsCritical(t *testing.T) {
 	db := seedIntegrityCheckDB(t, 10, 0, false)
 	ic := NewIntegrityChecker(db)
-	report, err := ic.Check(context.Background())
+	report, err := ic.Check(t.Context())
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}

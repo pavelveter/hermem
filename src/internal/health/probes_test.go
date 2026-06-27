@@ -55,7 +55,7 @@ func TestDBProbe_ClosedDB(t *testing.T) {
 	}
 	db.Close()
 	svc := health.New(health.DBProbe(db))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r, ok := st.Checks["database"]
 	if !ok {
 		t.Fatal("missing database check result")
@@ -72,7 +72,7 @@ func TestVectorIndexProbe_OK(t *testing.T) {
 		},
 	}
 	svc := health.New(health.VectorIndexProbe(vi, 3))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["vector_index"]
 	if !r.OK {
 		t.Fatalf("expected vector_index OK, got error: %s", r.Error)
@@ -86,7 +86,7 @@ func TestVectorIndexProbe_Error(t *testing.T) {
 		},
 	}
 	svc := health.New(health.VectorIndexProbe(vi, 3))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["vector_index"]
 	if r.OK {
 		t.Fatal("expected vector_index to fail")
@@ -95,7 +95,7 @@ func TestVectorIndexProbe_Error(t *testing.T) {
 
 func TestVectorIndexProbe_Nil(t *testing.T) {
 	svc := health.New(health.VectorIndexProbe(nil, 3))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["vector_index"]
 	if r.OK {
 		t.Fatal("expected nil vector_index to fail")
@@ -109,7 +109,7 @@ func TestEmbedderProbe_OK(t *testing.T) {
 		},
 	}
 	svc := health.New(health.EmbedderProbe(em))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["embedder"]
 	if !r.OK {
 		t.Fatalf("expected embedder OK, got error: %s", r.Error)
@@ -123,7 +123,7 @@ func TestEmbedderProbe_Error(t *testing.T) {
 		},
 	}
 	svc := health.New(health.EmbedderProbe(em))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["embedder"]
 	if r.OK {
 		t.Fatal("expected embedder to fail")
@@ -142,7 +142,7 @@ func TestEmbedderProbe_Timeout(t *testing.T) {
 		},
 	}
 	svc := health.New(health.EmbedderProbe(em))
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
 	defer cancel()
 	st := svc.Ready(ctx)
 	r := st.Checks["embedder"]
@@ -153,7 +153,7 @@ func TestEmbedderProbe_Timeout(t *testing.T) {
 
 func TestExtractorProbe_NilIsWarning(t *testing.T) {
 	svc := health.New(health.ExtractorProbe(nil))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["extractor"]
 	if r.OK {
 		t.Fatal("expected extractor to fail when nil")
@@ -170,7 +170,7 @@ func TestExtractorProbe_OK(t *testing.T) {
 		},
 	}
 	svc := health.New(health.ExtractorProbe(ex))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["extractor"]
 	if !r.OK {
 		t.Fatalf("expected extractor OK, got error: %s", r.Error)
@@ -198,7 +198,7 @@ func TestStatusAggregation_CriticalFailUnhealthy(t *testing.T) {
 			Severity: "warning",
 		},
 	)
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	if st.Ready {
 		t.Fatal("expected Ready=false when critical check fails")
 	}
@@ -222,7 +222,7 @@ func TestStatusAggregation_WarningOnlyStillHealthy(t *testing.T) {
 			Severity: "warning",
 		},
 	)
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	if !st.Ready {
 		t.Fatal("expected Ready=true when only warning checks fail")
 	}
@@ -231,7 +231,7 @@ func TestStatusAggregation_WarningOnlyStillHealthy(t *testing.T) {
 func TestDiskSpaceProbe_RunsWithoutError(t *testing.T) {
 	// Use the worktree root as the probe path — always has some disk space.
 	svc := health.New(health.DiskSpaceProbe("/"))
-	st := svc.Ready(context.Background())
+	st := svc.Ready(t.Context())
 	r := st.Checks["disk_space"]
 	// Disk might be full in constrained CI, but on a dev machine this passes.
 	if !r.OK {

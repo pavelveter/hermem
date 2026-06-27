@@ -20,7 +20,7 @@ func TestCompress_NoEntities(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
 	cp := NewCompressor(db, &mockExtractor{result: &core.ExtractionResult{}, err: nil})
-	_, err := cp.Compress(context.Background(), nil)
+	_, err := cp.Compress(t.Context(), nil)
 	if err == nil {
 		t.Fatal("expected error for empty IDs")
 	}
@@ -37,7 +37,7 @@ func TestCompress_SingleEntity(t *testing.T) {
 			},
 		},
 	})
-	node, err := cp.Compress(context.Background(), []string{"e1"})
+	node, err := cp.Compress(t.Context(), []string{"e1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestCompress_MultipleEntities(t *testing.T) {
 			},
 		},
 	})
-	node, err := cp.Compress(context.Background(), []string{"e1", "e2"})
+	node, err := cp.Compress(t.Context(), []string{"e1", "e2"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestCompressCluster_Empty(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
 	cp := NewCompressor(db, &mockExtractor{result: &core.ExtractionResult{}, err: nil})
-	nodes, err := cp.CompressCluster(context.Background(), nil)
+	nodes, err := cp.CompressCluster(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestCompressCluster_MultipleClusters(t *testing.T) {
 			},
 		},
 	})
-	nodes, err := cp.CompressCluster(context.Background(), [][]string{{"a", "b"}, {"c"}})
+	nodes, err := cp.CompressCluster(t.Context(), [][]string{{"a", "b"}, {"c"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,11 +121,11 @@ func TestRecompress_Success(t *testing.T) {
 			},
 		},
 	})
-	first, err := cp.Compress(context.Background(), []string{"e1"})
+	first, err := cp.Compress(t.Context(), []string{"e1"})
 	if err != nil {
 		t.Fatalf("compress: %v", err)
 	}
-	recompressed, err := cp.Recompress(context.Background(), first.ID)
+	recompressed, err := cp.Recompress(t.Context(), first.ID)
 	if err != nil {
 		t.Fatalf("recompress: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestRecompress_Success(t *testing.T) {
 		t.Fatalf("new node should not have superseded_by set")
 	}
 
-	loaded, err := loadSummaryNode(context.Background(), db, first.ID)
+	loaded, err := loadSummaryNode(t.Context(), db, first.ID)
 	if err != nil {
 		t.Fatalf("load original: %v", err)
 	}
@@ -176,11 +176,11 @@ func TestRecompress_MaxDepth(t *testing.T) {
 		Generation:     MaxRecursionDepth,
 		ExtractorModel: "llm",
 	}
-	if err := insertSummaryNode(context.Background(), db, *node); err != nil {
+	if err := insertSummaryNode(t.Context(), db, *node); err != nil {
 		t.Fatalf("seed max-depth node: %v", err)
 	}
 
-	_, err := cp.Recompress(context.Background(), "summary-maxed")
+	_, err := cp.Recompress(t.Context(), "summary-maxed")
 	if err == nil {
 		t.Fatal("expected error for max depth reached")
 	}
@@ -197,11 +197,11 @@ func TestRegenerate_Success(t *testing.T) {
 			},
 		},
 	})
-	first, err := cp.Compress(context.Background(), []string{"e1"})
+	first, err := cp.Compress(t.Context(), []string{"e1"})
 	if err != nil {
 		t.Fatalf("compress: %v", err)
 	}
-	regenerated, err := cp.Regenerate(context.Background(), first.ID)
+	regenerated, err := cp.Regenerate(t.Context(), first.ID)
 	if err != nil {
 		t.Fatalf("regenerate: %v", err)
 	}
@@ -228,11 +228,11 @@ func TestProvenance_SurvivesRecompress(t *testing.T) {
 			},
 		},
 	})
-	first, err := cp.Compress(context.Background(), []string{"e1", "e2"})
+	first, err := cp.Compress(t.Context(), []string{"e1", "e2"})
 	if err != nil {
 		t.Fatalf("compress: %v", err)
 	}
-	recompressed, err := cp.Recompress(context.Background(), first.ID)
+	recompressed, err := cp.Recompress(t.Context(), first.ID)
 	if err != nil {
 		t.Fatalf("recompress: %v", err)
 	}

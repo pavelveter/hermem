@@ -1,7 +1,6 @@
 package episodic
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"strings"
@@ -71,7 +70,7 @@ func openPlaybackTestDB(t *testing.T) *sql.DB {
 func TestPlaybackService_Playback_RequiresEpisodeID(t *testing.T) {
 	db := openPlaybackTestDB(t)
 	svc := NewPlaybackService(db)
-	_, err := svc.Playback(context.Background(), "")
+	_, err := svc.Playback(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
 	}
@@ -83,7 +82,7 @@ func TestPlaybackService_Playback_EmptyEpisodeReturnsEmptySlice(t *testing.T) {
 		t.Fatalf("seed episode: %v", err)
 	}
 	svc := NewPlaybackService(db)
-	frames, err := svc.Playback(context.Background(), "ep-empty")
+	frames, err := svc.Playback(t.Context(), "ep-empty")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
 	}
@@ -105,7 +104,7 @@ func TestPlaybackService_Playback_NonExistentEpisodeReturnsEmptyFrames(t *testin
 	// EpisodeService.GetEpisode first.
 	db := openPlaybackTestDB(t)
 	svc := NewPlaybackService(db)
-	frames, err := svc.Playback(context.Background(), "missing")
+	frames, err := svc.Playback(t.Context(), "missing")
 	if err != nil {
 		t.Fatalf("Playback on non-existent episode: %v", err)
 	}
@@ -128,20 +127,20 @@ func TestPlaybackService_Playback_ActorReflectsKindContext(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO entities (id, category, content, status) VALUES ('t1', 'task', 'task content', 'completed')`); err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
-	if err := NewEventService(db).CreateEvent(context.Background(), Event{
+	if err := NewEventService(db).CreateEvent(t.Context(), Event{
 		ID: "e1", EpisodeID: "ep-1", Type: EventMessage, Content: "hello",
 		Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
-	if err := NewLinkService(db).LinkMemory(context.Background(), "ep-1", "m1", "referenced"); err != nil {
+	if err := NewLinkService(db).LinkMemory(t.Context(), "ep-1", "m1", "referenced"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
-	if err := NewTaskLinkService(db).LinkTask(context.Background(), "ep-1", "t1"); err != nil {
+	if err := NewTaskLinkService(db).LinkTask(t.Context(), "ep-1", "t1"); err != nil {
 		t.Fatalf("LinkTask: %v", err)
 	}
 	svc := NewPlaybackService(db)
-	frames, err := svc.Playback(context.Background(), "ep-1")
+	frames, err := svc.Playback(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
 	}
@@ -178,12 +177,12 @@ func TestPlaybackService_Playback_PreservesChronologicalOrder(t *testing.T) {
 		{ID: "e-mid", EpisodeID: "ep-1", Type: EventMessage, Content: "mid",
 			Timestamp: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)},
 	} {
-		if err := evSvc.CreateEvent(context.Background(), e); err != nil {
+		if err := evSvc.CreateEvent(t.Context(), e); err != nil {
 			t.Fatalf("CreateEvent %d: %v", i, err)
 		}
 	}
 	svc := NewPlaybackService(db)
-	frames, err := svc.Playback(context.Background(), "ep-1")
+	frames, err := svc.Playback(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
 	}

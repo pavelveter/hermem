@@ -1,7 +1,6 @@
 package episodic
 
 import (
-	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -75,7 +74,7 @@ func TestEventService_CreateEvent_DefaultsTimestampAndMetadata(t *testing.T) {
 	svc := NewEventService(db)
 
 	before := time.Now()
-	if err := svc.CreateEvent(context.Background(), Event{
+	if err := svc.CreateEvent(t.Context(), Event{
 		ID:        "ev-1",
 		EpisodeID: "ep-1",
 		Type:      EventMessage,
@@ -84,7 +83,7 @@ func TestEventService_CreateEvent_DefaultsTimestampAndMetadata(t *testing.T) {
 		t.Fatalf("CreateEvent: %v", err)
 	}
 
-	got, err := svc.ListEventsByEpisode(context.Background(), "ep-1")
+	got, err := svc.ListEventsByEpisode(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("ListEventsByEpisode: %v", err)
 	}
@@ -102,7 +101,7 @@ func TestEventService_CreateEvent_DefaultsTimestampAndMetadata(t *testing.T) {
 func TestEventService_CreateEvent_RequiresID(t *testing.T) {
 	db := openEventTestDB(t)
 	svc := NewEventService(db)
-	err := svc.CreateEvent(context.Background(), Event{EpisodeID: "ep-1", Type: EventMessage})
+	err := svc.CreateEvent(t.Context(), Event{EpisodeID: "ep-1", Type: EventMessage})
 	if err == nil || !strings.Contains(err.Error(), "id required") {
 		t.Fatalf("want id-required error, got %v", err)
 	}
@@ -111,7 +110,7 @@ func TestEventService_CreateEvent_RequiresID(t *testing.T) {
 func TestEventService_CreateEvent_RequiresEpisodeID(t *testing.T) {
 	db := openEventTestDB(t)
 	svc := NewEventService(db)
-	err := svc.CreateEvent(context.Background(), Event{ID: "ev-1", Type: EventMessage})
+	err := svc.CreateEvent(t.Context(), Event{ID: "ev-1", Type: EventMessage})
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
 	}
@@ -121,7 +120,7 @@ func TestEventService_CreateEvent_RejectsInvalidType(t *testing.T) {
 	db := openEventTestDB(t)
 	seedEpisode(t, db, "ep-1")
 	svc := NewEventService(db)
-	err := svc.CreateEvent(context.Background(), Event{
+	err := svc.CreateEvent(t.Context(), Event{
 		ID:        "ev-1",
 		EpisodeID: "ep-1",
 		Type:      "garbage",
@@ -139,7 +138,7 @@ func TestEventService_CreateEvent_AllFourTypes(t *testing.T) {
 	seedEpisode(t, db, "ep-1")
 	svc := NewEventService(db)
 	for i, typ := range []EventType{EventMessage, EventAction, EventObservation, EventSystem} {
-		if err := svc.CreateEvent(context.Background(), Event{
+		if err := svc.CreateEvent(t.Context(), Event{
 			ID:        []string{"e1", "e2", "e3", "e4"}[i],
 			EpisodeID: "ep-1",
 			Type:      typ,
@@ -148,7 +147,7 @@ func TestEventService_CreateEvent_AllFourTypes(t *testing.T) {
 			t.Fatalf("CreateEvent %s: %v", typ, err)
 		}
 	}
-	got, _ := svc.ListEventsByEpisode(context.Background(), "ep-1")
+	got, _ := svc.ListEventsByEpisode(t.Context(), "ep-1")
 	if len(got) != 4 {
 		t.Fatalf("want 4 events, got %d", len(got))
 	}
@@ -165,11 +164,11 @@ func TestEventService_ListEventsByEpisode_OrdersByTimestamp(t *testing.T) {
 		{ID: "e-b", EpisodeID: "ep-1", Type: EventMessage, Timestamp: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Content: "second"},
 	}
 	for _, e := range events {
-		if err := svc.CreateEvent(context.Background(), e); err != nil {
+		if err := svc.CreateEvent(t.Context(), e); err != nil {
 			t.Fatalf("CreateEvent %s: %v", e.ID, err)
 		}
 	}
-	got, _ := svc.ListEventsByEpisode(context.Background(), "ep-1")
+	got, _ := svc.ListEventsByEpisode(t.Context(), "ep-1")
 	wantIDs := []string{"e-a", "e-b", "e-c"}
 	for i, e := range got {
 		if e.ID != wantIDs[i] {
@@ -181,7 +180,7 @@ func TestEventService_ListEventsByEpisode_OrdersByTimestamp(t *testing.T) {
 func TestEventService_ListEventsByEpisode_RequiresEpisodeID(t *testing.T) {
 	db := openEventTestDB(t)
 	svc := NewEventService(db)
-	_, err := svc.ListEventsByEpisode(context.Background(), "")
+	_, err := svc.ListEventsByEpisode(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
 	}
@@ -191,7 +190,7 @@ func TestEventService_ListEventsByEpisode_EmptyReturnsEmptySlice(t *testing.T) {
 	db := openEventTestDB(t)
 	seedEpisode(t, db, "ep-empty")
 	svc := NewEventService(db)
-	got, err := svc.ListEventsByEpisode(context.Background(), "ep-empty")
+	got, err := svc.ListEventsByEpisode(t.Context(), "ep-empty")
 	if err != nil {
 		t.Fatalf("ListEventsByEpisode: %v", err)
 	}
@@ -208,7 +207,7 @@ func TestEventService_ListEventsByType_OrdersByTimestampDesc(t *testing.T) {
 	seedEpisode(t, db, "ep-1")
 	svc := NewEventService(db)
 	for i, typ := range []EventType{EventMessage, EventAction, EventMessage, EventMessage} {
-		if err := svc.CreateEvent(context.Background(), Event{
+		if err := svc.CreateEvent(t.Context(), Event{
 			ID:        []string{"m1", "a1", "m2", "m3"}[i],
 			EpisodeID: "ep-1",
 			Type:      typ,
@@ -217,7 +216,7 @@ func TestEventService_ListEventsByType_OrdersByTimestampDesc(t *testing.T) {
 			t.Fatalf("CreateEvent: %v", err)
 		}
 	}
-	got, err := svc.ListEventsByType(context.Background(), EventMessage, 0)
+	got, err := svc.ListEventsByType(t.Context(), EventMessage, 0)
 	if err != nil {
 		t.Fatalf("ListEventsByType: %v", err)
 	}
@@ -238,7 +237,7 @@ func TestEventService_ListEventsByType_Limit(t *testing.T) {
 	seedEpisode(t, db, "ep-1")
 	svc := NewEventService(db)
 	for i := 0; i < 5; i++ {
-		if err := svc.CreateEvent(context.Background(), Event{
+		if err := svc.CreateEvent(t.Context(), Event{
 			ID:        []string{"e1", "e2", "e3", "e4", "e5"}[i],
 			EpisodeID: "ep-1",
 			Type:      EventMessage,
@@ -247,7 +246,7 @@ func TestEventService_ListEventsByType_Limit(t *testing.T) {
 			t.Fatalf("CreateEvent: %v", err)
 		}
 	}
-	got, err := svc.ListEventsByType(context.Background(), EventMessage, 2)
+	got, err := svc.ListEventsByType(t.Context(), EventMessage, 2)
 	if err != nil {
 		t.Fatalf("ListEventsByType: %v", err)
 	}
@@ -259,7 +258,7 @@ func TestEventService_ListEventsByType_Limit(t *testing.T) {
 func TestEventService_ListEventsByType_RejectsInvalidType(t *testing.T) {
 	db := openEventTestDB(t)
 	svc := NewEventService(db)
-	_, err := svc.ListEventsByType(context.Background(), "garbage", 10)
+	_, err := svc.ListEventsByType(t.Context(), "garbage", 10)
 	if err == nil || !strings.Contains(err.Error(), "invalid type") {
 		t.Fatalf("want invalid-type error, got %v", err)
 	}

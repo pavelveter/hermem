@@ -98,7 +98,7 @@ func TestLive_ReturnsOk(t *testing.T) {
 
 func TestReady_OK(t *testing.T) {
 	svc := newHealthFixture(t)
-	status := svc.Ready(context.Background())
+	status := svc.Ready(t.Context())
 	if !status.Ready {
 		t.Fatalf("want Ready=true, got status=%s checks=%v", status.Status, status.Checks)
 	}
@@ -114,7 +114,7 @@ func TestReady_DBError(t *testing.T) {
 	}
 	db.Close()
 	svc := health.New(health.DBProbe(db))
-	status := svc.Ready(context.Background())
+	status := svc.Ready(t.Context())
 	if status.Ready {
 		t.Fatalf("want Ready=false, got %v", status)
 	}
@@ -138,7 +138,7 @@ func TestReady_MultipleChecks_Aggregation(t *testing.T) {
 			Severity: "critical",
 		},
 	)
-	status := svc.Ready(context.Background())
+	status := svc.Ready(t.Context())
 	if !status.Ready {
 		t.Fatalf("want Ready=true, got %v", status)
 	}
@@ -159,7 +159,7 @@ func TestReady_CriticalFail_SetsDegraded(t *testing.T) {
 			Severity: "critical",
 		},
 	)
-	status := svc.Ready(context.Background())
+	status := svc.Ready(t.Context())
 	if status.Ready {
 		t.Fatal("want Ready=false when critical check fails")
 	}
@@ -187,7 +187,7 @@ func TestReady_WarningFail_StillReady(t *testing.T) {
 			Severity: "warning",
 		},
 	)
-	status := svc.Ready(context.Background())
+	status := svc.Ready(t.Context())
 	if !status.Ready {
 		t.Fatal("want Ready=true when only warning checks fail")
 	}
@@ -209,7 +209,7 @@ func TestReady_TimeoutRespected(t *testing.T) {
 			Severity: "critical",
 		},
 	)
-	status := svc.Ready(context.Background())
+	status := svc.Ready(t.Context())
 	if status.Ready {
 		t.Fatal("want Ready=false when check times out")
 	}

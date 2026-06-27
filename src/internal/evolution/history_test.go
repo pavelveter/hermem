@@ -1,13 +1,12 @@
 package evolution
 
 import (
-	"context"
 	"testing"
 )
 
 func TestRecordAndListHistory(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'test', 1.0)`); err != nil {
 		t.Fatalf("insert belief: %v", err)
@@ -39,7 +38,7 @@ func TestRecordAndListHistory(t *testing.T) {
 }
 
 func TestRecordHistory_InvalidID(t *testing.T) {
-	err := RecordHistory(context.Background(), nil, 0, 1.0, "Active", "test")
+	err := RecordHistory(t.Context(), nil, 0, 1.0, "Active", "test")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -47,7 +46,7 @@ func TestRecordHistory_InvalidID(t *testing.T) {
 
 func TestListHistory_Empty(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'test', 1.0)`); err != nil {
 		t.Fatalf("insert belief: %v", err)
