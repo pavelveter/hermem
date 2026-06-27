@@ -17,10 +17,13 @@ import (
 // Error codes for machine-readable error classification.
 const (
 	CodeNotFound       = "not_found"
+	CodeConflict       = "conflict"
 	CodeInvalidInput   = "invalid_input"
 	CodeSchemaConflict = "schema_conflict"
 	CodeUnauthorized   = "unauthorized"
 	CodeInvalidSchema  = "invalid_schema"
+	CodeInvalidGraph   = "invalid_graph"
+	CodeCorruptedIndex = "corrupted_index"
 	CodeInternalError  = "internal_error"
 )
 
@@ -29,9 +32,12 @@ const (
 // number of fmt.Errorf("prefix: %w", err) wrappings.
 var (
 	ErrNotFound       = errors.New("not found")
+	ErrConflict       = errors.New("conflict")
 	ErrInvalidInput   = errors.New("invalid input")
 	ErrSchemaConflict = errors.New("schema conflict")
 	ErrUnauthorized   = errors.New("unauthorized")
+	ErrInvalidGraph   = errors.New("invalid graph")
+	ErrCorruptedIndex = errors.New("corrupted index")
 )
 
 // DomainError is the canonical typed error for domain-level failures.
@@ -80,4 +86,19 @@ func NewInvalidSchemaError(field, value string) *DomainError {
 		Field:   field,
 		Message: fmt.Sprintf("invalid %s: %s", field, value),
 	}
+}
+
+// NewConflictError returns a DomainError with CodeConflict.
+func NewConflictError(msg string) *DomainError {
+	return &DomainError{Code: CodeConflict, Message: msg, Err: ErrConflict}
+}
+
+// NewInvalidGraphError returns a DomainError with CodeInvalidGraph.
+func NewInvalidGraphError(msg string) *DomainError {
+	return &DomainError{Code: CodeInvalidGraph, Message: msg, Err: ErrInvalidGraph}
+}
+
+// NewCorruptedIndexError returns a DomainError with CodeCorruptedIndex.
+func NewCorruptedIndexError(msg string) *DomainError {
+	return &DomainError{Code: CodeCorruptedIndex, Message: msg, Err: ErrCorruptedIndex}
 }

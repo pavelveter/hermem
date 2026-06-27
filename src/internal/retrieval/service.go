@@ -121,7 +121,11 @@ func (s *Service) Query(ctx context.Context, query string, topK int, opts core.R
 // walks → returns the RetrievalResult data model. Callers can render
 // using any Renderer (MarkdownRenderer, PlainTextRenderer, JSONRenderer, etc.)
 // or use the convenience Query() method for markdown output.
+// If opts.TopK is set, it takes precedence over the topK parameter.
 func (s *Service) QueryResult(ctx context.Context, query string, topK int, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+	if opts.TopK > 0 {
+		topK = opts.TopK
+	}
 	seedIDs, err := s.ResolveSeeds(ctx, query, topK)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
