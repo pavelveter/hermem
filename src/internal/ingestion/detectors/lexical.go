@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"strings"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -98,7 +100,23 @@ func isCyrillicToken(s string) bool {
 	return false
 }
 
+// stemPair produces the stems of a and b for suffix-flip detection.
+//
+// UNICODE NORMALIZATION (Audit Part 5 #4): both inputs are forced to
+// NFC at the entry point before tokenization and case-folding. Go's
+// strings.ToLower does NOT normalize, so a Cyrillic token from a user
+// in NFD (e.g. "й" rendered as "и" + U+0306 combining breve) would
+// otherwise skip past the suffix-matching in stemRussian and create a
+// duplicate vertex for the same concept in the knowledge graph.
+//
+// Cost: one O(len(s)) pass per input. Acceptable because stemPair is
+// called once per (existing, incoming) contradiction candidate pair,
+// NOT in a tight search loop.
 func stemPair(a, b string) (string, string) {
+	// Normalize to NFC before any further transformation. Strings that
+	// are already in NFC pass through with zero observable change.
+	a = norm.NFC.String(a)
+	b = norm.NFC.String(b)
 	stem := func(s string) string {
 		parts := strings.Fields(strings.ToLower(s))
 		out := make([]string, 0, len(parts))
