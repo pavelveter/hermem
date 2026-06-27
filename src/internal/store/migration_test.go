@@ -267,7 +267,7 @@ func TestApplyAllThenRevertAll(t *testing.T) {
 	// them and 013 re-runs end-to-end.
 	for _, table := range []string{"episodes", "events", "episode_memories", "episode_tasks"} {
 		if _, err := db.Exec("DROP TABLE IF EXISTS " + table); err != nil {
-			t.Logf("drop %s (best-effort reset before re-apply): %v", table, err)
+			t.Logf("drop %s (reset before re-apply): %v", table, err)
 		}
 	}
 

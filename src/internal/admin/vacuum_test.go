@@ -19,7 +19,7 @@ func TestVacuumRunner_Run(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	defer db.Close()
-	defer os.Remove(f.Name()) //nolint:errcheck // t.Cleanup best-effort: missing file isn't a test failure indicator
+	defer os.Remove(f.Name()) //nolint:errcheck // t.Cleanup: missing file isn't a test failure indicator
 
 	db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY, data TEXT)`)
 	for i := 0; i < 1000; i++ {

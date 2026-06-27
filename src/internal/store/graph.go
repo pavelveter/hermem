@@ -22,7 +22,7 @@ func GetContradictions(db *sql.DB, entityID string) ([]core.ContradictionPair, e
 		return nil, fmt.Errorf("query contradictions: %w", err)
 	}
 	defer rows.Close()
-	var out []core.ContradictionPair
+	out := make([]core.ContradictionPair, 0)
 	for rows.Next() {
 		var p core.ContradictionPair
 		if err := rows.Scan(&p.SourceID, &p.SourceContent, &p.TargetID, &p.TargetContent); err != nil {
@@ -65,7 +65,7 @@ func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source strin
 		return nil, fmt.Errorf("query provenance: %w", err)
 	}
 	defer rows.Close()
-	var out []core.Entity
+	out := make([]core.Entity, 0)
 	for rows.Next() {
 		var e core.Entity
 		var convID, msgID, src, srcType sql.NullString
@@ -95,7 +95,7 @@ func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source strin
 		}
 		out = append(out, e)
 	}
-	return core.NormalizeSlice(out), rows.Err()
+	return out, rows.Err()
 }
 
 // FindConnectedComponents finds all connected components via BFS.
@@ -129,7 +129,7 @@ func FindConnectedComponents(db *sql.DB, minSize int) ([]core.ConnectedComponent
 		adj[dst] = append(adj[dst], src)
 	}
 	visited := make(map[string]bool)
-	var components []core.ConnectedComponent
+	components := make([]core.ConnectedComponent, 0)
 	for _, id := range allIDs {
 		if visited[id] {
 			continue

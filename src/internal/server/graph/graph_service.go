@@ -90,13 +90,12 @@ func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
-	var filtered []core.Community
+	filtered := make([]core.Community, 0)
 	for _, c := range all {
 		if c.Size >= minSize {
 			filtered = append(filtered, c)
 		}
 	}
-	filtered = core.NormalizeSlice(filtered)
 	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"communities":          filtered,
 		"global_modularity":    globalQ,

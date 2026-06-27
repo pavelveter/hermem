@@ -2,11 +2,6 @@
 // domain service — read-only inspection of applied migrations, the
 // schema fingerprint, and the post-apply checksum integrity check.
 //
-// PHASE 3.2 consolidates the four cli/db/* commands into one
-// transport-agnostic Service. Pre-PHASE-3.2 each cli/db/{migrate,
-// schema, verify, rollback}.go called the corresponding store.*
-// function directly, never going through any service layer.
-//
 // OUT OF SCOPE (deliberately stays in store/):
 //   - store.RunMigrations(db)         — apply pending migrations; called
 //     from main.go at boot. Does not
@@ -44,14 +39,6 @@ import (
 )
 
 // Service is the transport-agnostic migration / schema domain service.
-//
-// One dep at construction — db — same as PHASE 2.3 contradiction +
-// PHASE 3.1 graph. The three read-only methods (Status / Rollback /
-// Verify) are pure SQL. Schema takes a per-call schema arg so a SIGHUP
-// reload that swaps cfg.Schema doesn't require reconstructing.
-//
-// No Refs/Metrics coupling — the HTTP shell increments counters on
-// its own; the domain service is pure.
 type Service struct {
 	db *sql.DB
 }
@@ -62,21 +49,9 @@ func New(db *sql.DB) *Service {
 }
 
 // Status returns the applied/pending state of every embedded
-// migration file in lexicographic order. Pre-PHASE-3.2 this was
-// store.MigrationStatus; PHASE 3.2 owns it inside the migration
-// service domain.
-//
-// Returns `[]store.MigStatus{}` (not nil) on empty result so the
-// HTTP envelope emits `[]` not `null`. store.MigStatus now ships
-// JSON tags (added in PHASE 3.2) so the wire shape matches the
-// struct shape without an adapter — same precedent as
-// core.ContradictionPair.
+// migration file in lexicographic order.
 func (s *Service) Status(_ context.Context) ([]store.MigStatus, error) {
-	status, err := store.MigrationStatus(s.db)
-	if err != nil {
-		return nil, fmt.Errorf("migration status: %w", err)
-	}
-	return core.NormalizeSlice(status), nil
+	return store.MigrationStatus(s.db)
 }
 
 // Rollback removes the last-applied migration. When target is
@@ -94,50 +69,13 @@ func (s *Service) Rollback(_ context.Context, target string) (string, error) {
 
 // Verify returns every migration whose stored checksum diverges
 // from the current FNV-1a hash of the embedded migration file.
-// Empty result → no integrity drift. Returns
-// `[]store.MigMismatch{}` (not nil) on clean empty so the envelope
-// stays `[]`.
+// Empty result → no integrity drift.
 func (s *Service) Verify(_ context.Context) ([]store.MigMismatch, error) {
-	mismatches, err := store.VerifyMigrationIntegrity(s.db)
-	if err != nil {
-		return nil, fmt.Errorf("migration verify: %w", err)
-	}
-	return core.NormalizeSlice(mismatches), nil
+	return store.VerifyMigrationIntegrity(s.db)
 }
 
 // Run applies every pending migration in lexicographic order and
 // returns the post-apply status snapshot.
-//
-// §4 audit closure: this is the daemon-LESS apply path that lets
-// K8s InitContainers, pre-deploy scripts, and operator invocations
-// advance schema outside the boot sequence. Replaces the pre-§4
-// apply-on-boot semantic — production must NOT apply migrations as
-// part of the boot gate because a long-running ALTER can hold the
-// start gate long enough for K8s liveness/readiness probes to kill
-// the pod (CrashLoopBackOff). Refusal-mode (auto_migrate=false) is
-// the new production default; this method is the operator's escape
-// hatch.
-//
-// On error, returns nil status + wrapped error mirroring the
-// underlying store.RunMigrations surface; the message wraps the
-// positional context (\"migration apply: <store-err>\") so callers
-// branch on the wrapped error message or on a sql.ErrNoRows check
-// inside the wrapped chain. The wrapped error is NOT exported as a
-// package-level sentinel — store.RunMigrations surfaces per-statement
-// SQL errors verbatim today, so a future sentinelisation pass would
-// belong in store/, not here.
-//
-// On success, every embedded migration file reports applied=true in
-// the returned slice; the caller can diff against a pre-apply
-// DryRun snapshot to print the headline \"applied N\" delta.
-//
-// Followup note: store.RunMigrations(s.db) does NOT accept a
-// context.Context today, so a SIGINT mid-Apply cannot abort a
-// long-running ALTER. Pre-§4 limitation; tracked as a separate
-// ticket — the §4 closure's intent is that migrations stop holding
-// the *boot* gate, but the apply path itself now owns the same
-// operator-cancellation window that previously held production
-// boots hostage.
 func (s *Service) Run(ctx context.Context) ([]store.MigStatus, error) {
 	if err := store.RunMigrations(s.db); err != nil {
 		return nil, fmt.Errorf("migration apply: %w", err)
@@ -152,13 +90,13 @@ func (s *Service) DryRun(_ context.Context) ([]store.MigStatus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dry-run: %w", err)
 	}
-	var pending []store.MigStatus
+	pending := make([]store.MigStatus, 0)
 	for _, m := range status {
 		if !m.Applied {
 			pending = append(pending, m)
 		}
 	}
-	return core.NormalizeSlice(pending), nil
+	return pending, nil
 }
 
 // SchemaReport is the typed envelope returned by Schema. JSON tags

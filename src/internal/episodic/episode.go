@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
@@ -142,7 +141,7 @@ func (s *Service) ListBySession(ctx context.Context, sessionID string, limit int
 		return nil, fmt.Errorf("episodic: ListBySession query: %w", err)
 	}
 	defer rows.Close()
-	var out []Episode
+	out := make([]Episode, 0)
 	for rows.Next() {
 		ep, err := scanEpisodeRows(rows)
 		if err != nil {
@@ -153,7 +152,7 @@ func (s *Service) ListBySession(ctx context.Context, sessionID string, limit int
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListBySession rows: %w", err)
 	}
-	return core.NormalizeSlice(out), nil
+	return out, nil
 }
 
 // UpdateSummary overwrites the episode's summary column. Returns

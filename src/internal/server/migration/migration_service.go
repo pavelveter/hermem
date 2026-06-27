@@ -112,7 +112,7 @@ func (s *HTTPService) HandleMigrationVerify(w http.ResponseWriter, r *http.Reque
 // HandleSchemaFingerprint — GET /db/schema.
 //
 // §3.2 — error-returning handler. The pre-§3.2 inline "no server
-// state" 500 defense-in-depth branch is replaced by returning the
+// state" 500 branch is replaced by returning the
 // errNoServerState sentinel that mapStatus maps to (500, msg);
 // identical wire bytes.
 func (s *HTTPService) HandleSchemaFingerprint(w http.ResponseWriter, r *http.Request) error {

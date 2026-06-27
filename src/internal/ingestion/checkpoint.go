@@ -85,7 +85,7 @@ func SaveCheckpoint(path string, ckpt IngestionCheckpoint) error {
 	if err := os.Rename(tmp, path); err != nil {
 		// Best-effort cleanup so an orphan .tmp.N doesn't accumulate
 		// across thousands of failed saves.
-		_ = os.Remove(tmp) //nolint:errcheck // tmp file cleanup best-effort: missing file on next run is tolerated
+		_ = os.Remove(tmp) //nolint:errcheck // tmp file cleanup: missing file on next run is tolerated
 		return fmt.Errorf("checkpoint: rename: %w", err)
 	}
 	return nil
@@ -119,7 +119,7 @@ func SavePendingQueue(path string, msgs []core.MemoryMessage) error {
 
 // defaultDrainTimeout caps a ctx-cancel drain so a producer that does
 // not close its channel cannot stall MemoryWorkerResilient indefinitely.
-// Tiny value because the intent is "best-effort flush before exit"; a
+// Tiny value because the intent is "flush before exit"; a
 // 5s ceiling comfortably covers in-flight embedding/LLM calls in normal
 // operation.
 const defaultDrainTimeout = 5 * time.Second

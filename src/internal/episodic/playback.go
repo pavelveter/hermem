@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// PlaybackFrame is one ordered narrative frame in an episode
+// playbackFrame is one ordered narrative frame in an episode
 // playback. Distinct from TimelineEntry because playback is a
 // presentation shape (what callers render) rather than a
 // reconstruction shape (what the DB stores).
@@ -27,7 +25,7 @@ import (
 // Content is the human-readable payload — identical across all
 // three kinds so a single Markdown / text renderer can switch on
 // Type alone.
-type PlaybackFrame struct {
+type playbackFrame struct {
 	Timestamp time.Time `json:"timestamp"`
 	Type      string    `json:"type"`
 	Source    string    `json:"source"`
@@ -35,23 +33,21 @@ type PlaybackFrame struct {
 	Content   string    `json:"content"`
 }
 
-// PlaybackService renders an episode as a chronological narrative.
-// Built on top of TimelineService.ReconstructTimeline so the
-// chronological ordering + merge logic lives in exactly one place.
-type PlaybackService struct {
+// playbackService renders an episode as a chronological narrative.
+type playbackService struct {
 	db *sql.DB
 }
 
-// NewPlaybackService constructs a PlaybackService. db is required.
-func NewPlaybackService(db *sql.DB) *PlaybackService {
-	return &PlaybackService{db: db}
+// newPlaybackService constructs a playbackService. db is required.
+func newPlaybackService(db *sql.DB) *playbackService {
+	return &playbackService{db: db}
 }
 
 // Playback returns the episode's chronological frames in a
 // presentation-ready shape. Delegates the merge + sort to
 // TimelineService so the ordering matches what /query and other
 // timeline-shaped surfaces already produce.
-func (p *PlaybackService) Playback(ctx context.Context, episodeID string) ([]PlaybackFrame, error) {
+func (p *playbackService) Playback(ctx context.Context, episodeID string) ([]playbackFrame, error) {
 	if episodeID == "" {
 		return nil, fmt.Errorf("episodic: Playback: episode_id required")
 	}
@@ -59,9 +55,9 @@ func (p *PlaybackService) Playback(ctx context.Context, episodeID string) ([]Pla
 	if err != nil {
 		return nil, fmt.Errorf("episodic: Playback reconstruct: %w", err)
 	}
-	frames := make([]PlaybackFrame, len(entries))
+	frames := make([]playbackFrame, len(entries))
 	for i, e := range entries {
-		frames[i] = PlaybackFrame{
+		frames[i] = playbackFrame{
 			Timestamp: e.Timestamp,
 			Type:      string(e.Kind),
 			Source:    e.SourceID,
@@ -75,8 +71,10 @@ func (p *PlaybackService) Playback(ctx context.Context, episodeID string) ([]Pla
 // ExportJSON marshals the frames as indented JSON bytes. The
 // envelope is a plain array — callers wrap with their own outer
 // keys (e.g. episode_id, generated_at) if they need context.
-func (p *PlaybackService) ExportJSON(frames []PlaybackFrame) ([]byte, error) {
-	frames = core.NormalizeSlice(frames)
+func (p *playbackService) ExportJSON(frames []playbackFrame) ([]byte, error) {
+	if frames == nil {
+		frames = []playbackFrame{}
+	}
 	out, err := json.MarshalIndent(frames, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("episodic: ExportJSON marshal: %w", err)
@@ -88,7 +86,7 @@ func (p *PlaybackService) ExportJSON(frames []PlaybackFrame) ([]byte, error) {
 // "# Episode Timeline\n\n- timestamp — actor (type) content\n\n..."
 // Ordered chronologically (caller passes frames in the desired
 // order — Playback already returns them sorted).
-func (p *PlaybackService) ExportMarkdown(frames []PlaybackFrame) string {
+func (p *playbackService) ExportMarkdown(frames []playbackFrame) string {
 	var b strings.Builder
 	b.WriteString("# Episode Timeline\n\n")
 	for _, f := range frames {
@@ -106,7 +104,7 @@ func (p *PlaybackService) ExportMarkdown(frames []PlaybackFrame) string {
 // ExportText renders the frames as a plain-text narrative with one
 // frame per line. Useful for logs or copy-paste into chat UIs that
 // don't render Markdown.
-func (p *PlaybackService) ExportText(frames []PlaybackFrame) string {
+func (p *playbackService) ExportText(frames []playbackFrame) string {
 	var b strings.Builder
 	for _, f := range frames {
 		actor := f.Actor

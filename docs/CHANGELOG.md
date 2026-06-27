@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Historical Context (moved from code comments)
+
+- **PHASE 2.2**: Introduced `retrieval.Service` struct for transport-agnostic API. Before PHASE 2.2, callers reached package-level functions directly (RetrieveContext, GenerateResponse, FormatContextMarkdown, etc.). The Service struct was added so HTTP handlers and CLI subcommands share a uniform pointer-based API without changing domain semantics.
+
+- **PHASE 2.2 HTTP behavior**: HandleQuery propagated embed errors but swallowed vector-search errors (graceful degradation: empty seed pool → empty graph result). CLI used to swallow both; after the refactor CLI gets the same HTTP shape (errors surface as 500 on embed failures, empty result on search failures).
+
+- **PHASE 2.2 Query/Explain**: HandleQueryExplain and CLI newExplainCmd swallowed both Embed and Search errors (graceful degradation: a broken embedder or empty vector index produced an empty graph result instead of a 500). This shape was preserved — empty pipeline, not loud failure. Query diverges intentionally (it propagates embed errors per its pre-PHASE-2.2 HTTP contract).
+
+- **PHASE 2.3**: HTTP shell normalized empty slices inline before passing to domain; domain services now return `[]T{}` (not nil) via `core.NormalizeSlice`.
+
+- **PHASE 3.2**: Consolidated four `cli/db/*` commands into one transport-agnostic `migration.Service`. Before PHASE 3.2, each `cli/db/{migrate,schema,verify,rollback}.go` called the corresponding `store.*` function directly, never going through any service layer.
+
+- **PHASE 3.5**: Extracted `edge.Service` and `timeline.Service` from `server/memory` shell. The `timelineJSON` wire shape intentionally omits `omitempty` tags to keep byte-compatible with pre-PHASE-3.5 consumers (nil CreatedAt renders as `"created_at":null`).
+
+- **POST-P1 SERVICE LAYER**: `goal.Service` created from TODO.md item — a goal IS a task in hermem's schema, distinguished only by `Entity.Category == "goal"`.
+
 ### Refactoring — Codebase Review Fixes
 
 - **refactor: extract DetectCommunities to `graph/community` package** — Moved Louvain algorithm from `store/community.go` to `graph/community/community.go`. Added `context.Context` to `LoadGraph`, `DetectCommunities`, `buildResult`, `computeGlobalModularity`, `computeCommunityModularity`. Deprecated wrapper in `store/community.go` for backward compatibility.

@@ -44,5 +44,5 @@ func (s *Service) List(_ context.Context, entityID string) ([]core.Contradiction
 	if err != nil {
 		return nil, err
 	}
-	return core.NormalizeSlice(pairs), nil
+	return pairs, nil
 }

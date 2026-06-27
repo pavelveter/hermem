@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // Session is the P2 EPISODIC MEMORY top-level container — a bounded
@@ -131,7 +129,7 @@ func (s *SessionService) ListSessions(ctx context.Context, limit int) ([]Session
 		return nil, fmt.Errorf("episodic: ListSessions query: %w", err)
 	}
 	defer rows.Close()
-	var out []Session
+	out := make([]Session, 0)
 	for rows.Next() {
 		var sess Session
 		var metaJSON string
@@ -154,5 +152,5 @@ func (s *SessionService) ListSessions(ctx context.Context, limit int) ([]Session
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListSessions rows: %w", err)
 	}
-	return core.NormalizeSlice(out), nil
+	return out, nil
 }

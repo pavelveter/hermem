@@ -40,7 +40,7 @@ func ListTasks(db *sql.DB, schema core.SchemaConfig, status, goalID string) ([]c
 	if err != nil {
 		return nil, err
 	}
-	return core.NormalizeSlice(tasks), nil
+	return tasks, nil
 }
 
 // GetTaskWithRelations returns a slim core.Task plus its blocked_by and recovers_via edges.
@@ -137,7 +137,7 @@ func GetRootTasks(db *sql.DB, schema core.SchemaConfig) ([]core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return core.NormalizeSlice(tasks), nil
+	return tasks, nil
 }
 
 // GetTaskTree builds a tree of tasks starting from rootID.
@@ -273,7 +273,7 @@ func blockedEdgesToSourceIDs(edges []core.Edge) []string {
 // embedded Fact go zero-valued (Go anon-embed promotion does not
 // auto-fill from an outer struct's named fields).
 func ScanTaskEntities(rows *sql.Rows) ([]core.Task, error) {
-	var tasks []core.Task
+	tasks := make([]core.Task, 0)
 	for rows.Next() {
 		var e core.Entity
 		var priority sql.NullInt64

@@ -224,7 +224,7 @@ func TestIntegration_FullPipeline(t *testing.T) {
 	}
 
 	// 8. Playback — should produce the same 6 frames in the same order.
-	pbSvc := NewPlaybackService(db)
+			pbSvc := newPlaybackService(db)
 	frames, err := pbSvc.Playback(ctx, "ep-int")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
@@ -294,7 +294,7 @@ func TestIntegration_EmptyEpisodeEdgeCase(t *testing.T) {
 		t.Fatalf("empty timeline: want 0 entries, got %d", len(entries))
 	}
 
-	frames, err := NewPlaybackService(db).Playback(ctx, "ep-empty")
+	frames, err := newPlaybackService(db).Playback(ctx, "ep-empty")
 	if err != nil {
 		t.Fatalf("Playback on empty: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestIntegration_EmptyEpisodeEdgeCase(t *testing.T) {
 	}
 
 	// Empty Markdown should still have the header.
-	md := NewPlaybackService(db).ExportMarkdown(frames)
+	md := newPlaybackService(db).ExportMarkdown(frames)
 	if !strings.HasPrefix(md, "# Episode Timeline") {
 		t.Errorf("empty markdown: want header, got %q", md)
 	}
@@ -402,7 +402,7 @@ func TestIntegration_ParallelSubtests(t *testing.T) {
 				t.Errorf("LinkMemory %d: %v", i, err)
 				return
 			}
-			pbSvc := NewPlaybackService(db)
+	pbSvc := newPlaybackService(db)
 			if _, err := pbSvc.Playback(ctx, "ep-par"); err != nil {
 				t.Errorf("Playback %d: %v", i, err)
 				return

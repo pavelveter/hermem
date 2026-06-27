@@ -58,7 +58,7 @@ func (r *OllamaReranker) Rerank(ctx context.Context, query string, facts []core.
 		} `json:"results"`
 	}
 	if err := r.http.doPOST(ctx, "/api/rerank", body, &rr); err != nil {
-		return facts, nil // graceful degradation
+		return facts, nil
 	}
 	reranked := make([]core.RetrievedFact, 0, len(facts))
 	for _, item := range rr.Results {

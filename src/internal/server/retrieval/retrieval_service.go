@@ -114,9 +114,6 @@ func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	if len(req.SeedIDs) == 0 {
-		// Defense-in-depth duplicate of domain validation. Pre-PHASE-2.2
-		// HTTP shell checked this inline so /retrieve clients see 400 on
-		// empty seeds without ever crossing into the domain.
 		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "seed_ids required", Field: "seed_ids"})
 		return nil
 	}

@@ -83,7 +83,7 @@ func (s *Service) Timeline(ctx context.Context, limit int) ([]TimelineEntry, err
 		return nil, fmt.Errorf("timeline query: %w", err)
 	}
 	defer rows.Close()
-	var entries []TimelineEntry
+	entries := make([]TimelineEntry, 0)
 	for rows.Next() {
 		var e TimelineEntry
 		var createdAt sql.NullTime
@@ -112,5 +112,5 @@ func (s *Service) Timeline(ctx context.Context, limit int) ([]TimelineEntry, err
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("timeline rows: %w", err)
 	}
-	return core.NormalizeSlice(entries), nil
+	return entries, nil
 }

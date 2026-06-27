@@ -37,11 +37,7 @@ func New(db *sql.DB) *Service {
 // `[]ConnectedComponent{}` (not nil) on empty result so envelope
 // serialization emits `[]` not `null`.
 func (s *Service) Components(_ context.Context, minSize int) ([]core.ConnectedComponent, error) {
-	comps, err := store.FindConnectedComponents(s.db, minSize)
-	if err != nil {
-		return nil, fmt.Errorf("components: %w", err)
-	}
-	return core.NormalizeSlice(comps), nil
+	return store.FindConnectedComponents(s.db, minSize)
 }
 
 // Communities runs Louvain-style community detection for up to maxIter
@@ -57,10 +53,13 @@ func (s *Service) Communities(ctx context.Context, maxIter int) ([]core.Communit
 		return nil, 0, fmt.Errorf("communities: %w", err)
 	}
 	if g == nil {
-		return core.NormalizeSlice([]core.Community{}), 0, nil
+		return make([]core.Community, 0), 0, nil
 	}
 	comms, globalQ := community.DetectCommunities(g, maxIter)
-	return core.NormalizeSlice(comms), globalQ, nil
+	if comms == nil {
+		comms = make([]core.Community, 0)
+	}
+	return comms, globalQ, nil
 }
 
 // Verify runs a read-only integrity sweep over the graph and reports
