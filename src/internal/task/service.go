@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/pavelveter/hermem/src/internal/config"
@@ -112,12 +113,16 @@ func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (
 // non-fatal, a duplicate edge on add is non-fatal.
 func (s *Service) Dep(_ context.Context, sourceID, targetID, relationType string, add bool) error {
 	if sourceID == "" || targetID == "" {
-		return fmt.Errorf("dep: source_id and target_id required")
+		return core.NewInvalidInputError("dep: source_id and target_id required")
 	}
 	if add {
-		_ = store.AddEdge(s.db, sourceID, targetID, relationType, 1.0)
+		if err := store.AddEdge(s.db, sourceID, targetID, relationType, 1.0); err != nil {
+			slog.Warn("task.Dep: add edge failed", "source", sourceID, "target", targetID, "relation", relationType, "err", err)
+		}
 	} else {
-		_ = store.DeleteEdge(s.db, sourceID, targetID, relationType)
+		if err := store.DeleteEdge(s.db, sourceID, targetID, relationType); err != nil {
+			slog.Warn("task.Dep: delete edge failed", "source", sourceID, "target", targetID, "relation", relationType, "err", err)
+		}
 	}
 	return nil
 }
@@ -186,12 +191,14 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 		Content:   content,
 		Embedding: emb,
 	}
-	if err := store.StoreEntityWithEmbedding(s.db, s.vi, schema, entity); err != nil {
+	if err := store.StoreEntityWithEmbedding(ctx, s.db, s.vi, schema, entity); err != nil {
 		return "", fmt.Errorf("create: store: %w", err)
 	}
 	for _, cid := range contextIDs {
 		if cid != "" {
-			_ = store.AddEdge(s.db, id, cid, "related_to", 1.0)
+			if err := store.AddEdge(s.db, id, cid, "related_to", 1.0); err != nil {
+				slog.Warn("task.Create: add context edge failed", "task_id", id, "context_id", cid, "err", err)
+			}
 		}
 	}
 	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, id, emb) //nolint:errcheck // shadow auto-link; not a Create failure
