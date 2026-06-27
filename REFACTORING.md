@@ -59,9 +59,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 - [ ] Update imports across codebase
 
 ### 3.3 Harden serverstate.Load()
-- [ ] Add nil-safety check or debug-mode panic
-- [ ] Consider `sync.Once` for lazy initialization
-- [ ] Document thread-safety contract
+- [x] Add nil-safety check or debug-mode panic
+- [x] Consider `sync.Once` for lazy initialization
+- [x] Document thread-safety contract
 
 ### 3.4 Fix compression.Metrics race condition
 - [ ] Audit `clusterSizes []int64` write paths
