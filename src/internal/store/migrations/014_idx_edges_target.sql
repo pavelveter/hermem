@@ -1,0 +1,24 @@
+-- Migration 014: Reverse-direction edges index.
+--
+-- Audit Part 6 #3 follow-through. The edges table PRIMARY KEY already
+-- covers the forward-direction (source_id, target_id, relation_type)
+-- composite — every write path uses `INSERT OR IGNORE INTO edges` keyed
+-- on those three columns so duplicate-edge collisions are a no-op.
+--
+-- Queries that probe the REVERSE direction (rows where target_id = ?
+-- AND relation_type = ?) currently force SQLite to scan the entire
+-- edges table because the PK index orders by source_id first. Task
+-- helpers (`src/internal/store/task.go::QueryEdges` for blocking +
+-- recovery triage) hit this path on every ClaimNextTask call; at
+-- 100k+ edges the full-table scan turns into a CPU peg.
+--
+-- This index gives SQLite a B-tree on (target_id, relation_type) so
+-- the reverse-direction WHERE-clause resolves in O(log n) instead of
+-- O(rows). Cost: one extra B-tree to maintain per INSERT / DELETE on
+-- edges; both writes are infrequent relative to read traffic under
+-- normal operation, so the trade is favourable.
+--
+-- Naming matches the surrounding convention (idx_<table>_<col[s]>)
+-- and is idempotent on re-run via IF NOT EXISTS.
+
+CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id, relation_type);
