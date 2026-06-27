@@ -12,8 +12,12 @@ linters:
     - staticcheck
     - unused
     - forbidigo
+    - cyclop
 
   settings:
+    cyclop:
+      max-complexity: 25
+      skip-tests: true
     forbidigo:
       forbid:
         - pattern: ActiveSchema
@@ -74,3 +78,6 @@ linters:
       - path: src/internal/httputil/.*\.go
         linters: [errcheck]
         text: 'Error return value of `.*json\.Encoder.*Encode` is not checked.*'
+      # Tests: complex integration tests with many assertions.
+      - path: _test\.go$
+        linters: [cyclop]

@@ -271,6 +271,7 @@ type CompositeScorer func(node GraphNode, nodeVec []float32, queryEmbedding []fl
 
 // RetrieveContextOptions controls graph-walk bounds for a single retrieval call.
 type RetrieveContextOptions struct {
+	TopK              int
 	MaxDepth          int
 	DepthCeiling      int
 	MaxRetrievedNodes int

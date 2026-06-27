@@ -5,6 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
+)
+
+// Compile-time interface assertions.
+var (
+	_ core.Embedder = (*OllamaEmbedder)(nil)
+	_ core.Embedder = (*OpenAIEmbedder)(nil)
 )
 
 // OllamaEmbedder implements core.Embedder against the Ollama /api/embeddings endpoint.
