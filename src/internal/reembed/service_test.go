@@ -18,6 +18,10 @@ func (stubEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0.1, 0.2, 0.3}, nil
 }
 
+func (stubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // newReembedFixture wires a reembed.Service against an in-memory
 // SQLite + in-memory vector index + 3-dim stub embedder.
 func newReembedFixture(t *testing.T) (*reembed.Service, *sql.DB) {

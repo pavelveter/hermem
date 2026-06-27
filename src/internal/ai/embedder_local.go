@@ -156,6 +156,13 @@ func (e *LocalEmbedder) Embed(ctx context.Context, text string) ([]float32, erro
 	return parseRawEmbedding(stdout.String())
 }
 
+// Ping checks whether the local llama-embedding binary is available.
+func (e *LocalEmbedder) Ping(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.setup()
+}
+
 // parseRawEmbedding parses whitespace-separated floats from llama-embedding raw output.
 func parseRawEmbedding(s string) ([]float32, error) {
 	s = strings.TrimSpace(s)

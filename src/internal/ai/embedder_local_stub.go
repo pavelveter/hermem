@@ -21,3 +21,8 @@ func NewLocalEmbedder(modelPath string, timeout time.Duration) (*LocalEmbedder, 
 func (e *LocalEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	return nil, fmt.Errorf("local embed: not available")
 }
+
+// Ping always returns an error in stub mode.
+func (e *LocalEmbedder) Ping(ctx context.Context) error {
+	return fmt.Errorf("local embed: not available")
+}

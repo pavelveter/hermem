@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -42,6 +43,19 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 		return nil, fmt.Errorf("ollama embed: %w", err)
 	}
 	return r.Embedding, nil
+}
+
+// Ping checks whether the Ollama server is reachable.
+func (e *OllamaEmbedder) Ping(ctx context.Context) error {
+	resp, err := e.http.doGET(ctx, "/api/tags")
+	if err != nil {
+		return fmt.Errorf("ollama ping: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ollama ping: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // OpenAIEmbedder implements core.Embedder against the OpenAI /v1/embeddings endpoint.
@@ -87,4 +101,17 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 		return nil, fmt.Errorf("openai embed: no data")
 	}
 	return r.Data[0].Embedding, nil
+}
+
+// Ping checks whether the OpenAI API is reachable.
+func (e *OpenAIEmbedder) Ping(ctx context.Context) error {
+	resp, err := e.http.doGET(ctx, "/models")
+	if err != nil {
+		return fmt.Errorf("openai ping: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("openai ping: status %d", resp.StatusCode)
+	}
+	return nil
 }

@@ -418,5 +418,9 @@ func (f *fakeEmbedder) Embed(_ context.Context, content string) ([]float32, erro
 	return v, nil
 }
 
+func (f *fakeEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // Compile-time check that fakeEmbedder satisfies core.Embedder.
 var _ core.Embedder = (*fakeEmbedder)(nil)

@@ -23,6 +23,10 @@ func (stubEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0.1, 0.2, 0.3}, nil
 }
 
+func (stubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // newEdgeFixture wires an edge.Service against an in-memory SQLite +
 // in-memory vector index. Mirrors the construction pattern in
 // src/internal/server/integration_test.go::newTestFixture — same

@@ -173,6 +173,10 @@ func (f *fakeEmbedder) Embed(_ context.Context, content string) ([]float32, erro
 	return make([]float32, f.dim), nil
 }
 
+func (f *fakeEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 func itoa(i int) string {
 	if i < 10 {
 		return string(rune('0' + i))
