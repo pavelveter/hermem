@@ -79,9 +79,11 @@ var russianSuffixes = []string{
 
 func stemRussian(w string) string {
 	w = strings.ToLower(w)
+	wr := []rune(w)
 	for _, suf := range russianSuffixes {
-		if strings.HasSuffix(w, suf) && len(w)-len(suf) >= 3 {
-			return w[:len(w)-len(suf)]
+		sr := []rune(suf)
+		if len(wr) >= len(sr) && string(wr[len(wr)-len(sr):]) == suf && len(wr)-len(sr) >= 3 {
+			return string(wr[:len(wr)-len(sr)])
 		}
 	}
 	return w
