@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pavelveter/hermem/src/internal/admin"
-	"github.com/pavelveter/hermem/src/internal/core"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 func newRebuildIndexCmd(env *cli.Env) *cobra.Command {
