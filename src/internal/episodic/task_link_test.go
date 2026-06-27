@@ -24,8 +24,8 @@ func openTaskLinkTestDB(t *testing.T) *sql.DB {
 			conversation_id TEXT,
 			title TEXT NOT NULL DEFAULT '',
 			summary TEXT NOT NULL DEFAULT '',
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
+			started_at_ms INTEGER NOT NULL DEFAULT 0,
+			ended_at_ms INTEGER,
 			metadata TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE TABLE IF NOT EXISTS entities (
@@ -37,7 +37,7 @@ func openTaskLinkTestDB(t *testing.T) *sql.DB {
 		`CREATE TABLE IF NOT EXISTS episode_tasks (
 			episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
 			task_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-			linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			linked_at_ms INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (episode_id, task_id)
 		)`,
 	}
