@@ -68,9 +68,9 @@ func TestRunDry_OnFreshDBListsAll(t *testing.T) {
 		t.Fatalf("RunDry: %v", err)
 	}
 
-	allFiles, err := PendingMigrations()
+	allFiles, err := migrationFiles()
 	if err != nil {
-		t.Fatalf("PendingMigrations: %v", err)
+		t.Fatalf("migrationFiles: %v", err)
 	}
 	if len(results) != len(allFiles) {
 		t.Fatalf("expected %d dry-run results, got %d", len(allFiles), len(results))

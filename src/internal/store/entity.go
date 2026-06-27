@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -97,18 +98,7 @@ func InClauseArgs(ids []string) (string, []interface{}) {
 		phs[i] = "?"
 		args[i] = id
 	}
-	return joinPhs(phs), args
-}
-
-func joinPhs(phs []string) string {
-	if len(phs) == 0 {
-		return ""
-	}
-	s := phs[0]
-	for i := 1; i < len(phs); i++ {
-		s += "," + phs[i]
-	}
-	return s
+	return strings.Join(phs, ","), args
 }
 
 // BoolMapInClause builds placeholders and args for a map of bool keys.
@@ -120,5 +110,5 @@ func BoolMapInClause(values map[string]bool) (string, []interface{}) {
 		ph[i] = "?"
 		args[i] = key
 	}
-	return joinPhs(ph), args
+	return strings.Join(ph, ","), args
 }
