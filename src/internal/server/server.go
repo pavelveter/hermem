@@ -63,14 +63,48 @@ type Server struct {
 	mux           *http.ServeMux
 }
 
+// ServerDeps holds all dependencies for creating a Server.
+type ServerDeps struct {
+	Refs          *serverstate.Ref
+	Retrieval     *ret.HTTPService
+	Task          *tasksvc.HTTPService
+	Memory        *mem.HTTPService
+	Edge          *edge.HTTPService
+	Timeline      *timeline.HTTPService
+	Ingest        *ingsrv.HTTPService
+	Contradiction *cnd.HTTPService
+	Graph         *graphsrv.HTTPService
+	Migration     *migrsrv.HTTPService
+	Retention     *retention.HTTPService
+	Reembed       *reembed.HTTPService
+	Health        *healthsrv.HTTPService
+	Metrics       *metrics.Metrics
+}
+
+// NewServerFromDeps wires the 12 domain services + Metrics into a single mux.
+func NewServerFromDeps(deps ServerDeps) *Server {
+	s := &Server{
+		Refs:          deps.Refs,
+		Retrieval:     deps.Retrieval,
+		Task:          deps.Task,
+		Memory:        deps.Memory,
+		Edge:          deps.Edge,
+		Timeline:      deps.Timeline,
+		Ingest:        deps.Ingest,
+		Contradiction: deps.Contradiction,
+		Graph:         deps.Graph,
+		Migration:     deps.Migration,
+		Retention:     deps.Retention,
+		Reembed:       deps.Reembed,
+		Health:        deps.Health,
+		Metrics:       deps.Metrics,
+	}
+	s.mount()
+	return s
+}
+
 // NewServer wires the 12 domain services + Metrics into a single mux.
-// No HTTP server is started — call (*Server).ServeHTTP separately
-// (e.g. via the convenience Run below).
-//
-// PHASE 3.8: AdminService dissolved. The final `/metrics` route is
-// registered directly from the Metrics field. 5 phases of extraction
-// (3.1–3.5 initially from the god-object, then 3.6 reembed, 3.7 health,
-// 3.8 metrics) eliminate AdminService entirely.
+// Deprecated: Use NewServerFromDeps instead.
 func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edgeSvc *edge.HTTPService, timelineSvc *timeline.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retentionSvc *retention.HTTPService, reembedSvc *reembed.HTTPService, health *healthsrv.HTTPService, m *metrics.Metrics) *Server {
 	s := &Server{
 		Refs:          refs,
