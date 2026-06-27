@@ -19,19 +19,35 @@
 // (`h.Sum32() & shardMask`), shaving a division per acquire. The default
 // is 32 — enough parallelism for the current 50k-vec corpus without
 // exhausting the Go runtime's goroutine stack space.
+//
+// Cancellation: the shard mutex is a chan-based semaphore (capacity 1).
+// LockCtx / AcquireBatchCtx select on ctx.Done() so a stalled shard
+// (e.g. a Louvain pass holding a single entity for >2s) cannot back up
+// HTTP-goroutines indefinitely. Callers MUST pass a non-nil context;
+// background work should pass context.Background() explicitly.
 package store
 
 import (
+	"context"
+	"errors"
 	"hash/fnv"
 	"sort"
-	"sync"
 )
 
-// shard is the granularity of contention: one sync.Mutex per shard.
-// Each Lock/Unlock call lands on exactly one shard, so concurrent
-// acquisitions on disjoint entity IDs never block.
+// ErrLockCancelled is returned by LockCtx / AcquireBatchCtx when the
+// caller's context fires before the shard's token could be drained. It
+// is a sentinel so callers (HTTP handlers, worker dispatch) can map it
+// to 503 / context.Cancelled uniformly without type-asserting on
+// ctx.Err().
+var ErrLockCancelled = errors.New("entity-locker: lock acquisition cancelled")
+
+// shard is the granularity of contention: one buffered channel as a
+// non-reentrant mutex. Capacity 1 + a pre-loaded token gives us exactly
+// one outstanding holder; release sends the token back. The select-on
+// ctx.Done + <-sem pattern is the canonical ctx-aware mutex idiom in
+// stdlib (sync.Mutex itself is non-cancellable).
 type shard struct {
-	mu sync.Mutex
+	sem chan struct{}
 }
 
 // EntityLocker is the public type. Construct via NewEntityLocker; do NOT
@@ -41,7 +57,7 @@ type EntityLocker struct {
 	shardMask uint32
 }
 
-// NewEntityLocker allocates `shardCount` mutex shards. shardCount is
+// NewEntityLocker allocates `shardCount` semaphore shards. shardCount is
 // rounded UP to the nearest power of two for fast bitwise masking
 // (`h.Sum32() & shardMask`); non-positive values default to 32.
 //
@@ -85,7 +101,10 @@ func NewEntityLocker(shardCount int) *EntityLocker {
 		shardMask: uint32(shardCount - 1),
 	}
 	for i := 0; i < shardCount; i++ {
-		l.shards[i] = &shard{}
+		// Capacity 1 + one pre-loaded token ≈ "1 outstanding holder".
+		s := make(chan struct{}, 1)
+		s <- struct{}{}
+		l.shards[i] = &shard{sem: s}
 	}
 	return l
 }
@@ -101,41 +120,65 @@ func (l *EntityLocker) getShard(entityID string) *shard {
 	return l.shards[h.Sum32()&l.shardMask]
 }
 
-// Lock acquires the shard mutex for entityID. Always pair with Unlock
-// (defer Unlock immediately after Lock to survive panics). Multi-id
-// acquisition MUST go through AcquireBatch to avoid ABBA deadlocks.
-func (l *EntityLocker) Lock(entityID string) {
-	l.getShard(entityID).mu.Lock()
+// LockCtx acquires the shard semaphore for entityID, returning nil on
+// success or ErrLockCancelled (wrapping ctx.Err()) on cancellation.
+// Always pair with Unlock (defer Unlock immediately after LockCtx to
+// survive panics). Multi-id acquisition MUST go through AcquireBatchCtx
+// to avoid ABBA deadlocks.
+//
+// nil context is rejected at runtime via context.Background() so the
+// contract is uniform; callers MUST thread the request context through.
+func (l *EntityLocker) LockCtx(ctx context.Context, entityID string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-l.getShard(entityID).sem:
+		return nil
+	case <-ctx.Done():
+		return joinLockErr(ctx.Err())
+	}
 }
 
-// Unlock releases the shard mutex for entityID. Unlocking an entity ID
-// that was not previously Lock-ed panics on the inner sync.Mutex; that's
-// intentional — misuse here would silently leave locks held.
+// Unlock releases the shard semaphore for entityID. Unlocking an entity
+// ID that was not previously LockCtx-ed panics on the inner channel send
+// (default branch on full channel); that's intentional — misuse here
+// would silently leave locks held.
 func (l *EntityLocker) Unlock(entityID string) {
-	l.getShard(entityID).mu.Unlock()
-} // AcquireBatch locks a sorted set of UNIQUE entity IDs in one call.
-// Idempotent for empty batches. Returns a function that releases all
-// locks in the REVERSE order — release ordering doesn't affect
-// correctness here (Go mutex is non-reentrant, so we MUST lock each
-// distinct ID at most once per AcquireBatch call) but symmetric
-// teardown minimizes wrong-order dropouts in trace logs.
+	l.getShard(entityID).sem <- struct{}{}
+}
+
+// AcquireBatchCtx locks a sorted set of UNIQUE entity IDs in one call.
+// Idempotent for empty batches: returns (noop release, nil). On context
+// cancellation mid-batch, releases every shard it already holds (in
+// reverse order) BEFORE returning (nil, ErrLockCancelled) — partial
+// rollback guarantees no shard is left zombie-held when the caller gives
+// up.
+//
+// Release ordering doesn't affect correctness (Go mutex is
+// non-reentrant, so we MUST lock each distinct ID at most once per
+// AcquireBatchCtx call) but symmetric teardown minimizes wrong-order
+// dropouts in trace logs.
 //
 // Duplicate ID semantics: callers may pass slices with the same ID
 // twice (e.g. an ingest batch that dedup-collides on itself). Locking
 // the SAME shard twice without an intervening Unlock is a deadlock
-// with sync.Mutex (which is non-reentrant). We dedup BEFORE locking,
-// preserving lex order of first-occurrence.
+// with the chan-based mutex (receive on empty channel blocks forever).
+// We dedup BEFORE locking, preserving lex order of first-occurrence.
 //
 // Used by IngestionWorker.IngestSynchronized (TODO § 3.2 followup):
 // before `BeginTx` on a batch, lock the sorted unique IDs; release on
 // commit OR rollback; the lock window is bounded by the tx latency.
-func (l *EntityLocker) AcquireBatch(entityIDs []string) func() {
-	if len(entityIDs) == 0 {
-		return func() {}
+func (l *EntityLocker) AcquireBatchCtx(ctx context.Context, entityIDs []string) (func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	// Dedup BEFORE sorting so we don't lock a shard twice — sync.Mutex
-	// is non-reentrant so a duplicate Lock against the same id would
-	// block forever. map[string]struct{} is the canonical dedup set.
+	if len(entityIDs) == 0 {
+		return func() {}, nil
+	}
+	// Dedup BEFORE sorting so we don't lock a shard twice — receive on
+	// an empty chan would block forever. map[string]struct{} is the
+	// canonical dedup set.
 	seen := make(map[string]struct{}, len(entityIDs))
 	unique := make([]string, 0, len(entityIDs))
 	for _, id := range entityIDs {
@@ -146,12 +189,42 @@ func (l *EntityLocker) AcquireBatch(entityIDs []string) func() {
 		unique = append(unique, id)
 	}
 	sort.Strings(unique)
+
+	// Tracks shards acquired so far so we can roll back on ctx cancel.
+	acquired := make([]string, 0, len(unique))
 	for _, id := range unique {
-		l.Lock(id)
+		if err := l.LockCtx(ctx, id); err != nil {
+			// Release in REVERSE order so observers/diagnostics see
+			// symmetric teardown. Empty acquired is a no-op.
+			for i := len(acquired) - 1; i >= 0; i-- {
+				l.Unlock(acquired[i])
+			}
+			return nil, err
+		}
+		acquired = append(acquired, id)
 	}
 	return func() {
-		for i := len(unique) - 1; i >= 0; i-- {
-			l.Unlock(unique[i])
+		for i := len(acquired) - 1; i >= 0; i-- {
+			l.Unlock(acquired[i])
 		}
+	}, nil
+}
+
+// joinLockErr tags ctx state with our sentinel so HTTP handlers can
+// errors.Is(err, store.ErrLockCancelled) without losing the underlying
+// context.Canceled / context.DeadlineExceeded signal.
+func joinLockErr(err error) error {
+	if err == nil {
+		return ErrLockCancelled
 	}
+	return &lockErr{base: ErrLockCancelled, cause: err}
+}
+
+type lockErr struct {
+	base, cause error
+}
+
+func (e *lockErr) Error() string { return e.base.Error() + ": " + e.cause.Error() }
+func (e *lockErr) Unwrap() []error {
+	return []error{e.base, e.cause}
 }

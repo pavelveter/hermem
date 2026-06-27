@@ -3,8 +3,57 @@ package detectors
 import (
 	"testing"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/pavelveter/hermem/src/internal/core"
 )
+
+// TestStemPair_NormalizesNFD — Audit Part 5 #4 regression. Two strings
+// that LOOK identical but differ in Unicode normalization form (NFC
+// vs NFD) MUST produce byte-identical stems after stemPair. Without
+// the NFC entry-point normalization, the NFD "й" / "ё" / "й" would
+// decompose into a base letter + combining diacritic, slipping past
+// the suffix byte-equality check and creating phantom duplicate
+// vertices in the graph.
+//
+// We exercise the conversion explicitly (norm.NFD.String of the NFC
+// source) and re-apply stemPair to the NFD form — its stem MUST equal
+// the stem of the NFC form.
+func TestStemPair_NormalizesNFD(t *testing.T) {
+	cases := []struct {
+		name string
+		nfc  string
+	}{
+		{"yogurt_with_breve", "йогурт"},  // NFC: и + U+0306 combining breve
+		{"yelka_with_diaeresis", "ёлка"}, // NFC: е + U+0308 combining diaeresis
+		{"mixed_ru_word", "разлюбил"},    // plain Russian, smoke test
+		{"neg_particle", "не люблю"},     // detection path
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			nfd := norm.NFD.String(c.nfc)
+			if nfd == c.nfc {
+				// Sanity: NFC/NFD differ for these inputs. If a future
+				// Go/x-text version ships where NFD is identity for
+				// these characters, the audit premise weakens — surface.
+				t.Logf("NOTE: NFC == NFD for %q; assertion tighter than necessary but still valid", c.nfc)
+			}
+			nfcStem, nfdStem := stemPair(c.nfc, nfd)
+			if nfcStem != nfdStem {
+				t.Errorf("NFC stem %q ≠ NFD stem %q for input %q (NFD=%q) — NFC normalization missing or incomplete at stemPair entry",
+					nfcStem, nfdStem, c.nfc, nfd)
+			}
+		})
+	}
+
+	// Property: stemPair on identical input (modulo normalization) MUST
+	// collapse to the same stem as the NFC form, even when one side is
+	// explicitly NFD.
+	a, b := stemPair("йогурт", norm.NFD.String("йогурт"))
+	if a != b {
+		t.Errorf("non-pair stemPair mismatch: NFC %q vs NFD %q", a, b)
+	}
+}
 
 func TestLexicalDetector(t *testing.T) {
 	cases := []struct {

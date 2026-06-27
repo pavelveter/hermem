@@ -7,6 +7,7 @@ require (
 	github.com/prometheus/client_golang v1.21.0
 	github.com/prometheus/client_model v0.6.1
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/text v0.21.0
 	gopkg.in/ini.v1 v1.67.3
 )
 
