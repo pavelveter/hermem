@@ -12,9 +12,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 - [x] Update all consumers to use `core.Embedder`
 
 ### 1.2 Consolidate test DB helpers
-- [ ] Create `internal/testutil/opendb.go` with shared `OpenTestDB(t)`
-- [ ] Replace 15+ duplicated `openTestDB` across packages
-- [ ] Ensure uniform cleanup and migration logic
+- [x] Create `internal/testutil/opendb.go` with shared `OpenTestDB(t)`
+- [x] Replace 15+ duplicated `openTestDB` across packages
+- [x] Ensure uniform cleanup and migration logic
 
 ### 1.3 Unify placeholder creation
 - [ ] Extract placeholder logic into `scripts/ensure-embed-placeholders.sh`
