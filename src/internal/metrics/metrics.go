@@ -1,41 +1,12 @@
 // Package metrics owns hermem_* Prometheus metrics and exposes a single
 // hermem-owned *prometheus.Registry the HTTP layer can serve via promhttp.
 //
-// OBSERVABILITY sprint commits 1-8 wire a Prometheus driver layer underneath
-// the original Metrics struct (atomic.Int64 + IncXxx methods preserved
-// byte-compatibly from e2aa722). Progress:
-//
-//   - Commit 1/8 (0195a23): 17 IncXxx counters (atomic + prometheus.Counter
-//     in lockstep using a hermem-owned registry), legacy WriteExposition
-//     preserved verbatim for the /metrics-style endpoint that callers wired
-//     before OBSERVABILITY.
-//   - Commit 2/8 (ac28975): 4 single-label-free duration histograms
-//     (hIngest / hRetrieval / hContradiction / hRerank) with shared
-//     durationBuckets = {.05 .1 .5 1 2 5 10 15 30 60}.
-//   - Commit 3/8: hIngest upgrades to *prometheus.HistogramVec with the
-//     single label "category". The ingest path in src/internal/ingestion
-//     already differentiates entities by category at write-time (this is the
-//     `category` DB column from worker.go and dialog.go), so the label is
-//     populated by callers that already know the value — no extra inference.
-//     Pre-warmed with a "_init" sentinel child in New() so cold-start
-//     /metrics scrape returns a non-empty parent MetricFamily.
-//   - Commits 4-6/8: hRetrieval, hContradiction, hRerank promote to Vec each
-//     with one new label (mode / detector / strategy).
-//   - Commits 7-8/8: Grafana dashboard JSON + Prometheus alert rules +
-//     /metrics endpoint wiring in src/internal/server/.
-//
-// IMPORTANT (called out for future maintainers): every per-domain collector
-// added by commits 3-8 MUST register on the SAME *prometheus.Registry
+// All per-domain collectors MUST register on the SAME *prometheus.Registry
 // returned by PrometheusRegistry(). Do NOT call prometheus.MustRegister /
-// promauto — that pins to the global default and silently defeats the
-// hermem-owned intent.
+// promauto — that pins to the global default.
 //
-// Cardinality discipline: each HistogramVec/CounterVec in this package has a
-// single label with a small, bounded value-set (<=10 expected, never
-// unbounded user-input). High-cardinality labels break Prometheus — if a
-// future commit adds a label, restrict the value-set in the caller's read
-// paths. The "_init" sentinel is a system-emitted entry that must NOT be
-// used by callers (see hIngest comment).
+// Cardinality discipline: each HistogramVec/CounterVec has a single label
+// with a small, bounded value-set (<=10 expected).
 package metrics
 
 import (

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/store"
 )
 
 type RebuildIndex struct {
@@ -23,24 +24,20 @@ func NewRebuildIndex(db *sql.DB, vi VectorIndex, em core.Embedder) *RebuildIndex
 func (r *RebuildIndex) Run(ctx context.Context, opts RebuildOpts) (*RebuildReport, error) {
 	report := &RebuildReport{}
 
-	query := "SELECT id, content FROM entities WHERE 1=1"
-	args := []interface{}{}
-
+	q := store.NewSQLBuilder("SELECT id, content FROM entities")
 	if opts.Category != "" {
-		query += " AND category = ?"
-		args = append(args, opts.Category)
+		q.Where("category = ?", opts.Category)
 	}
 	if !opts.Since.IsZero() {
-		query += " AND updated_at >= ?"
-		args = append(args, opts.Since.Format(time.RFC3339))
+		q.Where("updated_at >= ?", opts.Since.Format(time.RFC3339))
 	}
 	if opts.OnlyArchived {
-		query += " AND archived = 1"
+		q.Where("archived = 1")
 	} else {
-		query += " AND archived = 0"
+		q.Where("archived = 0")
 	}
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := r.db.QueryContext(ctx, q.Build(), q.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("rebuild: query: %w", err)
 	}

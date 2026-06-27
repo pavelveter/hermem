@@ -5,8 +5,7 @@ import (
 	"strings"
 )
 
-// SQLBuilder is a minimal query builder for SQL queries.
-// Not an ORM — just helps compose WHERE clauses, ORDER BY, and LIMIT
+// SQLBuilder composes WHERE clauses, ORDER BY, and LIMIT
 // without string concatenation.
 type SQLBuilder struct {
 	base   string
@@ -60,6 +59,8 @@ func (b *SQLBuilder) Args() []interface{} {
 }
 
 // Build constructs the final SQL query string.
+// The builder automatically adds WHERE when conditions are present,
+// so callers never need to use "1=1" as a base condition.
 func (b *SQLBuilder) Build() string {
 	var sb strings.Builder
 	sb.WriteString(b.base)

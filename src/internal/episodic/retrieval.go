@@ -45,24 +45,9 @@ func NewRetrievalService(db *sql.DB, embedder core.Embedder) *RetrievalService {
 	return &RetrievalService{db: db, embedder: embedder}
 }
 
-// SearchEpisodes returns episodes matching the filter, optionally
-// reranked by cosine similarity to query if an embedder is wired
-// and query is non-empty. Result order:
-//
-//   - Pure SQL (no embedder or empty query): ORDER BY started_at_ms DESC
-//     (most-recent first), limit applied.
-//   - Semantic (embedder + query): same SQL filter + limit, then
-//     in-memory rerank by cosine similarity DESC. Episodes without
-//     a stored embedding get cosine=0 and cluster at the bottom.
-//
-// Filter composition: zero-value filter fields are no-ops. TimeFrom
-// and TimeTo are inclusive on both ends. The ms-quantised
-// comparison (started_at_ms >= ?) is intentional — callers pass
-// time.Time values and the hermemtime helper converts them to
-// INTEGER ms before binding so the range is TZ-invariant.
-func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, filter EpisodeFilter) ([]Episode, error) {
-	// Apply SQL filter. Compose the WHERE clause incrementally so
-	// callers that set only one field still get a correct query.
+// LoadCandidates retrieves episodes matching the filter criteria
+// without semantic ranking. This is the SQL-only retrieval stage.
+func (s *RetrievalService) LoadCandidates(ctx context.Context, filter EpisodeFilter) ([]Episode, error) {
 	base := `SELECT id, session_id, conversation_id, title, summary, started_at_ms, ended_at_ms, metadata FROM episodes`
 	q := store.NewSQLBuilder(base)
 	if filter.SessionID != "" {
@@ -80,14 +65,13 @@ func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, fil
 	if filter.HasLinkedMemories {
 		q.Where(`EXISTS (SELECT 1 FROM episode_memories WHERE episode_id = episodes.id)`)
 	}
-	q.Where("1=1") // base condition
 	q.Order("started_at_ms DESC")
 	if filter.Limit > 0 {
 		q.Limit(filter.Limit)
 	}
 	rows, err := s.db.QueryContext(ctx, q.Build(), q.Args()...)
 	if err != nil {
-		return nil, fmt.Errorf("episodic: SearchEpisodes query: %w", err)
+		return nil, fmt.Errorf("episodic: LoadCandidates query: %w", err)
 	}
 	defer rows.Close()
 	out := make([]Episode, 0)
@@ -99,18 +83,35 @@ func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, fil
 		out = append(out, *ep)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("episodic: SearchEpisodes rows: %w", err)
-	}
-
-	// Semantic rerank — only when caller asks AND an embedder is wired.
-	if s.embedder != nil && query != "" {
-		queryVec, err := s.embedder.Embed(ctx, query)
-		if err != nil {
-			return nil, fmt.Errorf("episodic: SearchEpisodes embed query: %w", err)
-		}
-		rankByCosine(queryVec, out)
+		return nil, fmt.Errorf("episodic: LoadCandidates rows: %w", err)
 	}
 	return out, nil
+}
+
+// SemanticRank reranks episodes by cosine similarity to the query.
+// Episodes without a stored embedding get cosine=0 and cluster at
+// the bottom. This is the ranking-only stage.
+func (s *RetrievalService) SemanticRank(ctx context.Context, query string, episodes []Episode) ([]Episode, error) {
+	if s.embedder == nil || query == "" {
+		return episodes, nil
+	}
+	queryVec, err := s.embedder.Embed(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("episodic: SemanticRank embed: %w", err)
+	}
+	rankByCosine(queryVec, episodes)
+	return episodes, nil
+}
+
+// SearchEpisodes returns episodes matching the filter, optionally
+// reranked by cosine similarity to query if an embedder is wired
+// and query is non-empty.
+func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, filter EpisodeFilter) ([]Episode, error) {
+	episodes, err := s.LoadCandidates(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return s.SemanticRank(ctx, query, episodes)
 }
 
 // rankByCosine in-place sorts episodes by cosine similarity to
