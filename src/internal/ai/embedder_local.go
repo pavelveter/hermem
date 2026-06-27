@@ -1,3 +1,5 @@
+//go:build !no_local_embedding
+
 package ai
 
 import (
@@ -15,7 +17,7 @@ import (
 	"time"
 )
 
-//go:embed /internal/bin/llama-embedding
+//go:embed bin/llama-embedding
 var llamaBinary []byte
 
 //go:embed bin/llama-libs

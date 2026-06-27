@@ -13,8 +13,9 @@ do at the keyboard*.
 ## 1. TL;DR
 
 ```bash
-# Build once.
-go build -o hermem ./src
+# Build once (with or without local embedding binary).
+make build
+# or: go build -o hermem ./src
 
 # CLI mode: pipe JSON into stdin. No server, no Ollama process to keep alive.
 echo '{"query":"What is Go?"}' | ./hermem memory query
@@ -46,9 +47,12 @@ the file is missing, all keys fall back to defaults (Ollama at
 ### Build the binary
 
 ```bash
-go build -o hermem ./src
+# Recommended: make handles missing bin/ gracefully
+make build
 # or with -trimpath for reproducible builds
 go build -trimpath -ldflags="-s -w" -o hermem ./src
+# or without local embedding (faster, no llama-embedding binary needed)
+make build-no-local
 ```
 
 Install into `$PATH`:
@@ -81,6 +85,9 @@ model    = nomic-embed-text
 key      =                        # only used when provider = openai
 timeout  = 30s                    # HTTP request timeout (Go duration)
 
+[embedding]
+; model_path = "./models/nomic-embed-text.gguf"  # local GGUF model (no Ollama/OpenAI needed)
+
 [extraction]
 ; provider, url, key — optional, fall back to [embedder]
 provider    = ollama
@@ -103,7 +110,7 @@ dim = 768                        # embedding dimension for vec0 table (must matc
 depth_ceiling = 5                 # hard clamp on requested max_depth
 max_nodes     = 100               # soft cap on nodes per RetrieveContext
 
-[ranking]                          # Sprint 5 — tunable ranking weights
+[ranking]                          # tunable ranking weights
 vector_weight         = 0.7       # vector similarity weight (0 = disabled)
 recency_weight        = 0.3       # recency decay weight
 ; recency_half_life_hours = 720   # half-life for exp decay (default 720h ≈ 30d)
@@ -112,7 +119,7 @@ recency_weight        = 0.3       # recency decay weight
 ; temporal_half_life_hours = 720  # half-life for temporal decay
 ; centrality_weight     = 0.05    # graph centrality boost for hub nodes
 
-[reranker]                         # Sprint 5 — optional post-retrieval reranker
+[reranker]                         # optional post-retrieval reranker
 ; Follows the same provider convention as [embedder] / [extraction].
 ; When provider is empty or absent, reranking is skipped.
 ; provider = ollama               # "ollama" (cross-encoder) | "openai" (chat-based)
@@ -1864,7 +1871,7 @@ var durationBuckets = []float64{0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 30, 60}
 | ----------------------------------- | ---------- | ---------------------------------------------------------------------- |
 | `hermem_ingest_duration_seconds`    | `category` | `observation`, `world`, `task`, `edge` (plus `_init` sentinel)         |
 | `hermem_retrieval_duration_seconds` | `mode`     | `search`, `retrieve`, `query`, `response`, `query_explain`, `provenance` (plus `_init`) |
-| `hermem_contradiction_duration_seconds` | `detector` | `lexical`, `composite` (`semantic` reserved for phase 2.4; plus `_init`) |
+| `hermem_contradiction_duration_seconds` | `detector` | `lexical`, `composite` |
 | `hermem_rerank_duration_seconds`    | `strategy` | `llm_openai`, `llm_ollama`, `noop` (plus `_init`)                       |
 
 Adding a new label value is intentionally not free: extend the matching

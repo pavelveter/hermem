@@ -49,3 +49,4 @@ devtools.txt
 
 # Local GGUF models (too large for git)
 models/
+src/internal/ai/bin/

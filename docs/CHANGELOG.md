@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat: local embedding via embedded llama-embedding binary** — `llama-embedding` binary + dylibs are embedded via `go:embed` and extracted to a temp directory at runtime. No CGo compilation required. Config: `[embedding] model_path` in `hermem.ini` points to a local GGUF model file. When set, `NewEmbedder()` uses the embedded binary instead of Ollama/OpenAI. All 966 tests pass.
+
+- **refactor: §12.6 Unified component lifecycle** — New `core.Component` interface with `Start(ctx)`/`Stop(ctx)`, `lifecycle.Manager` for ordered start/stop with rollback, and concrete components: `HTTPComponent`, `GCComponent`, `SIGHUPComponent`, `MetricsComponent`. `server.Serve()` now uses the lifecycle manager instead of ad-hoc goroutine management.
+
+- **refactor: §12.3 Extract SQL from domain services** — Moved raw SQL from `graph/service.go` to `store/graph_verify.go` and from `task/service.go` to `store/task_executable.go`. Domain services are now pure orchestration.
+
+- **refactor: §5.1-5.3 Package organization** — Split `contradiction/` detectors into `ingestion/detectors/`, added `doc.go` to `evolution/`, deleted unused `episode/` package.
+
+- **refactor: §6 Extract wireAll helper** — Moved service construction from `cli/serve.go` to `cli/wiring.go` as a `wireAll()` function.
+
+- **refactor: §7.3 Standardize timestamps** — Unified all timestamp fields to `*time.Time` across Entity, Belief, LineageEntry, SummaryNode, and scoring functions. Added `core.TimePtr()` helper.
+
 - **P2 — SEMANTIC COMPRESSION**: `feat/semantic-compression` completes all 9 P2 SEMANTIC COMPRESSION items via the new `src/internal/compression/` package and migration `012_create_summary_nodes.sql`. All 909 tests pass race-safe. All 9 TODO.md items now [x].
   - **feat(compression)**: `SummaryNode` domain type + `summary` category registered in `DefaultSchemaConfig`. Conversion methods: `AsEntity()` and `EntityAsSummaryNode()`.
   - **feat(compression)**: `Clusterer` with greedy cosine-similarity clustering (configurable threshold/min/max); loads embeddings from SQLite entities table directly.
