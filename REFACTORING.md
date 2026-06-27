@@ -26,8 +26,8 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 ## Sprint 2 — Critical Fixes
 
 ### 2.1 Replace polling loop in Orchestrator.AgentLoop
-- [ ] Remove `time.Sleep(500ms)` busy-wait
-- [ ] Implement backoff-based polling (exponential, capped)
+- [x] Remove `time.Sleep(500ms)` busy-wait
+- [x] Implement backoff-based polling (exponential, capped)
 - [ ] Or use SQLite WAL commit hook for notification
 
 ### 2.2 Embedder validation on startup
