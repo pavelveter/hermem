@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
 // EpisodeFilter narrows the candidate set before ranking. Zero
@@ -47,30 +48,33 @@ func NewRetrievalService(db *sql.DB, embedder core.Embedder) *RetrievalService {
 // reranked by cosine similarity to query if an embedder is wired
 // and query is non-empty. Result order:
 //
-//   - Pure SQL (no embedder or empty query): ORDER BY started_at DESC
+//   - Pure SQL (no embedder or empty query): ORDER BY started_at_ms DESC
 //     (most-recent first), limit applied.
 //   - Semantic (embedder + query): same SQL filter + limit, then
 //     in-memory rerank by cosine similarity DESC. Episodes without
 //     a stored embedding get cosine=0 and cluster at the bottom.
 //
 // Filter composition: zero-value filter fields are no-ops. TimeFrom
-// and TimeTo are inclusive on both ends.
+// and TimeTo are inclusive on both ends. The ms-quantised
+// comparison (started_at_ms >= ?) is intentional — callers pass
+// time.Time values and the hermemtime helper converts them to
+// INTEGER ms before binding so the range is TZ-invariant.
 func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, filter EpisodeFilter) ([]Episode, error) {
 	// Apply SQL filter. Compose the WHERE clause incrementally so
 	// callers that set only one field still get a correct query.
-	q := `SELECT id, session_id, conversation_id, title, summary, started_at, ended_at, metadata FROM episodes WHERE 1=1`
+	q := `SELECT id, session_id, conversation_id, title, summary, started_at_ms, ended_at_ms, metadata FROM episodes WHERE 1=1`
 	args := []any{}
 	if filter.SessionID != "" {
 		q += " AND session_id = ?"
 		args = append(args, filter.SessionID)
 	}
 	if !filter.TimeFrom.IsZero() {
-		q += " AND started_at >= ?"
-		args = append(args, filter.TimeFrom)
+		q += " AND started_at_ms >= ?"
+		args = append(args, hermemtime.UnixMillisFromTime(filter.TimeFrom))
 	}
 	if !filter.TimeTo.IsZero() {
-		q += " AND started_at <= ?"
-		args = append(args, filter.TimeTo)
+		q += " AND started_at_ms <= ?"
+		args = append(args, hermemtime.UnixMillisFromTime(filter.TimeTo))
 	}
 	if filter.HasSummary {
 		q += " AND summary != ''"
@@ -78,7 +82,7 @@ func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, fil
 	if filter.HasLinkedMemories {
 		q += ` AND EXISTS (SELECT 1 FROM episode_memories WHERE episode_id = episodes.id)`
 	}
-	q += " ORDER BY started_at DESC"
+	q += " ORDER BY started_at_ms DESC"
 	if filter.Limit > 0 {
 		q += " LIMIT ?"
 		args = append(args, filter.Limit)

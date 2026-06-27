@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
 // ErrNotFound is returned by Get* / List* methods when the requested
@@ -36,6 +37,12 @@ var ErrNotFound = errors.New("episodic: not found")
 // JSON tags mirror the column names so the type can be (de)serialized
 // as a wire shape by future transport shells without an extra
 // conversion step. time.Time is rendered RFC3339 for portability.
+//
+// Storage: StartedAt / EndedAt are persisted as INTEGER Unix
+// milliseconds (UTC) in episodes.started_at_ms and
+// episodes.ended_at_ms (introduced by migration 013). The
+// hermemtime helpers enforce .UTC() on the write path so a
+// non-UTC value cannot land in the column.
 type Episode struct {
 	ID             string         `json:"id"`
 	SessionID      string         `json:"session_id,omitempty"`
@@ -63,6 +70,12 @@ func New(db *sql.DB) *Service {
 // defaulted to time.Now() so the timeline index has a stable anchor.
 // Metadata is JSON-encoded; nil maps render as "{}" to match the
 // migration default.
+//
+// Timestamp storage: StartedAt / EndedAt are persisted as INTEGER
+// Unix milliseconds (UTC) via hermemtime.UnixMillisFromTime, which
+// forces .UTC() on the value. Write-time TZ normalisation is the
+// invariant — readers can rely on every stored ms value having been
+// UTC at insert time.
 func (s *Service) CreateEpisode(ctx context.Context, ep Episode) error {
 	if ep.ID == "" {
 		return fmt.Errorf("episodic: CreateEpisode: id required")
@@ -78,9 +91,10 @@ func (s *Service) CreateEpisode(ctx context.Context, ep Episode) error {
 	if err != nil {
 		return fmt.Errorf("episodic: CreateEpisode marshal metadata: %w", err)
 	}
-	var endedAt sql.NullTime
+	startedAtMs := hermemtime.UnixMillisFromTime(ep.StartedAt)
+	var endedAtMs sql.NullInt64
 	if ep.EndedAt != nil {
-		endedAt = sql.NullTime{Time: *ep.EndedAt, Valid: true}
+		endedAtMs = sql.NullInt64{Int64: hermemtime.UnixMillisFromTime(*ep.EndedAt), Valid: true}
 	}
 	var sessionID, convID sql.NullString
 	if ep.SessionID != "" {
@@ -90,9 +104,9 @@ func (s *Service) CreateEpisode(ctx context.Context, ep Episode) error {
 		convID = sql.NullString{String: ep.ConversationID, Valid: true}
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO episodes (id, session_id, conversation_id, title, summary, started_at, ended_at, metadata)
+		`INSERT INTO episodes (id, session_id, conversation_id, title, summary, started_at_ms, ended_at_ms, metadata)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		ep.ID, sessionID, convID, ep.Title, ep.Summary, ep.StartedAt, endedAt, string(metaJSON),
+		ep.ID, sessionID, convID, ep.Title, ep.Summary, startedAtMs, endedAtMs, string(metaJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("episodic: CreateEpisode insert: %w", err)
@@ -105,7 +119,7 @@ func (s *Service) CreateEpisode(ctx context.Context, ep Episode) error {
 // error messages.
 func (s *Service) GetEpisode(ctx context.Context, id string) (*Episode, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, session_id, conversation_id, title, summary, started_at, ended_at, metadata
+		`SELECT id, session_id, conversation_id, title, summary, started_at_ms, ended_at_ms, metadata
 		 FROM episodes WHERE id = ?`, id)
 	return scanEpisode(row)
 }
@@ -116,8 +130,8 @@ func (s *Service) ListBySession(ctx context.Context, sessionID string, limit int
 	if sessionID == "" {
 		return nil, fmt.Errorf("episodic: ListBySession: session_id required")
 	}
-	q := `SELECT id, session_id, conversation_id, title, summary, started_at, ended_at, metadata
-	      FROM episodes WHERE session_id = ? ORDER BY started_at ASC`
+	q := `SELECT id, session_id, conversation_id, title, summary, started_at_ms, ended_at_ms, metadata
+	      FROM episodes WHERE session_id = ? ORDER BY started_at_ms ASC`
 	args := []any{sessionID}
 	if limit > 0 {
 		q += " LIMIT ?"
@@ -162,14 +176,18 @@ func (s *Service) UpdateSummary(ctx context.Context, id, summary string) error {
 	return nil
 }
 
-// EndEpisode stamps ended_at on the episode. Pass a zero time to
-// mean "right now" — keeps call sites short for the common case.
+// EndEpisode stamps ended_at_ms on the episode. Pass a zero time
+// to mean "right now" — keeps call sites short for the common
+// case. The value is persisted as INTEGER Unix milliseconds
+// (UTC) via hermemtime.UnixMillisFromTime; the .UTC() call inside
+// that helper enforces the write-time TZ invariant.
 func (s *Service) EndEpisode(ctx context.Context, id string, endedAt time.Time) error {
 	if endedAt.IsZero() {
 		endedAt = time.Now()
 	}
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE episodes SET ended_at = ? WHERE id = ?`, endedAt, id)
+		`UPDATE episodes SET ended_at_ms = ? WHERE id = ?`,
+		hermemtime.UnixMillisFromTime(endedAt), id)
 	if err != nil {
 		return fmt.Errorf("episodic: EndEpisode update: %w", err)
 	}
@@ -186,13 +204,18 @@ func (s *Service) EndEpisode(ctx context.Context, id string, endedAt time.Time) 
 // --- shared scan helpers ---
 
 // scanEpisode reads one episode row from a *sql.Row (QueryRow path).
+// The two timestamp columns are persisted as INTEGER Unix milliseconds
+// (UTC) by hermemtime.UnixMillisFromTime; readers convert back to
+// time.Time via hermemtime.TimeFromUnixMillis. The returned time.Time
+// is rendered as zero-valued for unset / zero-ms rows (matches the
+// INSERT-side default of 0).
 func scanEpisode(row *sql.Row) (*Episode, error) {
 	var ep Episode
 	var sessionID, convID sql.NullString
 	var title, summary, metaJSON string
-	var startedAt time.Time
-	var endedAt sql.NullTime
-	if err := row.Scan(&ep.ID, &sessionID, &convID, &title, &summary, &startedAt, &endedAt, &metaJSON); err != nil {
+	var startedAtMs int64
+	var endedAtMs sql.NullInt64
+	if err := row.Scan(&ep.ID, &sessionID, &convID, &title, &summary, &startedAtMs, &endedAtMs, &metaJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -206,9 +229,9 @@ func scanEpisode(row *sql.Row) (*Episode, error) {
 	}
 	ep.Title = title
 	ep.Summary = summary
-	ep.StartedAt = startedAt
-	if endedAt.Valid {
-		t := endedAt.Time
+	ep.StartedAt = hermemtime.TimeFromUnixMillis(startedAtMs)
+	if endedAtMs.Valid {
+		t := hermemtime.TimeFromUnixMillis(endedAtMs.Int64)
 		ep.EndedAt = &t
 	}
 	if err := json.Unmarshal([]byte(metaJSON), &ep.Metadata); err != nil {
@@ -226,9 +249,9 @@ func scanEpisodeRows(rows *sql.Rows) (*Episode, error) {
 	var ep Episode
 	var sessionID, convID sql.NullString
 	var title, summary, metaJSON string
-	var startedAt time.Time
-	var endedAt sql.NullTime
-	if err := rows.Scan(&ep.ID, &sessionID, &convID, &title, &summary, &startedAt, &endedAt, &metaJSON); err != nil {
+	var startedAtMs int64
+	var endedAtMs sql.NullInt64
+	if err := rows.Scan(&ep.ID, &sessionID, &convID, &title, &summary, &startedAtMs, &endedAtMs, &metaJSON); err != nil {
 		return nil, fmt.Errorf("episodic: scan rows: %w", err)
 	}
 	if sessionID.Valid {
@@ -239,9 +262,9 @@ func scanEpisodeRows(rows *sql.Rows) (*Episode, error) {
 	}
 	ep.Title = title
 	ep.Summary = summary
-	ep.StartedAt = startedAt
-	if endedAt.Valid {
-		t := endedAt.Time
+	ep.StartedAt = hermemtime.TimeFromUnixMillis(startedAtMs)
+	if endedAtMs.Valid {
+		t := hermemtime.TimeFromUnixMillis(endedAtMs.Int64)
 		ep.EndedAt = &t
 	}
 	if err := json.Unmarshal([]byte(metaJSON), &ep.Metadata); err != nil {

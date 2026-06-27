@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
 // EventType is the closed enum of event categories. The CHECK
@@ -67,6 +68,12 @@ func NewEventService(db *sql.DB) *EventService {
 // If event.Timestamp is zero it defaults to time.Now() so the
 // timeline ordering has a stable anchor even when callers don't
 // supply an explicit time.
+//
+// Timestamp storage: events.timestamp is persisted as INTEGER
+// Unix milliseconds (UTC) via hermemtime.UnixMillisFromTime
+// (introduced by migration 013). The helper normalises to UTC
+// before serialising so a non-UTC value cannot land in the
+// column even if the caller forgot to .UTC() the input.
 func (s *EventService) CreateEvent(ctx context.Context, event Event) error {
 	if event.ID == "" {
 		return fmt.Errorf("episodic: CreateEvent: id required")
@@ -89,9 +96,10 @@ func (s *EventService) CreateEvent(ctx context.Context, event Event) error {
 		return fmt.Errorf("episodic: CreateEvent marshal metadata: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO events (id, episode_id, type, content, timestamp, metadata)
+		`INSERT INTO events (id, episode_id, type, content, timestamp_ms, metadata)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		event.ID, event.EpisodeID, string(event.Type), event.Content, event.Timestamp, string(metaJSON),
+		event.ID, event.EpisodeID, string(event.Type), event.Content,
+		hermemtime.UnixMillisFromTime(event.Timestamp), string(metaJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("episodic: CreateEvent insert: %w", err)
@@ -100,15 +108,19 @@ func (s *EventService) CreateEvent(ctx context.Context, event Event) error {
 }
 
 // ListEventsByEpisode returns all events for the given episode,
-// ordered by timestamp ASC then id (stable tiebreak).
+// ordered by timestamp_ms ASC then id (stable tiebreak). Reading
+// the INTEGER ms column and converting back to time.Time via
+// hermemtime.TimeFromUnixMillis preserves the chronological
+// invariant under any host TZ — the persisted ms value is
+// invariant under container / process TZ drift.
 func (s *EventService) ListEventsByEpisode(ctx context.Context, episodeID string) ([]Event, error) {
 	if episodeID == "" {
 		return nil, fmt.Errorf("episodic: ListEventsByEpisode: episode_id required")
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, episode_id, type, content, timestamp, metadata
+		`SELECT id, episode_id, type, content, timestamp_ms, metadata
 		 FROM events WHERE episode_id = ?
-		 ORDER BY timestamp ASC, id ASC`, episodeID)
+		 ORDER BY timestamp_ms ASC, id ASC`, episodeID)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: ListEventsByEpisode query: %w", err)
 	}
@@ -128,15 +140,15 @@ func (s *EventService) ListEventsByEpisode(ctx context.Context, episodeID string
 }
 
 // ListEventsByType returns events of the given type across all
-// episodes, ordered by timestamp DESC (most-recent first). limit
+// episodes, ordered by timestamp_ms DESC (most-recent first). limit
 // ≤ 0 means no cap.
 func (s *EventService) ListEventsByType(ctx context.Context, eventType EventType, limit int) ([]Event, error) {
 	if !validEventTypes[eventType] {
 		return nil, fmt.Errorf("episodic: ListEventsByType: invalid type %q", eventType)
 	}
-	q := `SELECT id, episode_id, type, content, timestamp, metadata
+	q := `SELECT id, episode_id, type, content, timestamp_ms, metadata
 	      FROM events WHERE type = ?
-	      ORDER BY timestamp DESC, id ASC`
+	      ORDER BY timestamp_ms DESC, id ASC`
 	args := []any{string(eventType)}
 	if limit > 0 {
 		q += " LIMIT ?"
@@ -161,14 +173,19 @@ func (s *EventService) ListEventsByType(ctx context.Context, eventType EventType
 	return core.NormalizeSlice(out), nil
 }
 
-// scanEvent reads one event row from a *sql.Rows iterator.
+// scanEvent reads one event row from a *sql.Rows iterator. The
+// timestamp is persisted as INTEGER Unix milliseconds (UTC) by
+// hermemtime.UnixMillisFromTime; read path reverses via
+// hermemtime.TimeFromUnixMillis.
 func scanEvent(rows *sql.Rows) (*Event, error) {
 	var ev Event
 	var typ, metaJSON string
-	if err := rows.Scan(&ev.ID, &ev.EpisodeID, &typ, &ev.Content, &ev.Timestamp, &metaJSON); err != nil {
+	var timestampMs int64
+	if err := rows.Scan(&ev.ID, &ev.EpisodeID, &typ, &ev.Content, &timestampMs, &metaJSON); err != nil {
 		return nil, fmt.Errorf("episodic: scan event: %w", err)
 	}
 	ev.Type = EventType(typ)
+	ev.Timestamp = hermemtime.TimeFromUnixMillis(timestampMs)
 	if err := json.Unmarshal([]byte(metaJSON), &ev.Metadata); err != nil {
 		return nil, fmt.Errorf("episodic: scan event unmarshal metadata: %w", err)
 	}

@@ -29,26 +29,25 @@ func openTestDB(t *testing.T) *sql.DB {
 
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS sessions (
-			id TEXT PRIMARY KEY,
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
-			metadata TEXT DEFAULT '{}'
-		)`,
+		id TEXT PRIMARY KEY,
+		started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		ended_at DATETIME,
+		metadata TEXT DEFAULT '{}'
+	)`,
 		`CREATE TABLE IF NOT EXISTS conversations (
-			id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			summary TEXT DEFAULT '',
-			metadata TEXT DEFAULT '{}'
-		)`,
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		summary TEXT DEFAULT '',
+		metadata TEXT DEFAULT '{}')`,
 		`CREATE TABLE IF NOT EXISTS episodes (
 			id TEXT PRIMARY KEY,
 			session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
 			conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
 			title TEXT NOT NULL DEFAULT '',
 			summary TEXT NOT NULL DEFAULT '',
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
+			started_at_ms INTEGER NOT NULL DEFAULT 0,
+			ended_at_ms INTEGER,
 			metadata TEXT NOT NULL DEFAULT '{}'
 		)`,
 	}
@@ -84,7 +83,7 @@ func TestService_CreateEpisode_DefaultsStartedAtAndMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEpisode: %v", err)
 	}
-	if got.StartedAt.Before(before) || got.StartedAt.After(time.Now().Add(time.Second)) {
+	if got.StartedAt.Before(before.Add(-time.Millisecond)) || got.StartedAt.After(time.Now().Add(time.Second)) {
 		t.Fatalf("StartedAt default out of range: %v", got.StartedAt)
 	}
 	if got.Metadata == nil {

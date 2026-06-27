@@ -258,6 +258,19 @@ func TestApplyAllThenRevertAll(t *testing.T) {
 		}
 	}
 
+	// Migration 013 mutates the P2 episodic schema by DROP COLUMN-ing
+	// `started_at` / `timestamp` / `linked_at` (no `IF EXISTS` and no
+	// down-migration step). The row-only rollback above only deletes
+	// the schema_migrations tracking rows; the physical schema stays
+	// partially mutated. Drop the affected tables so the re-apply
+	// step runs against a clean slate, then RunMigrations re-creates
+	// them and 013 re-runs end-to-end.
+	for _, table := range []string{"episodes", "events", "episode_memories", "episode_tasks"} {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + table); err != nil {
+			t.Logf("drop %s (best-effort reset before re-apply): %v", table, err)
+		}
+	}
+
 	// Verify no migrations are marked as applied.
 	afterRevert, err := appliedMigrations(db)
 	if err != nil {

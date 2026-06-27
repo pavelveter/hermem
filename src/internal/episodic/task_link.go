@@ -70,26 +70,31 @@ func (s *TaskLinkService) UnlinkTask(ctx context.Context, episodeID, taskID stri
 //
 // Distinct from MemoryRef/EpisodeRef to keep the wire shape
 // explicit at call sites.
+//
+// BREAKING: LinkedAt was previously a string; after migration 013
+// it is an int64 Unix millisecond (UTC) read from
+// episode_tasks.linked_at_ms. Clients previously parsing the
+// field as a datetime string need to switch to time.UnixMilli(c).
 type TaskRef struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 	Status   string `json:"status"`
-	LinkedAt string `json:"linked_at"`
+	LinkedAt int64  `json:"linked_at"`
 }
 
 // ListTasksForEpisode returns all tasks linked to the given
-// episode, ordered by linked_at ASC then task id (stable). Empty
-// episode_id is rejected at the Go layer before the SQL runs.
+// episode, ordered by linked_at_ms ASC then task id (stable).
+// Empty episode_id is rejected at the Go layer before the SQL runs.
 func (s *TaskLinkService) ListTasksForEpisode(ctx context.Context, episodeID string) ([]TaskRef, error) {
 	if episodeID == "" {
 		return nil, fmt.Errorf("episodic: ListTasksForEpisode: episode_id required")
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT e.id, e.content, COALESCE(e.status, ''), et.linked_at
+		`SELECT e.id, e.content, COALESCE(e.status, ''), et.linked_at_ms
 		 FROM episode_tasks et
 		 JOIN entities e ON e.id = et.task_id
 		 WHERE et.episode_id = ?
-		 ORDER BY et.linked_at ASC, et.task_id ASC`, episodeID)
+		 ORDER BY et.linked_at_ms ASC, et.task_id ASC`, episodeID)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: ListTasksForEpisode query: %w", err)
 	}

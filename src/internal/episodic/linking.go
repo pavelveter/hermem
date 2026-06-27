@@ -90,27 +90,32 @@ func (s *LinkService) UnlinkMemory(ctx context.Context, episodeID, entityID, rol
 // Distinct from core.Entity to make the intent explicit at call
 // sites — ListMemoriesForEpisode returns []MemoryRef, not
 // []core.Entity.
+//
+// BREAKING: LinkedAt was previously a string (RFC3339-ish
+// formatter); after migration 013 it is an int64 Unix millisecond
+// (UTC) read from episode_memories.linked_at_ms. Clients parsing
+// the field as time.Time need to switch to time.UnixMilli(c).
 type MemoryRef struct {
 	ID       string `json:"id"`
 	Category string `json:"category"`
 	Content  string `json:"content"`
 	Role     string `json:"role"`
-	LinkedAt string `json:"linked_at"`
+	LinkedAt int64  `json:"linked_at"`
 }
 
 // ListMemoriesForEpisode returns all entities linked to the given
 // episode, with their link role and timestamp. Ordered by link
-// timestamp ASC then entity id (stable).
+// timestamp_ms ASC then entity id (stable).
 func (s *LinkService) ListMemoriesForEpisode(ctx context.Context, episodeID string) ([]MemoryRef, error) {
 	if episodeID == "" {
 		return nil, fmt.Errorf("episodic: ListMemoriesForEpisode: episode_id required")
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT e.id, e.category, e.content, em.role, em.linked_at
+		`SELECT e.id, e.category, e.content, em.role, em.linked_at_ms
 		 FROM episode_memories em
 		 JOIN entities e ON e.id = em.entity_id
 		 WHERE em.episode_id = ?
-		 ORDER BY em.linked_at ASC, em.entity_id ASC`, episodeID)
+		 ORDER BY em.linked_at_ms ASC, em.entity_id ASC`, episodeID)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: ListMemoriesForEpisode query: %w", err)
 	}
@@ -124,34 +129,35 @@ func (s *LinkService) ListMemoriesForEpisode(ctx context.Context, episodeID stri
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("episodic: ListMemoriesForEpisode rows: %w", err)
+		return nil, fmt.Errorf("episodic: ListMemoriesForMemory rows: %w", err)
 	}
 	return core.NormalizeSlice(out), nil
 }
 
 // EpisodeRef is the slim projection of an episode returned by
-// ListEpisodesForMemory. Same projection discipline as MemoryRef.
+// ListEpisodesForMemory. Same projection discipline as MemoryRef;
+// LinkedAt is INTEGER Unix milliseconds (UTC) after migration 013.
 type EpisodeRef struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 	Summary  string `json:"summary"`
 	Role     string `json:"role"`
-	LinkedAt string `json:"linked_at"`
+	LinkedAt int64  `json:"linked_at"`
 }
 
 // ListEpisodesForMemory returns all episodes linked to the given
 // entity, with their link role and timestamp. Ordered by link
-// timestamp ASC then episode id (stable).
+// timestamp_ms ASC then episode id (stable).
 func (s *LinkService) ListEpisodesForMemory(ctx context.Context, entityID string) ([]EpisodeRef, error) {
 	if entityID == "" {
 		return nil, fmt.Errorf("episodic: ListEpisodesForMemory: entity_id required")
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT ep.id, ep.title, ep.summary, em.role, em.linked_at
+		`SELECT ep.id, ep.title, ep.summary, em.role, em.linked_at_ms
 		 FROM episode_memories em
 		 JOIN episodes ep ON ep.id = em.episode_id
 		 WHERE em.entity_id = ?
-		 ORDER BY em.linked_at ASC, em.episode_id ASC`, entityID)
+		 ORDER BY em.linked_at_ms ASC, em.episode_id ASC`, entityID)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: ListEpisodesForMemory query: %w", err)
 	}
