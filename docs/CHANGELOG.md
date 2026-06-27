@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Sprint 4 — Observability & Quality
+- **feat: structured logging for HTTP handlers** — Enhanced `SlogMiddleware` with `status_code`, `request_id`, `duration`, `method`, `path` fields. Uses `responseWriter` wrapper to capture status codes. All request logs now at Info level.
+- **ci: benchmark workflow** — New `.github/workflows/bench.yml` runs benchmarks on PRs and pushes, uses `benchstat` for analysis, posts results as PR comments, uploads raw results as artifacts.
+
+### Sprint 3 — Architecture
+- **feat: core.Retriever interface** — New `core.Retriever` interface with `RetrieveContext` and `MultiHopRetrieveContext` methods. `retrieval.Service` implements the interface. `temporal.go` now uses the interface instead of calling `retrieval.RetrieveContext` directly.
+- **refactor: harden serverstate.Load()** — Added nil-safety check with panic for debugging. Documented thread-safety contract (atomic.Pointer consistency). Documented that returned `*State` must not be mutated.
+- **fix: remove unused clusterSizes field** — Removed dead code `clusterSizes []int64` from `compression.Metrics`. All other fields use `atomic.Int64` for thread-safety.
+
+### Sprint 2 — Critical Fixes
+- **refactor: replace time.Sleep(500ms) with exponential backoff** — `Orchestrator.AgentLoop` now uses 50ms → 1s exponential backoff with context-aware select. Resets after successful task execution.
+- **feat: add Ping method to Embedder interface** — New `Ping(ctx) error` method on `core.Embedder`. Implemented for Ollama (`/api/tags`), OpenAI (`/models`), and Local (binary check). `serve` command validates embedder availability before accepting traffic. Fail-fast with clear error message if provider unreachable.
+- **refactor: extract hop helpers from MultiHopRetrieveContext** — Extracted `hopEmbedFacts()`, `hopVectorSearch()`, `hopMergeSeeds()` to reduce cognitive complexity. Added 5 unit tests for each extracted step.
+
+### Sprint 1 — Quick Wins
+- **refactor: deduplicate Embedder interfaces** — Removed `admin.Embedder` and `episodic.retrieval.Embedder` duplicates. `core.Embedder` is now the single source of truth.
+- **refactor: consolidate test DB helpers** — Created shared `testutil.OpenTestDB`/`OpenTestDBSimple` in `internal/testutil`. Replaced duplicated `openTestDB` across 4 packages.
+- **refactor: unify placeholder creation** — Extracted placeholder logic into `scripts/ensure-embed-placeholders.sh`. Makefile, pre-push hook, and CI workflow now call the same script. Single source of truth for dylib list.
+- **chore: move scripts to scripts/ directory** — Moved `bench.sh` and `loadtest.sh` into `scripts/` for better organization.
+
 - **feat: local embedding via embedded llama-embedding binary** — `llama-embedding` binary + dylibs are embedded via `go:embed` and extracted to a temp directory at runtime. No CGo compilation required. Config: `[embedding] model_path` in `hermem.ini` points to a local GGUF model file. When set, `NewEmbedder()` uses the embedded binary instead of Ollama/OpenAI. All 966 tests pass.
 
 - **refactor: §12.6 Unified component lifecycle** — New `core.Component` interface with `Start(ctx)`/`Stop(ctx)`, `lifecycle.Manager` for ordered start/stop with rollback, and concrete components: `HTTPComponent`, `GCComponent`, `SIGHUPComponent`, `MetricsComponent`. `server.Serve()` now uses the lifecycle manager instead of ad-hoc goroutine management.
