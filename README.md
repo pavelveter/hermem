@@ -164,7 +164,8 @@ and are documented under each command via `hermem <group> <cmd> --help`.
 # Clone and build
 git clone https://github.com/pavelveter/hermem.git
 cd hermem
-go build -o hermem ./src
+make build        # works with or without local embedding binary
+# or: go build -o hermem ./src   # same as make build
 
 # Inspect the command tree (top-level + 6 groups)
 ./hermem --help
@@ -218,8 +219,11 @@ hermes gateway restart
 ### Standalone (without Hermes)
 
 ```bash
-# Build
-go build -o hermem ./src
+# Build (with or without local embedding — make handles missing bin/)
+make build
+
+# Or build without local embedding (no llama-embedding binary needed)
+make build-no-local
 
 # Copy to PATH
 cp hermem /usr/local/bin/

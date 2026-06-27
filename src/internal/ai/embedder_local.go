@@ -1,3 +1,5 @@
+//go:build !no_local_embedding
+
 package ai
 
 import (

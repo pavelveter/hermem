@@ -13,8 +13,9 @@ do at the keyboard*.
 ## 1. TL;DR
 
 ```bash
-# Build once.
-go build -o hermem ./src
+# Build once (with or without local embedding binary).
+make build
+# or: go build -o hermem ./src
 
 # CLI mode: pipe JSON into stdin. No server, no Ollama process to keep alive.
 echo '{"query":"What is Go?"}' | ./hermem memory query
@@ -46,9 +47,12 @@ the file is missing, all keys fall back to defaults (Ollama at
 ### Build the binary
 
 ```bash
-go build -o hermem ./src
+# Recommended: make handles missing bin/ gracefully
+make build
 # or with -trimpath for reproducible builds
 go build -trimpath -ldflags="-s -w" -o hermem ./src
+# or without local embedding (faster, no llama-embedding binary needed)
+make build-no-local
 ```
 
 Install into `$PATH`:
