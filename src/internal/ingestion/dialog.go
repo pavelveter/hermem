@@ -34,18 +34,14 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 	if err != nil {
 		return fmt.Errorf("extract entities: %w", err)
 	}
-	type item struct {
-		entity    core.ExtractedEntity
-		embedding []float32
-	}
-	items := make([]item, 0, len(result.Entities))
+	items := make([]processInput, 0, len(result.Entities))
 	for _, entity := range result.Entities {
 		embedding, err := w.embedder.Embed(ctx, entity.Content)
 		if err != nil {
 			slog.Error("entity embed failed", "entity_id", entity.ID, "err", err)
 			continue
 		}
-		items = append(items, item{entity: entity, embedding: embedding})
+		items = append(items, processInput{entity: entity, embedding: embedding})
 	}
 	if len(items) == 0 {
 		return nil
@@ -84,10 +80,7 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 //
 // Non-busy errors are returned immediately — retrying them would amplify
 // the bug rather than fix it.
-func (w *IngestionWorker) processOneItem(ctx context.Context, prov core.Provenance, it struct {
-	entity    core.ExtractedEntity
-	embedding []float32
-}, similarIDs []string, selfID string) error {
+func (w *IngestionWorker) processOneItem(ctx context.Context, prov core.Provenance, it processInput, similarIDs []string, selfID string) error {
 	const maxAttempts = 5
 	backoff := 50 * time.Millisecond
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -176,10 +169,7 @@ func applyVIOps(ctx context.Context, vi core.VectorIndex, ops []viOp) {
 //	MERGE into existing             → [remove(it.entity.ID), store(mergeEntity.ID, mergeEntity.Embedding)]
 //	LOW-CONF contradiction archive  → [remove(archiveIDFromExisting), store(it.entity.ID, embedding)]
 //	HIGH-CONF contradiction (keep) → [store(it.entity.ID, embedding)]; existing.ID untouched because it was indexed by its prior ingest and the createEdgesInTx below adds a contradicts edge so the keep-both relation is durable.
-func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Provenance, it struct {
-	entity    core.ExtractedEntity
-	embedding []float32
-}, similarIDs []string, selfID string) error {
+func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Provenance, it processInput, similarIDs []string, selfID string) error {
 	targetID := it.entity.ID
 	existing, err := w.findMatch(it.embedding, similarIDs, selfID)
 	if err != nil {
@@ -187,105 +177,133 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 	}
 
 	var viOps []viOp
-	// archiveID retains the existing.ID for the LOW-CONF contradiction
-	// branch even after `existing = nil` clears the dedup handle. We
-	// need the id both to fold the archive UPDATE INTO itemTx (atomic
-	// with the new entity write) and to populate the post-commit Remove.
 	var archiveID string
-	if existing != nil && w.detector.Detect(*existing, core.Entity{Content: it.entity.Content}).Detected {
-		existingConf := existing.Confidence
-		if existingConf == 0 {
-			existingConf = 1.0
-		}
-		if existingConf >= 0.7 {
-			slog.Info("contradiction detected, keeping both", "existing_id", existing.ID, "incoming_id", it.entity.ID)
+	if existing != nil {
+		action, archID, ops := w.handleContradiction(existing, it.entity)
+		archiveID = archID
+		viOps = append(viOps, ops...)
+		switch action {
+		case contradictionKeepBoth:
 			it.entity.Relations = append(it.entity.Relations, core.Relation{TargetID: existing.ID, RelationType: w.schema.RelationContradicts})
 			existing = nil
-		} else {
-			slog.Info("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", it.entity.ID)
-			archiveID = existing.ID
-			// Post-commit Remove cleans the vec index; defensive against
-			// any future bug reintroducing BulkStore-style pre-stores.
-			viOps = append(viOps, viOp{kind: viOpRemove, id: existing.ID})
+		case contradictionPreferIncoming:
+			viOps = append(viOps, viOp{kind: viOpStore, id: it.entity.ID, vec: it.embedding})
 			existing = nil
 		}
 	}
 
-	var mergeEntity *core.Entity
+	var merged *core.Entity
 	if existing != nil {
+		merged, err = w.mergeExistingEntity(ctx, existing, it.entity, prov)
+		if err != nil {
+			return fmt.Errorf("merge embed failed: %w", err)
+		}
 		targetID = existing.ID
-		mergedContent := existing.Content
-		if !strings.Contains(existing.Content, it.entity.Content) {
-			mergedContent = existing.Content + "; " + it.entity.Content
-		}
-		updatedEmb, embErr := w.embedder.Embed(ctx, mergedContent)
-		if embErr != nil {
-			return fmt.Errorf("merge embed failed: %w", embErr)
-		}
-		vector.NormalizeVector(updatedEmb)
-		mergeEntity = &core.Entity{
-			ID:             existing.ID,
-			Category:       existing.Category,
-			Content:        mergedContent,
-			Embedding:      updatedEmb,
-			Status:         existing.Status,
-			CreatedAt:      existing.CreatedAt,
-			Confidence:     1.0,
-			ConversationID: prov.ConversationID,
-			MessageID:      prov.MessageID,
-			ExtractedFrom:  prov.ExtractedFrom,
-			Source:         "dialog",
-			SourceType:     "extraction",
-			UpdatedAt:      core.TimePtr(time.Now().UTC()),
-		}
-		// Merge-prep: defensive post-commit Remove drops any stale vec
-		// entry for it.entity.ID from a prior aborted ingest; post-commit
-		// Store writes the merged embedding.
 		viOps = append(viOps,
 			viOp{kind: viOpRemove, id: it.entity.ID},
-			viOp{kind: viOpStore, id: mergeEntity.ID, vec: mergeEntity.Embedding},
+			viOp{kind: viOpStore, id: merged.ID, vec: merged.Embedding},
 		)
-	} else {
-		// Fresh entity: § 3.1 atomicity — the per-item post-commit
-		// Store is the ONLY way the new ID lands in the vec index.
-		// Without it, the new row would be invisible to the next
-		// SearchBatch.
+	} else if archiveID == "" {
 		viOps = append(viOps, viOp{kind: viOpStore, id: it.entity.ID, vec: it.embedding})
 	}
 
+	if err := w.executeItemTx(ctx, targetID, it.entity, it.embedding, prov, merged, archiveID); err != nil {
+		return err
+	}
+	applyVIOps(ctx, w.vi, viOps)
+	return nil
+}
+
+// processInput bundles the extracted entity and its embedding.
+type processInput struct {
+	entity    core.ExtractedEntity
+	embedding []float32
+}
+
+// contradictionAction describes the outcome of handleContradiction.
+type contradictionAction int
+
+const (
+	contradictionNone         contradictionAction = iota
+	contradictionKeepBoth                         // HIGH-CONF: keep both entities
+	contradictionPreferIncoming                    // LOW-CONF: archive existing, keep incoming
+)
+
+// handleContradiction detects contradictions between existing and incoming entities
+// and returns the action to take, an optional archive ID, and any vector index ops.
+func (w *IngestionWorker) handleContradiction(existing *core.Entity, incoming core.ExtractedEntity) (contradictionAction, string, []viOp) {
+	if !w.detector.Detect(*existing, core.Entity{Content: incoming.Content}).Detected {
+		return contradictionNone, "", nil
+	}
+
+	existingConf := existing.Confidence
+	if existingConf == 0 {
+		existingConf = 1.0
+	}
+
+	if existingConf >= 0.7 {
+		slog.Info("contradiction detected, keeping both", "existing_id", existing.ID, "incoming_id", incoming.ID)
+		return contradictionKeepBoth, "", nil
+	}
+
+	slog.Info("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", incoming.ID)
+	return contradictionPreferIncoming, existing.ID, []viOp{{kind: viOpRemove, id: existing.ID}}
+}
+
+// mergeExistingEntity merges the incoming entity into the existing one and returns
+// the merged entity with a re-embedded vector.
+func (w *IngestionWorker) mergeExistingEntity(ctx context.Context, existing *core.Entity, incoming core.ExtractedEntity, prov core.Provenance) (*core.Entity, error) {
+	mergedContent := existing.Content
+	if !strings.Contains(existing.Content, incoming.Content) {
+		mergedContent = existing.Content + "; " + incoming.Content
+	}
+	updatedEmb, err := w.embedder.Embed(ctx, mergedContent)
+	if err != nil {
+		return nil, err
+	}
+	vector.NormalizeVector(updatedEmb)
+	return &core.Entity{
+		ID:             existing.ID,
+		Category:       existing.Category,
+		Content:        mergedContent,
+		Embedding:      updatedEmb,
+		Status:         existing.Status,
+		CreatedAt:      existing.CreatedAt,
+		Confidence:     1.0,
+		ConversationID: prov.ConversationID,
+		MessageID:      prov.MessageID,
+		ExtractedFrom:  prov.ExtractedFrom,
+		Source:         "dialog",
+		SourceType:     "extraction",
+		UpdatedAt:      core.TimePtr(time.Now().UTC()),
+	}, nil
+}
+
+// executeItemTx runs the database transaction for creating or merging an entity.
+func (w *IngestionWorker) executeItemTx(ctx context.Context, targetID string, entity core.ExtractedEntity, embedding []float32, prov core.Provenance, merged *core.Entity, archiveID string) error {
 	itemTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx failed: %w", err)
 	}
 	var writeErr error
-	if mergeEntity != nil {
-		writeErr = w.mergeEntityInTx(ctx, itemTx, *mergeEntity)
+	if merged != nil {
+		writeErr = w.mergeEntityInTx(ctx, itemTx, *merged)
 	} else {
-		writeErr = w.createEntityInTx(ctx, itemTx, it.entity, it.embedding, prov)
+		writeErr = w.createEntityInTx(ctx, itemTx, entity, embedding, prov)
 	}
-	// Fold contradiction archive INTO itemTx so the archive commits /
-	// rolls-back atomically with the new entity write. archiveID is
-	// only non-empty here for the LOW-CONF contradiction case.
 	if archiveID != "" && writeErr == nil {
 		if _, err := itemTx.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id = ?`, archiveID); err != nil {
 			writeErr = fmt.Errorf("archive existing in tx: %w", err)
 		}
 	}
 	if writeErr == nil {
-		writeErr = w.createEdgesInTx(ctx, itemTx, targetID, it.entity.Relations)
+		writeErr = w.createEdgesInTx(ctx, itemTx, targetID, entity.Relations)
 	}
 	if writeErr != nil {
 		_ = itemTx.Rollback()
 		return writeErr
 	}
-	if err := itemTx.Commit(); err != nil {
-		return err
-	}
-	// COMMIT SUCCESSFUL — drain vi ops. Vec failures are logged but
-	// do not fail the item: DB is the source of truth and algo.ReEmbedAll
-	// can rebuild any drift that accrues from cumulative vec failures.
-	applyVIOps(ctx, w.vi, viOps)
-	return nil
+	return itemTx.Commit()
 }
 
 // findMatch returns the highest-similarity non-self entity above the dedup threshold.

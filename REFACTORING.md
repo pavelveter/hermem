@@ -49,10 +49,10 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 - [x] Verify 971 tests pass
 
 ### §R2.3 Introduce `ServerDeps` struct (14 params → 1)
-- [ ] Define `type ServerDeps struct { Refs, Retrieval, Task, Memory, Edge, Timeline, Ingest, Contradiction, Graph, Migration, Retention, Reembed, Health, Metrics }`
-- [ ] Change `NewServer` signature to `(deps ServerDeps)`
-- [ ] Update `wireAll()` in `cli/wiring.go`
-- [ ] Verify 971 tests pass
+- [x] Define `type ServerDeps struct { Refs, Retrieval, Task, Memory, Edge, Timeline, Ingest, Contradiction, Graph, Migration, Retention, Reembed, Health, Metrics }`
+- [x] Change `NewServer` signature to `(deps ServerDeps)`
+- [x] Update `wireAll()` in `cli/wiring.go`
+- [x] Verify 971 tests pass
 
 ---
 
