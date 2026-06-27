@@ -37,30 +37,13 @@ import (
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )
 
-// Server is the HTTP shell. It holds 12 domain HTTPService instances +
+// Server is the HTTP shell. It holds a registry of RouteProviders +
 // a Metrics field for /metrics + a mux + the atomic state holder.
-// Each transport shell holds the domain Service reference and threads
-// it as a borrowed pointer.
-//
-// PHASE 3.8: AdminService dissolved — /metrics registered directly
-// from the Metrics field in mount(). The AdminService god-object,
-// dismantled across 5 phases, is now entirely gone.
 type Server struct {
-	Refs          *serverstate.Ref
-	Retrieval     *ret.HTTPService
-	Task          *tasksvc.HTTPService
-	Memory        *mem.HTTPService
-	Edge          *edge.HTTPService
-	Timeline      *timeline.HTTPService
-	Ingest        *ingsrv.HTTPService
-	Contradiction *cnd.HTTPService
-	Graph         *graphsrv.HTTPService
-	Migration     *migrsrv.HTTPService
-	Retention     *retention.HTTPService
-	Reembed       *reembed.HTTPService
-	Health        *healthsrv.HTTPService
-	Metrics       *metrics.Metrics
-	mux           *http.ServeMux
+	Refs      *serverstate.Ref
+	Metrics   *metrics.Metrics
+	providers []providerSlot
+	mux       *http.ServeMux
 }
 
 // ServerDeps holds all dependencies for creating a Server.
@@ -84,20 +67,22 @@ type ServerDeps struct {
 // NewServerFromDeps wires the 12 domain services + Metrics into a single mux.
 func NewServerFromDeps(deps ServerDeps) *Server {
 	s := &Server{
-		Refs:          deps.Refs,
-		Retrieval:     deps.Retrieval,
-		Task:          deps.Task,
-		Memory:        deps.Memory,
-		Edge:          deps.Edge,
-		Timeline:      deps.Timeline,
-		Ingest:        deps.Ingest,
-		Contradiction: deps.Contradiction,
-		Graph:         deps.Graph,
-		Migration:     deps.Migration,
-		Retention:     deps.Retention,
-		Reembed:       deps.Reembed,
-		Health:        deps.Health,
-		Metrics:       deps.Metrics,
+		Refs:    deps.Refs,
+		Metrics: deps.Metrics,
+		providers: []providerSlot{
+			{"Retrieval", deps.Retrieval},
+			{"Task", deps.Task},
+			{"Memory", deps.Memory},
+			{"Edge", deps.Edge},
+			{"Timeline", deps.Timeline},
+			{"Ingest", deps.Ingest},
+			{"Contradiction", deps.Contradiction},
+			{"Graph", deps.Graph},
+			{"Migration", deps.Migration},
+			{"Retention", deps.Retention},
+			{"Reembed", deps.Reembed},
+			{"Health", deps.Health},
+		},
 	}
 	s.mount()
 	return s
@@ -106,7 +91,7 @@ func NewServerFromDeps(deps ServerDeps) *Server {
 // NewServer wires the 12 domain services + Metrics into a single mux.
 // Deprecated: Use NewServerFromDeps instead.
 func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edgeSvc *edge.HTTPService, timelineSvc *timeline.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retentionSvc *retention.HTTPService, reembedSvc *reembed.HTTPService, health *healthsrv.HTTPService, m *metrics.Metrics) *Server {
-	s := &Server{
+	return NewServerFromDeps(ServerDeps{
 		Refs:          refs,
 		Retrieval:     retrieval,
 		Task:          task,
@@ -121,9 +106,7 @@ func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.
 		Reembed:       reembedSvc,
 		Health:        health,
 		Metrics:       m,
-	}
-	s.mount()
-	return s
+	})
 }
 
 // mount wires every URL on the standard mux. Each typed shell is a
@@ -140,21 +123,7 @@ func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.
 // shell logs an explicit warning so the operator catches the bug.
 func (s *Server) mount() {
 	mux := http.NewServeMux()
-	slots := []providerSlot{
-		{"Retrieval", s.Retrieval},
-		{"Task", s.Task},
-		{"Memory", s.Memory},
-		{"Edge", s.Edge},
-		{"Timeline", s.Timeline},
-		{"Ingest", s.Ingest},
-		{"Contradiction", s.Contradiction},
-		{"Graph", s.Graph},
-		{"Migration", s.Migration},
-		{"Retention", s.Retention},
-		{"Reembed", s.Reembed},
-		{"Health", s.Health},
-	}
-	for _, slot := range slots {
+	for _, slot := range s.providers {
 		if slot.p == nil {
 			slog.Warn("server: shell not wired, routes will be missing", "shell", slot.name)
 			continue
