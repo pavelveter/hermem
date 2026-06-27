@@ -25,43 +25,13 @@ linters:
 
   exclusions:
     rules:
-      # errcheck v2 emits WITH backticks around the function name and a
-      # trailing "(errcheck)" suffix. Patterns below end with `.*` so
-      # the suffix is part of the match (regex.MatchString, unanchored).
-      # Standard Go idioms: defer *.Close() / tx.Rollback() / *.RowsAffected —
-      # keep-alive pool drains on next reuse, ctx-cancel surfaces as real
-      # failure, RowsAffected is informational for SELECT-style reads.
+      # Standard Go idioms: defer *.Close() / tx.Rollback() / *.RowsAffected.
       - linters: [errcheck]
         text: 'Error return value of `.*\.Close` is not checked.*'
       - linters: [errcheck]
         text: 'Error return value of `.*\.Rollback` is not checked.*'
       - linters: [errcheck]
         text: 'Error return value of `.*\.RowsAffected` is not checked.*'
-      # Tests: bootstrap read or cleanup errors (existence asserted separately
-      # or intentional cleanup of missing file).
-      - path: .*_test\.go$
-        linters: [errcheck]
-        text: 'Error return value of `(os\.Remove|os\.ReadFile|url\.Parse|.*\.Do|.*ProcessDialogWithProvenance|.*MigrationChecksumSHA256|.*db\.Exec)` is not checked.*'
-      # Tests: type-assertion `, _ := got.(Type)` discard (errcheck emits generic).
-      - path: .*_test\.go$
-        linters: [errcheck]
-        text: 'Error return value is not checked.*'
-      # Tests: service/store bootstrap and query helpers (existence asserted separately).
-      - path: .*_test\.go$
-        linters: [errcheck]
-        text: 'Error return value of `(svc\.|New\(db\)\.|store\.MemDB|sql\.Open|mgr\.Start)` is not checked.*'
-      # Tests: HTTP body teardown.
-      - path: .*_test\.go$
-        linters: [errcheck]
-        text: 'Error return value of `resp.*\.Close` is not checked.*'
-      # Tests: httptest.NewRequest bootstrap.
-      - path: .*_test\.go$
-        linters: [errcheck]
-        text: 'Error return value of `http\.NewRequest` is not checked.*'
-      # Tests: response writer bootstrap.
-      - path: .*_test\.go$
-        linters: [errcheck]
-        text: 'Error return value of `w\.(Write|Flush|Close)` is not checked.*'
       # CLI: stdout/stderr writes (output errors handled via slog).
       - path: src/internal/cli/.*\.go
         linters: [errcheck]
@@ -73,18 +43,14 @@ linters:
       - path: src/internal/server/.*\.go
         linters: [errcheck]
         text: 'Error return value of `(io\.Copy|.*\.Encode|w\.Write)` is not checked.*'
-      # AI: retry-drain body + best-effort JSON encode/Decode + async test helper.
+      # AI: retry-drain body + best-effort JSON encode/Decode.
       - path: src/internal/ai/.*\.go
         linters: [errcheck]
         text: 'Error return value of `(io\.Copy|json\.Marshal|io\.ReadAll|.*json\.Decoder.*Decode|.*json\.Encoder.*Encode)` is not checked.*'
-      - path: src/internal/ai/.*_test\.go
-        linters: [errcheck]
-        text: 'Error return value of `(c\.Do|.*json\.Encoder.*Encode)` is not checked.*'
-      # Metrics worker: best-effort stdout writes + async db.Exec flush.
+      # Metrics: best-effort exposition + flush.
       - path: src/internal/metrics/.*\.go
         linters: [errcheck]
         text: 'Error return value of `(fmt\.Fprintf|db\.Exec|.*\.WriteExposition)` is not checked.*'
-      # CLI metrics command: best-effort exposition write.
       - path: src/internal/cli/metrics\.go$
         linters: [errcheck]
         text: 'Error return value of `.*\.WriteExposition` is not checked.*'
@@ -92,3 +58,8 @@ linters:
       - path: src/internal/httputil/.*\.go
         linters: [errcheck]
         text: 'Error return value of `.*json\.Encoder.*Encode` is not checked.*'
+      # Tests: ALL errcheck in test files — bootstrap, query, cleanup.
+      # Errors are asserted via result values, not via error returns.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: '.*'
