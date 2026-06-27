@@ -117,6 +117,9 @@ func LoadConfig(path string) (*Config, error) {
 	if v, ok := getStr("embedder", "model"); ok {
 		cfg.Model = v
 	}
+	if v, ok := getStr("embedding", "model_path"); ok {
+		cfg.ModelPath = v
+	}
 	if v, ok := getStr("database", "path"); ok {
 		cfg.DBPath = v
 	}
@@ -214,14 +217,17 @@ func (c *Config) Validate() error {
 	if c.VectorDim <= 0 {
 		return fmt.Errorf("vector.dim must be positive, got %d", c.VectorDim)
 	}
-	if c.Provider != "ollama" && c.Provider != "openai" {
-		return fmt.Errorf("embedder.provider must be 'ollama' or 'openai', got %q", c.Provider)
-	}
-	if c.URL == "" {
-		return fmt.Errorf("embedder.url must not be empty")
-	}
-	if u, err := url.Parse(c.URL); err != nil || u.Scheme == "" || u.Host == "" {
-		return fmt.Errorf("embedder.url must be absolute (scheme+host), got %q", c.URL)
+	// Skip URL/provider validation when using local embedder.
+	if c.ModelPath == "" {
+		if c.Provider != "ollama" && c.Provider != "openai" {
+			return fmt.Errorf("embedder.provider must be 'ollama' or 'openai', got %q", c.Provider)
+		}
+		if c.URL == "" {
+			return fmt.Errorf("embedder.url must not be empty")
+		}
+		if u, err := url.Parse(c.URL); err != nil || u.Scheme == "" || u.Host == "" {
+			return fmt.Errorf("embedder.url must be absolute (scheme+host), got %q", c.URL)
+		}
 	}
 	if c.EmbedderTimeout <= 0 {
 		return fmt.Errorf("embedder.timeout must be > 0, got %v", c.EmbedderTimeout)

@@ -46,3 +46,6 @@ commit_msgs/
 banner.pngout.txt
 out.txt
 devtools.txt
+
+# Local GGUF models (too large for git)
+models/

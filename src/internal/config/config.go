@@ -21,6 +21,7 @@ type Config struct {
 	Key                string
 	Model              string
 	DBPath             string
+	ModelPath          string
 	ExtractProvider    string
 	ExtractURL         string
 	ExtractKey         string
@@ -56,7 +57,22 @@ func orDefault(val, fallback string) string {
 }
 
 // NewEmbedder creates an embedder from config.
+// If ModelPath is set and the file exists, returns a local in-process embedder.
+// Otherwise falls back to Ollama/OpenAI network embedder.
 func (c *Config) NewEmbedder() core.Embedder {
+	if c.ModelPath != "" {
+		if _, err := os.Stat(c.ModelPath); err == nil {
+			e, err := ai.NewLocalEmbedder(c.ModelPath, c.EmbedderTimeout)
+			if err != nil {
+				slog.Error("local embedder init failed, falling back to network", "err", err)
+			} else {
+				slog.Info("using local embedder", "model_path", c.ModelPath)
+				return e
+			}
+		} else {
+			slog.Warn("model_path specified but file not found, falling back to network", "path", c.ModelPath, "err", err)
+		}
+	}
 	switch c.Provider {
 	case "openai":
 		return ai.NewOpenAIEmbedder(c.URL, c.Key, c.Model, c.EmbedderTimeout)
