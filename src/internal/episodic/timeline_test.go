@@ -26,8 +26,8 @@ func openTimelineTestDB(t *testing.T) *sql.DB {
 			conversation_id TEXT,
 			title TEXT NOT NULL DEFAULT '',
 			summary TEXT NOT NULL DEFAULT '',
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
+			started_at_ms INTEGER NOT NULL DEFAULT 0,
+			ended_at_ms INTEGER,
 			metadata TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE TABLE IF NOT EXISTS entities (
@@ -41,20 +41,20 @@ func openTimelineTestDB(t *testing.T) *sql.DB {
 			episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
 			type TEXT NOT NULL CHECK(type IN ('message', 'action', 'observation', 'system')),
 			content TEXT NOT NULL DEFAULT '',
-			timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			timestamp_ms INTEGER NOT NULL DEFAULT 0,
 			metadata TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE TABLE IF NOT EXISTS episode_memories (
 			episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
 			entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
 			role TEXT NOT NULL DEFAULT 'extracted',
-			linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			linked_at_ms INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (episode_id, entity_id, role)
 		)`,
 		`CREATE TABLE IF NOT EXISTS episode_tasks (
 			episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
 			task_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-			linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			linked_at_ms INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (episode_id, task_id)
 		)`,
 	}
