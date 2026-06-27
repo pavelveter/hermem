@@ -64,9 +64,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 - [x] Document thread-safety contract
 
 ### 3.4 Fix compression.Metrics race condition
-- [ ] Audit `clusterSizes []int64` write paths
-- [ ] Add `sync.Mutex` if concurrent writes possible
-- [ ] Or document single-writer guarantee
+- [x] Audit `clusterSizes []int64` write paths
+- [x] Add `sync.Mutex` if concurrent writes possible
+- [x] Or document single-writer guarantee
 
 ---
 
