@@ -108,13 +108,13 @@ func (s *Service) ResolveSeeds(ctx context.Context, query string, topK int) ([]s
 }
 
 // Query embeds → runs vector search → uses top-K as seeds → graph
-// walks → returns a Markdown context blob (FormatContextMarkdown).
+// walks → returns a Markdown context blob.
 func (s *Service) Query(ctx context.Context, query string, topK int, opts core.RetrieveContextOptions) (string, error) {
 	result, err := s.QueryResult(ctx, query, topK, opts)
 	if err != nil {
 		return "", err
 	}
-	return FormatContextMarkdown(result), nil
+	return (&MarkdownRenderer{}).Render(result), nil
 }
 
 // QueryResult embeds → runs vector search → uses top-K as seeds → graph

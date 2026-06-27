@@ -267,7 +267,7 @@ func MigrationStatus(db *sql.DB) ([]MigStatus, error) {
 			}
 		}
 	}
-	files, err := PendingMigrations()
+	files, err := migrationFiles()
 	if err != nil {
 		return nil, fmt.Errorf("list pending migrations: %w", err)
 	}
@@ -283,11 +283,6 @@ func MigrationStatus(db *sql.DB) ([]MigStatus, error) {
 		out = append(out, m)
 	}
 	return out, nil
-}
-
-// PendingMigrations returns sorted migration file names.
-func PendingMigrations() ([]string, error) {
-	return migrationFiles()
 }
 
 // RollbackMigration removes the last-applied migration.
@@ -535,13 +530,6 @@ func DetectContentDrift(db *sql.DB) ([]DriftedMigration, error) {
 		}
 	}
 	return drifted, nil
-}
-
-// MigrationFiles returns the sorted list of embedded migration file names.
-// Exported for tests and tooling that need to enumerate files without
-// applying them.
-func MigrationFiles() ([]string, error) {
-	return migrationFiles()
 }
 
 // CaptureSchemaHash queries SQLite's internal schema representation and

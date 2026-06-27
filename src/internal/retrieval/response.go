@@ -44,5 +44,5 @@ func GenerateResponse(ctx context.Context, db *sql.DB, vi core.VectorIndex, embe
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve context: %w", err)
 	}
-	return FormatContextMarkdown(result), nil
+	return (&MarkdownRenderer{}).Render(result), nil
 }
