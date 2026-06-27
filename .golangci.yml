@@ -46,6 +46,10 @@ linters:
       - path: .*_test\.go$
         linters: [errcheck]
         text: 'Error return value is not checked.*'
+      # Tests: service/store bootstrap and query helpers (existence asserted separately).
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `(svc\.|New\(db\)\.|store\.MemDB|sql\.Open|mgr\.Start)` is not checked.*'
       # Tests: HTTP body teardown.
       - path: .*_test\.go$
         linters: [errcheck]
