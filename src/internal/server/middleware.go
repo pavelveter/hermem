@@ -158,9 +158,39 @@ func SlogMiddleware(next http.Handler) http.Handler {
 		default:
 		}
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		slog.Debug("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
+		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		reqID := r.Header.Get("X-Request-ID")
+		slog.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rw.status,
+			"duration", time.Since(start),
+			"request_id", reqID,
+		)
 	})
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code.
+type responseWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	if !rw.wroteHeader {
+		rw.status = code
+		rw.wroteHeader = true
+	}
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.wroteHeader {
+		rw.wroteHeader = true
+	}
+	return rw.ResponseWriter.Write(b)
 }
 
 type envKey struct{}
