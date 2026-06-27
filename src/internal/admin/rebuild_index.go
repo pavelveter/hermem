@@ -5,16 +5,18 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 type RebuildIndex struct {
 	db       *sql.DB
 	vi       VectorIndex
-	embedder Embedder
+	embedder core.Embedder
 	onLog    func(msg string)
 }
 
-func NewRebuildIndex(db *sql.DB, vi VectorIndex, em Embedder) *RebuildIndex {
+func NewRebuildIndex(db *sql.DB, vi VectorIndex, em core.Embedder) *RebuildIndex {
 	return &RebuildIndex{db: db, vi: vi, embedder: em}
 }
 

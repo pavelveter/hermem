@@ -11,11 +11,6 @@ type VectorIndex interface {
 	Remove(ctx context.Context, ids []string) error
 }
 
-// Embedder is the subset of core.Embedder needed by RebuildIndex.
-type Embedder interface {
-	Embed(ctx context.Context, content string) ([]float32, error)
-}
-
 type RebuildOpts struct {
 	Category     string
 	Since        time.Time

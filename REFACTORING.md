@@ -7,9 +7,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 ## Sprint 1 — Quick Wins
 
 ### 1.1 Deduplicate Embedder interfaces
-- [ ] Remove `admin.Embedder` and `episodic.retrieval.Embedder` duplicates
-- [ ] Keep `core.Embedder` as single source of truth
-- [ ] Update all consumers to use `core.Embedder`
+- [x] Remove `admin.Embedder` and `episodic.retrieval.Embedder` duplicates
+- [x] Keep `core.Embedder` as single source of truth
+- [x] Update all consumers to use `core.Embedder`
 
 ### 1.2 Consolidate test DB helpers
 - [ ] Create `internal/testutil/opendb.go` with shared `OpenTestDB(t)`
