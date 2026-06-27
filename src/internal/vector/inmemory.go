@@ -16,17 +16,26 @@ import (
 // threshold is a hot-path optimisation, not a hard limit.
 const maxSearchN = 50_000
 
+// dotBuf / intBuf wrap fixed-size arrays so the sync.Pool boxes a
+// pointer to a stack-sized value instead of pushing a slice header to
+// heap on every New call.
+type dotBuf struct {
+	buf [maxSearchN]float32
+}
+
+type intBuf struct {
+	buf [maxSearchN]int
+}
+
 var (
 	dotPool = sync.Pool{
 		New: func() any {
-			s := make([]float32, 0, maxSearchN)
-			return &s
+			return &dotBuf{}
 		},
 	}
 	intPool = sync.Pool{
 		New: func() any {
-			s := make([]int, 0, maxSearchN)
-			return &s
+			return &intBuf{}
 		},
 	}
 )
@@ -39,38 +48,30 @@ func getDots(n int) []float32 {
 	if n > maxSearchN {
 		return make([]float32, n)
 	}
-	p := dotPool.Get().(*[]float32) //nolint:errcheck // sync.Pool invariant: New() always returns *[]float32
-	if cap(*p) < n {
-		return make([]float32, n)
-	}
-	return (*p)[:n]
+	d := dotPool.Get().(*dotBuf) //nolint:errcheck // sync.Pool invariant
+	return d.buf[:n]
 }
 
 func putDots(d []float32) {
 	if cap(d) != maxSearchN {
 		return
 	}
-	d = d[:0]
-	dotPool.Put(&d)
+	dotPool.Put(&dotBuf{})
 }
 
 func getInts(n int) []int {
 	if n > maxSearchN {
 		return make([]int, n)
 	}
-	p := intPool.Get().(*[]int) //nolint:errcheck // sync.Pool invariant: New() always returns *[]int
-	if cap(*p) < n {
-		return make([]int, n)
-	}
-	return (*p)[:n]
+	ib := intPool.Get().(*intBuf) //nolint:errcheck // sync.Pool invariant
+	return ib.buf[:n]
 }
 
 func putInts(d []int) {
 	if cap(d) != maxSearchN {
 		return
 	}
-	d = d[:0]
-	intPool.Put(&d)
+	intPool.Put(&intBuf{})
 }
 
 type vectorEntry struct {
