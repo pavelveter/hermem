@@ -8,7 +8,6 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/admin"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 func newRebuildIndexCmd(env *cli.Env) *cobra.Command {
@@ -28,9 +27,9 @@ Use --dry-run to preview without changes.`,
 			if !ok || vi == nil {
 				return fmt.Errorf("vector index not available (VI is nil or does not implement admin.VectorIndex)")
 			}
-			em, ok := env.Embedder.(core.Embedder)
-			if !ok || em == nil {
-				return fmt.Errorf("embedder not available (Embedder is nil or does not implement core.Embedder)")
+			em := env.Embedder
+			if em == nil {
+				return fmt.Errorf("embedder not available")
 			}
 
 			var since time.Time
