@@ -56,6 +56,7 @@ type Env struct {
 	Embedder  core.Embedder
 	Extractor core.LLMExtractor
 	Reranker  core.Reranker
+	Retriever core.Retriever
 	Metrics   *metrics.Metrics
 	Worker    *metrics.AsyncMetricsWorker
 	Tracer    tracing.Tracer

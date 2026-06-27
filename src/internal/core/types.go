@@ -158,6 +158,15 @@ type Embedder interface {
 	Ping(ctx context.Context) error
 }
 
+// Retriever performs graph-walk retrieval from seed IDs.
+type Retriever interface {
+	// RetrieveContext runs a graph walk from seed IDs and returns ranked results.
+	RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
+	// MultiHopRetrieveContext runs multiple hops of discovery, expanding seeds
+	// via vector search at each hop.
+	MultiHopRetrieveContext(ctx context.Context, vi VectorIndex, embedder Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
+}
+
 // Relation — a typed connection extracted from dialog.
 type Relation struct {
 	TargetID     string `json:"target_id"`
