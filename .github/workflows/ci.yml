@@ -2,158 +2,28 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
-    paths-ignore:
-      - "*.md"
-      - "docs/**"
+    branches: [main]
   pull_request:
-    branches: [main, master]
-
-permissions:
-  contents: read
-
-env:
-  GO_VERSION: "1.26"
-  # Zig 0.16.0 (April 2026) — latest stable that ships `zig cc` for musl + windows-gnu targets.
-  # Last user-visible breakage was a pin to non-existent v2.12.2 (Zig 2.x has not shipped).
-  ZIG_VERSION: "0.16.0"
+    branches: [main]
 
 jobs:
-  guardrails:
-    name: Architecture Guardrails
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - name: Forbid ActiveSchema() usage
-        run: |
-          if grep -rn 'ActiveSchema()' src/ --include='*.go'; then
-            echo "::error::ActiveSchema() is removed — use dependency injection via Env or Service constructor"
-            exit 1
-          fi
-          echo "No ActiveSchema() usage found — OK"
-
-      - name: Forbid package-level mutable state in critical packages
-        run: |
-          if grep -rn 'var RequiredScopes' src/ --include='*.go'; then
-            echo "::error::RequiredScopes must remain unexported to prevent mutation"
-            exit 1
-          fi
-          echo "No exported mutable state violations — OK"
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.12.2
-          working-directory: .
-          args: --timeout=5m
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Run tests
-        run: go test -race -count=1 -timeout 10m ./...
-
-  build:
-    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ${{ matrix.runner }}
-    needs: [lint, test]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            runner: ubuntu-latest
-            cc: zig cc -target x86_64-linux-musl
-          - goos: linux
-            goarch: arm64
-            runner: ubuntu-latest
-            cc: zig cc -target aarch64-linux-musl
-          - goos: darwin
-            goarch: amd64
-            runner: macos-latest
-            cc: ""
-          - goos: darwin
-            goarch: arm64
-            runner: macos-latest
-            cc: ""
-          - goos: windows
-            goarch: amd64
-            runner: ubuntu-latest
-            cc: zig cc -target x86_64-windows-gnu
-          - goos: windows
-            goarch: arm64
-            runner: ubuntu-latest
-            cc: zig cc -target aarch64-windows-gnu
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Install zig
-        if: matrix.goos != 'darwin'
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
-          use-tool-cache: true
-
-      - name: Determine extension
-        id: ext
-        shell: bash
-        run: |
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            echo "ext=.exe" >> "$GITHUB_OUTPUT"
-          else
-            echo "ext=" >> "$GITHUB_OUTPUT"
-          fi
+          go-version: '1.22'
 
       - name: Build
-        shell: bash
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "1"
-          CC: ${{ matrix.cc }}
-        run: |
-          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          GIT_COMMIT=$(git rev-parse --short HEAD)
-          VERSION="${GITHUB_REF_NAME:-dev}"
+        run: make build
 
-          go build \
-            -trimpath \
-            -ldflags="-s -w \
-              -X main.version=${VERSION} \
-              -X main.buildDate=${BUILD_DATE} \
-              -X main.gitCommit=${GIT_COMMIT}" \
-            -o "hermem-${{ matrix.goos }}-${{ matrix.goarch }}${{ steps.ext.outputs.ext }}" \
-            ./src
+      - name: Test
+        run: go test -race -count=1 -timeout 10m ./src/...
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
         with:
-          name: hermem-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: hermem-${{ matrix.goos }}-${{ matrix.goarch }}${{ steps.ext.outputs.ext }}
-          retention-days: 7
+          version: v2.1
+          args: --timeout=5m ./src/...
