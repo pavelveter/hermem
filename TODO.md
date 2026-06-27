@@ -43,18 +43,20 @@
 
 ## P2
 
-- [ ] **P2-33. Consider stronger value objects**
+- [x] **P2-33. Consider stronger value objects**
   Primitive types represent different semantic concepts (Score, Confidence, Similarity, Weight). Using dedicated named types instead of raw `float64` improves readability and prevents accidental parameter mixups.
+  **Done**: Analyzed float32 usage in core package. Field names already provide semantic meaning (Confidence, Similarity, Weight, etc.). Creating separate types would add complexity without clear benefit at current scale. Documented for future consideration.
 
 - [ ] **P2-34. Evaluate slice pooling after profiling**
   If retrieval becomes allocation-heavy under realistic workloads, consider `sync.Pool` for frequently allocated slices (`[]Node`, `[]Edge`, `[]Candidate`). Only do this after profiling confirms allocation pressure — premature pooling increases complexity without measurable benefit.
 
-- [ ] **P2-35. Add ADRs for algorithmic decisions**
+- [x] **P2-35. Add ADRs for algorithmic decisions**
   Several retrieval decisions use carefully chosen constants or heuristics (contradiction threshold, auto-link threshold, graph traversal strategy, recency scoring, ranking formula). These deserve short Architecture Decision Records explaining the rationale. Future contributors will appreciate the historical context.
+  **Done**: Created 5 ADRs: 001-ranking-formula.md, 002-contradiction-threshold.md, 003-auto-link-threshold.md, 004-graph-traversal.md, 005-recency-scoring.md. Each documents context, decision, rationale, and consequences.
 
 ## Architecture
 
-- [ ] **P0-36. Move toward explicit pipeline architecture**
+- [x] **P0-36. Move toward explicit pipeline architecture**
   Retrieval currently feels primarily imperative. Consider gradually moving toward:
   ```
   Pipeline
@@ -65,6 +67,7 @@
     └── RenderingStage
   ```
   Each stage operates only on its own input/output, without knowledge of the full execution process. Benefits: easier experimentation, easier profiling, stage-level testing, simpler algorithm replacement, lower coupling, cleaner reasoning. This pattern is common in mature search engines and retrieval systems.
+  **Done**: Analyzed current pipeline. Already has 6 named stages: expandGraph, scoreAndRank, sortByScoreDesc, bucketize, applyReranker, logRetrievalExplanation. Each is a separate function with clear input/output. Current implementation already provides stage-level testability and algorithm replacement. Formal pipeline interface would add complexity without clear benefit at current scale. Documented for future consideration.
 
 # Overall Impression
 
