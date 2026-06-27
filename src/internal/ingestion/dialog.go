@@ -414,8 +414,114 @@ func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extracto
 	wg.Wait()
 }
 
-// MemoryWorkerResilient is the production-grade ingest entry point —
-// supersedes MemoryWorker for any new caller. Two behaviour changes:
+// MemoryWorkerResilientFromConfig is the production-grade ingest entry point.
+// Supersedes MemoryWorkerResilient for any new caller.
+func MemoryWorkerResilientFromConfig(ctx context.Context, cfg MemoryWorkerConfig, ch <-chan core.MemoryMessage) {
+	worker := NewIngestionWorkerFromConfig(IngestionWorkerConfig{
+		DB:             cfg.DB,
+		VectorIndex:    cfg.VectorIndex,
+		Extractor:      cfg.Extractor,
+		Embedder:       cfg.Embedder,
+		DedupThreshold: cfg.DedupThreshold,
+		Schema:         cfg.Schema,
+	})
+	if cfg.CkptPath == "" && cfg.PendingPath == "" {
+		slog.Warn("MemoryWorkerResilient: ckptPath and pendingPath both empty - no durability on cancel",
+			"worker_id", cfg.WorkerID)
+	}
+	LoadCheckpoint(cfg.CkptPath, cfg.WorkerID)
+	const maxParallel = 8
+	sem := make(chan struct{}, maxParallel)
+	var wg sync.WaitGroup
+	var processed atomic.Int64
+
+	flushCheckpoint := func() {
+		cur := IngestionCheckpoint{
+			LastCommittedIndex: processed.Load(),
+			LastCommittedAt:    time.Now().UTC(),
+			WorkerID:           cfg.WorkerID,
+		}
+		if err := SaveCheckpoint(cfg.CkptPath, cur); err != nil {
+			slog.Error("checkpoint save failed", "err", err, "path", cfg.CkptPath)
+		}
+	}
+
+	drain := func() {
+		pending := make([]core.MemoryMessage, 0, 16)
+		deadline := time.NewTimer(defaultDrainTimeout)
+		defer deadline.Stop()
+	drainLoop:
+		for {
+			select {
+			case remaining, ok := <-ch:
+				if !ok {
+					break drainLoop
+				}
+				pending = append(pending, remaining)
+			case <-deadline.C:
+				slog.Warn("MemoryWorkerResilient: drain deadline reached, producer did not close ch",
+					"worker_id", cfg.WorkerID, "pending_count", len(pending))
+				break drainLoop
+			}
+		}
+		if err := SavePendingQueue(cfg.PendingPath, pending); err != nil {
+			slog.Error("pending save failed", "err", err, "path", cfg.PendingPath)
+		} else if len(pending) > 0 {
+			slog.Info("MemoryWorkerResilient: drained to pending queue",
+				"count", len(pending), "path", cfg.PendingPath)
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("MemoryWorkerResilient: ctx cancelled, draining", "worker_id", cfg.WorkerID)
+			drain()
+			wg.Wait()
+			flushCheckpoint()
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				wg.Wait()
+				flushCheckpoint()
+				return
+			}
+			wg.Add(1)
+			select {
+			case <-ctx.Done():
+				wg.Done()
+				drain()
+				wg.Wait()
+				flushCheckpoint()
+				return
+			case sem <- struct{}{}:
+			}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				prov := core.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
+				if err := worker.ProcessDialogWithProvenance(ctx, msg.Dialog, prov); err != nil {
+					slog.Error("dialog processing failed",
+						"err", err, "dialog_len", len(msg.Dialog), "worker_id", cfg.WorkerID)
+					return
+				}
+				processed.Add(1)
+				cur := IngestionCheckpoint{
+					LastCommittedIndex: processed.Load(),
+					LastCommittedAt:    time.Now().UTC(),
+					WorkerID:           cfg.WorkerID,
+				}
+				if err := SaveCheckpoint(cfg.CkptPath, cur); err != nil {
+					slog.Error("per-msg checkpoint save failed",
+						"err", err, "index", cur.LastCommittedIndex)
+				}
+			}()
+		}
+	}
+}
+
+// MemoryWorkerResilient is the production-grade ingest entry point.
+// Deprecated: Use MemoryWorkerResilientFromConfig instead.
 //
 //   - § 4.1 Checkpoint partial batches on ctx cancellation: after every
 //     successful ProcessDialogWithProvenance return the worker atomically
