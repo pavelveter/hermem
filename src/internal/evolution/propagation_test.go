@@ -1,7 +1,6 @@
 package evolution
 
 import (
-	"context"
 	"database/sql"
 	"math"
 	"testing"
@@ -23,7 +22,7 @@ func openDB(t *testing.T) *sql.DB {
 
 func TestPropagateConfidence_AllSupport(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	bSvc := belief.New(db)
 	eSvc := evidence.New(db)
 	b := &belief.Belief{Content: "test", Confidence: 1.0}
@@ -50,7 +49,7 @@ func TestPropagateConfidence_AllSupport(t *testing.T) {
 
 func TestPropagateConfidence_MixedEvidence(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	bSvc := belief.New(db)
 	eSvc := evidence.New(db)
 	b := &belief.Belief{Content: "mixed", Confidence: 1.0}
@@ -77,7 +76,7 @@ func TestPropagateConfidence_MixedEvidence(t *testing.T) {
 
 func TestPropagateConfidence_NoEvidenceKeepsConfidence(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	bSvc := belief.New(db)
 	eSvc := evidence.New(db)
 	b := &belief.Belief{Content: "no-evic", Confidence: 0.7}
@@ -94,7 +93,7 @@ func TestPropagateConfidence_NoEvidenceKeepsConfidence(t *testing.T) {
 }
 
 func TestPropagateConfidence_InvalidID(t *testing.T) {
-	_, err := PropagateConfidence(context.Background(), nil, nil, 0)
+	_, err := PropagateConfidence(t.Context(), nil, nil, 0)
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}

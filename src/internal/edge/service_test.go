@@ -79,7 +79,7 @@ func TestEdgeService_AddEdge_OK(t *testing.T) {
 	seedEntity(t, db, "edge-src-ok", "world", "src")
 	seedEntity(t, db, "edge-tgt-ok", "world", "tgt")
 	req := core.EdgeRequest{SourceID: "edge-src-ok", TargetID: "edge-tgt-ok", RelationType: "related_to", Weight: 1.0}
-	if err := svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false)); err != nil {
+	if err := svc.AddEdge(t.Context(), req, core.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 	// Verify the row landed in the DB.
@@ -101,7 +101,7 @@ func TestEdgeService_AddEdge_AutoCreate_OK(t *testing.T) {
 	seedEntity(t, db, "edge-ac-src", "world", "src")
 	seedEntity(t, db, "edge-ac-tgt", "world", "tgt")
 	req := core.EdgeRequest{SourceID: "edge-ac-src", TargetID: "edge-ac-tgt", RelationType: "related_to", AutoCreate: true}
-	if err := svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false)); err != nil {
+	if err := svc.AddEdge(t.Context(), req, core.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("AddEdge AutoCreate: %v", err)
 	}
 	var n int
@@ -121,7 +121,7 @@ func TestEdgeService_AddEdge_RejectsUnknownRelation(t *testing.T) {
 	seedEntity(t, db, "edge-r-src", "world", "src")
 	seedEntity(t, db, "edge-r-tgt", "world", "tgt")
 	req := core.EdgeRequest{SourceID: "edge-r-src", TargetID: "edge-r-tgt", RelationType: "nonexistent"}
-	err := svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false))
+	err := svc.AddEdge(t.Context(), req, core.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected DomainError, got nil")
 	}
@@ -142,7 +142,7 @@ func TestEdgeService_AddEdge_RejectsMissingFields(t *testing.T) {
 		{SourceID: "s", TargetID: "t", RelationType: ""},
 	}
 	for _, req := range cases {
-		err := svc.AddEdge(context.Background(), req, core.DefaultSchemaConfig(false))
+		err := svc.AddEdge(t.Context(), req, core.DefaultSchemaConfig(false))
 		if err == nil {
 			t.Fatalf("want error for missing fields, got nil for %+v", req)
 		}

@@ -31,7 +31,7 @@ func TestManager_StartStop(t *testing.T) {
 	mgr.Register(c1)
 	mgr.Register(c2)
 
-	if err := mgr.Start(context.Background()); err != nil {
+	if err := mgr.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -39,7 +39,7 @@ func TestManager_StartStop(t *testing.T) {
 		t.Error("Start not called on all components")
 	}
 
-	if err := mgr.Stop(context.Background()); err != nil {
+	if err := mgr.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
@@ -58,7 +58,7 @@ func TestManager_StartFailure(t *testing.T) {
 	mgr.Register(c2)
 	mgr.Register(c3)
 
-	err := mgr.Start(context.Background())
+	err := mgr.Start(t.Context())
 	if err == nil {
 		t.Fatal("expected error from Start")
 	}
@@ -82,8 +82,8 @@ func TestManager_StopCollectsErrors(t *testing.T) {
 	mgr.Register(c1)
 	mgr.Register(c2)
 
-	_ = mgr.Start(context.Background())
-	err := mgr.Stop(context.Background())
+	_ = mgr.Start(t.Context())
+	err := mgr.Stop(t.Context())
 
 	if err == nil {
 		t.Fatal("expected error from Stop")

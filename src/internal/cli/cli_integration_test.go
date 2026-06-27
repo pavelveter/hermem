@@ -34,7 +34,7 @@ func testEnv(t *testing.T) *clienv.Env {
 		// a panic inside database/sql while holding db.mu, which then wedges
 		// t.Cleanup(env.Close) on the same mutex and produces a deterministic 240s
 		// timeout. See the fix(cli) commit notes for the deadlock trace.
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: cfg,
 		// Embedder must be wired because cli/memory/{store,search,edge},
 		// cli/task/create, and friends call env.Embedder.Embed(env.Ctx, content)
@@ -64,7 +64,7 @@ func testStatefulEnv(t *testing.T) *clienv.Env {
 	}
 	env := &clienv.Env{
 		// See testEnv; same Ctx + Embedder requirements apply.
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		Cfg: cfg,
 		// See testEnv; by the same tests-multi-executeCmd logic,
 		// KeepDBOpen is required here too. State tests like

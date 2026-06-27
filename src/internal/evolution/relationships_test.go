@@ -1,13 +1,12 @@
 package evolution
 
 import (
-	"context"
 	"testing"
 )
 
 func TestGetSupportRefute(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'test', 1.0)`); err != nil {
 		t.Fatalf("insert belief: %v", err)
@@ -46,7 +45,7 @@ func TestGetSupportRefute(t *testing.T) {
 
 func TestGetSupportRefute_NoEvidence(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence) VALUES (1, 'test', 1.0)`); err != nil {
 		t.Fatalf("insert belief: %v", err)
@@ -62,7 +61,7 @@ func TestGetSupportRefute_NoEvidence(t *testing.T) {
 }
 
 func TestGetSupportRefute_InvalidID(t *testing.T) {
-	_, err := GetSupportRefute(context.Background(), nil, 0)
+	_, err := GetSupportRefute(t.Context(), nil, 0)
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}

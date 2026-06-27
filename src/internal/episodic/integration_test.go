@@ -1,7 +1,6 @@
 package episodic
 
 import (
-	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -125,7 +124,7 @@ func openIntegrationDB(t *testing.T) *sql.DB {
 func TestIntegration_FullPipeline(t *testing.T) {
 	t.Parallel()
 	db := openIntegrationDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// 1. Create a session + episode.
 	if _, err := db.Exec(`INSERT INTO sessions (id) VALUES ('sess-1')`); err != nil {
@@ -282,7 +281,7 @@ func TestIntegration_FullPipeline(t *testing.T) {
 func TestIntegration_EmptyEpisodeEdgeCase(t *testing.T) {
 	t.Parallel()
 	db := openIntegrationDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := New(db).CreateEpisode(ctx, Episode{ID: "ep-empty", Title: "nothing happened"}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
@@ -317,7 +316,7 @@ func TestIntegration_EmptyEpisodeEdgeCase(t *testing.T) {
 func TestIntegration_MissingLLMEdgeCase(t *testing.T) {
 	t.Parallel()
 	db := openIntegrationDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := New(db).CreateEpisode(ctx, Episode{ID: "ep-no-llm"}); err != nil {
 		t.Fatalf("CreateEpisode: %v", err)
@@ -360,7 +359,7 @@ func (e stringError) Error() string { return string(e) }
 func TestIntegration_ParallelSubtests(t *testing.T) {
 	t.Parallel()
 	db := openIntegrationDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Pre-seed minimal data so every parallel subtest has
 	// something to operate on.
@@ -437,7 +436,7 @@ func TestIntegration_ParallelSubtests(t *testing.T) {
 func TestIntegration_SearchWithFilters(t *testing.T) {
 	t.Parallel()
 	db := openIntegrationDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.Exec(`INSERT INTO sessions (id) VALUES ('sess-1')`); err != nil {
 		t.Fatalf("seed session: %v", err)

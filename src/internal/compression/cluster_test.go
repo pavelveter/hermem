@@ -1,7 +1,6 @@
 package compression
 
 import (
-	"context"
 	"testing"
 )
 
@@ -9,7 +8,7 @@ func TestClusterer_EmptyInput(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
 	c := NewClusterer(db, DefaultClustererConfig())
-	clusters, err := c.Cluster(context.Background(), nil)
+	clusters, err := c.Cluster(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -28,7 +27,7 @@ func TestClusterer_BelowMinSize(t *testing.T) {
 		MinClusterSize:      3,
 		MaxClusterSize:      10,
 	})
-	clusters, err := c.Cluster(context.Background(), []string{"e1", "e2"})
+	clusters, err := c.Cluster(t.Context(), []string{"e1", "e2"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -42,7 +41,7 @@ func TestClusterer_NoEmbeddings(t *testing.T) {
 	db := openTestDB(t)
 	seedEntity(t, db, "e1", "world", "no embedding")
 	c := NewClusterer(db, DefaultClustererConfig())
-	clusters, err := c.Cluster(context.Background(), []string{"e1"})
+	clusters, err := c.Cluster(t.Context(), []string{"e1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -63,7 +62,7 @@ func TestClusterer_FixedEmbeddings(t *testing.T) {
 		MinClusterSize:      2,
 		MaxClusterSize:      10,
 	})
-	clusters, err := c.Cluster(context.Background(), []string{"a", "b", "c"})
+	clusters, err := c.Cluster(t.Context(), []string{"a", "b", "c"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

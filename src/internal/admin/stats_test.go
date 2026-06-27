@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"math"
@@ -78,7 +77,7 @@ func seedStatsDB(t *testing.T) *sql.DB {
 func TestStatsCollector_Collect(t *testing.T) {
 	db := seedStatsDB(t)
 	sc := NewStatsCollector(db)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	stats, err := sc.Collect(ctx)
 	if err != nil {
@@ -140,7 +139,7 @@ func TestStatsCollector_EmptyDB(t *testing.T) {
 	}
 
 	sc := NewStatsCollector(db)
-	stats, err := sc.Collect(context.Background())
+	stats, err := sc.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect empty: %v", err)
 	}
@@ -152,7 +151,7 @@ func TestStatsCollector_EmptyDB(t *testing.T) {
 func TestStatsCollector_SingleFlight(t *testing.T) {
 	db := seedStatsDB(t)
 	sc := NewStatsCollector(db)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s1, err := sc.Collect(ctx)
 	if err != nil {
@@ -170,7 +169,7 @@ func TestStatsCollector_SingleFlight(t *testing.T) {
 func TestStatsCollector_CacheStaleAfter5s(t *testing.T) {
 	db := seedStatsDB(t)
 	sc := NewStatsCollector(db)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := sc.Collect(ctx)
 	if err != nil {

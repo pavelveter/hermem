@@ -1,7 +1,6 @@
 package timeline_test
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -53,7 +52,7 @@ func TestNewService_Success(t *testing.T) {
 
 func TestTimelineService_Timeline_EmptyDB(t *testing.T) {
 	svc, _ := newTimelineFixture(t)
-	entries, err := svc.Timeline(context.Background(), 50)
+	entries, err := svc.Timeline(t.Context(), 50)
 	if err != nil {
 		t.Fatalf("Timeline: %v", err)
 	}
@@ -67,7 +66,7 @@ func TestTimelineService_Timeline_WithLimitAndOrder(t *testing.T) {
 	seedEntity(t, db, "tl-one", "world", "one")
 	seedEntity(t, db, "tl-two", "world", "two")
 	seedEntity(t, db, "tl-three", "world", "three")
-	entries, err := svc.Timeline(context.Background(), 2)
+	entries, err := svc.Timeline(t.Context(), 2)
 	if err != nil {
 		t.Fatalf("Timeline: %v", err)
 	}

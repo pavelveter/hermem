@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"sync"
@@ -80,7 +81,7 @@ func (w *AsyncMetricsWorker) flushLocked() {
 	if len(w.buffer) == 0 {
 		return
 	}
-	tx, err := w.db.Begin()
+	tx, err := w.db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		slog.Warn("metrics begin tx", "err", err)
 		return

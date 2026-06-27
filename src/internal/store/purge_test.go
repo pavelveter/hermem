@@ -38,7 +38,7 @@ func TestPurgeEntity_NotFoundReturnsSentinel(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	err := PurgeEntity(ctx, db, nil, "nonexistent-id-xyz")
 	if err == nil {
 		t.Fatal("PurgeEntity on missing id: want error, got nil")
@@ -72,7 +72,7 @@ func TestPurgeEntity_NilVILogsAndReturnsNil(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	const id = "test-entity-purge"
 	seedEntity(t, db, id, "concept", "entity content")
 

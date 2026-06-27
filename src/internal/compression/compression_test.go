@@ -49,7 +49,7 @@ func TestCompressionIntegration(t *testing.T) {
 	clustererCfg := DefaultClustererConfig()
 	clustererCfg.SimilarityThreshold = 0.01
 	clusterer := NewClusterer(db, clustererCfg)
-	clusters, err := clusterer.Cluster(context.Background(), ids)
+	clusters, err := clusterer.Cluster(t.Context(), ids)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestCompressionIntegration(t *testing.T) {
 		t.Fatal("expected at least 1 cluster")
 	}
 
-	nodes, err := cp.CompressCluster(context.Background(), clusters)
+	nodes, err := cp.CompressCluster(t.Context(), clusters)
 	if err != nil {
 		t.Fatalf("compress cluster: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestCompressionIntegration(t *testing.T) {
 		t.Fatalf("expected at least 2 compressed_from IDs, got %d", len(first.CompressedFrom))
 	}
 
-	recompressed, err := cp.Recompress(context.Background(), first.ID)
+	recompressed, err := cp.Recompress(t.Context(), first.ID)
 	if err != nil {
 		t.Fatalf("recompress: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestCompressionIntegration(t *testing.T) {
 		t.Fatalf("expected generation 2 after recompress, got %d", recompressed.Generation)
 	}
 
-	loadedOrig, err := loadSummaryNode(context.Background(), db, first.ID)
+	loadedOrig, err := loadSummaryNode(t.Context(), db, first.ID)
 	if err != nil {
 		t.Fatalf("load original: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestCompressionIntegration(t *testing.T) {
 		},
 	}
 	cp2 := NewCompressor(db, extractor2).WithMetrics(metrics)
-	regenerated, err := cp2.Regenerate(context.Background(), first.ID)
+	regenerated, err := cp2.Regenerate(t.Context(), first.ID)
 	if err != nil {
 		t.Fatalf("regenerate: %v", err)
 	}

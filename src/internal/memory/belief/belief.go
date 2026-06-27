@@ -204,7 +204,7 @@ func (s *service) MarkSuperseded(ctx context.Context, id, byID int64) error {
 	if id == byID {
 		return errors.New("belief: superseded_by must differ from id")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("belief: begin: %w", err)
 	}

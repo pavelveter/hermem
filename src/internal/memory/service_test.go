@@ -76,7 +76,7 @@ func TestNewService_Success(t *testing.T) {
 func TestMemoryService_Store_OK(t *testing.T) {
 	f := newMemFixture(t)
 	req := core.StoreRequest{ID: "e1", Category: "world", Content: "hello", Embedding: []float32{0.1, 0.2, 0.3}}
-	if err := f.svc.Store(context.Background(), req, core.DefaultSchemaConfig(false)); err != nil {
+	if err := f.svc.Store(t.Context(), req, core.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
 	// Verify the row landed in the DB.
@@ -92,7 +92,7 @@ func TestMemoryService_Store_OK(t *testing.T) {
 func TestMemoryService_Store_RejectsUnknownCategory(t *testing.T) {
 	f := newMemFixture(t)
 	req := core.StoreRequest{ID: "e2", Category: "bogus", Content: "x"}
-	err := f.svc.Store(context.Background(), req, core.DefaultSchemaConfig(false))
+	err := f.svc.Store(t.Context(), req, core.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected DomainError, got nil")
 	}
@@ -113,7 +113,7 @@ func TestMemoryService_Store_RejectsMissingFields(t *testing.T) {
 		{ID: "e3", Category: "world", Content: ""},
 	}
 	for _, req := range cases {
-		err := f.svc.Store(context.Background(), req, core.DefaultSchemaConfig(false))
+		err := f.svc.Store(t.Context(), req, core.DefaultSchemaConfig(false))
 		if err == nil {
 			t.Fatalf("want error for missing fields, got nil for %+v", req)
 		}
@@ -126,7 +126,7 @@ func TestMemoryService_Store_RejectsMissingFields(t *testing.T) {
 func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 	f := newMemFixture(t)
 	req := core.StoreRequest{ID: "store-link-1", Category: "world", Content: "linkable"}
-	if err := f.svc.StoreAndLink(context.Background(), req, core.DefaultSchemaConfig(false)); err != nil {
+	if err := f.svc.StoreAndLink(t.Context(), req, core.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("StoreAndLink: %v", err)
 	}
 }

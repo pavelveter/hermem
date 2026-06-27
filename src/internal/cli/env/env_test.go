@@ -1,7 +1,6 @@
 package env
 
 import (
-	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -38,7 +37,7 @@ func validCfg() *config.Config {
 // TestEnvManager_GetReturnsInitial — construction with initial env yields
 // that exact pointer to Get().
 func TestEnvManager_GetReturnsInitial(t *testing.T) {
-	env := &Env{Ctx: context.Background()}
+	env := &Env{Ctx: t.Context()}
 	m := NewEnvManager(env)
 	if got := m.Get(); got != env {
 		t.Fatalf("Get: want %p, got %p", env, got)
@@ -57,8 +56,8 @@ func TestEnvManager_GetNilSafe(t *testing.T) {
 // TestEnvManager_SetSwapsAtomically — Set replaces the visible snapshot
 // for every subsequent Get call.
 func TestEnvManager_SetSwapsAtomically(t *testing.T) {
-	m := NewEnvManager(&Env{Ctx: context.Background(), Cfg: &config.Config{}})
-	env2 := &Env{Ctx: context.Background(), Cfg: &config.Config{VectorDim: 99}}
+	m := NewEnvManager(&Env{Ctx: t.Context(), Cfg: &config.Config{}})
+	env2 := &Env{Ctx: t.Context(), Cfg: &config.Config{VectorDim: 99}}
 	m.Set(env2)
 	if got := m.Get(); got != env2 || got.Cfg.VectorDim != 99 {
 		t.Fatalf("Get after Set: want pointer to env2 (dim=99), got %+v", got)
@@ -69,7 +68,7 @@ func TestEnvManager_SetSwapsAtomically(t *testing.T) {
 // *Env is the one stashed behind atomic.Pointer.
 func TestEnvManager_ReloadValidatesAndSwaps(t *testing.T) {
 	m := NewEnvManager(&Env{
-		Ctx:   context.Background(),
+		Ctx:   t.Context(),
 		Cfg:   validCfg(),
 		Build: BuildInfo{Version: "v1"},
 	})
@@ -89,7 +88,7 @@ func TestEnvManager_ReloadValidatesAndSwaps(t *testing.T) {
 // TestEnvManager_ReloadRejectsInvalid — bad cfg is rejected without
 // mutating the existing Env.
 func TestEnvManager_ReloadRejectsInvalid(t *testing.T) {
-	original := &Env{Ctx: context.Background()}
+	original := &Env{Ctx: t.Context()}
 	m := NewEnvManager(original)
 	if _, err := m.Reload(&config.Config{}); err == nil {
 		t.Fatal("expected validate error, got nil")
@@ -106,7 +105,7 @@ func TestEnvManager_ReloadRejectsInvalid(t *testing.T) {
 func TestEnvManager_ConcurrentGetSet(t *testing.T) {
 	const goroutines = 32
 	var broken int32 // 0 = healthy, 1 = invariant violated
-	m := NewEnvManager(&Env{Ctx: context.Background()})
+	m := NewEnvManager(&Env{Ctx: t.Context()})
 	seen := sync.Map{}
 
 	var wg sync.WaitGroup
@@ -114,7 +113,7 @@ func TestEnvManager_ConcurrentGetSet(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func(i int) {
 			defer wg.Done()
-			env := &Env{Ctx: context.Background()}
+			env := &Env{Ctx: t.Context()}
 			m.Set(env)
 			seen.Store(env, struct{}{})
 		}(i)

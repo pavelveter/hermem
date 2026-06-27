@@ -1,13 +1,12 @@
 package evolution
 
 import (
-	"context"
 	"testing"
 )
 
 func TestTraceRevisions_SingleBelief(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence, status) VALUES (1, 'root', 1.0, 'Active')`)
 	if err != nil {
@@ -28,7 +27,7 @@ func TestTraceRevisions_SingleBelief(t *testing.T) {
 
 func TestTraceRevisions_Chain(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence, status, parent_chain_id) VALUES (1, 'v1', 1.0, 'Active', NULL)`); err != nil {
 		t.Fatalf("insert v1: %v", err)
@@ -56,7 +55,7 @@ func TestTraceRevisions_Chain(t *testing.T) {
 }
 
 func TestTraceRevisions_InvalidID(t *testing.T) {
-	_, err := TraceRevisions(context.Background(), nil, 0)
+	_, err := TraceRevisions(t.Context(), nil, 0)
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}

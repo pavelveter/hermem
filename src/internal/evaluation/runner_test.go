@@ -26,7 +26,7 @@ func TestRunner_ComputesAllMetrics(t *testing.T) {
 	}
 
 	runner := NewRunner(5)
-	report, err := runner.Run(context.Background(), dataset, fn)
+	report, err := runner.Run(t.Context(), dataset, fn)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestRunner_ContextCancelled(t *testing.T) {
 		return nil, ctx.Err()
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
 	runner := NewRunner(5)

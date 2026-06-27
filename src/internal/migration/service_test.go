@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"context"
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -35,7 +34,7 @@ func TestService_Status_ReturnsNonNilSlice(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	status, err := svc.Status(context.Background())
+	status, err := svc.Status(t.Context())
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -67,7 +66,7 @@ func TestService_Rollback_NoError(t *testing.T) {
 	// should observe a non-empty name (the most-recent applied
 	// migration). Either outcome is acceptable for this test — the
 	// contract is "no error, returns the name or empty".
-	name, err := svc.Rollback(context.Background(), "")
+	name, err := svc.Rollback(t.Context(), "")
 	if err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
@@ -84,7 +83,7 @@ func TestService_Verify_NoMismatchOnConsistentDB(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	mismatches, err := svc.Verify(context.Background())
+	mismatches, err := svc.Verify(t.Context())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -110,7 +109,7 @@ func TestService_DryRun_ReturnsEmptyAfterMemDB(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	pending, err := svc.DryRun(context.Background())
+	pending, err := svc.DryRun(t.Context())
 	if err != nil {
 		t.Fatalf("DryRun: %v", err)
 	}
@@ -129,7 +128,7 @@ func TestService_Schema_NoError(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	report, err := svc.Schema(context.Background(), core.DefaultSchemaConfig(false))
+	report, err := svc.Schema(t.Context(), core.DefaultSchemaConfig(false))
 	if err != nil {
 		t.Fatalf("Schema: %v", err)
 	}

@@ -1,7 +1,6 @@
 package compression
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -28,7 +27,7 @@ func BenchmarkCluster(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, err := c.Cluster(context.Background(), ids)
+		_, err := c.Cluster(b.Context(), ids)
 		if err != nil {
 			b.Fatalf("cluster: %v", err)
 		}
@@ -56,7 +55,7 @@ func BenchmarkCompress(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, err := cp.Compress(context.Background(), ids)
+		_, err := cp.Compress(b.Context(), ids)
 		if err != nil {
 			b.Fatalf("compress: %v", err)
 		}
@@ -75,14 +74,14 @@ func BenchmarkRecompress(b *testing.B) {
 		},
 	})
 
-	first, err := cp.Compress(context.Background(), []string{"e1"})
+	first, err := cp.Compress(b.Context(), []string{"e1"})
 	if err != nil {
 		b.Fatalf("compress: %v", err)
 	}
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, err := cp.Recompress(context.Background(), first.ID)
+		_, err := cp.Recompress(b.Context(), first.ID)
 		if err != nil {
 			b.Fatalf("recompress: %v", err)
 		}

@@ -90,7 +90,7 @@ func TestService_RunOnce_HappyPath_ArchivesExpiredObservation(t *testing.T) {
 		DeleteBatchSize: 50,
 	}
 
-	rep, err := svc.RunOnce(context.Background(), pol)
+	rep, err := svc.RunOnce(t.Context(), pol)
 	if err != nil {
 		t.Fatalf("RunOnce: %v report=%+v", err, rep)
 	}
@@ -120,7 +120,7 @@ func TestService_RunOnce_ZeroCandidates_ReturnsZeroSwept(t *testing.T) {
 		DeleteBatchSize: 50,
 	}
 
-	rep, err := svc.RunOnce(context.Background(), pol)
+	rep, err := svc.RunOnce(t.Context(), pol)
 	if err != nil {
 		t.Fatalf("RunOnce on empty DB: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestService_RunOnce_TTL_AlreadyExpired_ArchivesImmediately(t *testing.T) {
 		DeleteBatchSize: 50,
 	}
 
-	rep, err := svc.RunOnce(context.Background(), pol)
+	rep, err := svc.RunOnce(t.Context(), pol)
 	if err != nil {
 		t.Fatalf("RunOnce on edge-TTL row: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestService_RunOnce_CancelledContext_ReturnsError(t *testing.T) {
 	vi := &stubVI{}
 	svc := retention.New(db, vi)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel BEFORE call
 
 	pol := core.RetentionPolicy{
@@ -202,7 +202,7 @@ func TestService_Run_RespectsContextCancel(t *testing.T) {
 	vi := &stubVI{}
 	svc := retention.New(db, vi)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	pol := core.RetentionPolicy{
 		ObservationTTL:  24 * time.Hour,
 		RunInterval:     10 * time.Millisecond,

@@ -1,7 +1,6 @@
 package episodic
 
 import (
-	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -70,7 +69,7 @@ func openTimelineTestDB(t *testing.T) *sql.DB {
 func TestTimelineService_ReconstructTimeline_RequiresEpisodeID(t *testing.T) {
 	db := openTimelineTestDB(t)
 	svc := NewTimelineService(db)
-	_, err := svc.ReconstructTimeline(context.Background(), "")
+	_, err := svc.ReconstructTimeline(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
 	}
@@ -82,7 +81,7 @@ func TestTimelineService_ReconstructTimeline_EmptyEpisodeReturnsEmptySlice(t *te
 		t.Fatalf("seed episode: %v", err)
 	}
 	svc := NewTimelineService(db)
-	got, err := svc.ReconstructTimeline(context.Background(), "ep-empty")
+	got, err := svc.ReconstructTimeline(t.Context(), "ep-empty")
 	if err != nil {
 		t.Fatalf("ReconstructTimeline: %v", err)
 	}
@@ -106,11 +105,11 @@ func TestTimelineService_ReconstructTimeline_OnlyEvents(t *testing.T) {
 		{ID: "e1", EpisodeID: "ep-1", Type: EventMessage, Content: "hello", Timestamp: time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)},
 		{ID: "e2", EpisodeID: "ep-1", Type: EventAction, Content: "clicked", Timestamp: time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)},
 	} {
-		if err := evSvc.CreateEvent(context.Background(), e); err != nil {
+		if err := evSvc.CreateEvent(t.Context(), e); err != nil {
 			t.Fatalf("CreateEvent %d: %v", i, err)
 		}
 	}
-	got, err := svc.ReconstructTimeline(context.Background(), "ep-1")
+	got, err := svc.ReconstructTimeline(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("ReconstructTimeline: %v", err)
 	}
@@ -139,23 +138,23 @@ func TestTimelineService_ReconstructTimeline_MergesEventsMemoriesAndTasks(t *tes
 		t.Fatalf("seed task entity: %v", err)
 	}
 	evSvc := NewEventService(db)
-	if err := evSvc.CreateEvent(context.Background(), Event{
+	if err := evSvc.CreateEvent(t.Context(), Event{
 		ID: "e1", EpisodeID: "ep-1", Type: EventMessage, Content: "event",
 		Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
 	linkSvc := NewLinkService(db)
-	if err := linkSvc.LinkMemory(context.Background(), "ep-1", "m1", "extracted"); err != nil {
+	if err := linkSvc.LinkMemory(t.Context(), "ep-1", "m1", "extracted"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
 	taskSvc := NewTaskLinkService(db)
-	if err := taskSvc.LinkTask(context.Background(), "ep-1", "t1"); err != nil {
+	if err := taskSvc.LinkTask(t.Context(), "ep-1", "t1"); err != nil {
 		t.Fatalf("LinkTask: %v", err)
 	}
 
 	svc := NewTimelineService(db)
-	got, err := svc.ReconstructTimeline(context.Background(), "ep-1")
+	got, err := svc.ReconstructTimeline(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("ReconstructTimeline: %v", err)
 	}
@@ -190,29 +189,29 @@ func TestTimelineService_ReconstructTimeline_OrdersByTimestamp(t *testing.T) {
 	}
 	evSvc := NewEventService(db)
 	// Out-of-order timestamps.
-	if err := evSvc.CreateEvent(context.Background(), Event{
+	if err := evSvc.CreateEvent(t.Context(), Event{
 		ID: "e-late", EpisodeID: "ep-1", Type: EventMessage, Content: "late",
 		Timestamp: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
-	if err := evSvc.CreateEvent(context.Background(), Event{
+	if err := evSvc.CreateEvent(t.Context(), Event{
 		ID: "e-early", EpisodeID: "ep-1", Type: EventMessage, Content: "early",
 		Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
 	linkSvc := NewLinkService(db)
-	if err := linkSvc.LinkMemory(context.Background(), "ep-1", "m1", "extracted"); err != nil {
+	if err := linkSvc.LinkMemory(t.Context(), "ep-1", "m1", "extracted"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
 	taskSvc := NewTaskLinkService(db)
-	if err := taskSvc.LinkTask(context.Background(), "ep-1", "t1"); err != nil {
+	if err := taskSvc.LinkTask(t.Context(), "ep-1", "t1"); err != nil {
 		t.Fatalf("LinkTask: %v", err)
 	}
 
 	svc := NewTimelineService(db)
-	got, err := svc.ReconstructTimeline(context.Background(), "ep-1")
+	got, err := svc.ReconstructTimeline(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("ReconstructTimeline: %v", err)
 	}
@@ -245,7 +244,7 @@ func TestTimelineService_ReconstructTimeline_StableOnTiebreak(t *testing.T) {
 	evSvc := NewEventService(db)
 	sameTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	for _, id := range []string{"e-c", "e-a", "e-b"} {
-		if err := evSvc.CreateEvent(context.Background(), Event{
+		if err := evSvc.CreateEvent(t.Context(), Event{
 			ID: id, EpisodeID: "ep-1", Type: EventMessage, Content: id,
 			Timestamp: sameTime,
 		}); err != nil {
@@ -253,7 +252,7 @@ func TestTimelineService_ReconstructTimeline_StableOnTiebreak(t *testing.T) {
 		}
 	}
 	svc := NewTimelineService(db)
-	got, err := svc.ReconstructTimeline(context.Background(), "ep-1")
+	got, err := svc.ReconstructTimeline(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("ReconstructTimeline: %v", err)
 	}
@@ -274,14 +273,14 @@ func TestTimelineService_ReconstructTimeline_EventTypePropagatesToEntry(t *testi
 		t.Fatalf("seed episode: %v", err)
 	}
 	evSvc := NewEventService(db)
-	if err := evSvc.CreateEvent(context.Background(), Event{
+	if err := evSvc.CreateEvent(t.Context(), Event{
 		ID: "e1", EpisodeID: "ep-1", Type: EventAction, Content: "clicked",
 		Timestamp: time.Now(),
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
 	svc := NewTimelineService(db)
-	got, _ := svc.ReconstructTimeline(context.Background(), "ep-1")
+	got, _ := svc.ReconstructTimeline(t.Context(), "ep-1")
 	if len(got) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(got))
 	}
@@ -299,11 +298,11 @@ func TestTimelineService_ReconstructTimeline_MemoryRolePropagatesToEntry(t *test
 		t.Fatalf("seed entity: %v", err)
 	}
 	linkSvc := NewLinkService(db)
-	if err := linkSvc.LinkMemory(context.Background(), "ep-1", "m1", "referenced"); err != nil {
+	if err := linkSvc.LinkMemory(t.Context(), "ep-1", "m1", "referenced"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
 	svc := NewTimelineService(db)
-	got, _ := svc.ReconstructTimeline(context.Background(), "ep-1")
+	got, _ := svc.ReconstructTimeline(t.Context(), "ep-1")
 	if len(got) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(got))
 	}
@@ -321,11 +320,11 @@ func TestTimelineService_ReconstructTimeline_TaskStatusPropagatesToEntry(t *test
 		t.Fatalf("seed task: %v", err)
 	}
 	taskSvc := NewTaskLinkService(db)
-	if err := taskSvc.LinkTask(context.Background(), "ep-1", "t1"); err != nil {
+	if err := taskSvc.LinkTask(t.Context(), "ep-1", "t1"); err != nil {
 		t.Fatalf("LinkTask: %v", err)
 	}
 	svc := NewTimelineService(db)
-	got, _ := svc.ReconstructTimeline(context.Background(), "ep-1")
+	got, _ := svc.ReconstructTimeline(t.Context(), "ep-1")
 	if len(got) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(got))
 	}

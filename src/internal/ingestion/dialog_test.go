@@ -289,7 +289,7 @@ func TestProcessDialogWithProvenance_VIOpFailureDoesNotFailCommit(t *testing.T) 
 	defer db.Close()
 
 	prov := core.Provenance{ExtractedFrom: "src/dlg-vifail"}
-	if err := worker.ProcessDialogWithProvenance(context.Background(), "src/dlg-vifail", prov); err != nil {
+	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/dlg-vifail", prov); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil (vi.Store failure must NOT abort ingest per § 3.1)", err)
 	}
 
@@ -328,7 +328,7 @@ func TestProcessDialogWithProvenance_FreshEntityStoresExactlyOnce(t *testing.T) 
 	defer db.Close()
 
 	prov := core.Provenance{ExtractedFrom: "src/dlg-fresh"}
-	if err := worker.ProcessDialogWithProvenance(context.Background(), "src/dlg-fresh", prov); err != nil {
+	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/dlg-fresh", prov); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
 	}
 
@@ -389,7 +389,7 @@ func TestProcessDialogWithProvenance_MergeComposesRemoveBeforeStore(t *testing.T
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
 	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
 
-	if err := worker.ProcessDialogWithProvenance(context.Background(), "src/merge-test", core.Provenance{ExtractedFrom: "src/merge-test"}); err != nil {
+	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/merge-test", core.Provenance{ExtractedFrom: "src/merge-test"}); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
 	}
 
@@ -471,7 +471,7 @@ func TestProcessDialogWithProvenance_LowConfContradictionArchivesAtomically(t *t
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
 	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
 
-	if err := worker.ProcessDialogWithProvenance(context.Background(), "src/lc-test", core.Provenance{ExtractedFrom: "src/lc-test"}); err != nil {
+	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/lc-test", core.Provenance{ExtractedFrom: "src/lc-test"}); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
 	}
 
@@ -548,7 +548,7 @@ func TestProcessDialogWithProvenance_RollbackSkipsVIOps(t *testing.T) {
 	// § 3.1 invariant: per-item errors are LOGGED, not propagated.
 	// Discard err so linter doesn't complain; spy.callOrder empty
 	// below is the real atomicity assertion.
-	_ = worker.ProcessDialogWithProvenance(context.Background(), "src/rb-test", core.Provenance{ExtractedFrom: "src/rb-test"})
+	_ = worker.ProcessDialogWithProvenance(t.Context(), "src/rb-test", core.Provenance{ExtractedFrom: "src/rb-test"})
 
 	// § 3.1 atomicity contract: NO viOp fires when the DB tx never
 	// commits. callOrder must be empty (this is the regression-trap;

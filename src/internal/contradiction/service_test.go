@@ -1,7 +1,6 @@
 package contradiction
 
 import (
-	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -38,7 +37,7 @@ func TestService_List_EmptyDBReturnsEmptySlice(t *testing.T) {
 	defer db.Close()
 	svc := New(db)
 
-	pairs, err := svc.List(context.Background(), "")
+	pairs, err := svc.List(t.Context(), "")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -68,7 +67,7 @@ func TestService_List_FiltersByEntityID(t *testing.T) {
 	seedEdge(t, db, "c", "d", "related_to")
 	svc := New(db)
 
-	pairsFiltered, err := svc.List(context.Background(), "a")
+	pairsFiltered, err := svc.List(t.Context(), "a")
 	if err != nil {
 		t.Fatalf("List filtered: %v", err)
 	}
@@ -80,7 +79,7 @@ func TestService_List_FiltersByEntityID(t *testing.T) {
 		t.Errorf("pair %+v does not include entityID 'a'", p)
 	}
 
-	pairsAll, err := svc.List(context.Background(), "")
+	pairsAll, err := svc.List(t.Context(), "")
 	if err != nil {
 		t.Fatalf("List all: %v", err)
 	}
@@ -106,7 +105,7 @@ func TestService_List_EmptyEntityIDReturnsAll(t *testing.T) {
 	seedEdge(t, db, "x", "y", "contradicts")
 	svc := New(db)
 
-	pairs, err := svc.List(context.Background(), "")
+	pairs, err := svc.List(t.Context(), "")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -128,7 +127,7 @@ func TestService_List_PropagatesDBError(t *testing.T) {
 	_ = db.Close()
 	svc := New(db)
 
-	_, err = svc.List(context.Background(), "")
+	_, err = svc.List(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected closed-DB error, got nil")
 	}

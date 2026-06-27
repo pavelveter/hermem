@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -35,7 +34,7 @@ func TestVacuumRunner_Run(t *testing.T) {
 		callCount++
 	})
 
-	reclaimed, err := vr.Run(context.Background())
+	reclaimed, err := vr.Run(t.Context())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -55,7 +54,7 @@ func TestVacuumRunner_EmptyDB(t *testing.T) {
 	defer db.Close()
 
 	vr := NewVacuumRunner(db)
-	reclaimed, err := vr.Run(context.Background())
+	reclaimed, err := vr.Run(t.Context())
 	if err != nil {
 		t.Fatalf("Run empty: %v", err)
 	}

@@ -747,7 +747,7 @@ func TestApplyReranker_NilRerankerIsNoOp(t *testing.T) {
 		Experiences:  []core.RetrievedFact{{Content: "gamma"}},
 		Observations: []core.RetrievedFact{{Content: "delta"}},
 	}
-	if err := applyReranker(r, nil, context.Background(), "q"); err != nil {
+	if err := applyReranker(r, nil, t.Context(), "q"); err != nil {
 		t.Fatalf("nil reranker: want nil err, got %v", err)
 	}
 	// Contents preserved.
@@ -758,7 +758,7 @@ func TestApplyReranker_NilRerankerIsNoOp(t *testing.T) {
 
 func TestApplyReranker_NilResultIsNoOp(t *testing.T) {
 	stub := &stubReranker{}
-	if err := applyReranker(nil, stub, context.Background(), "q"); err != nil {
+	if err := applyReranker(nil, stub, t.Context(), "q"); err != nil {
 		t.Fatalf("nil result: want nil err, got %v", err)
 	}
 	if len(stub.calls) != 0 {
@@ -775,7 +775,7 @@ func TestApplyReranker_ReverseBucketContents(t *testing.T) {
 		Experiences: []core.RetrievedFact{{Content: "e1"}},
 	}
 	stub := &stubReranker{reversed: true}
-	if err := applyReranker(r, stub, context.Background(), "q"); err != nil {
+	if err := applyReranker(r, stub, t.Context(), "q"); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	// World reversed.
@@ -813,7 +813,7 @@ func TestApplyReranker_ErrorPropagates(t *testing.T) {
 		Opinions:   []core.RetrievedFact{{Content: "after"}},
 	}
 	stub := &stubReranker{failOn: "trigger"}
-	err := applyReranker(r, stub, context.Background(), "q")
+	err := applyReranker(r, stub, t.Context(), "q")
 	if err == nil {
 		t.Fatal("want error from failing bucket, got nil")
 	}
@@ -904,7 +904,7 @@ func TestRetrieveContext_TracesAllStages(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "a", "world", "alpha-trace", []float32{1, 0, 0})
 
 	tracer := &stubTracer{}
-	ctx := tracing.WithTracer(context.Background(), tracer)
+	ctx := tracing.WithTracer(t.Context(), tracer)
 
 	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
 		MaxDepth: 1,
@@ -937,7 +937,7 @@ func TestRetrieveContext_TracesRerankWhenSet(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "a", "world", "alpha-rtrace", []float32{1, 0, 0})
 
 	tracer := &stubTracer{}
-	ctx := tracing.WithTracer(context.Background(), tracer)
+	ctx := tracing.WithTracer(t.Context(), tracer)
 
 	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
 		MaxDepth:  1,
@@ -1067,7 +1067,7 @@ func TestHopEmbedFacts(t *testing.T) {
 		{Content: "hello"},
 		{Content: "world"},
 	}
-	vecs, err := hopEmbedFacts(context.Background(), emb, facts, 1)
+	vecs, err := hopEmbedFacts(t.Context(), emb, facts, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1084,7 +1084,7 @@ func TestHopEmbedFacts_Error(t *testing.T) {
 	facts := []core.RetrievedFact{
 		{Content: "missing"},
 	}
-	_, err := hopEmbedFacts(context.Background(), emb, facts, 1)
+	_, err := hopEmbedFacts(t.Context(), emb, facts, 1)
 	if err == nil {
 		t.Fatal("expected error for missing content")
 	}
@@ -1094,7 +1094,7 @@ func TestHopVectorSearch(t *testing.T) {
 	db := openTestDB(t)
 	vi := vector.NewInMemoryVectorIndex(db)
 	vecs := [][]float32{{0.1, 0.2, 0.3}}
-	hits, err := hopVectorSearch(context.Background(), vi, vecs, 3, 1)
+	hits, err := hopVectorSearch(t.Context(), vi, vecs, 3, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

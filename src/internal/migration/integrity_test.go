@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"context"
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -39,7 +38,7 @@ func TestIntegrity_VerifyCleanAfterMemDB(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	mismatches, err := svc.Verify(context.Background())
+	mismatches, err := svc.Verify(t.Context())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -59,7 +58,7 @@ func TestIntegrity_TamperedChecksumDetected(t *testing.T) {
 		t.Fatalf("update checksum: %v", err)
 	}
 	svc := New(db)
-	mismatches, err := svc.Verify(context.Background())
+	mismatches, err := svc.Verify(t.Context())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -95,7 +94,7 @@ func TestIntegrity_ChecksumBackfill(t *testing.T) {
 		t.Fatalf("null checksum: %v", err)
 	}
 	svc := New(db)
-	mismatches, err := svc.Verify(context.Background())
+	mismatches, err := svc.Verify(t.Context())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}

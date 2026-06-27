@@ -30,14 +30,14 @@ func TestNewService_Success(t *testing.T) {
 
 func TestService_Status_RejectsEmptyFields(t *testing.T) {
 	f := newSvcFixture(t)
-	if err := f.svc.Status(context.Background(), "", "completed", statefulSchema()); err == nil {
+	if err := f.svc.Status(t.Context(), "", "completed", statefulSchema()); err == nil {
 		t.Fatal("expected empty-id/status error, got nil")
 	}
 }
 
 func TestService_Status_NotFound(t *testing.T) {
 	f := newSvcFixture(t)
-	err := f.svc.Status(context.Background(), "no-such-task", "completed", statefulSchema())
+	err := f.svc.Status(t.Context(), "no-such-task", "completed", statefulSchema())
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("expected not-found error from store, got: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestService_Status_NotFound(t *testing.T) {
 // should yield exactly zero-result slice, never nil.
 func TestService_Executable_EmptyDBReturnsEmpty(t *testing.T) {
 	f := newSvcFixture(t)
-	tasks, err := f.svc.Executable(context.Background(), "", statefulSchema())
+	tasks, err := f.svc.Executable(t.Context(), "", statefulSchema())
 	if err != nil {
 		t.Fatalf("Executable: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestService_Executable_EmptyDBReturnsEmpty(t *testing.T) {
 
 func TestService_Executable_NonStatefulSchemaReturnsEmpty(t *testing.T) {
 	f := newSvcFixture(t)
-	tasks, err := f.svc.Executable(context.Background(), "", core.DefaultSchemaConfig(false))
+	tasks, err := f.svc.Executable(t.Context(), "", core.DefaultSchemaConfig(false))
 	if err != nil {
 		t.Fatalf("Executable: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestService_Executable_NonStatefulSchemaReturnsEmpty(t *testing.T) {
 
 func TestService_List_EmptyDBReturnsEmpty(t *testing.T) {
 	f := newSvcFixture(t)
-	tasks, err := f.svc.List(context.Background(), "", "", statefulSchema())
+	tasks, err := f.svc.List(t.Context(), "", "", statefulSchema())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestService_List_EmptyDBReturnsEmpty(t *testing.T) {
 
 func TestService_Show_RejectsEmptyID(t *testing.T) {
 	f := newSvcFixture(t)
-	_, _, _, err := f.svc.Show(context.Background(), "", statefulSchema())
+	_, _, _, err := f.svc.Show(t.Context(), "", statefulSchema())
 	if err == nil {
 		t.Fatal("expected empty-id error from domain, got nil")
 	}
@@ -102,7 +102,7 @@ func TestService_Show_RejectsEmptyID(t *testing.T) {
 
 func TestService_Show_NotFound(t *testing.T) {
 	f := newSvcFixture(t)
-	_, _, _, err := f.svc.Show(context.Background(), "no-such-task", statefulSchema())
+	_, _, _, err := f.svc.Show(t.Context(), "no-such-task", statefulSchema())
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("expected not-found error, got: %v", err)
 	}
@@ -112,10 +112,10 @@ func TestService_Show_NotFound(t *testing.T) {
 
 func TestService_Dep_RejectsEmptyIDs(t *testing.T) {
 	f := newSvcFixture(t)
-	if err := f.svc.Dep(context.Background(), "", "t2", "blocked_by", true); err == nil {
+	if err := f.svc.Dep(t.Context(), "", "t2", "blocked_by", true); err == nil {
 		t.Fatal("expected empty-source-id error, got nil")
 	}
-	if err := f.svc.Dep(context.Background(), "s1", "", "blocked_by", true); err == nil {
+	if err := f.svc.Dep(t.Context(), "s1", "", "blocked_by", true); err == nil {
 		t.Fatal("expected empty-target-id error, got nil")
 	}
 }
@@ -124,7 +124,7 @@ func TestService_Dep_AddCreatesEdge(t *testing.T) {
 	f := newSvcFixture(t)
 	seedTaskEntity(t, f.db, "t-src", "task", "pending", "do this first")
 	seedTaskEntity(t, f.db, "t-dst", "task", "pending", "then do this")
-	if err := f.svc.Dep(context.Background(), "t-src", "t-dst", "blocked_by", true); err != nil {
+	if err := f.svc.Dep(t.Context(), "t-src", "t-dst", "blocked_by", true); err != nil {
 		t.Fatalf("Dep add: %v", err)
 	}
 	var n int
@@ -145,7 +145,7 @@ func TestService_Dep_AddCreatesEdge(t *testing.T) {
 // no error and a stable empty string.
 func TestService_Tree_EmptyDB(t *testing.T) {
 	f := newSvcFixture(t)
-	out, err := f.svc.Tree(context.Background(), "", statefulSchema())
+	out, err := f.svc.Tree(t.Context(), "", statefulSchema())
 	if err != nil {
 		t.Fatalf("Tree: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestService_Tree_EmptyDB(t *testing.T) {
 
 func TestService_Create_RejectsEmptyContent(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Create(context.Background(), "t-new", "", nil, statefulSchema())
+	_, err := f.svc.Create(t.Context(), "t-new", "", nil, statefulSchema())
 	if err == nil {
 		t.Fatal("expected empty-content error, got nil")
 	}
@@ -166,7 +166,7 @@ func TestService_Create_RejectsEmptyContent(t *testing.T) {
 
 func TestService_Create_RejectsEmptyID(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Create(context.Background(), "", "do the thing", nil, statefulSchema())
+	_, err := f.svc.Create(t.Context(), "", "do the thing", nil, statefulSchema())
 	if err == nil {
 		t.Fatal("expected empty-id error, got nil")
 	}
@@ -174,7 +174,7 @@ func TestService_Create_RejectsEmptyID(t *testing.T) {
 
 func TestService_Create_RejectsNonStatefulSchema(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Create(context.Background(), "t-new", "do thing", nil, core.DefaultSchemaConfig(false))
+	_, err := f.svc.Create(t.Context(), "t-new", "do thing", nil, core.DefaultSchemaConfig(false))
 	if err == nil || !strings.Contains(err.Error(), "no stateful category") {
 		t.Errorf("expected no-stateful-category error, got: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestService_Create_RejectsNonStatefulSchema(t *testing.T) {
 
 func TestService_Create_Success(t *testing.T) {
 	f := newSvcFixture(t)
-	newID, err := f.svc.Create(context.Background(), "t-new", "do the thing", []string{}, statefulSchema())
+	newID, err := f.svc.Create(t.Context(), "t-new", "do the thing", []string{}, statefulSchema())
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestService_Create_Success(t *testing.T) {
 
 func TestService_RecoveryPlan_RejectsEmptyID(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.RecoveryPlan(context.Background(), "", statefulSchema())
+	_, err := f.svc.RecoveryPlan(t.Context(), "", statefulSchema())
 	if err == nil {
 		t.Fatal("expected empty-id error from domain, got nil")
 	}

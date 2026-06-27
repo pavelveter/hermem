@@ -78,7 +78,7 @@ func TestRebuildIndex_DryRun(t *testing.T) {
 		logs = append(logs, msg)
 	})
 
-	report, err := ri.Run(context.Background(), RebuildOpts{DryRun: true})
+	report, err := ri.Run(t.Context(), RebuildOpts{DryRun: true})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRebuildIndex_Run(t *testing.T) {
 	vi := &mockVectorIndex{}
 	ri := NewRebuildIndex(db, vi, em)
 
-	report, err := ri.Run(context.Background(), RebuildOpts{})
+	report, err := ri.Run(t.Context(), RebuildOpts{})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestRebuildIndex_FailedEntities(t *testing.T) {
 	vi := &mockVectorIndex{}
 	ri := NewRebuildIndex(db, vi, em)
 
-	report, err := ri.Run(context.Background(), RebuildOpts{})
+	report, err := ri.Run(t.Context(), RebuildOpts{})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestRebuildIndex_EmptyFilter(t *testing.T) {
 	vi := &mockVectorIndex{}
 	ri := NewRebuildIndex(db, vi, em)
 
-	report, err := ri.Run(context.Background(), RebuildOpts{Category: "nonexistent"})
+	report, err := ri.Run(t.Context(), RebuildOpts{Category: "nonexistent"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestRebuildIndex_OnlyArchived(t *testing.T) {
 	vi := &mockVectorIndex{}
 	ri := NewRebuildIndex(db, vi, em)
 
-	report, err := ri.Run(context.Background(), RebuildOpts{OnlyArchived: true})
+	report, err := ri.Run(t.Context(), RebuildOpts{OnlyArchived: true})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestRebuildIndex_EmptyDB(t *testing.T) {
 	vi := &mockVectorIndex{}
 	ri := NewRebuildIndex(db, vi, em)
 
-	report, err := ri.Run(context.Background(), RebuildOpts{})
+	report, err := ri.Run(t.Context(), RebuildOpts{})
 	if err != nil {
 		t.Fatalf("Run empty: %v", err)
 	}

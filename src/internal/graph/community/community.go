@@ -95,6 +95,12 @@ func LoadGraph(ctx context.Context, db *sql.DB) (*Graph, error) {
 // DetectCommunities runs Louvain community detection on an in-memory Graph
 // for up to maxIterations passes. Returns the communities sorted by size
 // (largest first) and the global modularity score.
+//
+// Thread-safety: the caller MUST pass a snapshot Graph obtained via
+// LoadGraph within a read-locked section. DetectCommunities only reads
+// g.IDs, g.Adj, g.NodeIndex, g.TotalWeight, and g.NodeWeight — it
+// never mutates the graph. All mutable state (community assignments,
+// commInternal, commTotal) lives in stack-local slices/maps.
 func DetectCommunities(g *Graph, maxIterations int) ([]core.Community, float64) {
 	n := len(g.IDs)
 	if n == 0 {

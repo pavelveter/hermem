@@ -1,7 +1,6 @@
 package belief_test
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"testing"
@@ -16,7 +15,7 @@ func TestService_CreateAndGet_HappyPath(t *testing.T) {
 	t.Parallel()
 	db := memDB(t)
 	svc := belief.New(db)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	b := &belief.Belief{
 		Content:    "the kitchen light is on",
@@ -58,7 +57,7 @@ func TestService_CreateAndGet_HappyPath(t *testing.T) {
 func TestService_CreateBelief_ConfidenceBoundsRejected(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := svc.CreateBelief(ctx, &belief.Belief{Content: "neg", Confidence: -0.1}); err == nil {
 		t.Fatal("want error for Confidence < 0")
@@ -71,7 +70,7 @@ func TestService_CreateBelief_ConfidenceBoundsRejected(t *testing.T) {
 func TestService_NilBeliefRejected(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
-	if err := svc.CreateBelief(context.Background(), nil); err == nil {
+	if err := svc.CreateBelief(t.Context(), nil); err == nil {
 		t.Fatal("want error for nil Belief")
 	}
 }
@@ -79,7 +78,7 @@ func TestService_NilBeliefRejected(t *testing.T) {
 func TestService_EmptyContentRejected(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
-	if err := svc.CreateBelief(context.Background(), &belief.Belief{}); err == nil {
+	if err := svc.CreateBelief(t.Context(), &belief.Belief{}); err == nil {
 		t.Fatal("want error for empty Content")
 	}
 }
@@ -88,7 +87,7 @@ func TestService_DefaultConfidenceMagnitude(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
 	b := &belief.Belief{Content: "default-confidence case"}
-	if err := svc.CreateBelief(context.Background(), b); err != nil {
+	if err := svc.CreateBelief(t.Context(), b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)
 	}
 	if b.Confidence != 1.0 {
@@ -99,7 +98,7 @@ func TestService_DefaultConfidenceMagnitude(t *testing.T) {
 func TestService_ListBeliefsOrdered(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, content := range []string{"alpha", "beta", "gamma"} {
 		if err := svc.CreateBelief(ctx, &belief.Belief{
@@ -126,7 +125,7 @@ func TestService_ListBeliefsOrdered(t *testing.T) {
 func TestService_UpdateConfidence(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	b := &belief.Belief{Content: "subject", Confidence: 0.5}
 	if err := svc.CreateBelief(ctx, b); err != nil {
@@ -166,7 +165,7 @@ func TestService_UpdateConfidence(t *testing.T) {
 func TestService_MarkSuperseded(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	a := &belief.Belief{Content: "old", Confidence: 0.6}
 	b := &belief.Belief{Content: "new", Confidence: 0.99}
@@ -214,13 +213,13 @@ func TestService_MarkSuperseded(t *testing.T) {
 func TestService_GetNotFound(t *testing.T) {
 	t.Parallel()
 	svc := belief.New(memDB(t))
-	if _, err := svc.GetBelief(context.Background(), 99999); !errors.Is(err, belief.ErrNotFound) {
+	if _, err := svc.GetBelief(t.Context(), 99999); !errors.Is(err, belief.ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
-	if _, err := svc.GetBelief(context.Background(), 0); !errors.Is(err, belief.ErrNotFound) {
+	if _, err := svc.GetBelief(t.Context(), 0); !errors.Is(err, belief.ErrNotFound) {
 		t.Fatalf("want ErrNotFound for ID 0, got %v", err)
 	}
-	if _, err := svc.GetBelief(context.Background(), -1); !errors.Is(err, belief.ErrNotFound) {
+	if _, err := svc.GetBelief(t.Context(), -1); !errors.Is(err, belief.ErrNotFound) {
 		t.Fatalf("want ErrNotFound for negative ID, got %v", err)
 	}
 }

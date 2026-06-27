@@ -1,7 +1,6 @@
 package episodic
 
 import (
-	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -69,7 +68,7 @@ func seedTaskEntity(t *testing.T, db *sql.DB, id, content, status string) {
 func TestTaskLinkService_LinkTask_RequiresEpisodeID(t *testing.T) {
 	db := openTaskLinkTestDB(t)
 	svc := NewTaskLinkService(db)
-	err := svc.LinkTask(context.Background(), "", "task-1")
+	err := svc.LinkTask(t.Context(), "", "task-1")
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
 	}
@@ -79,7 +78,7 @@ func TestTaskLinkService_LinkTask_RequiresTaskID(t *testing.T) {
 	db := openTaskLinkTestDB(t)
 	seedEpisodeForTask(t, db, "ep-1", "")
 	svc := NewTaskLinkService(db)
-	err := svc.LinkTask(context.Background(), "ep-1", "")
+	err := svc.LinkTask(t.Context(), "ep-1", "")
 	if err == nil || !strings.Contains(err.Error(), "task_id required") {
 		t.Fatalf("want task_id-required error, got %v", err)
 	}
@@ -92,11 +91,11 @@ func TestTaskLinkService_LinkTask_Idempotent(t *testing.T) {
 	svc := NewTaskLinkService(db)
 
 	for i := 0; i < 3; i++ {
-		if err := svc.LinkTask(context.Background(), "ep-1", "task-1"); err != nil {
+		if err := svc.LinkTask(t.Context(), "ep-1", "task-1"); err != nil {
 			t.Fatalf("LinkTask #%d: %v", i, err)
 		}
 	}
-	got, _ := svc.ListTasksForEpisode(context.Background(), "ep-1")
+	got, _ := svc.ListTasksForEpisode(t.Context(), "ep-1")
 	if len(got) != 1 {
 		t.Fatalf("idempotent: want 1 link, got %d", len(got))
 	}
@@ -108,13 +107,13 @@ func TestTaskLinkService_UnlinkTask_RemovesLink(t *testing.T) {
 	seedTaskEntity(t, db, "task-1", "do thing", "pending")
 	svc := NewTaskLinkService(db)
 
-	if err := svc.LinkTask(context.Background(), "ep-1", "task-1"); err != nil {
+	if err := svc.LinkTask(t.Context(), "ep-1", "task-1"); err != nil {
 		t.Fatalf("LinkTask: %v", err)
 	}
-	if err := svc.UnlinkTask(context.Background(), "ep-1", "task-1"); err != nil {
+	if err := svc.UnlinkTask(t.Context(), "ep-1", "task-1"); err != nil {
 		t.Fatalf("UnlinkTask: %v", err)
 	}
-	got, _ := svc.ListTasksForEpisode(context.Background(), "ep-1")
+	got, _ := svc.ListTasksForEpisode(t.Context(), "ep-1")
 	if len(got) != 0 {
 		t.Fatalf("after unlink: want 0 tasks, got %d", len(got))
 	}
@@ -124,7 +123,7 @@ func TestTaskLinkService_UnlinkTask_Idempotent(t *testing.T) {
 	db := openTaskLinkTestDB(t)
 	seedEpisodeForTask(t, db, "ep-1", "")
 	svc := NewTaskLinkService(db)
-	if err := svc.UnlinkTask(context.Background(), "ep-1", "missing-task"); err != nil {
+	if err := svc.UnlinkTask(t.Context(), "ep-1", "missing-task"); err != nil {
 		t.Fatalf("UnlinkTask on missing link: %v", err)
 	}
 }
@@ -132,10 +131,10 @@ func TestTaskLinkService_UnlinkTask_Idempotent(t *testing.T) {
 func TestTaskLinkService_UnlinkTask_RequiresIDs(t *testing.T) {
 	db := openTaskLinkTestDB(t)
 	svc := NewTaskLinkService(db)
-	if err := svc.UnlinkTask(context.Background(), "", "task-1"); err == nil {
+	if err := svc.UnlinkTask(t.Context(), "", "task-1"); err == nil {
 		t.Fatal("want error for empty episode_id")
 	}
-	if err := svc.UnlinkTask(context.Background(), "ep-1", ""); err == nil {
+	if err := svc.UnlinkTask(t.Context(), "ep-1", ""); err == nil {
 		t.Fatal("want error for empty task_id")
 	}
 }
@@ -149,11 +148,11 @@ func TestTaskLinkService_ListTasksForEpisode_ReturnsAllLinkedTasks(t *testing.T)
 	svc := NewTaskLinkService(db)
 
 	for _, id := range []string{"task-a", "task-b", "task-c"} {
-		if err := svc.LinkTask(context.Background(), "ep-1", id); err != nil {
+		if err := svc.LinkTask(t.Context(), "ep-1", id); err != nil {
 			t.Fatalf("LinkTask %s: %v", id, err)
 		}
 	}
-	got, err := svc.ListTasksForEpisode(context.Background(), "ep-1")
+	got, err := svc.ListTasksForEpisode(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("ListTasksForEpisode: %v", err)
 	}
@@ -178,7 +177,7 @@ func TestTaskLinkService_ListTasksForEpisode_ReturnsAllLinkedTasks(t *testing.T)
 func TestTaskLinkService_ListTasksForEpisode_RequiresEpisodeID(t *testing.T) {
 	db := openTaskLinkTestDB(t)
 	svc := NewTaskLinkService(db)
-	_, err := svc.ListTasksForEpisode(context.Background(), "")
+	_, err := svc.ListTasksForEpisode(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
 	}
@@ -188,7 +187,7 @@ func TestTaskLinkService_ListTasksForEpisode_EmptyReturnsEmptySlice(t *testing.T
 	db := openTaskLinkTestDB(t)
 	seedEpisodeForTask(t, db, "ep-empty", "")
 	svc := NewTaskLinkService(db)
-	got, err := svc.ListTasksForEpisode(context.Background(), "ep-empty")
+	got, err := svc.ListTasksForEpisode(t.Context(), "ep-empty")
 	if err != nil {
 		t.Fatalf("ListTasksForEpisode: %v", err)
 	}
@@ -206,7 +205,7 @@ func TestTaskLinkService_LinkTask_OnDeleteCascade(t *testing.T) {
 	seedTaskEntity(t, db, "task-cascade", "do thing", "pending")
 	svc := NewTaskLinkService(db)
 
-	if err := svc.LinkTask(context.Background(), "ep-cascade", "task-cascade"); err != nil {
+	if err := svc.LinkTask(t.Context(), "ep-cascade", "task-cascade"); err != nil {
 		t.Fatalf("LinkTask: %v", err)
 	}
 	// Delete the episode — the link should cascade-delete.
@@ -214,7 +213,7 @@ func TestTaskLinkService_LinkTask_OnDeleteCascade(t *testing.T) {
 		t.Fatalf("delete episode: %v", err)
 	}
 	// Verify the link row is gone by attempting to unlink (idempotent — no error expected).
-	if err := svc.UnlinkTask(context.Background(), "ep-cascade", "task-cascade"); err != nil {
+	if err := svc.UnlinkTask(t.Context(), "ep-cascade", "task-cascade"); err != nil {
 		t.Fatalf("UnlinkTask after cascade delete: %v", err)
 	}
 }

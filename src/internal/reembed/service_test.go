@@ -67,7 +67,7 @@ func TestNewService_Success(t *testing.T) {
 
 func TestReEmbedAll_EmptyDB(t *testing.T) {
 	svc, _ := newReembedFixture(t)
-	result, err := svc.ReEmbedAll(context.Background(), 3, 50, "")
+	result, err := svc.ReEmbedAll(t.Context(), 3, 50, "")
 	if err != nil {
 		t.Fatalf("ReEmbedAll: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestReEmbedAll_WithEntities(t *testing.T) {
 	// Seed a row with empty content — should be Skipped.
 	seedEntity(t, db, "re3", "")
 
-	result, err := svc.ReEmbedAll(context.Background(), 3, 50, "test-model-v2")
+	result, err := svc.ReEmbedAll(t.Context(), 3, 50, "test-model-v2")
 	if err != nil {
 		t.Fatalf("ReEmbedAll: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestReEmbedAll_WithEntities(t *testing.T) {
 
 func TestNeedsReEmbed_NoDrift(t *testing.T) {
 	svc, _ := newReembedFixture(t)
-	needs, oldDim, err := svc.NeedsReEmbed(context.Background(), 3)
+	needs, oldDim, err := svc.NeedsReEmbed(t.Context(), 3)
 	if err != nil {
 		t.Fatalf("NeedsReEmbed: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestNeedsReEmbed_DriftDetected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed meta: %v", err)
 	}
-	needs, oldDim, err := svc.NeedsReEmbed(context.Background(), 3)
+	needs, oldDim, err := svc.NeedsReEmbed(t.Context(), 3)
 	if err != nil {
 		t.Fatalf("NeedsReEmbed: %v", err)
 	}

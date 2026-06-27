@@ -1,13 +1,12 @@
 package evolution
 
 import (
-	"context"
 	"testing"
 )
 
 func TestListActiveBeliefs_ExcludesSuperseded(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence, status) VALUES (1, 'active', 1.0, 'Active')`); err != nil {
 		t.Fatalf("insert active: %v", err)
@@ -33,7 +32,7 @@ func TestListActiveBeliefs_ExcludesSuperseded(t *testing.T) {
 
 func TestListActiveBeliefs_IncludeSuperseded(t *testing.T) {
 	db := openDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := db.ExecContext(ctx, `INSERT INTO beliefs (id, content, confidence, status) VALUES (1, 'active', 1.0, 'Active')`); err != nil {
 		t.Fatalf("insert active: %v", err)

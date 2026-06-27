@@ -24,7 +24,7 @@ func testAdminEnv(t *testing.T) *cli.Env {
 		VectorDim: 3,
 	}
 	env := &cli.Env{
-		Ctx:        context.Background(),
+		Ctx:        t.Context(),
 		Cfg:        cfg,
 		KeepDBOpen: true,
 	}

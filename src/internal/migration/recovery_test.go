@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"context"
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -21,7 +20,7 @@ func TestRecovery_RollbackEmptyDB(t *testing.T) {
 		t.Fatalf("delete migration_checksums: %v", err)
 	}
 	svc := New(db)
-	name, err := svc.Rollback(context.Background(), "")
+	name, err := svc.Rollback(t.Context(), "")
 	if err != nil {
 		t.Fatalf("Rollback on empty DB: %v", err)
 	}
@@ -50,7 +49,7 @@ func TestRecovery_RollbackPartiallyApplied(t *testing.T) {
 	}
 	// DryRun should NOT show it as pending (it's in schema_migrations).
 	svc := New(db)
-	pending, err := svc.DryRun(context.Background())
+	pending, err := svc.DryRun(t.Context())
 	if err != nil {
 		t.Fatalf("DryRun: %v", err)
 	}
@@ -60,7 +59,7 @@ func TestRecovery_RollbackPartiallyApplied(t *testing.T) {
 		}
 	}
 	// Rollback should still clean it up.
-	name, err := svc.Rollback(context.Background(), "")
+	name, err := svc.Rollback(t.Context(), "")
 	if err != nil {
 		t.Fatalf("Rollback after partial apply: %v", err)
 	}
@@ -68,7 +67,7 @@ func TestRecovery_RollbackPartiallyApplied(t *testing.T) {
 		t.Fatal("want rolled-back migration name, got empty")
 	}
 	// After rollback, DryRun should show it as pending.
-	pending, err = svc.DryRun(context.Background())
+	pending, err = svc.DryRun(t.Context())
 	if err != nil {
 		t.Fatalf("DryRun after rollback: %v", err)
 	}
@@ -113,7 +112,7 @@ func TestRecovery_RollbackToTarget(t *testing.T) {
 		if versions[i] == target {
 			break
 		}
-		name, err := svc.Rollback(context.Background(), target)
+		name, err := svc.Rollback(t.Context(), target)
 		if err != nil {
 			t.Fatalf("Rollback to %q: %v", target, err)
 		}
