@@ -1009,7 +1009,7 @@ incrementally — the global `slog` still works during the transition.
 
 ### [x] 12.6 Unified component lifecycle (`Start(ctx)`, `Stop(ctx)`)
 
-**Status: ❌ NOT DONE.**
+**Status: ✅ DONE.**
 
 Components start and stop in ad-hoc ways:
 - HTTP server: `httpSrv.ListenAndServe()` in a goroutine, `httpSrv.Shutdown()` on signal.
@@ -1122,7 +1122,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 | **HIGH** | §11: AMX CGo verification | Low | ✅ DONE — new `src/internal/vector/cosine_amx_guard_test.go` (build tag `darwin && cgo`) adds `TestBatchDot_AMXGuard` (wall-time assertion: 1024×768 batched dot must complete in <2ms per call; 4-10× above AMX-fast ~0.3ms, 2.5-7.5× below pure-Go ~5-15ms) + `BenchmarkBatchDot_AMX` (ns/op + custom `dot/sec` metric for trend dashboards). New `.github/workflows/ci-amx.yml` runs on `macos-latest` with `CGO_ENABLED=1` and gates PRs on the wall-time assertion. The existing `bench.yml` (ubuntu-latest) is unchanged — it would skip the darwin+cgo build tag, so the new macos job is the only place the guard actually fires. CGo preamble byte-verified: build tag `//go:build darwin && cgo` exact, no blank line between `*/` and `import "C"`, LDFLAGS `-framework Accelerate` present. Both `install.sh` and `Dockerfile` already enforce CGO_ENABLED=1. |
 | **✅ DONE** | §12.2: Central error taxonomy | — | Eliminates string-matching in handlers |
 | **HIGH** | §12.5: Unified logging interface | Medium | ✅ DONE — core.Logger + SlogLogger + TestLogger |
-| **HIGH** | §12.6: Component lifecycle | High | Predictable start/stop, less signal-handling boilerplate |
+| **HIGH** | §12.6: Component lifecycle | High | ✅ DONE — core.Component + lifecycle.Manager + components/{http,gc,sighup,metrics} |
 | **MEDIUM** | §4.1-4.2: Comment cleanup | Low | ✅ DONE — §4.1 server-side pkg-doc trim landed; §4.2 inline-archaeology polish landed in commit f939bb8. Load-bearing “what” anchors preserved (§ 3.1 atomicity contract; § 3.2 wire-contract refs; AutoLinkEdges-only-reason paragraph; MemoryWorker Concurrency-bounded-by-semaphore + ctx-cancel clauses; build-inline-per-call rationale on cli/memory/*). |
 | **MEDIUM** | §5.1-5.3: Package organization | Medium-High | Structure clarity |
 | **MEDIUM** | §6: serve.go wiring | Medium | ~50 LOC eliminated |
@@ -1152,7 +1152,7 @@ cancellation propagation for free. Shutdown order is explicit and auditable.
 
 7. ~~**§1.4** — Add `NormalizeSlice[T]` and use everywhere~~ ✅ DONE
 
-8. **§12.6** — Component lifecycle (`Start`/`Stop`)
+8. ~~**§12.6** — Component lifecycle (`Start`/`Stop`)~~ ✅ DONE
    (replaces ad-hoc goroutine management in `server.Serve()`)
 
 9. ~~**§9** — AI client unification (`httpClient` helper)~~ ✅ DONE — 6 clients collapsed; ~23 net LOC; +7 contract tests
