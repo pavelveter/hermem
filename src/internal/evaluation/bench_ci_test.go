@@ -17,7 +17,7 @@ import (
 func TestAllDatasets_ProduceMeaningfulMetrics(t *testing.T) {
 	t.Run("Retrieval", func(t *testing.T) {
 		ds := DefaultRetrievalDataset()
-		runner := NewRunner(5)
+		runner := NewEvalRunner(5)
 		report, err := runner.Run(context.Background(), ds, PerfectRetrievalFn(ds.Qrels))
 		if err != nil {
 			t.Fatalf("retrieval runner: %v", err)
@@ -68,7 +68,7 @@ func TestAllDatasets_ProduceMeaningfulMetrics(t *testing.T) {
 			QueryIDs: queryIDs,
 			Qrels:    ds.Expected,
 		}
-		runner := NewRunner(5)
+		runner := NewEvalRunner(5)
 		report, err := runner.Run(context.Background(), retDataset, PerfectRetrievalFn(ds.Expected))
 		if err != nil {
 			t.Fatalf("memory runner: %v", err)

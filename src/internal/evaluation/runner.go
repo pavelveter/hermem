@@ -22,18 +22,18 @@ type Dataset struct {
 	QueryIDs []string
 }
 
-// Runner executes a retrieval function against a dataset and computes metrics.
-type Runner struct {
+// EvalRunner executes a retrieval function against a dataset and computes metrics.
+type EvalRunner struct {
 	K int // top-K cutoff for all metrics
 }
 
-// NewRunner creates a Runner with the given K.
-func NewRunner(k int) *Runner {
-	return &Runner{K: k}
+// NewEvalRunner creates an EvalRunner with the given K.
+func NewEvalRunner(k int) *EvalRunner {
+	return &EvalRunner{K: k}
 }
 
 // Run executes fn against dataset, computes all four metrics, and returns a Report.
-func (r *Runner) Run(ctx context.Context, dataset Dataset, fn RetrievalFn) (Report, error) {
+func (r *EvalRunner) Run(ctx context.Context, dataset Dataset, fn RetrievalFn) (Report, error) {
 	if r.K <= 0 {
 		r.K = 10
 	}

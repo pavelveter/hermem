@@ -24,12 +24,9 @@ func StoreEntityWithEmbedding(db *sql.DB, vi core.VectorIndex, schema core.Schem
 		}
 	}
 
-	status := entity.Status
-	if status == "" && schema.StatefulCategories[entity.Category] && len(schema.ValidStateOrder) > 0 {
-		status = schema.ValidStateOrder[0]
-	}
+	entity = entity.WithInitialStatus(schema)
 	_, err := db.Exec(`INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
-		entity.ID, entity.Category, entity.Content, embeddingBytes, NullString(status))
+		entity.ID, entity.Category, entity.Content, embeddingBytes, NullString(entity.Status))
 	if err != nil {
 		if hasEmbedding {
 			if rmErr := vi.Remove(context.Background(), []string{entity.ID}); rmErr != nil {

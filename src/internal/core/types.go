@@ -31,6 +31,17 @@ type Entity struct {
 	Priority       int        `json:"priority,omitempty"`
 }
 
+// WithInitialStatus returns a copy of e with Status set to the first
+// valid state from schema.ValidStateOrder when Status is empty.
+// This centralizes the "stateful entities start at the first valid state"
+// rule that was previously duplicated in store/entity.go and ingestion/worker.go.
+func (e Entity) WithInitialStatus(schema SchemaConfig) Entity {
+	if e.Status == "" && schema.StatefulCategories[e.Category] && len(schema.ValidStateOrder) > 0 {
+		e.Status = schema.ValidStateOrder[0]
+	}
+	return e
+}
+
 // Edge is a directed relation between two entities.
 type Edge struct {
 	SourceID     string  `json:"source_id"`

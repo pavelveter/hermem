@@ -15,7 +15,7 @@ func seedIntegrityCheckDB(t *testing.T, missingEmbeddings, danglingEdges int, ar
 	if err != nil {
 		t.Fatalf("temp: %v", err)
 	}
-	_ = f.Close() //nolint:errcheck // test teardown
+	_ = f.Close()
 	db, err := sql.Open("sqlite3", f.Name())
 	if err != nil {
 		t.Fatalf("open: %v", err)

@@ -140,7 +140,7 @@ func (s *Service) RunOnce(ctx context.Context, policy core.RetentionPolicy) (rep
 	// IMMEDIATE in that state. Issuing a no-op ROLLBACK first clears
 	// the broken state cheaply. Mirrors the pre-extraction algo/gc.go
 	// comment § 3.4 verbatim.
-	_, _ = s.db.ExecContext(ctx, "ROLLBACK") //nolint:errcheck // defensive: clears broken state on conn reuse; err from ROLLBACK on a non-tx conn is benign
+	_, _ = s.db.ExecContext(ctx, "ROLLBACK")
 	if berr := beginImmediate(ctx, s.db); berr != nil {
 		rep.Error = berr.Error()
 		err = fmt.Errorf("retention: begin immediate: %w", berr)
@@ -165,13 +165,13 @@ func (s *Service) RunOnce(ctx context.Context, policy core.RetentionPolicy) (rep
 	}
 	if errorOccurred {
 		rep.Error = "partial archive failure"
-		_ = rollbackCurrentTx(ctx, s.db) //nolint:errcheck // defensive: clears broken connection state, err is benign since call site has the BEGIN IMMEDIATE guard
+		_ = rollbackCurrentTx(ctx, s.db)
 		err = fmt.Errorf("retention: partial archive failure")
 		return
 	}
 	if cerr := commitCurrentTx(ctx, s.db); cerr != nil {
 		rep.Error = cerr.Error()
-		_ = rollbackCurrentTx(ctx, s.db) //nolint:errcheck // defensive: clears broken connection state, err is benign since call site has the BEGIN IMMEDIATE guard
+		_ = rollbackCurrentTx(ctx, s.db)
 		err = fmt.Errorf("retention: commit: %w", cerr)
 		return
 	}

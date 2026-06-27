@@ -85,7 +85,7 @@ func SaveCheckpoint(path string, ckpt IngestionCheckpoint) error {
 	if err := os.Rename(tmp, path); err != nil {
 		// Best-effort cleanup so an orphan .tmp.N doesn't accumulate
 		// across thousands of failed saves.
-		_ = os.Remove(tmp) //nolint:errcheck // tmp file cleanup: missing file on next run is tolerated
+		_ = os.Remove(tmp)
 		return fmt.Errorf("checkpoint: rename: %w", err)
 	}
 	return nil

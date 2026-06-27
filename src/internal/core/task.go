@@ -56,6 +56,42 @@ func ComposeFromTask(t Task) Entity {
 	return Compose(t.Fact, Evidence{}, Episode{}, t, Belief{})
 }
 
+// WithInitialStatus returns a copy of t with Status set to the first
+// valid state from schema.ValidStateOrder when Status is empty.
+// This centralizes the "stateful entities start at the first valid state"
+// rule that was previously duplicated in store/entity.go, ingestion/worker.go.
+func (t Task) WithInitialStatus(schema SchemaConfig) Task {
+	if t.Status == "" && schema.StatefulCategories[t.Category] && len(schema.ValidStateOrder) > 0 {
+		t.Status = schema.ValidStateOrder[0]
+	}
+	return t
+}
+
+// CanTransitionTo reports whether transitioning from t.Status to newStatus
+// is allowed by the schema's ValidStateOrder. Adjacent states (next or
+// previous in the order) are always allowed. Non-adjacent transitions
+// return false.
+func (t Task) CanTransitionTo(newStatus string, schema SchemaConfig) bool {
+	if !schema.ValidStates[newStatus] {
+		return false
+	}
+	if len(schema.ValidStateOrder) == 0 {
+		return true
+	}
+	for i, s := range schema.ValidStateOrder {
+		if s == t.Status {
+			if i > 0 && schema.ValidStateOrder[i-1] == newStatus {
+				return true
+			}
+			if i < len(schema.ValidStateOrder)-1 && schema.ValidStateOrder[i+1] == newStatus {
+				return true
+			}
+			return false
+		}
+	}
+	return false
+}
+
 // TaskClaimRequest is the request body for POST /task/claim-next.
 type TaskClaimRequest struct {
 	GoalID string `json:"goal_id,omitempty"`
