@@ -380,7 +380,7 @@ func VerifyMigrationIntegrity(db *sql.DB) ([]MigMismatch, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list applied migrations: %w", err)
 	}
-	mismatches := make([]MigMismatch, 0)
+	mismatches := make([]MigMismatch, 0, len(applied))
 	for name := range applied {
 		st, ok := stored[name]
 		if !ok {

@@ -463,7 +463,11 @@ func topKFromResult(res *core.RetrievalResult, k int, includeSeedContents bool) 
 		return nil
 	}
 	seen := make(map[string]bool)
-	all := make([]core.RetrievedFact, 0)
+	cap := len(res.WorldFacts) + len(res.Opinions) + len(res.Experiences) + len(res.Observations)
+	if includeSeedContents {
+		cap += len(res.SeedNodes)
+	}
+	all := make([]core.RetrievedFact, 0, cap)
 	add := func(content string, score float32) {
 		if content == "" || seen[content] {
 			return
@@ -533,7 +537,11 @@ func hopVectorSearch(ctx context.Context, vi core.VectorIndex, queryVecs [][]flo
 // hopMergeSeeds merges newly discovered IDs into the accumulated set and
 // returns the next round of seeds (only the truly new ones).
 func hopMergeSeeds(hits [][]string, accumulated map[string]bool) []string {
-	nextSeeds := make([]string, 0)
+	total := 0
+	for _, ids := range hits {
+		total += len(ids)
+	}
+	nextSeeds := make([]string, 0, total)
 	for _, ids := range hits {
 		for _, id := range ids {
 			if !accumulated[id] {

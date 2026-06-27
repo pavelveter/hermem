@@ -90,7 +90,7 @@ func (s *Service) DryRun(_ context.Context) ([]store.MigStatus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dry-run: %w", err)
 	}
-	pending := make([]store.MigStatus, 0)
+	pending := make([]store.MigStatus, 0, len(status))
 	for _, m := range status {
 		if !m.Applied {
 			pending = append(pending, m)
