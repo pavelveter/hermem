@@ -7,15 +7,15 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 ## §R1. Critical: Function Complexity
 
 ### §R1.1 Extract `DetectCommunities` (cognitive: 77 → target < 30)
-- [ ] Create `src/internal/graph/community/louvain.go`
-- [ ] Extract `loadGraph(db) (ids, adj, totalWeight, nodeIndex)` from lines 12-58
-- [ ] Extract `louvainPhase1(community, adj, nodeWeight, maxIterations)` from lines 60-120
-- [ ] Extract `computeModularity(adj, community, nodeWeight, totalWeight)` from lines 145-162
-- [ ] Extract `buildCommunities(commMembers, adj, nodeIndex, nodeWeight, totalWeight)` from lines 164-192
-- [ ] Add `context.Context` parameter to `DetectCommunities`
-- [ ] Update callers: `src/internal/server/graph/` and tests
+- [x] Create `src/internal/graph/community/louvain.go`
+- [x] Extract `loadGraph(db) (ids, adj, totalWeight, nodeIndex)` from lines 12-58
+- [x] Extract `louvainPhase1(community, adj, nodeWeight, maxIterations)` from lines 60-120
+- [x] Extract `computeModularity(adj, community, nodeWeight, totalWeight)` from lines 145-162
+- [x] Extract `buildCommunities(commMembers, adj, nodeIndex, nodeWeight, totalWeight)` from lines 164-192
+- [x] Add `context.Context` parameter to `DetectCommunities`
+- [x] Update callers: `src/internal/server/graph/` and tests
 - [ ] Add unit tests for each extracted function
-- [ ] Verify 971 tests pass
+- [x] Verify 971 tests pass
 
 ### §R1.2 Reduce `processOneItemOnce` complexity (cognitive: 19 → target < 15)
 - [ ] Extract `handleContradiction(existing, incoming) (action, archiveID)`
@@ -59,11 +59,11 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 ## §R3. High: Separation of Concerns
 
 ### §R3.1 Move `DetectCommunities` out of `store` package
-- [ ] Create `src/internal/graph/community/` package
-- [ ] Move Louvain algorithm there
-- [ ] `store` should only provide `LoadGraph(ctx, db) (AdjacencyList, error)`
-- [ ] Update imports in server handlers
-- [ ] Verify 971 tests pass
+- [x] Create `src/internal/graph/community/` package
+- [x] Move Louvain algorithm there
+- [x] `store` should only provide `LoadGraph(ctx, db) (AdjacencyList, error)`
+- [x] Update imports in server handlers
+- [x] Verify 971 tests pass
 
 ### §R3.2 Split `processOneItemOnce` concerns
 - [ ] Create `ingestion/contradiction_handler.go` for contradiction logic
