@@ -1055,3 +1055,77 @@ func itoa(i int) string {
 	}
 	return string(digits)
 }
+
+// --- Unit tests for extracted hop helpers ---
+
+func TestHopEmbedFacts(t *testing.T) {
+	emb := &stubEmbedder{vecs: map[string][]float32{
+		"hello": {0.1, 0.2, 0.3},
+		"world": {0.4, 0.5, 0.6},
+	}}
+	facts := []core.RetrievedFact{
+		{Content: "hello"},
+		{Content: "world"},
+	}
+	vecs, err := hopEmbedFacts(context.Background(), emb, facts, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("expected 2 vectors, got %d", len(vecs))
+	}
+	if vecs[0][0] != 0.1 || vecs[1][0] != 0.4 {
+		t.Errorf("unexpected vector values: %v", vecs)
+	}
+}
+
+func TestHopEmbedFacts_Error(t *testing.T) {
+	emb := &stubEmbedder{vecs: map[string][]float32{}}
+	facts := []core.RetrievedFact{
+		{Content: "missing"},
+	}
+	_, err := hopEmbedFacts(context.Background(), emb, facts, 1)
+	if err == nil {
+		t.Fatal("expected error for missing content")
+	}
+}
+
+func TestHopVectorSearch(t *testing.T) {
+	db := openTestDB(t)
+	vi := vector.NewInMemoryVectorIndex(db)
+	vecs := [][]float32{{0.1, 0.2, 0.3}}
+	hits, err := hopVectorSearch(context.Background(), vi, vecs, 3, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 result set, got %d", len(hits))
+	}
+}
+
+func TestHopMergeSeeds(t *testing.T) {
+	accumulated := map[string]bool{"a": true, "b": true}
+	hits := [][]string{
+		{"a", "c"},
+		{"b", "d"},
+	}
+	nextSeeds := hopMergeSeeds(hits, accumulated)
+	if len(nextSeeds) != 2 {
+		t.Fatalf("expected 2 new seeds, got %d: %v", len(nextSeeds), nextSeeds)
+	}
+	if !accumulated["c"] || !accumulated["d"] {
+		t.Error("c and d should be in accumulated")
+	}
+	if accumulated["a"] != true || accumulated["b"] != true {
+		t.Error("a and b should still be in accumulated")
+	}
+}
+
+func TestHopMergeSeeds_Empty(t *testing.T) {
+	accumulated := map[string]bool{"a": true}
+	hits := [][]string{{"a"}}
+	nextSeeds := hopMergeSeeds(hits, accumulated)
+	if len(nextSeeds) != 0 {
+		t.Fatalf("expected 0 new seeds, got %d: %v", len(nextSeeds), nextSeeds)
+	}
+}

@@ -390,8 +390,7 @@ func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder core.Embe
 			return nil, fmt.Errorf("multihop hop %d: %w", h, err)
 		}
 
-		// 2. Top-K facts across all buckets + seed contents, ordered by
-		//    RankingScore descending (Content ascending tiebreak).
+		// 2. Top-K facts across all buckets + seed contents.
 		topFacts := topKFromResult(res, TopKPerHop, h == 1)
 		if len(topFacts) == 0 {
 			break
@@ -402,13 +401,9 @@ func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder core.Embe
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		queryVecs := make([][]float32, 0, len(topFacts))
-		for _, f := range topFacts {
-			emb, err := embedder.Embed(ctx, f.Content)
-			if err != nil {
-				return nil, fmt.Errorf("multihop embed hop=%d content=%q: %w", h, f.Content, err)
-			}
-			queryVecs = append(queryVecs, emb)
+		queryVecs, err := hopEmbedFacts(ctx, embedder, topFacts, h)
+		if err != nil {
+			return nil, err
 		}
 
 		// 4. Vector search for topologically-distant neighbours.
@@ -416,21 +411,13 @@ func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder core.Embe
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		hits, err := vi.SearchBatch(ctx, queryVecs, VectorTopK)
+		hits, err := hopVectorSearch(ctx, vi, queryVecs, VectorTopK, h)
 		if err != nil {
-			return nil, fmt.Errorf("multihop vector search hop=%d: %w", h, err)
+			return nil, err
 		}
 
 		// 5. Merge new IDs (dedup against the accumulated set).
-		nextSeeds := make([]string, 0)
-		for _, ids := range hits {
-			for _, id := range ids {
-				if !accumulated[id] {
-					accumulated[id] = true
-					nextSeeds = append(nextSeeds, id)
-				}
-			}
-		}
+		nextSeeds := hopMergeSeeds(hits, accumulated)
 		if len(nextSeeds) == 0 {
 			break // no expansion possible; remaining hops would repeat
 		}
@@ -519,4 +506,41 @@ func topKFromResult(res *core.RetrievalResult, k int, includeSeedContents bool) 
 		all = all[:k]
 	}
 	return all
+}
+
+// hopEmbedFacts embeds each fact's content and returns the resulting vectors.
+func hopEmbedFacts(ctx context.Context, embedder core.Embedder, facts []core.RetrievedFact, hop int) ([][]float32, error) {
+	vecs := make([][]float32, 0, len(facts))
+	for _, f := range facts {
+		emb, err := embedder.Embed(ctx, f.Content)
+		if err != nil {
+			return nil, fmt.Errorf("multihop embed hop=%d content=%q: %w", hop, f.Content, err)
+		}
+		vecs = append(vecs, emb)
+	}
+	return vecs, nil
+}
+
+// hopVectorSearch queries the vector index for neighbours of the given query vectors.
+func hopVectorSearch(ctx context.Context, vi core.VectorIndex, queryVecs [][]float32, topK, hop int) ([][]string, error) {
+	hits, err := vi.SearchBatch(ctx, queryVecs, topK)
+	if err != nil {
+		return nil, fmt.Errorf("multihop vector search hop=%d: %w", hop, err)
+	}
+	return hits, nil
+}
+
+// hopMergeSeeds merges newly discovered IDs into the accumulated set and
+// returns the next round of seeds (only the truly new ones).
+func hopMergeSeeds(hits [][]string, accumulated map[string]bool) []string {
+	nextSeeds := make([]string, 0)
+	for _, ids := range hits {
+		for _, id := range ids {
+			if !accumulated[id] {
+				accumulated[id] = true
+				nextSeeds = append(nextSeeds, id)
+			}
+		}
+	}
+	return nextSeeds
 }

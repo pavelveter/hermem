@@ -36,9 +36,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 - [x] Fail-fast with clear error message if provider unreachable
 
 ### 2.3 Refactor MultiHopRetrieveContext
-- [ ] Extract `hopEmbedFacts()`, `hopVectorSearch()`, `hopMergeSeeds()`
-- [ ] Reduce cognitive complexity from 40 to < 20
-- [ ] Add unit tests for each extracted step
+- [x] Extract `hopEmbedFacts()`, `hopVectorSearch()`, `hopMergeSeeds()`
+- [x] Reduce cognitive complexity from 40 to < 20
+- [x] Add unit tests for each extracted step
 
 ---
 
