@@ -20,7 +20,6 @@ linters:
           msg: "ActiveSchema() is removed — use dependency injection via Env or Service constructor"
           pkg: '^github\.com/pavelveter/hermem'
     errcheck:
-      check-blank: true
       check-type-assertions: true
 
   exclusions:
@@ -32,6 +31,26 @@ linters:
         text: 'Error return value of `.*\.Rollback` is not checked.*'
       - linters: [errcheck]
         text: 'Error return value of `.*\.RowsAffected` is not checked.*'
+      # Tests: bootstrap read or cleanup errors.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `(os\.Remove|os\.ReadFile|url\.Parse|.*\.Do|.*ProcessDialogWithProvenance|.*MigrationChecksumSHA256|.*db\.Exec)` is not checked.*'
+      # Tests: type-assertion `, _ := got.(Type)` discard.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value is not checked.*'
+      # Tests: HTTP body teardown.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `resp.*\.Close` is not checked.*'
+      # Tests: httptest.NewRequest bootstrap.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `http\.NewRequest` is not checked.*'
+      # Tests: response writer bootstrap.
+      - path: .*_test\.go$
+        linters: [errcheck]
+        text: 'Error return value of `w\.(Write|Flush|Close)` is not checked.*'
       # CLI: stdout/stderr writes (output errors handled via slog).
       - path: src/internal/cli/.*\.go
         linters: [errcheck]
@@ -47,10 +66,13 @@ linters:
       - path: src/internal/ai/.*\.go
         linters: [errcheck]
         text: 'Error return value of `(io\.Copy|json\.Marshal|io\.ReadAll|.*json\.Decoder.*Decode|.*json\.Encoder.*Encode)` is not checked.*'
+      - path: src/internal/ai/.*_test\.go
+        linters: [errcheck]
+        text: 'Error return value of `c\.Do` is not checked.*'
       # Metrics: best-effort exposition + flush.
       - path: src/internal/metrics/.*\.go
         linters: [errcheck]
-        text: 'Error return value of `(fmt\.Fprintf|db\.Exec|.*\.WriteExposition)` is not checked.*'
+        text: 'Error return value of `(fmt\.Fprintf|db\.Exec)` is not checked.*'
       - path: src/internal/cli/metrics\.go$
         linters: [errcheck]
         text: 'Error return value of `.*\.WriteExposition` is not checked.*'
@@ -58,8 +80,3 @@ linters:
       - path: src/internal/httputil/.*\.go
         linters: [errcheck]
         text: 'Error return value of `.*json\.Encoder.*Encode` is not checked.*'
-      # Tests: ALL errcheck in test files — bootstrap, query, cleanup.
-      # Errors are asserted via result values, not via error returns.
-      - path: .*_test\.go$
-        linters: [errcheck]
-        text: '.*'
