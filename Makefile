@@ -7,13 +7,7 @@ LLAMA_LIBS := $(BIN_DIR)/llama-libs
 # Default build — works with or without local embedding binary
 build:
 	@if [ ! -d "$(BIN_DIR)" ]; then \
-		echo "→ bin/ not found, creating placeholder for go:embed"; \
-		mkdir -p $(LLAMA_LIBS); \
-		touch $(LLAMA_BINARY); \
-		echo "placeholder" > $(LLAMA_BINARY); \
-		for lib in libllama-common.0.dylib libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib; do \
-			touch $(LLAMA_LIBS)/$$lib; \
-		done; \
+		scripts/ensure-embed-placeholders.sh; \
 	fi
 	go build -o hermem ./src
 

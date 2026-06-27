@@ -17,9 +17,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 - [x] Ensure uniform cleanup and migration logic
 
 ### 1.3 Unify placeholder creation
-- [ ] Extract placeholder logic into `scripts/ensure-embed-placeholders.sh`
-- [ ] Update Makefile, pre-push hook, and CI to call the script
-- [ ] Single source of truth for dylib list
+- [x] Extract placeholder logic into `scripts/ensure-embed-placeholders.sh`
+- [x] Update Makefile, pre-push hook, and CI to call the script
+- [x] Single source of truth for dylib list
 
 ---
 
