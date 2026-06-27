@@ -59,15 +59,6 @@ func OrNullTime(t *time.Time) interface{} {
 
 // SetStatus updates a stateful entity's status column.
 func SetStatus(db *sql.DB, schema core.SchemaConfig, id, status string) error {
-	var category string
-	if err := db.QueryRow(`SELECT category FROM entities WHERE id = ?`, id).Scan(&category); err == sql.ErrNoRows {
-		return fmt.Errorf("stateful entity not found: %s", id)
-	} else if err != nil {
-		return fmt.Errorf("get entity category: %w", err)
-	}
-	if !schema.StatefulCategories[category] {
-		return fmt.Errorf("entity is not stateful: %s", id)
-	}
 	if !schema.ValidStates[status] {
 		return fmt.Errorf("invalid status: %s", status)
 	}
