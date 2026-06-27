@@ -35,5 +35,3 @@ func (n SummaryNode) AsEntity() core.Entity {
 		UpdatedAt: n.CompressedAt,
 	}
 }
-
-

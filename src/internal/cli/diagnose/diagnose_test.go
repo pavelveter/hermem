@@ -1,46 +1,9 @@
 package diagnose
 
 import (
-	"database/sql"
 	"encoding/json"
 	"testing"
-
-	"github.com/pavelveter/hermem/src/internal/store"
 )
-
-func openDB(t *testing.T) *sql.DB {
-	t.Helper()
-	db, err := store.MemDBRandom()
-	if err != nil {
-		t.Fatalf("MemDBRandom: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
-func seedEntity(t *testing.T, db *sql.DB, id, category, content string) {
-	t.Helper()
-	_, err := db.Exec(`INSERT INTO entities (id, category, content) VALUES (?, ?, ?)`, id, category, content)
-	if err != nil {
-		t.Fatalf("seed entity %s: %v", id, err)
-	}
-}
-
-func seedEntityWithEmb(t *testing.T, db *sql.DB, id, category, content string, emb []float32) {
-	t.Helper()
-	_, err := db.Exec(`INSERT INTO entities (id, category, content, embedding) VALUES (?, ?, ?, ?)`, id, category, content, store.EmbeddingToBytes(emb))
-	if err != nil {
-		t.Fatalf("seed entity %s: %v", id, err)
-	}
-}
-
-func seedEdge(t *testing.T, db *sql.DB, src, dst, rel string) {
-	t.Helper()
-	_, err := db.Exec(`INSERT OR IGNORE INTO edges (source_id, target_id, relation_type) VALUES (?, ?, ?)`, src, dst, rel)
-	if err != nil {
-		t.Fatalf("seed edge %s->%s: %v", src, dst, err)
-	}
-}
 
 // TestReport_JSON verifies that Report serializes to valid JSON.
 func TestReport_JSON(t *testing.T) {

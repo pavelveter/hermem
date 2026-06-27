@@ -116,8 +116,8 @@ func openIntegrationDB(t *testing.T) *sql.DB {
 // TestIntegration_FullPipeline runs the entire episodic subsystem
 // in sequence and verifies each stage's output feeds the next:
 //
-//   CreateEpisode → CreateEvent ×N → LinkMemory ×N → LinkTask ×N
-//   → ReconstructTimeline → SummarizeEpisode → Playback
+//	CreateEpisode → CreateEvent ×N → LinkMemory ×N → LinkTask ×N
+//	→ ReconstructTimeline → SummarizeEpisode → Playback
 //
 // One test exercises every Service in the package and asserts
 // the final playback reflects the events/memories/tasks that

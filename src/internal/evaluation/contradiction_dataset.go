@@ -2,11 +2,11 @@ package evaluation
 
 // ContradictionPair represents a labeled pair of texts for contradiction detection.
 type ContradictionPair struct {
-	ID          string
-	TextA       string
-	TextB       string
+	ID              string
+	TextA           string
+	TextB           string
 	IsContradiction bool
-	Confidence  float32 // human-annotated confidence (0..1)
+	Confidence      float32 // human-annotated confidence (0..1)
 }
 
 // ContradictionDataset is a labeled dataset for evaluating contradiction detectors.

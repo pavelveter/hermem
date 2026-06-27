@@ -39,8 +39,8 @@ type MemoryReport struct {
 
 // RetentionReport captures archive state.
 type RetentionReport struct {
-	ArchivedEntities int `json:"archived_entities"`
-	TotalEntities    int `json:"total_entities"`
+	ArchivedEntities int     `json:"archived_entities"`
+	TotalEntities    int     `json:"total_entities"`
 	ArchivedPct      float64 `json:"archived_pct"`
 }
 
@@ -52,6 +52,9 @@ type ErrorsReport struct {
 
 // JSON returns the report as indented JSON bytes.
 func (r *Report) JSON() []byte {
-	b, _ := json.MarshalIndent(r, "", "  ")
+	b, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return []byte("{}")
+	}
 	return b
 }

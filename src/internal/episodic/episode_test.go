@@ -101,9 +101,9 @@ func TestService_CreateEpisode_PreservesMetadata(t *testing.T) {
 	svc := New(db)
 
 	meta := map[string]any{
-		"source":  "test",
-		"count":   float64(42), // JSON round-trips numbers as float64
-		"active":  true,
+		"source": "test",
+		"count":  float64(42), // JSON round-trips numbers as float64
+		"active": true,
 	}
 	if err := svc.CreateEpisode(context.Background(), Episode{
 		ID:        "ep-2",

@@ -8,12 +8,12 @@ import (
 
 // RelationshipCounts holds support/refute counts for a belief.
 type RelationshipCounts struct {
-	BeliefID    int64
-	Support     int
-	Refute      int
-	Total       int
-	SupportPct  float64
-	RefutePct   float64
+	BeliefID   int64
+	Support    int
+	Refute     int
+	Total      int
+	SupportPct float64
+	RefutePct  float64
 }
 
 // GetSupportRefute counts evidence rows by polarity for one belief.

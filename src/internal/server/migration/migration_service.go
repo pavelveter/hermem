@@ -10,8 +10,8 @@ import (
 	"net/http"
 
 	"github.com/pavelveter/hermem/src/internal/httputil"
-	migrsvc "github.com/pavelveter/hermem/src/internal/migration"
 	"github.com/pavelveter/hermem/src/internal/metrics"
+	migrsvc "github.com/pavelveter/hermem/src/internal/migration"
 	"github.com/pavelveter/hermem/src/internal/server/shared"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 )

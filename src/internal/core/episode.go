@@ -35,4 +35,3 @@ func (e Entity) AsEpisode() Episode {
 		ExtractedFrom:  e.ExtractedFrom,
 	}
 }
-

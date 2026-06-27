@@ -37,4 +37,3 @@ func (e Entity) AsEvidence() Evidence {
 		SourceType: e.SourceType,
 	}
 }
-

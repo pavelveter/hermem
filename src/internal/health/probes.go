@@ -76,4 +76,3 @@ func ExtractorProbe(ex core.LLMExtractor) Check {
 		Severity: "warning",
 	}
 }
-

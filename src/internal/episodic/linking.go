@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -92,11 +91,11 @@ func (s *LinkService) UnlinkMemory(ctx context.Context, episodeID, entityID, rol
 // sites — ListMemoriesForEpisode returns []MemoryRef, not
 // []core.Entity.
 type MemoryRef struct {
-	ID         string `json:"id"`
-	Category   string `json:"category"`
-	Content    string `json:"content"`
-	Role       string `json:"role"`
-	LinkedAt   string `json:"linked_at"`
+	ID       string `json:"id"`
+	Category string `json:"category"`
+	Content  string `json:"content"`
+	Role     string `json:"role"`
+	LinkedAt string `json:"linked_at"`
 }
 
 // ListMemoriesForEpisode returns all entities linked to the given
@@ -133,11 +132,11 @@ func (s *LinkService) ListMemoriesForEpisode(ctx context.Context, episodeID stri
 // EpisodeRef is the slim projection of an episode returned by
 // ListEpisodesForMemory. Same projection discipline as MemoryRef.
 type EpisodeRef struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	Summary    string `json:"summary"`
-	Role       string `json:"role"`
-	LinkedAt   string `json:"linked_at"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Summary  string `json:"summary"`
+	Role     string `json:"role"`
+	LinkedAt string `json:"linked_at"`
 }
 
 // ListEpisodesForMemory returns all episodes linked to the given
@@ -169,11 +168,4 @@ func (s *LinkService) ListEpisodesForMemory(ctx context.Context, entityID string
 		return nil, fmt.Errorf("episodic: ListEpisodesForMemory rows: %w", err)
 	}
 	return core.NormalizeSlice(out), nil
-}
-
-// joinRoles concatenates a slice of roles with comma separators —
-// useful for error messages and debug logs. Kept package-private
-// because no caller outside linking.go needs it today.
-func joinRoles(roles []string) string {
-	return strings.Join(roles, ",")
 }

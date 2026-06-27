@@ -23,19 +23,19 @@ func DefaultRetrievalDataset() Dataset {
 		},
 		Qrels: map[string][]string{
 			// Single relevant doc
-			"q-go-preference":   {"doc-go"},
+			"q-go-preference": {"doc-go"},
 			// Multiple relevant docs
-			"q-multi-language":  {"doc-go", "doc-python", "doc-rust"},
+			"q-multi-language": {"doc-go", "doc-python", "doc-rust"},
 			// One relevant doc in a list
-			"q-os":              {"doc-linux"},
+			"q-os": {"doc-linux"},
 			// One relevant doc
-			"q-editor":         {"doc-vim"},
+			"q-editor": {"doc-vim"},
 			// No relevant docs — tests zero-recall handling
-			"q-empty":          {},
+			"q-empty": {},
 			// Exactly one match
-			"q-single-match":   {"doc-go"},
+			"q-single-match": {"doc-go"},
 			// Two relevant docs — tests partial recall
-			"q-two-matches":    {"doc-go", "doc-python"},
+			"q-two-matches": {"doc-go", "doc-python"},
 		},
 	}
 }

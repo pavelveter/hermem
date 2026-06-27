@@ -319,7 +319,7 @@ func TestCosineAgainstMetadata_HandlesFloat64Slice(t *testing.T) {
 		{"embedding": []float64{1.0, 0.0, 0.0}},
 		{"embedding": []any{float64(1.0), float64(0.0), float64(0.0)}},
 		{"embedding": []float32{1.0, 0.0, 0.0}}, // []float32 falls through to 0 (unsupported in fallback)
-		{}, // missing key
+		{},                                      // missing key
 	} {
 		got := cosineAgainstMetadata([]float32{1.0, 0.0, 0.0}, meta)
 		// First two should be 1.0; last two should be 0.

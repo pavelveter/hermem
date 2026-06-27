@@ -173,30 +173,30 @@ func TestHermemPrefixContract_CorrectCollectorTypes(t *testing.T) {
 		t.Fatalf("Gather: %v", err)
 	}
 	want := map[string]dto.MetricType{
-		"hermem_store_total": dto.MetricType_COUNTER,
-		"hermem_search_total": dto.MetricType_COUNTER,
-		"hermem_retrieve_total": dto.MetricType_COUNTER,
-		"hermem_ingest_total": dto.MetricType_COUNTER,
-		"hermem_query_total": dto.MetricType_COUNTER,
-		"hermem_edge_total": dto.MetricType_COUNTER,
-		"hermem_errors_total": dto.MetricType_COUNTER,
-		"hermem_schema_conflict_total": dto.MetricType_COUNTER,
-		"hermem_task_status_total": dto.MetricType_COUNTER,
-		"hermem_task_exec_total": dto.MetricType_COUNTER,
-		"hermem_task_list_total": dto.MetricType_COUNTER,
-		"hermem_task_show_total": dto.MetricType_COUNTER,
-		"hermem_task_dep_total": dto.MetricType_COUNTER,
-		"hermem_task_rollback_total": dto.MetricType_COUNTER,
-		"hermem_task_tree_total": dto.MetricType_COUNTER,
-		"hermem_task_create_total": dto.MetricType_COUNTER,
-		"hermem_retention_run_total": dto.MetricType_COUNTER,
-		"hermem_ingest_duration_seconds": dto.MetricType_HISTOGRAM,
-		"hermem_retrieval_duration_seconds": dto.MetricType_HISTOGRAM,
-		"hermem_contradiction_duration_seconds": dto.MetricType_HISTOGRAM,
-		"hermem_rerank_duration_seconds": dto.MetricType_HISTOGRAM,
-		"hermem_graph_components_total": dto.MetricType_COUNTER,
-		"hermem_graph_communities_total": dto.MetricType_COUNTER,
-		"hermem_graph_verify_total": dto.MetricType_COUNTER,
+		"hermem_store_total":                        dto.MetricType_COUNTER,
+		"hermem_search_total":                       dto.MetricType_COUNTER,
+		"hermem_retrieve_total":                     dto.MetricType_COUNTER,
+		"hermem_ingest_total":                       dto.MetricType_COUNTER,
+		"hermem_query_total":                        dto.MetricType_COUNTER,
+		"hermem_edge_total":                         dto.MetricType_COUNTER,
+		"hermem_errors_total":                       dto.MetricType_COUNTER,
+		"hermem_schema_conflict_total":              dto.MetricType_COUNTER,
+		"hermem_task_status_total":                  dto.MetricType_COUNTER,
+		"hermem_task_exec_total":                    dto.MetricType_COUNTER,
+		"hermem_task_list_total":                    dto.MetricType_COUNTER,
+		"hermem_task_show_total":                    dto.MetricType_COUNTER,
+		"hermem_task_dep_total":                     dto.MetricType_COUNTER,
+		"hermem_task_rollback_total":                dto.MetricType_COUNTER,
+		"hermem_task_tree_total":                    dto.MetricType_COUNTER,
+		"hermem_task_create_total":                  dto.MetricType_COUNTER,
+		"hermem_retention_run_total":                dto.MetricType_COUNTER,
+		"hermem_ingest_duration_seconds":            dto.MetricType_HISTOGRAM,
+		"hermem_retrieval_duration_seconds":         dto.MetricType_HISTOGRAM,
+		"hermem_contradiction_duration_seconds":     dto.MetricType_HISTOGRAM,
+		"hermem_rerank_duration_seconds":            dto.MetricType_HISTOGRAM,
+		"hermem_graph_components_total":             dto.MetricType_COUNTER,
+		"hermem_graph_communities_total":            dto.MetricType_COUNTER,
+		"hermem_graph_verify_total":                 dto.MetricType_COUNTER,
 		"hermem_graph_communities_duration_seconds": dto.MetricType_HISTOGRAM,
 	}
 	for _, mf := range mfs {
@@ -387,7 +387,6 @@ func TestHermemPrefixContract_KnownCategorySet(t *testing.T) {
 	}
 }
 
-
 // TestHermemPrefixContract_KnownModesSet enforces the bounded-value-set
 // contract on the hRetrieval `mode` label. Adding a new retrieval-side
 // endpoint MUST extend knownModes in metrics.go AND bump the `want`
@@ -425,7 +424,6 @@ func TestHermemPrefixContract_KnownModesSet(t *testing.T) {
 		}
 	}
 }
-
 
 // TestHermemPrefixContract_KnownDetectorsSet enforces the bounded-value-set
 // contract on the hContradiction `detector` label. Adding a new detector
@@ -467,7 +465,6 @@ func TestHermemPrefixContract_KnownDetectorsSet(t *testing.T) {
 		}
 	}
 }
-
 
 // TestHermemPrefixContract_KnownStrategiesSet enforces the bounded-value-set
 // contract on the hRerank `strategy` label. Adding a new rerank strategy

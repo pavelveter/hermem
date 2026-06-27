@@ -32,9 +32,9 @@ import (
 // tests the unwrap path too.
 func TestMapStatusSentinels(t *testing.T) {
 	cases := []struct {
-		err    error
-		wantS  int
-		wantM  string
+		err   error
+		wantS int
+		wantM string
 	}{
 		{nil, http.StatusOK, ""},
 		{core.ErrNotFound, http.StatusBadRequest, "not found"},

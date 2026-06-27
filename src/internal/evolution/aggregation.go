@@ -6,9 +6,9 @@ import "github.com/pavelveter/hermem/src/internal/memory/evidence"
 type Aggregator int
 
 const (
-	AggregatorSum  Aggregator = iota // sum of strengths (default)
-	AggregatorAvg                    // average of strengths
-	AggregatorMin                    // minimum strength
+	AggregatorSum Aggregator = iota // sum of strengths (default)
+	AggregatorAvg                   // average of strengths
+	AggregatorMin                   // minimum strength
 )
 
 // AggregateEvidence groups evidence by polarity and returns aggregated
