@@ -105,6 +105,46 @@ func (s *Service) Verify(_ context.Context) ([]store.MigMismatch, error) {
 	return core.NormalizeSlice(mismatches), nil
 }
 
+// Run applies every pending migration in lexicographic order and
+// returns the post-apply status snapshot.
+//
+// §4 audit closure: this is the daemon-LESS apply path that lets
+// K8s InitContainers, pre-deploy scripts, and operator invocations
+// advance schema outside the boot sequence. Replaces the pre-§4
+// apply-on-boot semantic — production must NOT apply migrations as
+// part of the boot gate because a long-running ALTER can hold the
+// start gate long enough for K8s liveness/readiness probes to kill
+// the pod (CrashLoopBackOff). Refusal-mode (auto_migrate=false) is
+// the new production default; this method is the operator's escape
+// hatch.
+//
+// On error, returns nil status + wrapped error mirroring the
+// underlying store.RunMigrations surface; the message wraps the
+// positional context (\"migration apply: <store-err>\") so callers
+// branch on the wrapped error message or on a sql.ErrNoRows check
+// inside the wrapped chain. The wrapped error is NOT exported as a
+// package-level sentinel — store.RunMigrations surfaces per-statement
+// SQL errors verbatim today, so a future sentinelisation pass would
+// belong in store/, not here.
+//
+// On success, every embedded migration file reports applied=true in
+// the returned slice; the caller can diff against a pre-apply
+// DryRun snapshot to print the headline \"applied N\" delta.
+//
+// Followup note: store.RunMigrations(s.db) does NOT accept a
+// context.Context today, so a SIGINT mid-Apply cannot abort a
+// long-running ALTER. Pre-§4 limitation; tracked as a separate
+// ticket — the §4 closure's intent is that migrations stop holding
+// the *boot* gate, but the apply path itself now owns the same
+// operator-cancellation window that previously held production
+// boots hostage.
+func (s *Service) Run(ctx context.Context) ([]store.MigStatus, error) {
+	if err := store.RunMigrations(s.db); err != nil {
+		return nil, fmt.Errorf("migration apply: %w", err)
+	}
+	return s.Status(ctx)
+}
+
 // DryRun returns the list of pending migrations (not yet applied)
 // with their SHA-256 checksums, without applying anything.
 func (s *Service) DryRun(_ context.Context) ([]store.MigStatus, error) {

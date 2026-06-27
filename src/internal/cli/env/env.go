@@ -170,7 +170,14 @@ func (e *Env) EnsureDB() error {
 		e.initErr = errors.New("env: nil Cfg — main.go must construct Env with a valid config before calling EnsureDB")
 		return e.initErr
 	}
-	db, err := store.InitDB(config.ResolveDBPath(e.Cfg.DBPath), e.Cfg.VectorDim)
+	// §4 audit closure: route InitDB through InitDBStrict with the
+	// configured auto_migrate gate. When [database] auto_migrate=true
+	// (dev / docker-compose default historically; opt-in now), InitDB
+	// auto-applies pending migrations. When false (production default
+	// after §4), refuses with store.ErrMigrationsPending / IntegrityBroken
+	// so K8s liveness probes don't kill pods mid-migration — operator
+	// runs `./hermem db migrate apply` separately.
+	db, err := store.InitDBStrict(config.ResolveDBPath(e.Cfg.DBPath), e.Cfg.VectorDim, e.Cfg.AutoMigrate)
 	if err != nil {
 		e.initErr = fmt.Errorf("init db: %w", err)
 		return e.initErr

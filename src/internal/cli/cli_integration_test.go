@@ -27,6 +27,13 @@ func testEnv(t *testing.T) *clienv.Env {
 		DBPath:    filepath.Join(dir, "hermem_test.db"),
 		Schema:    core.DefaultSchemaConfig(false),
 		VectorDim: 3,
+		// §4 audit closure: tests legitimately want the apply-on-open
+		// ergonomic so a freshly-created DB doesn't trip the
+		// production refusal-mode gate. Production refuses to boot
+		// against an out-of-date schema; tests opt-in to apply so the
+		// migration runner is exercised end-to-end without per-test
+		// `migrate apply` boilerplate.
+		AutoMigrate: true,
 	}
 	env := &clienv.Env{
 		// Ctx must be non-nil: env.DB.PingContext(env.Ctx) and every QueryContext
@@ -61,6 +68,10 @@ func testStatefulEnv(t *testing.T) *clienv.Env {
 		DBPath:    filepath.Join(dir, "hermem_stateful_test.db"),
 		Schema:    statefulSchema(),
 		VectorDim: 3,
+		// §4 audit closure: same opt-in as testEnv; explicitly opt-in
+		// to apply-on-open so the apply path is exercised end-to-end in
+		// every stateful test fixture.
+		AutoMigrate: true,
 	}
 	env := &clienv.Env{
 		// See testEnv; same Ctx + Embedder requirements apply.

@@ -3,6 +3,7 @@ package store
 import (
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -12,8 +13,56 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// InitDB opens (or creates) the SQLite database with hardened pragma settings.
+// ErrMigrationsPending is returned by InitDBStrict when autoMigrate=false
+// and the DB has pending migrations. Caller should either run
+// `./hermem db migrate apply` (recommended in a K8s InitContainer or
+// pre-deploy step) OR set `[database] auto_migrate = true` in hermem.ini
+// to opt in to apply-on-boot.
+//
+// errors.Is(err, ErrMigrationsPending) is the canonical branch for the
+// caller — distinguishes "schema needs upgrade" from "checksums don't
+// match" without parsing the error string.
+var ErrMigrationsPending = errors.New("schema has pending migrations; run `./hermem db migrate apply` or set `[database] auto_migrate = true` in hermem.ini")
+
+// ErrSchemaIntegrityBroken is returned by InitDBStrict when the stored
+// migration checksums diverge from the on-disk migration files. Distinct
+// from ErrMigrationsPending so callers can branch: a pending count = an
+// out-of-date build, a checksum mismatch = tampered-on-disk files or a
+// partial init-container copy.
+var ErrSchemaIntegrityBroken = errors.New("schema migration checksums diverge from on-disk files; verify migration files integrity")
+
+// InitDB opens (or creates) the SQLite database with hardened pragma
+// settings AND auto-applies pending migrations. Kept for backwards
+// compatibility with the pre-§4 codebase (tests, custom embeddings,
+// MemDB helpers — all of which benefit from the ergonomic
+// apply-on-open). New callers SHOULD use InitDBStrict with
+// autoMigrate=false so production inherits the §4 refusal semantic.
+//
+// §4 audit closure: production boot must NOT auto-apply migrations
+// (long-running migrations held up K8s liveness probes → CrashLoopBackOff
+// + half-migrated DBs). The refusal semantic lets the operator run
+// `./hermem db migrate apply` separately without blocking the daemon.
 func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
+	return InitDBStrict(dbPath, vectorDim, true)
+}
+
+// InitDBStrict opens the SQLite database and respects the autoMigrate
+// gate. When autoMigrate=false, asserts the schema is already at the
+// latest migration (zero pending + zero integrity mismatches) and
+// refuses to boot otherwise with ErrMigrationsPending or
+// ErrSchemaIntegrityBroken (callers can errors.Is to branch).
+//
+// Refusal-mode UX:
+//   - pending migrations > 0  → ErrMigrationsPending wrapped with
+//     "N pending (file_a, file_b, ...)" so the operator sees which
+//     migrations to apply.
+//   - integrity mismatches > 0 → ErrSchemaIntegrityBroken wrapped with
+//     "N mismatched (file_a, file_b, ...)" so the operator can inspect.
+//   - error message ends with the explicit hinto to run
+//     `./hermem db migrate apply` (or set auto_migrate=true).
+//
+// When autoMigrate=true, behaves identically to InitDB (auto-applies).
+func InitDBStrict(dbPath string, vectorDim int, autoMigrate bool) (*sql.DB, error) {
 	v := url.Values{}
 	v.Set("_journal_mode", "WAL")
 	v.Set("_busy_timeout", "5000")
@@ -77,9 +126,27 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("checksums: %w", err)
 	}
-	if err := RunMigrations(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrations: %w", err)
+
+	if autoMigrate {
+		if err := RunMigrations(db); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrations: %w", err)
+		}
+	} else {
+		// §4 refuse-mode: assert schema is at latest migration BEFORE
+		// continuing. The schema_migrations/checksums tables are already
+		// created above, so MigrationStatus + VerifyMigrationIntegrity
+		// can read them. failure modes:
+		//   - pending > 0 → operator must run `./hermem db migrate apply`
+		//   - mismatched > 0 → tampered/partial init-container — manual fix
+		// both paths short-circuit before migrateEntitiesFlexibleSchema
+		// (which sets up entity-table columns) and CheckMeta (which
+		// writes the embedding_dim row), so a refused boot doesn't
+		// partially mutate the DB even on meta-touching paths.
+		if err := assertSchemaUpToDate(db); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	if err := migrateEntitiesFlexibleSchema(db); err != nil {
 		db.Close()
@@ -95,6 +162,42 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+// assertSchemaUpToDate queries MigrationStatus + VerifyMigrationIntegrity.
+// Returns nil iff zero pending AND zero mismatches.
+//
+// On failure, wraps the appropriate sentinel with a deterministic,
+// sorted list of offender file names so two consecutive failures yield
+// the same error message (operator-friendly for alerting / log diffs).
+func assertSchemaUpToDate(db *sql.DB) error {
+	status, err := MigrationStatus(db)
+	if err != nil {
+		return fmt.Errorf("refusal-mode migration status: %w", err)
+	}
+	var pending []string
+	for _, m := range status {
+		if !m.Applied {
+			pending = append(pending, m.Name)
+		}
+	}
+	if len(pending) > 0 {
+		sort.Strings(pending)
+		return fmt.Errorf("%w: %d pending (%s)", ErrMigrationsPending, len(pending), strings.Join(pending, ", "))
+	}
+	mismatches, err := VerifyMigrationIntegrity(db)
+	if err != nil {
+		return fmt.Errorf("refusal-mode integrity check: %w", err)
+	}
+	if len(mismatches) > 0 {
+		names := make([]string, 0, len(mismatches))
+		for _, m := range mismatches {
+			names = append(names, m.Name)
+		}
+		sort.Strings(names)
+		return fmt.Errorf("%w: %d mismatched (%s)", ErrSchemaIntegrityBroken, len(mismatches), strings.Join(names, ", "))
+	}
+	return nil
 }
 
 // CheckMeta verifies that the stored embedding_dim matches the configured one.

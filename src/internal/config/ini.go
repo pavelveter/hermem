@@ -75,6 +75,17 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		return v
 	}
+	getBool := func(section, key string, defaultVal bool) bool {
+		k := keyIn(sec(section), key)
+		if k == nil {
+			return defaultVal
+		}
+		v, err := k.Bool()
+		if err != nil {
+			return defaultVal
+		}
+		return v
+	}
 	getList := func(section, key string) []string {
 		k := keyIn(sec(section), key)
 		if k == nil {
@@ -83,7 +94,7 @@ func LoadConfig(path string) (*Config, error) {
 		return ParseCSVList(k.String())
 	}
 
-	applyINIFields(cfg, getStr, getInt, getFloat32, getDuration, getList, sec, path)
+	applyINIFields(cfg, getStr, getInt, getFloat32, getDuration, getBool, getList, sec, path)
 
 	return cfg, nil
 }
@@ -112,6 +123,11 @@ func defaultConfig() *Config {
 		Ranking:         core.RankingWeight{},
 		RerankerTimeout: 30 * time.Second,
 		Schema:          core.DefaultSchemaConfig(false),
+		// §4 audit closure: production defaults to refusing to boot
+		// against an out-of-date schema; operator must run
+		// `./hermem db migrate apply` (recommended in a K8s InitContainer
+		// or pre-deploy step) OR set `auto_migrate = true` in [database].
+		AutoMigrate: false,
 	}
 }
 
@@ -120,11 +136,12 @@ type getStrFunc func(section, key string) (string, bool)
 type getIntFunc func(section, key string, defaultVal, minVal int) int
 type getFloat32Func func(section, key string, defaultVal float32) float32
 type getDurationFunc func(section, key string, defaultVal time.Duration) time.Duration
+type getBoolFunc func(section, key string, defaultVal bool) bool
 type getListFunc func(section, key string) []string
 type secFunc func(name string) *ini.Section
 
 // applyINIFields applies all INI field mappings to the config.
-func applyINIFields(cfg *Config, getStr getStrFunc, getInt getIntFunc, getFloat32 getFloat32Func, getDuration getDurationFunc, getList getListFunc, sec secFunc, path string) {
+func applyINIFields(cfg *Config, getStr getStrFunc, getInt getIntFunc, getFloat32 getFloat32Func, getDuration getDurationFunc, getBool getBoolFunc, getList getListFunc, sec secFunc, path string) {
 	// Embedder section
 	if v, ok := getStr("embedder", "provider"); ok {
 		cfg.Provider = strings.ToLower(v)
@@ -152,6 +169,8 @@ func applyINIFields(cfg *Config, getStr getStrFunc, getInt getIntFunc, getFloat3
 	if v, ok := getStr("database", "backend"); ok {
 		cfg.VectorBackend = strings.ToLower(v)
 	}
+	// auto_migrate (default false = production refusal-mode; opt-in for dev).
+	cfg.AutoMigrate = getBool("database", "auto_migrate", cfg.AutoMigrate)
 
 	// Server section
 	if v, ok := getStr("server", "api_key"); ok {

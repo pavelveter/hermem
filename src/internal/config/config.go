@@ -46,6 +46,13 @@ type Config struct {
 	RerankerKey        string
 	RerankerTimeout    time.Duration
 	Schema             core.SchemaConfig
+	// AutoMigrate gates InitDB's auto-apply-migrations path. When false
+	// (the production default after §4 closure), InitDB refuses to boot
+	// if the DB has pending migrations or integrity mismatches and
+	// points the operator at `./hermem db migrate apply` (or opt-in
+	// via set `auto_migrate = true` in hermem.ini for dev / docker).
+	// §4 audit closure — see docs/CHANGELOG.md.
+	AutoMigrate bool
 }
 
 // orDefault returns val if non-empty, else fallback.
