@@ -33,24 +33,13 @@ type EpisodeFilter struct {
 // Flat-package + stateless pattern, same as the rest of episodic.
 type RetrievalService struct {
 	db       *sql.DB
-	embedder Embedder // optional; nil disables semantic ranking
-}
-
-// Embedder is the subset of core.Embedder this package needs.
-// Defined locally to avoid an import cycle (episodic → core would
-// be fine, but core shouldn't depend on episodic; using a local
-// interface lets the embedder stay a thin shim).
-//
-// Any type that implements core.Embedder satisfies this implicitly
-// via method-set compatibility.
-type Embedder interface {
-	Embed(ctx context.Context, content string) ([]float32, error)
+	embedder core.Embedder // optional; nil disables semantic ranking
 }
 
 // NewRetrievalService constructs a RetrievalService. embedder may
 // be nil — callers that don't need semantic ranking can pass nil
 // and the service falls back to pure SQL filtering.
-func NewRetrievalService(db *sql.DB, embedder Embedder) *RetrievalService {
+func NewRetrievalService(db *sql.DB, embedder core.Embedder) *RetrievalService {
 	return &RetrievalService{db: db, embedder: embedder}
 }
 
