@@ -44,10 +44,10 @@ func TestE2E_StoreEdgeRetrieve(t *testing.T) {
 
 	e1 := core.Entity{ID: "e2e-a", Category: "world", Content: "alpha entity", Embedding: []float32{1, 0, 0}}
 	e2 := core.Entity{ID: "e2e-b", Category: "world", Content: "beta entity", Embedding: []float32{0, 1, 0}}
-	if err := store.StoreEntityWithEmbedding(db, vi, schema, e1); err != nil {
+	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, e1); err != nil {
 		t.Fatalf("store a: %v", err)
 	}
-	if err := store.StoreEntityWithEmbedding(db, vi, schema, e2); err != nil {
+	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, e2); err != nil {
 		t.Fatalf("store b: %v", err)
 	}
 
@@ -124,13 +124,13 @@ func TestE2E_TaskLifecycle(t *testing.T) {
 	task2 := core.Entity{ID: "e2e-task2", Category: "task", Content: "second task", Embedding: []float32{0, 1, 0}}
 	task3 := core.Entity{ID: "e2e-task3", Category: "task", Content: "third task", Embedding: []float32{0, 0, 1}}
 
-	if err := store.StoreEntityWithEmbedding(db, vi, schema, task1); err != nil {
+	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, task1); err != nil {
 		t.Fatalf("store task1: %v", err)
 	}
-	if err := store.StoreEntityWithEmbedding(db, vi, schema, task2); err != nil {
+	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, task2); err != nil {
 		t.Fatalf("store task2: %v", err)
 	}
-	if err := store.StoreEntityWithEmbedding(db, vi, schema, task3); err != nil {
+	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, task3); err != nil {
 		t.Fatalf("store task3: %v", err)
 	}
 
@@ -423,7 +423,7 @@ func TestE2E_AgentLoop(t *testing.T) {
 
 func storeEntity(t *testing.T, db *sql.DB, vi *vector.InMemoryVectorIndex, schema core.SchemaConfig, e core.Entity) {
 	t.Helper()
-	if err := store.StoreEntityWithEmbedding(db, vi, schema, e); err != nil {
+	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, e); err != nil {
 		t.Fatalf("store %s: %v", e.ID, err)
 	}
 }

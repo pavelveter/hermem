@@ -87,7 +87,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi core.VectorIndex,
 			if err != nil {
 				return fmt.Errorf("embed placeholder %q: %w", id, err)
 			}
-			if err := store.StoreEntityWithEmbedding(db, vi, core.DefaultSchemaConfig(false), core.Entity{
+			if err := store.StoreEntityWithEmbedding(ctx, db, vi, core.DefaultSchemaConfig(false), core.Entity{
 				ID: id, Category: "world", Content: id, Embedding: embedding,
 			}); err != nil {
 				return fmt.Errorf("store placeholder %q: %w", id, err)

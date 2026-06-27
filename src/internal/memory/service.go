@@ -89,7 +89,7 @@ func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema core.
 		Content:   req.Content,
 		Embedding: req.Embedding,
 	}
-	if err := store.StoreEntityWithEmbedding(s.db, s.vi, schema, entity); err != nil {
+	if err := store.StoreEntityWithEmbedding(ctx, s.db, s.vi, schema, entity); err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
 	return nil
