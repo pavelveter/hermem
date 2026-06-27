@@ -133,7 +133,7 @@ func PurgeEntity(ctx context.Context, db *sql.DB, vi core.VectorIndex, entityID 
 		return fmt.Errorf("purge entity: commit: %w", err)
 	}
 
-	// Step 4: best-effort vi.Remove. log but do not fail.
+	// Step 4: vi.Remove. log but do not fail.
 	if vi != nil {
 		if err := vi.Remove(ctx, []string{entityID}); err != nil {
 			// Log but don't roll back the DB delete; caller can rebuild

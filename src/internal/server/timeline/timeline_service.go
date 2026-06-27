@@ -83,12 +83,8 @@ func (h *HTTPService) HandleTimeline(w http.ResponseWriter, r *http.Request) err
 // Lives in the transport shell so the domain struct stays JSON-less
 // (single source of truth for wire encoding lives at the edge).
 //
-// Crucially: NO `omitempty` tags. Pre-PHASE-3.5 TimelineEntry in
-// src/internal/server/memory/memory_service.go had no omitempty
-// either — nil CreatedAt renders as `"created_at":null` and missing
-// provenance fields render as `"source":""`. Dropping omitempty keeps
-// the wire bytes identical so existing /timeline consumers don't see
-// keys disappear.
+// NO `omitempty` tags — nil CreatedAt renders as `"created_at":null`
+// and missing provenance fields render as `"source":""`.
 type timelineJSON struct {
 	ID             string     `json:"id"`
 	Category       string     `json:"category"`

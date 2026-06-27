@@ -68,11 +68,7 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 // categories, globally". Returns `[]Task{}` (not nil) on empty result
 // so the HTTP envelope emits `[]` not `null`.
 func (s *Service) Executable(ctx context.Context, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
-	tasks, err := store.GetExecutableTasks(ctx, s.db, schema, goalID)
-	if err != nil {
-		return nil, err
-	}
-	return core.NormalizeSlice(tasks), nil
+	return store.GetExecutableTasks(ctx, s.db, schema, goalID)
 }
 
 // ClaimNextTask atomically claims the highest-priority pending task for
@@ -87,11 +83,7 @@ func (s *Service) ClaimNextTask(ctx context.Context, goalID string, schema core.
 // list ALL stateful-category tasks globally. Nil→empty normalization
 // promotes the downstream envelope contract.
 func (s *Service) List(_ context.Context, status, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
-	tasks, err := store.ListTasks(s.db, schema, status, goalID)
-	if err != nil {
-		return nil, fmt.Errorf("list: %w", err)
-	}
-	return core.NormalizeSlice(tasks), nil
+	return store.ListTasks(s.db, schema, status, goalID)
 }
 
 // Show returns one task entity plus its blocked_by + recovers_via
@@ -123,9 +115,9 @@ func (s *Service) Dep(_ context.Context, sourceID, targetID, relationType string
 		return fmt.Errorf("dep: source_id and target_id required")
 	}
 	if add {
-		_ = store.AddEdge(s.db, sourceID, targetID, relationType, 1.0) //nolint:errcheck // best-effort: edge adjacencies may be stale on store error
+		_ = store.AddEdge(s.db, sourceID, targetID, relationType, 1.0) //nolint:errcheck // edge adjacencies may be stale on store error
 	} else {
-		_ = store.DeleteEdge(s.db, sourceID, targetID, relationType) //nolint:errcheck // cleanup is best-effort; on failure row stays for next sweep
+		_ = store.DeleteEdge(s.db, sourceID, targetID, relationType) //nolint:errcheck // on failure row stays for next sweep
 	}
 	return nil
 }
@@ -199,10 +191,10 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 	}
 	for _, cid := range contextIDs {
 		if cid != "" {
-			_ = store.AddEdge(s.db, id, cid, "related_to", 1.0) //nolint:errcheck // best-effort: edge adjacencies may be stale on store error
+			_ = store.AddEdge(s.db, id, cid, "related_to", 1.0) //nolint:errcheck // edge adjacencies may be stale on store error
 		}
 	}
-	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, id, emb) //nolint:errcheck // best-effort: shadow auto-link; not a Create failure
+	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, id, emb) //nolint:errcheck // shadow auto-link; not a Create failure
 	return id, nil
 }
 
@@ -213,9 +205,5 @@ func (s *Service) RecoveryPlan(_ context.Context, id string, schema core.SchemaC
 	if id == "" {
 		return nil, fmt.Errorf("recovery: id required")
 	}
-	tasks, err := store.GenerateRecoveryPlan(s.db, schema, id)
-	if err != nil {
-		return nil, fmt.Errorf("recovery: %w", err)
-	}
-	return core.NormalizeSlice(tasks), nil
+	return store.GenerateRecoveryPlan(s.db, schema, id)
 }

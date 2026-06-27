@@ -13,8 +13,6 @@
 // orchestrator.Service, migration.Service). Construction is one
 // pointer assignment so callers may instantiate fresh per request
 // or hold a borrowed long-lived pointer.
-//
-// POST-P1 SERVICE LAYER: created from TODO.md "[ ] Create GoalService" item.
 package goal
 
 import (
@@ -59,11 +57,7 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 // Nil→empty slice normalization promotes the downstream envelope
 // contract (JSON `[]` not `null`).
 func (s *Service) List(_ context.Context, status, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
-	goals, err := store.ListTasks(s.db, schema, status, goalID)
-	if err != nil {
-		return nil, fmt.Errorf("goal: List: %w", err)
-	}
-	return core.NormalizeSlice(goals), nil
+	return store.ListTasks(s.db, schema, status, goalID)
 }
 
 // Get returns a single goal entity by ID. Returns an error wrapping

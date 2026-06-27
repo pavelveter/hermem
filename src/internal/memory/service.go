@@ -108,6 +108,6 @@ func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schem
 	if err := s.Store(ctx, req, schema); err != nil {
 		return err
 	}
-	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, req.ID, req.Embedding) //nolint:errcheck // best-effort: shadow auto-link; not a Save failure
+	vector.AutoLinkEdges(ctx, s.db, s.vi, s.embedder, req.ID, req.Embedding) //nolint:errcheck // shadow auto-link; not a Save failure
 	return nil
 }

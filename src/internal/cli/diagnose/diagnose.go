@@ -33,7 +33,7 @@ Checks performed:
   - Vector index: id_map row count, embedding dimension consistency.
   - Memory subsystem: embedding density by category, beliefs table by status.
   - Retention state: archived entity count.
-  - Recent errors: best-effort tail (empty if no log access).
+  - Recent errors: tail (empty if no log access).
 
 Output is human-readable by default; pass --json for machine-readable JSON.`,
 		Args: cobra.NoArgs,

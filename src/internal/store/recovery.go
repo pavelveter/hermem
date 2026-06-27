@@ -13,7 +13,7 @@ import (
 // by explicitly checking visited[rollbackID] before each append — prevents
 // looping a→b→c→a from re-including the failed task `a` at the tail.
 func GenerateRecoveryPlan(db *sql.DB, schema core.SchemaConfig, failedTaskID string) ([]core.Task, error) {
-	var plan []core.Task
+	plan := make([]core.Task, 0)
 	visited := make(map[string]bool)
 	current := failedTaskID
 	for current != "" && !visited[current] {

@@ -66,7 +66,7 @@ func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize i
 	result.OldDim = oldDim
 
 	if modelName != "" {
-		s.db.ExecContext(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('model_name', ?)", modelName) //nolint:errcheck // best-effort: per-row state flag; error logged via slog.Warn
+		s.db.ExecContext(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('model_name', ?)", modelName) //nolint:errcheck // per-row state flag; error logged via slog.Warn
 	}
 
 	rows, err := s.db.QueryContext(ctx, `SELECT id, content FROM entities WHERE archived = 0 ORDER BY id`)
@@ -100,7 +100,7 @@ func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize i
 		}
 	}
 
-	s.db.ExecContext(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('embedding_dim', ?)", fmt.Sprintf("%d", configuredDim)) //nolint:errcheck // best-effort: per-row state flag; error logged via slog.Warn
+	s.db.ExecContext(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('embedding_dim', ?)", fmt.Sprintf("%d", configuredDim)) //nolint:errcheck // per-row state flag; error logged via slog.Warn
 	result.Elapsed = time.Since(start).Round(time.Millisecond).String()
 	return result, nil
 }
@@ -123,12 +123,12 @@ func (s *Service) processReEmbedBatch(ctx context.Context, items []embedWork, di
 		}
 		vector.NormalizeVector(emb)
 		blob := store.EmbeddingToBytes(emb)
-		if _, err := s.db.ExecContext(ctx, `UPDATE entities SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, blob, item.id); err != nil { //nolint:errcheck // best-effort: per-row state flag; error logged via slog.Warn
+		if _, err := s.db.ExecContext(ctx, `UPDATE entities SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, blob, item.id); err != nil { //nolint:errcheck // per-row state flag; error logged via slog.Warn
 			result.Failed++
 			slog.Warn("re-embed update", "id", item.id, "err", err)
 			continue
 		}
-		s.vi.Store(ctx, item.id, emb) //nolint:errcheck // best-effort: vector drift corrected on next sweep
+		s.vi.Store(ctx, item.id, emb) //nolint:errcheck // vector drift corrected on next sweep
 		result.ReEmbedded++
 	}
 	return nil

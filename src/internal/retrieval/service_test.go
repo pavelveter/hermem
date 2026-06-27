@@ -261,7 +261,7 @@ func TestService_Explain_OK(t *testing.T) {
 }
 
 func TestService_Explain_SwallowsEmbedError(t *testing.T) {
-	// Pre-PHASE-2.2 HTTP HandleQueryExplain and CLI newExplainCmd both
+	// HTTP HandleQueryExplain and CLI newExplainCmd both
 	// swallowed embed errors. PHASE 2.2 Service.Explain must preserve
 	// that contract — embed-propagation here would visibly regress
 	// /query/explain behaviour for users whose embedder transiently

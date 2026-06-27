@@ -21,7 +21,7 @@ func HashSchema(schema core.SchemaConfig) string {
 		"unblocking": schema.StateUnblocking,
 		"recovery":   schema.RelationRecovery,
 	}
-	b, _ := json.Marshal(rep) //nolint:errcheck // best-effort: serialization failure surfaces as gzip error upstream
+	b, _ := json.Marshal(rep) //nolint:errcheck // serialization failure surfaces as gzip error upstream
 	h := sha256.Sum256(b)
 	return fmt.Sprintf("%x", h[:8])
 }

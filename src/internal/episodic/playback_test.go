@@ -69,7 +69,7 @@ func openPlaybackTestDB(t *testing.T) *sql.DB {
 
 func TestPlaybackService_Playback_RequiresEpisodeID(t *testing.T) {
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	_, err := svc.Playback(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "episode_id required") {
 		t.Fatalf("want episode_id-required error, got %v", err)
@@ -81,7 +81,7 @@ func TestPlaybackService_Playback_EmptyEpisodeReturnsEmptySlice(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO episodes (id) VALUES ('ep-empty')`); err != nil {
 		t.Fatalf("seed episode: %v", err)
 	}
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	frames, err := svc.Playback(t.Context(), "ep-empty")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
@@ -95,15 +95,8 @@ func TestPlaybackService_Playback_EmptyEpisodeReturnsEmptySlice(t *testing.T) {
 }
 
 func TestPlaybackService_Playback_NonExistentEpisodeReturnsEmptyFrames(t *testing.T) {
-	// Episodes that don't exist (or have no events/links) are
-	// valid cases — ReconstructTimeline returns an empty slice,
-	// so Playback does too. No error is propagated because the
-	// chronological feed for a non-existent episode is trivially
-	// empty. Callers that need to distinguish "episode doesn't
-	// exist" from "episode has no frames" should call
-	// EpisodeService.GetEpisode first.
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	frames, err := svc.Playback(t.Context(), "missing")
 	if err != nil {
 		t.Fatalf("Playback on non-existent episode: %v", err)
@@ -139,7 +132,7 @@ func TestPlaybackService_Playback_ActorReflectsKindContext(t *testing.T) {
 	if err := NewTaskLinkService(db).LinkTask(t.Context(), "ep-1", "t1"); err != nil {
 		t.Fatalf("LinkTask: %v", err)
 	}
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	frames, err := svc.Playback(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
@@ -181,7 +174,7 @@ func TestPlaybackService_Playback_PreservesChronologicalOrder(t *testing.T) {
 			t.Fatalf("CreateEvent %d: %v", i, err)
 		}
 	}
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	frames, err := svc.Playback(t.Context(), "ep-1")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
@@ -196,8 +189,8 @@ func TestPlaybackService_Playback_PreservesChronologicalOrder(t *testing.T) {
 
 func TestPlaybackService_ExportJSON_RoundTripsFrames(t *testing.T) {
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
-	frames := []PlaybackFrame{
+	svc := newPlaybackService(db)
+	frames := []playbackFrame{
 		{Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC), Type: "event", Source: "e1", Actor: "message", Content: "hello"},
 		{Timestamp: time.Date(2026, 1, 1, 13, 0, 0, 0, time.UTC), Type: "memory", Source: "m1", Actor: "extracted", Content: "fact"},
 	}
@@ -205,7 +198,7 @@ func TestPlaybackService_ExportJSON_RoundTripsFrames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExportJSON: %v", err)
 	}
-	var back []PlaybackFrame
+	var back []playbackFrame
 	if err := json.Unmarshal(out, &back); err != nil {
 		t.Fatalf("unmarshal: %v\nbody: %s", err, out)
 	}
@@ -222,7 +215,7 @@ func TestPlaybackService_ExportJSON_RoundTripsFrames(t *testing.T) {
 
 func TestPlaybackService_ExportJSON_NilFramesProducesEmptyArray(t *testing.T) {
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	out, err := svc.ExportJSON(nil)
 	if err != nil {
 		t.Fatalf("ExportJSON(nil): %v", err)
@@ -234,8 +227,8 @@ func TestPlaybackService_ExportJSON_NilFramesProducesEmptyArray(t *testing.T) {
 
 func TestPlaybackService_ExportMarkdown_HeaderAndBullets(t *testing.T) {
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
-	frames := []PlaybackFrame{
+	svc := newPlaybackService(db)
+	frames := []playbackFrame{
 		{Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC), Type: "event", Source: "e1", Actor: "message", Content: "hello"},
 		{Timestamp: time.Date(2026, 1, 1, 13, 0, 0, 0, time.UTC), Type: "memory", Source: "m1", Actor: "referenced", Content: "a memory"},
 	}
@@ -253,7 +246,7 @@ func TestPlaybackService_ExportMarkdown_HeaderAndBullets(t *testing.T) {
 
 func TestPlaybackService_ExportMarkdown_EmptyFramesHeaderOnly(t *testing.T) {
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	md := svc.ExportMarkdown(nil)
 	if !strings.HasPrefix(md, "# Episode Timeline") {
 		t.Errorf("empty markdown: want header, got %q", md)
@@ -265,8 +258,8 @@ func TestPlaybackService_ExportMarkdown_EmptyFramesHeaderOnly(t *testing.T) {
 
 func TestPlaybackService_ExportText_OneLinePerFrame(t *testing.T) {
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
-	frames := []PlaybackFrame{
+	svc := newPlaybackService(db)
+	frames := []playbackFrame{
 		{Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC), Type: "event", Source: "e1", Actor: "message", Content: "hello"},
 	}
 	txt := svc.ExportText(frames)
@@ -277,7 +270,7 @@ func TestPlaybackService_ExportText_OneLinePerFrame(t *testing.T) {
 
 func TestPlaybackService_ExportText_EmptyFramesEmptyString(t *testing.T) {
 	db := openPlaybackTestDB(t)
-	svc := NewPlaybackService(db)
+	svc := newPlaybackService(db)
 	if got := svc.ExportText(nil); got != "" {
 		t.Errorf("empty text: want empty string, got %q", got)
 	}

@@ -44,7 +44,7 @@ type RetentionReport struct {
 	ArchivedPct      float64 `json:"archived_pct"`
 }
 
-// ErrorsReport captures recent error tail (best-effort).
+// ErrorsReport captures recent error tail.
 type ErrorsReport struct {
 	Entries []string `json:"entries,omitempty"`
 	Note    string   `json:"note,omitempty"`

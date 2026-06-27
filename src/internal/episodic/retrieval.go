@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/store"
 	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
@@ -62,37 +63,34 @@ func NewRetrievalService(db *sql.DB, embedder core.Embedder) *RetrievalService {
 func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, filter EpisodeFilter) ([]Episode, error) {
 	// Apply SQL filter. Compose the WHERE clause incrementally so
 	// callers that set only one field still get a correct query.
-	q := `SELECT id, session_id, conversation_id, title, summary, started_at_ms, ended_at_ms, metadata FROM episodes WHERE 1=1`
-	args := []any{}
+	base := `SELECT id, session_id, conversation_id, title, summary, started_at_ms, ended_at_ms, metadata FROM episodes`
+	q := store.NewSQLBuilder(base)
 	if filter.SessionID != "" {
-		q += " AND session_id = ?"
-		args = append(args, filter.SessionID)
+		q.Where("session_id = ?", filter.SessionID)
 	}
 	if !filter.TimeFrom.IsZero() {
-		q += " AND started_at_ms >= ?"
-		args = append(args, hermemtime.UnixMillisFromTime(filter.TimeFrom))
+		q.Where("started_at_ms >= ?", hermemtime.UnixMillisFromTime(filter.TimeFrom))
 	}
 	if !filter.TimeTo.IsZero() {
-		q += " AND started_at_ms <= ?"
-		args = append(args, hermemtime.UnixMillisFromTime(filter.TimeTo))
+		q.Where("started_at_ms <= ?", hermemtime.UnixMillisFromTime(filter.TimeTo))
 	}
 	if filter.HasSummary {
-		q += " AND summary != ''"
+		q.Where("summary != ''")
 	}
 	if filter.HasLinkedMemories {
-		q += ` AND EXISTS (SELECT 1 FROM episode_memories WHERE episode_id = episodes.id)`
+		q.Where(`EXISTS (SELECT 1 FROM episode_memories WHERE episode_id = episodes.id)`)
 	}
-	q += " ORDER BY started_at_ms DESC"
+	q.Where("1=1") // base condition
+	q.Order("started_at_ms DESC")
 	if filter.Limit > 0 {
-		q += " LIMIT ?"
-		args = append(args, filter.Limit)
+		q.Limit(filter.Limit)
 	}
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.db.QueryContext(ctx, q.Build(), q.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("episodic: SearchEpisodes query: %w", err)
 	}
 	defer rows.Close()
-	var out []Episode
+	out := make([]Episode, 0)
 	for rows.Next() {
 		ep, err := scanEpisodeRows(rows)
 		if err != nil {
@@ -103,7 +101,6 @@ func (s *RetrievalService) SearchEpisodes(ctx context.Context, query string, fil
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: SearchEpisodes rows: %w", err)
 	}
-	out = core.NormalizeSlice(out)
 
 	// Semantic rerank — only when caller asks AND an embedder is wired.
 	if s.embedder != nil && query != "" {

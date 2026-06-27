@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // LinkRole is the default role used when callers pass an empty
@@ -120,7 +118,7 @@ func (s *LinkService) ListMemoriesForEpisode(ctx context.Context, episodeID stri
 		return nil, fmt.Errorf("episodic: ListMemoriesForEpisode query: %w", err)
 	}
 	defer rows.Close()
-	var out []MemoryRef
+	out := make([]MemoryRef, 0)
 	for rows.Next() {
 		var m MemoryRef
 		if err := rows.Scan(&m.ID, &m.Category, &m.Content, &m.Role, &m.LinkedAt); err != nil {
@@ -131,7 +129,7 @@ func (s *LinkService) ListMemoriesForEpisode(ctx context.Context, episodeID stri
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListMemoriesForMemory rows: %w", err)
 	}
-	return core.NormalizeSlice(out), nil
+	return out, nil
 }
 
 // EpisodeRef is the slim projection of an episode returned by
@@ -162,7 +160,7 @@ func (s *LinkService) ListEpisodesForMemory(ctx context.Context, entityID string
 		return nil, fmt.Errorf("episodic: ListEpisodesForMemory query: %w", err)
 	}
 	defer rows.Close()
-	var out []EpisodeRef
+	out := make([]EpisodeRef, 0)
 	for rows.Next() {
 		var e EpisodeRef
 		if err := rows.Scan(&e.ID, &e.Title, &e.Summary, &e.Role, &e.LinkedAt); err != nil {
@@ -173,5 +171,5 @@ func (s *LinkService) ListEpisodesForMemory(ctx context.Context, entityID string
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListEpisodesForMemory rows: %w", err)
 	}
-	return core.NormalizeSlice(out), nil
+	return out, nil
 }

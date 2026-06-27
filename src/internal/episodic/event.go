@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
 
@@ -125,7 +124,7 @@ func (s *EventService) ListEventsByEpisode(ctx context.Context, episodeID string
 		return nil, fmt.Errorf("episodic: ListEventsByEpisode query: %w", err)
 	}
 	defer rows.Close()
-	var out []Event
+	out := make([]Event, 0)
 	for rows.Next() {
 		ev, err := scanEvent(rows)
 		if err != nil {
@@ -136,7 +135,7 @@ func (s *EventService) ListEventsByEpisode(ctx context.Context, episodeID string
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListEventsByEpisode rows: %w", err)
 	}
-	return core.NormalizeSlice(out), nil
+	return out, nil
 }
 
 // ListEventsByType returns events of the given type across all
@@ -159,7 +158,7 @@ func (s *EventService) ListEventsByType(ctx context.Context, eventType EventType
 		return nil, fmt.Errorf("episodic: ListEventsByType query: %w", err)
 	}
 	defer rows.Close()
-	var out []Event
+	out := make([]Event, 0)
 	for rows.Next() {
 		ev, err := scanEvent(rows)
 		if err != nil {
@@ -170,7 +169,7 @@ func (s *EventService) ListEventsByType(ctx context.Context, eventType EventType
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("episodic: ListEventsByType rows: %w", err)
 	}
-	return core.NormalizeSlice(out), nil
+	return out, nil
 }
 
 // scanEvent reads one event row from a *sql.Rows iterator. The

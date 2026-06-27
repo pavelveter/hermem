@@ -27,7 +27,7 @@ func TestNewService_Success(t *testing.T) {
 // TestService_List_EmptyDBReturnsEmptySlice pins the JSON envelope
 // contract: a fresh DB with no contradicts edges must return a
 // non-nil, 0-length slice so the downstream envelope emits `[]`
-// instead of `null`. Pre-PHASE-2.3 HTTP shell normalized this inline;
+	// instead of `null`. HTTP shell normalized this inline;
 // PHASE 2.3 pushes the normalization into the domain Service.
 func TestService_List_EmptyDBReturnsEmptySlice(t *testing.T) {
 	db, err := store.MemDB()
