@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pavelveter/hermem/src/internal/admin"
-	"github.com/pavelveter/hermem/src/internal/core"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 )
 
@@ -28,9 +27,9 @@ Use --dry-run to preview without changes.`,
 			if !ok || vi == nil {
 				return fmt.Errorf("vector index not available (VI is nil or does not implement admin.VectorIndex)")
 			}
-			em, ok := env.Embedder.(core.Embedder)
-			if !ok || em == nil {
-				return fmt.Errorf("embedder not available (Embedder is nil or does not implement core.Embedder)")
+			em := env.Embedder
+			if em == nil {
+				return fmt.Errorf("embedder not available")
 			}
 
 			var since time.Time

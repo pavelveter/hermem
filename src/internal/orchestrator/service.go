@@ -52,7 +52,6 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 		if len(tasks) == 0 {
 			break
 		}
-		backoff = initBackoff // reset after successful execution
 		for _, task := range tasks {
 			func() {
 				defer func() {
@@ -68,6 +67,7 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 				return fmt.Errorf("agent loop: set status %s: %w", task.ID, err)
 			}
 		}
+		backoff = initBackoff // reset after successful execution
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -75,9 +75,6 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 		}
 		if backoff < maxBackoff {
 			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
 		}
 	}
 	return nil
