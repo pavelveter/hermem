@@ -69,11 +69,7 @@ section "go build ./src/..."
 BIN_DIR="src/internal/ai/bin"
 if [ ! -d "$BIN_DIR" ]; then
     warn "bin/ not found — creating placeholder for go:embed"
-    mkdir -p "$BIN_DIR/llama-libs"
-    echo "placeholder" > "$BIN_DIR/llama-embedding"
-    for lib in libllama-common.0.dylib libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib; do
-        touch "$BIN_DIR/llama-libs/$lib"
-    done
+    scripts/ensure-embed-placeholders.sh
 fi
 go build ./src/...
 ok "go build"

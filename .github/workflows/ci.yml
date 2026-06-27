@@ -52,12 +52,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Create embedding placeholders
-        run: |
-          mkdir -p src/internal/ai/bin/llama-libs
-          echo "placeholder" > src/internal/ai/bin/llama-embedding
-          for lib in libllama-common.0.dylib libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib; do
-            touch src/internal/ai/bin/llama-libs/$lib
-          done
+        run: scripts/ensure-embed-placeholders.sh
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -78,12 +73,7 @@ jobs:
           cache: true
 
       - name: Create embedding placeholders
-        run: |
-          mkdir -p src/internal/ai/bin/llama-libs
-          echo "placeholder" > src/internal/ai/bin/llama-embedding
-          for lib in libllama-common.0.dylib libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib; do
-            touch src/internal/ai/bin/llama-libs/$lib
-          done
+        run: scripts/ensure-embed-placeholders.sh
 
       - name: Run tests
         run: go test -race -count=1 -timeout 10m ./...
@@ -130,12 +120,7 @@ jobs:
           cache: true
 
       - name: Create embedding placeholders
-        run: |
-          mkdir -p src/internal/ai/bin/llama-libs
-          echo "placeholder" > src/internal/ai/bin/llama-embedding
-          for lib in libllama-common.0.dylib libllama.0.dylib libggml.0.dylib libggml-cpu.0.dylib libggml-blas.0.dylib libggml-metal.0.dylib libggml-base.0.dylib; do
-            touch src/internal/ai/bin/llama-libs/$lib
-          done
+        run: scripts/ensure-embed-placeholders.sh
 
       - name: Install zig
         if: matrix.goos != 'darwin'
