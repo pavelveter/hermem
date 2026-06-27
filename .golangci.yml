@@ -62,13 +62,7 @@ linters:
       - path: src/internal/server/.*\.go
         linters: [errcheck]
         text: 'Error return value of `(io\.Copy|.*\.Encode|w\.Write)` is not checked.*'
-      # AI: retry-drain body + best-effort JSON encode/Decode.
-      - path: src/internal/ai/.*\.go
-        linters: [errcheck]
-        text: 'Error return value of `(io\.Copy|json\.Marshal|io\.ReadAll|.*json\.Decoder.*Decode|.*json\.Encoder.*Encode)` is not checked.*'
-      - path: src/internal/ai/.*_test\.go
-        linters: [errcheck]
-        text: 'Error return value of `c\.Do` is not checked.*'
+
       # Metrics: best-effort exposition + flush.
       - path: src/internal/metrics/.*\.go
         linters: [errcheck]

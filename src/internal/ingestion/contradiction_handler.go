@@ -14,9 +14,9 @@ import (
 type contradictionAction int
 
 const (
-	contradictionNone         contradictionAction = iota
-	contradictionKeepBoth                         // HIGH-CONF: keep both entities
-	contradictionPreferIncoming                    // LOW-CONF: archive existing, keep incoming
+	contradictionNone           contradictionAction = iota
+	contradictionKeepBoth                           // HIGH-CONF: keep both entities
+	contradictionPreferIncoming                     // LOW-CONF: archive existing, keep incoming
 )
 
 // handleContradiction detects contradictions between existing and incoming entities

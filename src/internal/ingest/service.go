@@ -81,7 +81,15 @@ func (s *Service) Ingest(ctx context.Context, dialog string, dedupThreshold floa
 	// Pass an explicit lexical detector so future wiring can substitute a
 	// detectors.NewCompositeDetector(detectors.NewLexicalDetector(), detectors.NewSemanticDetector())
 	// at this single call site without changing the worker contract.
-	w := ingestion.NewIngestionWorker(s.db, s.vi, s.extractor, s.embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
+	w := ingestion.NewIngestionWorkerFromConfig(ingestion.IngestionWorkerConfig{
+		DB:             s.db,
+		VectorIndex:    s.vi,
+		Extractor:      s.extractor,
+		Embedder:       s.embedder,
+		DedupThreshold: dedupThreshold,
+		Schema:         schema,
+		Detector:       detectors.NewLexicalDetector(),
+	})
 	if err := w.ProcessDialog(ctx, dialog); err != nil {
 		return fmt.Errorf("ingest: %w", err)
 	}
