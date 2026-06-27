@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Refactoring — Codebase Review Fixes
+
+- **refactor: extract DetectCommunities to `graph/community` package** — Moved Louvain algorithm from `store/community.go` to `graph/community/community.go`. Added `context.Context` to `LoadGraph`, `DetectCommunities`, `buildResult`, `computeGlobalModularity`, `computeCommunityModularity`. Deprecated wrapper in `store/community.go` for backward compatibility.
+- **refactor: introduce IngestionWorkerConfig and MemoryWorkerConfig** — Replaced 7-13 parameter functions with typed config structs. Added `NewIngestionWorkerFromConfig` and `MemoryWorkerResilientFromConfig`. Deprecated original constructors for backward compatibility.
+- **refactor: extract ServerDeps struct** — `NewServerFromDeps` replaces 14-parameter `NewServer`. Deprecated original constructor preserved.
+- **refactor: reduce processOneItemOnce complexity** — Extracted `handleContradiction`, `mergeExistingEntity`, `executeItemTx` functions. Created `processInput` named type to replace anonymous struct. Split contradiction handling to `contradiction_handler.go`.
+- **refactor: reduce LoadConfig cognitive complexity** — Extracted `defaultConfig()`, `applyINIFields()` with typed getter functions. Complexity reduced from 43 to target < 20.
+- **refactor: externalize hardcoded negation words** — Created `assets/negations_en.txt` and `negations_ru.txt` files. Used `go:embed` for embedding. Added `loadEmbeddings` and `parseLines` helpers.
+- **refactor: introduce RouteProvider registry** — Replaced 13 explicit Server fields with `[]providerSlot` registry pattern. Added `registerProviders` with registration functions. Server now has `provider []providerSlot` field.
+- **refactor: split processOneItemOnce concerns** — Created `contradiction_handler.go` for `IsIngestionContradiction` and `buildIsContradictingEdge`.
+- **chore: delete REFACTORING.md** — All refactoring tasks completed.
+
 ### Sprint 4 — Observability & Quality
 - **feat: structured logging for HTTP handlers** — Enhanced `SlogMiddleware` with `status_code`, `request_id`, `duration`, `method`, `path` fields. Uses `responseWriter` wrapper to capture status codes. All request logs now at Info level.
 - **ci: benchmark workflow** — New `.github/workflows/bench.yml` runs benchmarks on PRs and pushes, uses `benchstat` for analysis, posts results as PR comments, uploads raw results as artifacts.
