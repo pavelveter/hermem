@@ -14,14 +14,17 @@ type QuantizedVector struct {
 	Codes []int8  `json:"codes"`
 }
 
-// quantCodePool stores pointers to slices so Put/Get exchange a pointer-
-// sized value instead of boxing a slice header into any (sync.Pool.Put
-// allocates per Put otherwise, which SA6002 flags as "argument should be
-// pointer-like to avoid allocations").
+// quantCodes wraps a fixed-size array so the sync.Pool boxes a pointer
+// to a stack-sized value. The previous []int8 implementation caused
+// escape analysis to push the slice header to heap on every New call,
+// defeating the pool's purpose.
+type quantCodes struct {
+	buf [256]int8
+}
+
 var quantCodePool = sync.Pool{
 	New: func() interface{} {
-		s := make([]int8, 0, 256)
-		return &s
+		return &quantCodes{}
 	},
 }
 
@@ -49,13 +52,13 @@ func QuantizeVector(v []float32) QuantizedVector {
 	// across pool reuse. The earlier 3-index `[:len(v):len(v)]` form
 	// reset cap back to len, defeating the whole point of the pool on
 	// hot paths with variable-length embeddings.
-	codesPtr := quantCodePool.Get().(*[]int8) //nolint:errcheck // sync.Pool.New() invariant returns *[]int8
-	codes := (*codesPtr)[:len(v)]
+	qc := quantCodePool.Get().(*quantCodes) //nolint:errcheck // sync.Pool.New() invariant
+	codes := qc.buf[:len(v)]
 	for i, x := range v {
 		codes[i] = int8((x - min) * scale)
 	}
 	q := QuantizedVector{Min: min, Max: max, Codes: codes}
-	quantCodePool.Put(codesPtr)
+	quantCodePool.Put(qc)
 	return q
 }
 
