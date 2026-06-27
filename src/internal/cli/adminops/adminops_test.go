@@ -22,6 +22,13 @@ func testAdminEnv(t *testing.T) *cli.Env {
 		DBPath:    dir + "/hermem_test.db",
 		Schema:    core.DefaultSchemaConfig(false),
 		VectorDim: 3,
+		// §4 audit closure: tests legitimately want the apply-on-open
+		// ergonomic so a freshly-created DB doesn't trip the
+		// production refusal-mode gate. Production refuses to boot
+		// against an out-of-date schema; tests opt-in to apply so the
+		// migration runner is exercised end-to-end without per-test
+		// `migrate apply` boilerplate.
+		AutoMigrate: true,
 	}
 	env := &cli.Env{
 		Ctx:        t.Context(),
