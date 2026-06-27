@@ -9,7 +9,6 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -59,7 +58,10 @@ func newTemporalCmd(env *cli.Env) *cobra.Command {
 					opts.TimeTo = t.UTC()
 				}
 			}
-			result, err := retrieval.RetrieveContext(env.DB, seedIDs, opts)
+			if env.Retriever == nil {
+				return fmt.Errorf("retriever not available")
+			}
+			result, err := env.Retriever.RetrieveContext(env.Ctx, seedIDs, opts)
 			if err != nil {
 				return fmt.Errorf("temporal: %w", err)
 			}

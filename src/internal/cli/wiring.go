@@ -48,6 +48,7 @@ func wireAll(env *clienv.Env, refs *serverstate.Ref) *server.Server {
 	).WithMetrics(env.Metrics)
 	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
 	retSvc := retdomain.New(env.DB, env.VI, env.Embedder)
+	env.Retriever = retSvc
 	cndSvc := contradictdomain.New(env.DB)
 	taskSvc := taskdomain.New(env.DB, env.Embedder, env.VI)
 	graphSvc := graphdomain.New(env.DB)

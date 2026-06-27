@@ -101,6 +101,21 @@ func (s *Service) Retrieve(ctx context.Context, seedIDs []string, opts core.Retr
 	return result, nil
 }
 
+// RetrieveContext satisfies core.Retriever by delegating to the package-level
+// RetrieveContext function.
+func (s *Service) RetrieveContext(ctx context.Context, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+	return s.Retrieve(ctx, seedIDs, opts)
+}
+
+// MultiHopRetrieveContext satisfies core.Retriever by delegating to the
+// package-level MultiHopRetrieveContext function.
+func (s *Service) MultiHopRetrieveContext(ctx context.Context, vi core.VectorIndex, embedder core.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+	if opts.Ctx == nil {
+		opts.Ctx = ctx
+	}
+	return MultiHopRetrieveContext(s.db, vi, embedder, seedIDs, opts)
+}
+
 // Query embeds → runs vector search → uses top-K as seeds → graph
 // walks → returns a Markdown context blob (pkgretrieval.FormatContextMarkdown).
 //

@@ -45,9 +45,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 ## Sprint 3 — Architecture
 
 ### 3.1 Introduce Retriever interface
-- [ ] Define `core.Retriever` interface with `RetrieveContext` method
-- [ ] Move `walk.RetrieveContext` into `retrieval.Service` method
-- [ ] Update 24 callers to use interface instead of bare function
+- [x] Define `core.Retriever` interface with `RetrieveContext` method
+- [x] Move `walk.RetrieveContext` into `retrieval.Service` method
+- [x] Update 24 callers to use interface instead of bare function
 - [ ] Enable mock-based testing of retrieval pipeline
 
 ### 3.2 Split store package
