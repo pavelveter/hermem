@@ -1,7 +1,7 @@
 ---
 name: hermem
 description: Lightweight graph memory for Hermes — store facts, search by vector similarity, retrieve connected context
-version: 0.3.0
+version: 0.4.0
 metadata:
   hermes:
     tags: [memory, graph, vector-search, sqlite, task-state]
@@ -30,6 +30,8 @@ hermem serve [--port 8420]               HTTP server (SIGHUP reloads hermem.ini)
 hermem health                            DB ping (mirrors /health/ready, exit 1 on fail)
 hermem metrics                           Prometheus exposition
 hermem version                           ldflags build metadata
+hermem diagnose [--json]                 Self-diagnostics (schema, vectors, beliefs)
+hermem bench [--iterations N] [--json]   Latency percentiles for each subsystem
 
 # `hermem memory …` — knowledge CRUD + retrieval
 hermem memory store         < req.json   Upsert entity
@@ -71,7 +73,7 @@ hermem agent loop           < req.json   algo.AgentLoop on a goal_id
 
 # `hermem db …`
 hermem db migrate                       Migration status
-hermem db rollback                      Roll back most-recent (--target=N for any range)
+hermem db rollback [--target N]         Roll back most-recent (or to target version)
 hermem db dry-run                       List pending migrations without applying
 hermem db verify                        Checksum integrity check (per-migration SHA-256)
 hermem db schema                        Stored vs current schema fingerprint
@@ -79,15 +81,14 @@ hermem db schema                        Stored vs current schema fingerprint
 # `hermem admin …` — multi-key scoped API-key management
 hermem admin keys list                  List API keys (masked) + their scopes/labels
 hermem admin keys add [--scope S]       Generate a new key (32-byte CSPRNG → 64 hex)
-hermem admin keys rotate <id>           Issue a new value, retain label/scope
-hermem admin keys revoke <id>           Remove a key from hermem.ini
-hermem admin keys show <header>         Decode in-flight X-API-Key → label/scope
+hermem admin keys rotate <label>        Issue a new value, retain label/scope
+hermem admin keys revoke <label>        Remove a key from hermem.ini
 
-# `hermem adminops …` (registered as `ops`) — offline database diagnostics
-hermem adminops stats                   Node/edge counts, embedding coverage, last GC
-hermem adminops integrity [--fix-hint]  Exit 1 on integrity issues, list critical/warning
-hermem adminops vacuum                  VACUUM with progress + bytes-reclaimed report
-hermem adminops rebuild-index           [--category C] [--since D] [--only-archived] [--dry-run]
+# `hermem ops …` — offline database diagnostics
+hermem ops stats                        Node/edge counts, embedding coverage, last GC
+hermem ops integrity [--fail-on-warning] Exit 1 on integrity issues
+hermem ops vacuum                       VACUUM with progress + bytes-reclaimed report
+hermem ops rebuild-index                [--category C] [--since D] [--only-archived] [--dry-run]
 
 # `hermem profile …` — opt-in runtime profiling (default: disabled)
 hermem profile cpu     [N]              CPU profile (default 10s) → protobuf via stdout

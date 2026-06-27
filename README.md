@@ -64,6 +64,7 @@ Each entity belongs to a category defined in `[schema]`:
 - **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem memory quantize` (stdin) CLI
 - **Docker** — multi-stage build, non-root user
 - **Zero global mutable state** — all services use constructor injection; `ActiveSchema()` singleton removed; package-level variables audited and documented
+- **Local embedding** — `llama-embedding` binary + dylibs embedded via `go:embed`; no external dependencies for embedding (extracts to temp dir at runtime)
 
 ## CLI Commands
 
@@ -82,19 +83,20 @@ hermem serve [--port 8420]              HTTP server (SIGHUP reloads hermem.ini)
 hermem health                           DB ping (mirrors /health/ready, exit 1 on fail)
 hermem metrics                          Prometheus exposition
 hermem version                          ldflags build metadata
+hermem diagnose [--json]                Self-diagnostics (schema, vectors, beliefs)
+hermem bench [--iterations N] [--json]  Latency percentiles for each subsystem
 
 # API-key management (auth v2 — multi-key, scoped)
 hermem admin keys list                   List API keys (masked) + scopes/labels
 hermem admin keys add [--scope S]        Generate a new key (32-byte CSPRNG → 64 hex)
-hermem admin keys rotate <id>            Issue a new value, retain label/scope
-hermem admin keys revoke <id>            Remove a key from hermem.ini
-hermem admin keys show <header>          Decode in-flight X-API-Key → label/scope
+hermem admin keys rotate <label>         Issue a new value, retain label/scope
+hermem admin keys revoke <label>         Remove a key from hermem.ini
 
-# Offline ops (admin maintenance — registered as `adminops`)
-hermem adminops stats                    Node/edge counts, embedding coverage, last GC
-hermem adminops integrity [--fix-hint]   Exit 1 on integrity issues
-hermem adminops vacuum                   VACUUM with progress + bytes-reclaimed report
-hermem adminops rebuild-index            [--category C] [--since D] [--only-archived] [--dry-run]
+# Offline ops (admin maintenance)
+hermem ops stats                         Node/edge counts, embedding coverage, last GC
+hermem ops integrity [--fail-on-warning] Exit 1 on integrity issues
+hermem ops vacuum                        VACUUM with progress + bytes-reclaimed report
+hermem ops rebuild-index                 [--category C] [--since D] [--only-archived] [--dry-run]
 
 # Opt-in runtime profiling (off by default)
 hermem profile cpu      [N]              CPU profile (default 10s) → protobuf via stdout
@@ -237,7 +239,7 @@ hermem serve --port 8420
 
 - Go 1.21+
 - CGO enabled (required by `github.com/mattn/go-sqlite3` + Accelerate on darwin; pure-Go `modernc.org/sqlite` pending)
-- One of: Ollama running locally, or an OpenAI API key
+- One of: Ollama running locally, or an OpenAI API key, or a local GGUF model for embedding
 - (Optional) `sqlite-vec` — statically linked via `github.com/asg017/sqlite-vec-go-bindings/cgo` when `[database] backend = sqlite-vec`
 
 ## Configuration
@@ -259,6 +261,9 @@ url = http://localhost:11434
 model = nomic-embed-text
 key =                           # API key for OpenAI (not needed for Ollama)
 timeout = 30s                   # HTTP request timeout (Go duration)
+
+[embedding]
+; model_path = "./models/nomic-embed-text.gguf"  # local GGUF model (no Ollama/OpenAI needed)
 
 [extraction]
 ; provider, url, key — optional, fall back to [embedder] values
@@ -389,6 +394,7 @@ Every key is optional; missing keys fall back to the defaults below.
 | `embedder.url` | `http://localhost:11434` | API endpoint. |
 | `embedder.model` | `nomic-embed-text` | Embedding model name. |
 | `embedder.key` | *(empty)* | API key (OpenAI only). |
+| `embedding.model_path` | *(empty)* | Path to local GGUF model file. When set, uses embedded llama-embedding binary instead of Ollama/OpenAI. |
 | `extraction.provider` | `"ollama"` *(inherits embedder)* | LLM provider for extraction (`ollama` \| `openai`). |
 | `extraction.url` | *(inherits embedder)* | API endpoint for extraction. |
 | `extraction.key` | *(inherits embedder)* | API key for extraction (OpenAI). |
@@ -485,8 +491,9 @@ hermem/
 │   ├── CHANGELOG.md         ← Keep-a-Changelog format, semver
 │   ├── ROADMAP.md           ← (project planning docs)
 │   ├── VISION.md
-│   ├── SKILL.md             ← Hermes Agent skill manifest
 │   └── andrey-karpathy-skills.md
+├── skills/hermem/
+│   └── SKILL.md             ← Hermes Agent skill manifest
 ├── Dockerfile               ← Multi-stage build, non-root user
 ├── docker-compose.yml       ← Local stack orchestration
 ├── hermem.ini               ← Sample config (full key reference in §Configuration)
@@ -494,16 +501,16 @@ hermem/
 ├── go.mod / go.sum          ← Go module + lockfile (uses gopkg.in/ini.v1, spf13/cobra)
 ├── plugins/memory/hermem/   ← Hermes Agent provider plugin (Python)
 │   ├── __init__.py
-│   └── plugin.yaml          # 3 tools: hermem_search / hermem_store / hermem_query
+│   └── plugin.yaml          # 10 tools: search, store, query, edge, retrieve,
+│                            # timeline, contradictions, task create/status/list
 └── src/
     ├── main.go              ← Binary entry: loads config + DB + VI + Embedder +
     │                         Extractor + Reranker + BuildInfo, constructs
     │                         cli.Env, calls cli.NewRootCommand(env).Execute().
     │                         Builds SIGHUP reload loop on prod. server (hermem serve).
     └── internal/            ← Flat domain packages + CLI + server shells
-        ├── ai/              ← LLM client helpers (Ollama + OpenAI), extractor
-        │                      base, retrieval prompts (operator-facing
-        │                      construction in config.NewEmbedder/NewExtractor)
+        ├── ai/              ← LLM client helpers (Ollama + OpenAI + local),
+        │                      extractor base, retrieval prompts
         ├── cli/             ← Cobra command tree (~44 files; see CLI Commands
         │                      section above for the user-visible layout)
         │   ├── root.go      ← NewRootCommand wires top-level + 6 groups
@@ -521,21 +528,21 @@ hermem/
         │   └── db/          ← 4 subs: migrate/rollback/verify/schema
         ├── config/          ← INI loader (gopkg.in/ini.v1), Config.Validate,
         │                      schema fingerprinting, Reranker factory
-        ├── contradiction/   ← PHASE 3.1: contradiction detection domain Service
+        ├── contradiction/   ← Contradiction detection domain Service
         ├── core/            ← Public types: Entity, Edge, request/response
         │                      structs, SchemaConfig, RetrieveContextOptions
-        ├── edge/            ← PHASE 3.5: relation-edge domain Service
-        ├── graph/           ← PHASE 3.1: graph analytics domain Service
-        ├── health/          ← PHASE 3.7: health-probe domain Service (DB ping)
+        ├── edge/            ← Relation-edge domain Service
+        ├── graph/           ← Graph analytics domain Service
+        ├── health/          ← Health-probe domain Service (DB ping)
         ├── httputil/        ← HTTP strict-decode helpers (DecodeStrict,
         │                      WriteJSON, WriteError, MaxBodyBytes)
-        ├── ingest/          ← PHASE 3.4: synchronous dialog ingestion Service
+        ├── ingest/          ← Synchronous dialog ingestion Service
         ├── memory/          ← Memory CRUD domain Service (Store, edge, ingest)
         ├── metrics/         ← AsyncMetricsWorker + Prometheus exposition
-        ├── migration/       ← PHASE 3.2: schema migration domain Service
-        ├── orchestrator/    ← PHASE 3.10: AgentLoop + ExecutionPlan (CLI-only)
-        ├── reembed/         ← PHASE 3.6: background re-embedding Service
-        ├── retention/       ← PHASE 3.3: GC archival domain Service
+        ├── migration/       ← Schema migration domain Service
+        ├── orchestrator/    ← AgentLoop + ExecutionPlan (CLI-only)
+        ├── reembed/         ← Background re-embedding Service
+        ├── retention/       ← GC archival domain Service
         ├── retrieval/       ← Recursive CTE graph walk, ranking pipeline,
         │                      FormatContextMarkdown, contradiction helpers
         ├── server/          ← HTTP API server, split into per-domain sub-services
@@ -573,7 +580,7 @@ hermem/
         │       ├── 006_weighted_edges.sql
         │       └── 007_task_priorities.sql
         ├── task/            ← Task lifecycle domain Service
-        ├── timeline/        ← PHASE 3.5: time-ordered entity projection
+        ├── timeline/        ← Time-ordered entity projection
         └── vector/          ← VectorIndex + backends + cosine + quant
             ├── index.go     ← VectorIndex interface, embedding serialisation,
             │                  NormalizeVector at ingest

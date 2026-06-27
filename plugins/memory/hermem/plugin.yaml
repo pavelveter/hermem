@@ -1,5 +1,5 @@
 name: hermem
-version: 0.3.0
+version: 0.4.0
 description: Hermem memory provider — lightweight graph memory via HTTP/CLI; 10 agent tools (search, store, query, edge, retrieve, timeline, contradictions, task create/status/list).
 author: hermem
 memory_provider: true
