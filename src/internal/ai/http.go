@@ -109,3 +109,17 @@ func (c *httpClient) doPOST(ctx context.Context, path string, reqBody, dst any) 
 	}
 	return json.NewDecoder(resp.Body).Decode(dst)
 }
+
+// doGET issues a GET to baseURL+path and returns the response. On a non-2xx
+// response the body is fully read and returned as an error. Used by Ping
+// health checks.
+func (c *httpClient) doGET(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	return c.resilient.Do(ctx, req)
+}

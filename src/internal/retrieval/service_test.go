@@ -25,6 +25,10 @@ func (svcStubEmbedder) Embed(_ context.Context, content string) ([]float32, erro
 	return []float32{0.1, 0.2, 0.3}, nil
 }
 
+func (svcStubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // svcErrEmbedder returns a sentinel error on every Embed call so tests
 // can verify error-propagation paths (Search, Query) without reaching
 // into retry/multi-call loops.
@@ -32,6 +36,10 @@ type svcErrEmbedder struct{ msg string }
 
 func (e *svcErrEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	return nil, errors.New(e.msg)
+}
+
+func (e *svcErrEmbedder) Ping(_ context.Context) error {
+	return nil
 }
 
 // svcFixture wires a Service against an in-memory SQLite + in-memory VI

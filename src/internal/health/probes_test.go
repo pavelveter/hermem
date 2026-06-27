@@ -36,6 +36,10 @@ func (m *mockEmbedder) Embed(ctx context.Context, content string) ([]float32, er
 	return m.embedFunc(ctx, content)
 }
 
+func (m *mockEmbedder) Ping(ctx context.Context) error {
+	return nil
+}
+
 type mockExtractor struct {
 	extractFunc func(ctx context.Context, dialog string) (*core.ExtractionResult, error)
 }

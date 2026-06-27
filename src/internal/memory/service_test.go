@@ -24,6 +24,10 @@ func (stubEmbedder) Embed(_ context.Context, content string) ([]float32, error) 
 	return []float32{0.1, 0.2, 0.3}, nil
 }
 
+func (stubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // memFixture wires a memory.Service against an in-memory SQLite +
 // in-memory vector index. Mirrors the construction pattern used in
 // src/internal/server/integration_test.go::newTestFixture —

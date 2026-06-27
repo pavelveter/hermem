@@ -31,9 +31,9 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 - [ ] Or use SQLite WAL commit hook for notification
 
 ### 2.2 Embedder validation on startup
-- [ ] Add `Ping(ctx) error` method to Embedder interface
-- [ ] Validate embedder availability in `serve` command before accepting traffic
-- [ ] Fail-fast with clear error message if provider unreachable
+- [x] Add `Ping(ctx) error` method to Embedder interface
+- [x] Validate embedder availability in `serve` command before accepting traffic
+- [x] Fail-fast with clear error message if provider unreachable
 
 ### 2.3 Refactor MultiHopRetrieveContext
 - [ ] Extract `hopEmbedFacts()`, `hopVectorSearch()`, `hopMergeSeeds()`

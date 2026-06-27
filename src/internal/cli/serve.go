@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -41,6 +42,14 @@ func runServe(env *clienv.Env, port string) error {
 		"build_date", env.Build.BuildDate,
 		"git_commit", env.Build.GitCommit,
 	)
+
+	// Validate embedder availability before accepting traffic.
+	if env.Embedder != nil {
+		if err := env.Embedder.Ping(env.Ctx); err != nil {
+			return fmt.Errorf("embedder health check failed: %w", err)
+		}
+		slog.Info("embedder OK")
+	}
 
 	refs := serverstate.NewRef(buildState(env.Cfg, env.Reranker))
 	srv := wireAll(env, refs)

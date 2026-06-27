@@ -223,6 +223,10 @@ func (fixedEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0.1, 0.2, 0.3}, nil
 }
 
+func (fixedEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 func newSvcFixture(t *testing.T) *svcFixture {
 	t.Helper()
 	db, err := store.MemDB()

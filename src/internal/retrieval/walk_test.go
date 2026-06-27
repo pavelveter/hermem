@@ -259,6 +259,10 @@ func (s *stubEmbedder) Embed(_ context.Context, c string) ([]float32, error) {
 	return out, nil
 }
 
+func (s *stubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // MultiHopCount=1 → strict passthrough. vi/embedder may be nil.
 func TestMultiHopRetrieveContext_PassthroughOnCountOne(t *testing.T) {
 	db := openTestDB(t)

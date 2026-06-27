@@ -131,6 +131,10 @@ func (s *stubEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	return out, nil
 }
 
+func (s *stubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // fannedOp records one vi (vector-index) call in the OBSERVED ORDER
 // so the merge-doctrine test can assert that `Remove(incoming-id)` ran
 // strictly BEFORE `Store(existing-id)`. Stores and Removes append in

@@ -29,6 +29,10 @@ func (e *stubEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0.1, 0.2, 0.3}, nil
 }
 
+func (e *stubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // --- E2E Flow: Store → Edge → Retrieve ---
 
 func TestE2E_StoreEdgeRetrieve(t *testing.T) {

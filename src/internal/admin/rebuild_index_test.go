@@ -23,6 +23,10 @@ func (m *mockEmbedder) Embed(_ context.Context, content string) ([]float32, erro
 	return m.fixedVec, nil
 }
 
+func (m *mockEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 type mockVectorIndex struct {
 	storeCallCount  int64
 	removeCallCount int64

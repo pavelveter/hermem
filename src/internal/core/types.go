@@ -153,6 +153,9 @@ type VectorIndex interface {
 // Embedder converts text to a float32 embedding vector.
 type Embedder interface {
 	Embed(ctx context.Context, content string) ([]float32, error)
+	// Ping checks whether the embedding provider is reachable.
+	// Returns nil if healthy, error otherwise.
+	Ping(ctx context.Context) error
 }
 
 // Relation — a typed connection extracted from dialog.

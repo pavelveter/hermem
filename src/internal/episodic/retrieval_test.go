@@ -80,6 +80,10 @@ func (s *stubEmbedder) Embed(_ context.Context, content string) ([]float32, erro
 	return out, nil
 }
 
+func (s *stubEmbedder) Ping(_ context.Context) error {
+	return nil
+}
+
 // seedEpisodeWithMeta inserts an episode with explicit metadata
 // (must be valid JSON).
 func seedEpisodeWithMeta(t *testing.T, db *sql.DB, id, sessionID, summary string, startedAt time.Time, meta string) {
