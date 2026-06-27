@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRunner_ComputesAllMetrics(t *testing.T) {
+func TestEvalRunner_ComputesAllMetrics(t *testing.T) {
 	dataset := Dataset{
 		Name:     "test",
 		QueryIDs: []string{"q1", "q2"},
@@ -25,7 +25,7 @@ func TestRunner_ComputesAllMetrics(t *testing.T) {
 		return nil, nil
 	}
 
-	runner := NewRunner(5)
+	runner := NewEvalRunner(5)
 	report, err := runner.Run(t.Context(), dataset, fn)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -54,7 +54,7 @@ func TestRunner_ComputesAllMetrics(t *testing.T) {
 	}
 }
 
-func TestRunner_ContextCancelled(t *testing.T) {
+func TestEvalRunner_ContextCancelled(t *testing.T) {
 	dataset := Dataset{
 		Name:     "test",
 		QueryIDs: []string{"q1"},
@@ -69,7 +69,7 @@ func TestRunner_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
-	runner := NewRunner(5)
+	runner := NewEvalRunner(5)
 	_, err := runner.Run(ctx, dataset, fn)
 	if err == nil {
 		t.Fatal("expected error from cancelled context")

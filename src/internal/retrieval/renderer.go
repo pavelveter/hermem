@@ -97,9 +97,9 @@ func writeJSONBucket(sb *strings.Builder, key string, facts []core.RetrievedFact
 	if len(facts) == 0 {
 		return
 	}
-	sb.WriteString(fmt.Sprintf("  \"%s\": [\n", key))
+	fmt.Fprintf(sb, "  \"%s\": [\n", key)
 	for i, f := range facts {
-		sb.WriteString(fmt.Sprintf("    \"%s\"", f.Content))
+		fmt.Fprintf(sb, "    \"%s\"", f.Content)
 		if i < len(facts)-1 {
 			sb.WriteString(",")
 		}

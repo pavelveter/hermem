@@ -9,11 +9,11 @@ import (
 // Not an ORM — just helps compose WHERE clauses, ORDER BY, and LIMIT
 // without string concatenation.
 type SQLBuilder struct {
-	base  string
+	base   string
 	wheres []string
-	args  []interface{}
-	order string
-	limit int
+	args   []interface{}
+	order  string
+	limit  int
 }
 
 // NewSQLBuilder creates a new SQLBuilder with a base SELECT query.
@@ -75,7 +75,7 @@ func (b *SQLBuilder) Build() string {
 	}
 
 	if b.limit > 0 {
-		sb.WriteString(fmt.Sprintf(" LIMIT %d", b.limit))
+		fmt.Fprintf(&sb, " LIMIT %d", b.limit)
 	}
 
 	return sb.String()

@@ -77,7 +77,7 @@ func runServe(env *clienv.Env, port string) error {
 				continue
 			}
 			srv.ReloadState(buildState(newCfg, newCfg.NewReranker()))
-			_ = store.StoreSchemaFingerprint(env.DB, newCfg.Schema) //nolint:errcheck // SIGHUP reload: schema fingerprint is informational; load failure surfaces on the NEXT reload via slog.Error above
+			_ = store.StoreSchemaFingerprint(env.DB, newCfg.Schema)
 			slog.Info("SIGHUP applied")
 		}
 	})

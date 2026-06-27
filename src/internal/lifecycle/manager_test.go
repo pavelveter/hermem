@@ -23,8 +23,8 @@ func (m *mockComponent) Stop(_ context.Context) error {
 	return m.stopErr
 }
 
-func TestManager_StartStop(t *testing.T) {
-	mgr := NewManager()
+func TestLifecycleManager_StartStop(t *testing.T) {
+	mgr := NewLifecycleManager()
 	c1 := &mockComponent{}
 	c2 := &mockComponent{}
 
@@ -48,8 +48,8 @@ func TestManager_StartStop(t *testing.T) {
 	}
 }
 
-func TestManager_StartFailure(t *testing.T) {
-	mgr := NewManager()
+func TestLifecycleManager_StartFailure(t *testing.T) {
+	mgr := NewLifecycleManager()
 	c1 := &mockComponent{}
 	c2 := &mockComponent{startErr: errors.New("boom")}
 	c3 := &mockComponent{}
@@ -74,8 +74,8 @@ func TestManager_StartFailure(t *testing.T) {
 	}
 }
 
-func TestManager_StopCollectsErrors(t *testing.T) {
-	mgr := NewManager()
+func TestLifecycleManager_StopCollectsErrors(t *testing.T) {
+	mgr := NewLifecycleManager()
 	c1 := &mockComponent{stopErr: errors.New("err1")}
 	c2 := &mockComponent{stopErr: errors.New("err2")}
 

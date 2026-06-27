@@ -208,7 +208,7 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	}
 
 	// Build lifecycle manager with HTTP + GC components.
-	mgr := lifecycle.NewManager()
+	mgr := lifecycle.NewLifecycleManager()
 	mgr.Register(components.NewHTTPComponent(httpSrv))
 	gcSvc := retentiondomain.New(cfg.DB, cfg.VI)
 	mgr.Register(components.NewGCComponent(gcSvc, cfg.Retention))

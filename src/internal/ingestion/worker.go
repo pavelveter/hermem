@@ -63,12 +63,9 @@ func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, enti
 		ExtractedFrom:  prov.ExtractedFrom,
 	}
 	embBytes := store.EmbeddingToBytes(dbEntity.Embedding)
-	status := dbEntity.Status
-	if status == "" && w.schema.StatefulCategories[dbEntity.Category] && len(w.schema.ValidStateOrder) > 0 {
-		status = w.schema.ValidStateOrder[0]
-	}
+	dbEntity = dbEntity.WithInitialStatus(w.schema)
 	_, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status, confidence, source, source_type, created_at, conversation_id, message_id, extracted_from) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
-		dbEntity.ID, dbEntity.Category, dbEntity.Content, embBytes, store.NullString(status), dbEntity.Confidence, dbEntity.Source, dbEntity.SourceType, dbEntity.ConversationID, dbEntity.MessageID, dbEntity.ExtractedFrom)
+		dbEntity.ID, dbEntity.Category, dbEntity.Content, embBytes, store.NullString(dbEntity.Status), dbEntity.Confidence, dbEntity.Source, dbEntity.SourceType, dbEntity.ConversationID, dbEntity.MessageID, dbEntity.ExtractedFrom)
 	if err != nil {
 		return fmt.Errorf("insert entity: %w", err)
 	}
@@ -83,12 +80,9 @@ func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, enti
 // DB BLOB and post-commit vi.Store on the same vec form.
 func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e core.Entity) error {
 	embBytes := store.EmbeddingToBytes(e.Embedding)
-	status := e.Status
-	if status == "" && w.schema.StatefulCategories[e.Category] && len(w.schema.ValidStateOrder) > 0 {
-		status = w.schema.ValidStateOrder[0]
-	}
+	e = e.WithInitialStatus(w.schema)
 	_, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status, confidence, source, source_type, created_at, conversation_id, message_id, extracted_from) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.Category, e.Content, embBytes, store.NullString(status), e.Confidence, e.Source, e.SourceType, store.OrNullTime(e.CreatedAt), e.ConversationID, e.MessageID, e.ExtractedFrom)
+		e.ID, e.Category, e.Content, embBytes, store.NullString(e.Status), e.Confidence, e.Source, e.SourceType, store.OrNullTime(e.CreatedAt), e.ConversationID, e.MessageID, e.ExtractedFrom)
 	if err != nil {
 		return fmt.Errorf("merge entity: %w", err)
 	}

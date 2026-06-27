@@ -47,7 +47,7 @@ func (s *StatsCollector) Collect(ctx context.Context) (*Stats, error) {
 		mu.Unlock()
 	}
 
-	_ = s.db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize) //nolint:errcheck // PRAGMA read; missing page_size falls back to 4096 below
+	_ = s.db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize)
 	if pageSize == 0 {
 		pageSize = 4096
 	}
@@ -101,7 +101,7 @@ func (s *StatsCollector) Collect(ctx context.Context) (*Stats, error) {
 	}
 	stats.DBSizeBytes = pageCount * pageSize
 
-	_ = s.db.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'last_gc_run_at'").Scan(&stats.LastGCRunAt) //nolint:errcheck // missing key is fine; LastGCRunAt stays zero
+	_ = s.db.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'last_gc_run_at'").Scan(&stats.LastGCRunAt)
 	stats.LastGCArchived = 0
 
 	s.mu.Lock()
