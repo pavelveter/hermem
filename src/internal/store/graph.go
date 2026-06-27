@@ -129,7 +129,7 @@ func FindConnectedComponents(db *sql.DB, minSize int) ([]core.ConnectedComponent
 		adj[dst] = append(adj[dst], src)
 	}
 	visited := make(map[string]bool)
-	components := make([]core.ConnectedComponent, 0)
+	components := make([]core.ConnectedComponent, 0, len(allIDs))
 	for _, id := range allIDs {
 		if visited[id] {
 			continue

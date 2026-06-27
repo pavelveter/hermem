@@ -434,7 +434,7 @@ func MemoryWorkerResilientFromConfig(ctx context.Context, cfg MemoryWorkerConfig
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("MemoryWorkerResilient: ctx cancelled, draining", "worker_id", cfg.WorkerID)
+			slog.Debug("MemoryWorkerResilient: ctx cancelled, draining", "worker_id", cfg.WorkerID)
 			drain()
 			wg.Wait()
 			flushCheckpoint()
@@ -559,9 +559,9 @@ func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex,
 			}
 		}
 		if err := SavePendingQueue(pendingPath, pending); err != nil {
-			slog.Error("pending save save failed", "err", err, "path", pendingPath)
+			slog.Error("pending save failed", "err", err, "path", pendingPath)
 		} else if len(pending) > 0 {
-			slog.Info("MemoryWorkerResilient: drained to pending queue",
+			slog.Debug("MemoryWorkerResilient: drained to pending queue",
 				"count", len(pending), "path", pendingPath)
 		}
 	}
@@ -611,7 +611,7 @@ func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex,
 					WorkerID:           workerID,
 				}
 				if err := SaveCheckpoint(ckptPath, cur); err != nil {
-					slog.Error("per-msg checkpoint save failed",
+					slog.Warn("per-msg checkpoint save failed",
 						"err", err, "index", cur.LastCommittedIndex)
 				}
 			}()

@@ -90,7 +90,7 @@ func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
-	filtered := make([]core.Community, 0)
+	filtered := make([]core.Community, 0, len(all))
 	for _, c := range all {
 		if c.Size >= minSize {
 			filtered = append(filtered, c)

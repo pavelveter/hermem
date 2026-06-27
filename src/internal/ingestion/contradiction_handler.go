@@ -32,11 +32,11 @@ func (w *IngestionWorker) handleContradiction(existing *core.Entity, incoming co
 	}
 
 	if existingConf >= 0.7 {
-		slog.Info("contradiction detected, keeping both", "existing_id", existing.ID, "incoming_id", incoming.ID)
+		slog.Debug("contradiction detected, keeping both", "existing_id", existing.ID, "incoming_id", incoming.ID)
 		return contradictionKeepBoth, "", nil
 	}
 
-	slog.Info("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", incoming.ID)
+	slog.Debug("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", incoming.ID)
 	return contradictionPreferIncoming, existing.ID, []viOp{{kind: viOpRemove, id: existing.ID}}
 }
 
