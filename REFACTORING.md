@@ -66,10 +66,10 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 - [x] Verify 971 tests pass
 
 ### §R3.2 Split `processOneItemOnce` concerns
-- [ ] Create `ingestion/contradiction_handler.go` for contradiction logic
-- [ ] Create `ingestion/merge.go` for merge logic
-- [ ] Keep `dialog.go` for orchestration only
-- [ ] Verify 971 tests pass
+- [x] Create `ingestion/contradiction_handler.go` for contradiction logic
+- [x] Create `ingestion/merge.go` for merge logic
+- [x] Keep `dialog.go` for orchestration only
+- [x] Verify 971 tests pass
 
 ---
 
