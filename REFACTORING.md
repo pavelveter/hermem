@@ -78,6 +78,6 @@ Based on codebase-memory analysis (3587 nodes, 13914 edges, 37 packages).
 - [x] Replace scattered `slog.Info/Error` with structured calls
 
 ### 4.2 Benchmark CI integration
-- [ ] Add benchstat comparison to bench.yml workflow
-- [ ] Report regressions as PR comments
-- [ ] Track benchmark history over time
+- [x] Add benchstat comparison to bench.yml workflow
+- [x] Report regressions as PR comments
+- [x] Track benchmark history over time
