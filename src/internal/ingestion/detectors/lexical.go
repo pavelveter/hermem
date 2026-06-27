@@ -1,11 +1,18 @@
 package detectors
 
 import (
+	_ "embed"
 	"strings"
 
 	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
+
+//go:embed assets/negations_en.txt
+var negationsEN string
+
+//go:embed assets/negations_ru.txt
+var negationsRU string
 
 const lexicalReasonHit = "lexical negation flip"
 
@@ -30,14 +37,7 @@ func (d *LexicalDetector) Detect(existing, incoming core.Entity) contradiction.D
 func lexicalNegationFlip(a, b string) bool {
 	al := strings.ToLower(a)
 	bl := strings.ToLower(b)
-	negWords := []string{
-		"not", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "never", "no ", "hate", "dislike",
-		"разлюбил", "разлюбила", "разлюбили",
-		"ненавижу", "ненавидит", "ненавидел", "ненавидела",
-		"не ненавижу", "не ненавидит", "не ненавидел", "не ненавидела",
-		"не люблю", "не любит", "не любил", "не любила", "не любили",
-		"не хочу", "не хочет", "не хотел", "не хотела",
-	}
+	negWords := parseNegationWords(negationsEN + "\n" + negationsRU)
 	for _, n := range negWords {
 		if strings.Contains(al, n) != strings.Contains(bl, n) {
 			return true
@@ -51,6 +51,20 @@ func lexicalNegationFlip(a, b string) bool {
 		return true
 	}
 	return false
+}
+
+// parseNegationWords splits a newline-separated list of negation words,
+// trimming whitespace and dropping empties.
+func parseNegationWords(s string) []string {
+	lines := strings.Split(s, "\n")
+	words := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			words = append(words, line)
+		}
+	}
+	return words
 }
 
 var russianSuffixes = []string{

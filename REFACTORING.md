@@ -26,11 +26,11 @@ Post-Sprint-4 code review findings. All tasks derived from codebase analysis (3,
 - [x] Verify 971 tests pass
 
 ### §R1.3 Refactor `LoadConfig` repetitive pattern (cognitive: 43 → target < 20)
-- [ ] Define `type configMapping struct { section, key string; apply func(*Config, string) }`
-- [ ] Build mapping table for all ~40 fields
-- [ ] Replace sequential `if v, ok := getStr(...)` blocks with loop over mapping
-- [ ] Extract `applySchemaSection(cfg, section, path)` for schema handling
-- [ ] Verify 971 tests pass
+- [x] Define `type configMapping struct { section, key string; apply func(*Config, string) }`
+- [x] Build mapping table for all ~40 fields
+- [x] Replace sequential `if v, ok := getStr(...)` blocks with loop over mapping
+- [x] Extract `applySchemaSection(cfg, section, path)` for schema handling
+- [x] Verify 971 tests pass
 
 ---
 
