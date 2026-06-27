@@ -55,3 +55,13 @@ func (e Entity) AsTask() Task {
 func ComposeFromTask(t Task) Entity {
 	return Compose(t.Fact, Evidence{}, Episode{}, t, Belief{})
 }
+
+// TaskClaimRequest is the request body for POST /task/claim-next.
+type TaskClaimRequest struct {
+	GoalID string `json:"goal_id,omitempty"`
+}
+
+// TaskClaimResponse is the response body for POST /task/claim-next.
+type TaskClaimResponse struct {
+	Task *Task `json:"task,omitempty"`
+}

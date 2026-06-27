@@ -56,6 +56,7 @@ func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 		"/task/status":     s.HandleTaskStatus, // NOT wrapped — bespoke 422/400 mapping
 		"/task/executable": s.Wrap(s.HandleTaskExecutable),
 		"/task/next":       s.Wrap(s.HandleTaskExecutable), // alias
+		"/task/claim-next": s.Wrap(s.HandleTaskClaimNext),
 		"/task/list":       s.Wrap(s.HandleTaskList),
 		"/task/show":       s.Wrap(s.HandleTaskShow),
 		"/task/dep":        s.Wrap(s.HandleTaskDep),
@@ -117,6 +118,33 @@ func (s *HTTPService) HandleTaskExecutable(w http.ResponseWriter, r *http.Reques
 	}
 	s.Metrics.IncTaskExec()
 	httputil.WriteJSON(w, http.StatusOK, core.TaskExecutableResponse{Tasks: tasks})
+	return nil
+}
+
+// HandleTaskClaimNext — POST /task/claim-next.
+// Atomically claims the highest-priority pending task for processing.
+// Returns null task when no tasks are available.
+func (s *HTTPService) HandleTaskClaimNext(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodPost {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return nil
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
+	req, err := httputil.DecodeJSON[core.TaskClaimRequest](w, r)
+	if err != nil {
+		return err
+	}
+	state := s.Refs.Load()
+	task, err := s.Svc.ClaimNextTask(r.Context(), req.GoalID, state.Schema)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		httputil.WriteJSON(w, http.StatusOK, core.TaskClaimResponse{Task: nil})
+		return nil
+	}
+	s.Metrics.IncTaskExec()
+	httputil.WriteJSON(w, http.StatusOK, core.TaskClaimResponse{Task: task})
 	return nil
 }
 

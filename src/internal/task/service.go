@@ -75,6 +75,13 @@ func (s *Service) Executable(ctx context.Context, goalID string, schema core.Sch
 	return core.NormalizeSlice(tasks), nil
 }
 
+// ClaimNextTask atomically claims the highest-priority pending task for
+// processing. Returns nil (not an error) when no tasks are available.
+// Uses UPDATE...RETURNING to ensure exactly one worker claims each task.
+func (s *Service) ClaimNextTask(ctx context.Context, goalID string, schema core.SchemaConfig) (*core.Task, error) {
+	return store.ClaimNextTask(ctx, s.db, schema, goalID)
+}
+
 // List returns task entities filtered by status and/or goal subtree.
 // Empty filters mean "no filter on that dimension" — both empty =
 // list ALL stateful-category tasks globally. Nil→empty normalization
