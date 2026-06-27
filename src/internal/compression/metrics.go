@@ -11,15 +11,12 @@ type Metrics struct {
 	regenerateCount      atomic.Int64
 	compressedEntities   atomic.Int64
 	clusterCount         atomic.Int64
-	clusterSizes         []int64
 	totalDurationNS      atomic.Int64
 	recompressDurationNS atomic.Int64
 }
 
 func NewMetrics() *Metrics {
-	return &Metrics{
-		clusterSizes: make([]int64, 0),
-	}
+	return &Metrics{}
 }
 
 func (m *Metrics) IncCompress() {
