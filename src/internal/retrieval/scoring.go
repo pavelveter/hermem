@@ -87,6 +87,7 @@ func ComputeScoreComponents(node core.GraphNode, nodeVec []float32, queryEmbeddi
 // explain fields on GraphNode / RetrievedFact when Explain=true.
 func BuildScoreBreakdown(c ScoreComponents, w core.RankingWeight) *core.ScoreBreakdown {
 	final := compositeScore(w, c.Sim, c.Recency, c.Temporal, c.Centrality, c.Path)
+	weightsCopy := w
 	return &core.ScoreBreakdown{
 		VectorScore:     c.Sim,
 		RecencyScore:    c.Recency,
@@ -95,6 +96,7 @@ func BuildScoreBreakdown(c ScoreComponents, w core.RankingWeight) *core.ScoreBre
 		PathScore:       c.Path,
 		DepthPenalty:    w.DepthPenalty * c.Path,
 		FinalScore:      final,
+		Weights:         &weightsCopy,
 	}
 }
 
