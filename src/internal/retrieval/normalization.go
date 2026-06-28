@@ -53,7 +53,7 @@ func (l LogNormalizer) Normalize(raw float32) float32 {
 // Produces an S-shaped curve — useful when extreme values should be
 // compressed but the transition region should be sensitive.
 type SigmoidNormalizer struct {
-	Midpoint float32 // center of the S-curve
+	Midpoint  float32 // center of the S-curve
 	Steepness float32 // controls the slope
 }
 

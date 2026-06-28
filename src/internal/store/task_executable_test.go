@@ -55,7 +55,7 @@ type claimResult struct {
 //	    that saw no work before the M-th claim would have reduced
 //	    claimed count below M, failing invariant (1))
 //
-	// This scaffold was t.Skip-ed earlier in the session
+// This scaffold was t.Skip-ed earlier in the session
 // after a regression surfaced a 5-vs-4 placeholder/args mismatch in
 // ClaimNextTask's global branch (catArgs was discarded via `_` and
 // only the 4 fixed positions were populated, so mattn/go-sqlite3 refused

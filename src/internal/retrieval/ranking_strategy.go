@@ -16,7 +16,7 @@ type RankingStrategy interface {
 // DefaultRanking uses the canonical weights from RankingWeight.WithDefaults().
 type DefaultRanking struct{}
 
-func (DefaultRanking) Name() string      { return "default" }
+func (DefaultRanking) Name() string                { return "default" }
 func (DefaultRanking) Weights() core.RankingWeight { return core.RankingWeight{}.WithDefaults() }
 
 // FreshnessFirst prioritizes recency over vector similarity.

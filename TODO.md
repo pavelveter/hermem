@@ -1,60 +1,121 @@
-# Hermem Senior Review (Part 5 — Post-Refactoring) — TODO
+# TODO: Retrieval Engine Improvements
 
-## P0
+This document tracks architectural improvements that should be implemented after the current stabilization phase.
 
-- [x] **P0-47. RetrievalService is still an orchestration object**
-  The service has become cleaner, but it is still responsible for embedding, vector search, graph retrieval, formatting, and error policy. This means it still owns multiple reasons to change. Continue moving toward a true retrieval pipeline where orchestration becomes declarative rather than procedural. This is no longer urgent, but remains the largest architectural opportunity.
-  **Done**: Documented as long-term architectural goal. Current pipeline is already well-structured with 6 named stages.
+The goal is to improve flexibility, explainability and long-term maintainability without introducing unnecessary complexity.
 
-## P1
+---
 
-- [x] **P1-48. SQLBuilder API leaks abstraction**
-  `q.Where("1=1")` is an implementation artifact rather than business intent. The builder should understand the empty WHERE state itself. The caller should never have to care whether the first predicate exists. If "1=1" appears in user code, the abstraction is leaking.
-  **Done**: Updated SQLBuilder to automatically add WHERE when conditions are present. Removed "1=1" from episodic/retrieval.go and admin/rebuild_index.go.
+## P0 — Explainable Retrieval
 
-- [x] **P1-49. SearchEpisodes mixes querying and ranking**
-  The SQL portion retrieves candidates. The second half performs semantic reranking. Conceptually these are two separate stages. Split into `LoadCandidates()` → `SemanticRank()` → `Return`. This would make alternative ranking strategies significantly easier.
-  **Done**: Split SearchEpisodes into LoadCandidates (SQL-only retrieval) and SemanticRank (cosine similarity reranking). SearchEpisodes now composes these two stages.
+- [x] **Explain Mode** — Added `ScoreBreakdown` value object with all scoring components (`VectorScore`, `RecencyScore`, `TemporalScore`, `CentralityScore`, `PathScore`, `DepthPenalty`, `FinalScore`) and `Weights` for full explainability. Populate when `Explain=true`.
 
-- [x] **P1-50. Add property tests for core ranking logic**
-  Tests are becoming integration-heavy (good). Add smaller property tests for core ranking logic:
-  - Ranking is deterministic
-  - Duplicate IDs never appear
-  - Graph expansion never exceeds MaxDepth
-  - Score ordering is stable
-  These tests survive refactoring much longer than scenario-based tests.
-  **Done**: Added 10 property tests covering similarity bounds, recency bounds, centrality bounds, monotonicity, breakdown consistency, ordering stability, score bounds, and depth penalty behavior.
+---
 
-- [ ] **P1-51. Monitor constructor parameter growth**
-  Public constructors continue to grow (`New(...)`, `NewPlaybackService(...)`, `NewTimelineService(...)`, `NewRetrievalService(...)`). Nothing is wrong today. Monitor constructor growth — if parameter lists exceed 4–5 arguments, introduce dependency bundles or factories.
+## P0 — Contradiction Resolution Strategy
 
-## P2
+- [x] **Pluggable Interface** — Added `ContradictionResolver` interface with `Resolve(existing, incoming) ResolutionAction`. Ingest pipeline depends only on the interface.
+- [x] **ThresholdResolver** — Initial implementation replaces hardcoded 0.7 threshold with configurable value.
 
-- [x] **P2-52. Continue trimming implementation comments**
-  Comments are much better. Continue trimming comments that explain implementation history rather than API contracts. The code is now readable enough that several comments could disappear completely.
-  **Done**: Trimmed metrics/metrics.go package doc (removed commit-by-commit changelog, ~20 lines), simplified SQLBuilder comments. Focus on removing history comments while keeping API contract docs.
+---
 
-- [ ] **P2-53. Consider package-level sentinel errors**
-  Error prefixes are consistent (`retrieval:`, `episodic:`, `query:`). Eventually consider introducing package-level sentinel errors where callers need to branch on behavior instead of parsing strings. Not urgent.
+## P0 — Ranking Strategy
 
-- [ ] **P2-54. Optimize allocations after profiling**
-  Allocation style is excellent (`make([]Episode, 0)` instead of `var out []Episode`). If future profiling shows predictable result sizes, capacity hints could reduce allocations further. Don't optimize before measuring.
+- [x] **RankingStrategy Interface** — Added `RankingStrategy` interface with `Name()` and `Weights()`.
+- [x] **Built-in Policies** — `DefaultRanking`, `FreshnessFirst`, `SemanticSearch`, `GraphExpansion`.
+- [x] **Selection** — `RankingStrategyByName(name)` for config-driven policy selection.
 
-- [x] **P2-55. Test retrieval scoring invariants mathematically**
-  ScoreComponents tests are excellent. Go further — test invariants instead of examples:
-  - Similarity is always in [0,1]
-  - Recency never becomes negative
-  - Increasing similarity never decreases total score (holding other variables constant)
-  - BuildScoreBreakdown always matches ComputeCompositeScore
-  These tests specify the algorithm mathematically.
-  **Done**: Added mathematical invariant tests: CompositeScoreNeverExceedsSumOfWeights, DepthPenaltyNeverIncreasesScore. Combined with existing property tests, now have comprehensive coverage.
+---
 
-## Architecture
+## P1 — Exponential Depth Decay
 
-- [x] **P0-56. Reduce coupling between retrieval stages**
-  The codebase no longer looks "unfinished". The next level is reducing coupling between retrieval stages rather than adding functionality. The retrieval pipeline should gradually evolve toward independently testable stages with explicit inputs and outputs. This will make future work (hybrid search, rerankers, GraphRAG, caching, experimentation) dramatically easier.
-  **Done**: Split SearchEpisodes into LoadCandidates + SemanticRank. This is the first step toward independently testable stages. Continue this pattern for other pipeline stages.
+- [x] **Replace Linear Penalty** — Depth penalty changed from `w.DepthPenalty * pathWeight` (linear) to `2^(-depth)` (exponential). `DepthPenalty` field now represents `1 - decay`.
 
-# Overall Impression
+---
 
-This is a noticeable improvement over the previous revision. Most previous structural concerns have been addressed. The remaining observations are primarily about long-term evolution rather than correctness.
+## P1 — Adaptive Auto-Link Threshold
+
+- [x] **Infrastructure** — Added `AdaptiveLinkThreshold` function that scales threshold by local graph density. Disabled by default, ready for production metrics.
+
+---
+
+## P1 — Confidence Lifecycle
+
+- [x] **TTL-based Cleanup** — Added `ConfidenceLifecycle` service that archives low-confidence entities after configurable TTL.
+- [x] **Audit Logging** — `slog.Info`/`slog.Debug` logging for archived entities.
+- [x] **Optional** — Disabled by default via `ConfidenceLifecycleConfig.Enabled`.
+
+---
+
+## P1 — Property-Based Tests
+
+- [x] **Ranking Invariants** — Deterministic ordering, identical inputs → identical scores.
+- [x] **Scoring Invariants** — Similarity ∈ [0,1], recency ≥ 0, BuildScoreBreakdown matches compositeScore.
+- [x] **Graph Invariants** — MaxDepth respected, no duplicate IDs.
+
+---
+
+## P1 — Ranking Benchmarks
+
+- [x] **Per-Strategy Benchmarks** — `BenchmarkCompositeScore_Default/FreshnessFirst`, `BenchmarkComputeScoreComponents`, `BenchmarkBuildScoreBreakdown`, `BenchmarkDepthDecay`, `BenchmarkSortByScoreDesc_100`.
+
+---
+
+## P2 — Configuration Profiles
+
+- [x] **RetrievalProfile** — Named profiles bundling ranking weights + retrieval tuning: `Default`, `FreshnessFirst`, `SemanticSearch`, `GraphExpansion`, `ConversationMemory`.
+- [x] **Selection** — `RetrievalProfileByName(name)` for config-driven profile selection.
+
+---
+
+## P2 — Config Hot Reload
+
+- [x] **AtomicConfig** — `AtomicConfig` wrapper using `atomic.Pointer` for lock-free reads and atomic replacement. Methods: `Load()`, `Store()`, `Swap()`.
+
+---
+
+## P2 — Score Normalization Research
+
+- [x] **ScoreNormalizer Interface** — `Normalize(raw) float32` for [0,1] output.
+- [x] **Implementations** — `LinearNormalizer`, `LogNormalizer`, `SigmoidNormalizer`, `TanhNormalizer`.
+- [x] **Factory** — `NormalizerByName(name, min, max)` for config-driven selection.
+
+---
+
+## P2 — sqlite-vec Backend
+
+- [x] **SQLiteVecIndex** — Stub implementation of `core.VectorIndex` backed by sqlite-vec extension. Falls back to in-memory when unavailable.
+- [x] **Architecture** — `NewIndex(backend, db, dim)` supports "sqlite-vec" backend with graceful fallback.
+
+---
+
+## P3 — Retrieval Pipeline
+
+- [x] **Pipeline Type** — Explicit `Pipeline` struct with pluggable stages: `CandidateRetrievalStage`, `RankingStage`, `ContextAssemblyStage`, `RenderingStage`.
+- [x] **Default Implementations** — Delegate to existing package-level functions.
+- [x] **Composition** — `SetExpand()`, `SetRank()`, `SetAssembly()`, `SetRender()` for stage replacement.
+
+---
+
+## P3 — ADR Improvements
+
+- [x] **ADR-001** — Explainable Retrieval via ScoreBreakdown.
+- [x] **ADR-002** — Pluggable Contradiction Resolution Strategy.
+- [x] **ADR-003** — Ranking Strategy Interface.
+- [x] **ADR-004** — Exponential Depth Decay.
+
+Each ADR includes: Context, Decision, Alternatives Considered, Trade-offs Accepted.
+
+---
+
+## Explicitly Deferred
+
+The following ideas are intentionally postponed until profiling demonstrates a measurable need:
+
+- sync.Pool
+- worker-based ingest pipeline
+- replacing recursive CTE with Go BFS
+- aggressive interface extraction
+- premature micro-optimizations
+
+Hermem should remain simple, deterministic and maintainable until real workloads justify additional complexity.

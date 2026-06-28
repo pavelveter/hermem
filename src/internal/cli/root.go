@@ -78,7 +78,15 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		// `func(*cobra.Command, []string) error` — Go's method-value
 		// syntax binds the receiver but leaves the parameter list
 		// wrong, so an explicit lambda is needed.
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error { return env.EnsureDB() },
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// `hermem db migrate apply` must open the DB before
+			// pending migrations exist, so it bypasses the §4
+			// assertSchemaUpToDate gate.
+			if cmd.Name() == "apply" {
+				return env.EnsureDBForMigration()
+			}
+			return env.EnsureDB()
+		},
 		// PersistentPostRunE fires after the subcommand's RunE returns
 		// (success OR error path). It is the only place we can drive
 		// graceful shutdown because main.go's `defer env.Close()`

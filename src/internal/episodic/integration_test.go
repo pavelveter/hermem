@@ -224,7 +224,7 @@ func TestIntegration_FullPipeline(t *testing.T) {
 	}
 
 	// 8. Playback — should produce the same 6 frames in the same order.
-			pbSvc := newPlaybackService(db)
+	pbSvc := newPlaybackService(db)
 	frames, err := pbSvc.Playback(ctx, "ep-int")
 	if err != nil {
 		t.Fatalf("Playback: %v", err)
@@ -402,7 +402,7 @@ func TestIntegration_ParallelSubtests(t *testing.T) {
 				t.Errorf("LinkMemory %d: %v", i, err)
 				return
 			}
-	pbSvc := newPlaybackService(db)
+			pbSvc := newPlaybackService(db)
 			if _, err := pbSvc.Playback(ctx, "ep-par"); err != nil {
 				t.Errorf("Playback %d: %v", i, err)
 				return

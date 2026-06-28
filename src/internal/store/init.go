@@ -63,6 +63,14 @@ func InitDB(dbPath string, vectorDim int) (*sql.DB, error) {
 //
 // When autoMigrate=true, behaves identically to InitDB (auto-applies).
 func InitDBStrict(dbPath string, vectorDim int, autoMigrate bool) (*sql.DB, error) {
+	return InitDBStrictWithOptions(dbPath, vectorDim, autoMigrate, false)
+}
+
+// InitDBStrictWithOptions is like InitDBStrict but also accepts
+// skipSchemaCheck. When true, the §4 assertSchemaUpToDate gate is
+// bypassed — intended solely for `hermem db migrate apply` which must
+// open the DB before migrations are applied.
+func InitDBStrictWithOptions(dbPath string, vectorDim int, autoMigrate bool, skipSchemaCheck bool) (*sql.DB, error) {
 	v := url.Values{}
 	v.Set("_journal_mode", "WAL")
 	v.Set("_busy_timeout", "5000")
@@ -132,7 +140,7 @@ func InitDBStrict(dbPath string, vectorDim int, autoMigrate bool) (*sql.DB, erro
 			db.Close()
 			return nil, fmt.Errorf("migrations: %w", err)
 		}
-	} else {
+	} else if !skipSchemaCheck {
 		// §4 refuse-mode: assert schema is at latest migration BEFORE
 		// continuing. The schema_migrations/checksums tables are already
 		// created above, so MigrationStatus + VerifyMigrationIntegrity
