@@ -213,18 +213,20 @@ type LLMExtractor interface {
 //	PathScore       — cumulative edge weight from seed (path_weight)
 //	DepthPenalty    — PathScore × DepthPenalty weight, subtracted from sum
 //	FinalScore      — composite final ranking score (mirrors RankingScore)
+//	Weights         — the ranking weights used for this score (for full explainability)
 //
 // ScoreBreakdown is populated when RetrieveContextOptions.Explain is true
 // (or for /query/explain). Nil otherwise — the omitempty tag keeps the
 // /retrieve JSON envelope byte-compatible for non-explain callers.
 type ScoreBreakdown struct {
-	VectorScore     float32 `json:"vector_score"`
-	RecencyScore    float32 `json:"recency_score"`
-	TemporalScore   float32 `json:"temporal_score"`
-	CentralityScore float32 `json:"centrality_score"`
-	PathScore       float32 `json:"path_score"`
-	DepthPenalty    float32 `json:"depth_penalty"`
-	FinalScore      float32 `json:"final_score"`
+	VectorScore     float32        `json:"vector_score"`
+	RecencyScore    float32        `json:"recency_score"`
+	TemporalScore   float32        `json:"temporal_score"`
+	CentralityScore float32        `json:"centrality_score"`
+	PathScore       float32        `json:"path_score"`
+	DepthPenalty    float32        `json:"depth_penalty"`
+	FinalScore      float32        `json:"final_score"`
+	Weights         *RankingWeight `json:"weights,omitempty"`
 }
 
 // RetrievedFact is one re-ranked item in a category bucket.
