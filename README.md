@@ -1,32 +1,97 @@
 <p align="center">
-  <img src="banner.jpg" alt="Hermem" width="600">
+  <img src="banner.jpg" alt="Hermem" width="700">
 </p>
 
-# Hermem
+<h1 align="center">Hermem</h1>
 
-A lightweight, single-binary graph memory system for LLM agents. Stores facts as a directed graph in SQLite with vector embeddings for semantic retrieval.
+<p align="center">
+Persistent graph memory for LLM agents.<br>
+SQLite. Embeddings. Graph traversal. One binary.
+</p>
 
-**Use case:** Give your agent persistent memory across sessions — it remembers what it learned, who you are, what worked, and what didn't.
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go">
+  <img src="https://img.shields.io/badge/SQLite-Graph%20Storage-003B57" alt="SQLite">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  <img src="https://img.shields.io/github/actions/workflow/status/pavelveter/hermem/ci.yml" alt="Build">
+</p>
 
-## Architecture
+---
+
+> **LLMs know almost everything. They just have the memory span of a goldfish.**
+>
+> Hermem gives AI agents something they've been missing since day one:
+> **persistent, searchable, structured memory.**
+
+Modern language models are stateless. Every conversation starts from zero. Every session forgets who you are. Every brilliant insight disappears forever once the context window scrolls away. Most AI applications solve this by sending bigger prompts. Some solve it by adding a vector database. Others invent five microservices, two queues, a cache layer, Kubernetes, and a distributed existential crisis. Hermem takes a different approach. It continuously extracts knowledge from conversations, stores it as a graph, enriches it with vector embeddings, tracks provenance, detects contradictions, understands temporal relationships, and retrieves only the information an LLM actually needs. No prompt archaeology. No copy-pasting previous conversations. No "please remember this."
+
+---
+
+# What is Hermem?
+
+Hermem is a **graph-native long-term memory engine** for AI agents. Instead of remembering conversations, it remembers **knowledge**. Instead of storing documents, it stores **entities** connected by typed relationships. Instead of retrieving random text chunks, it retrieves **connected ideas**. Think of it as somewhere between
+
+- Neo4j
+- a vector database
+- SQLite
+- an episodic memory system
+- a task planner
+- and a second brain for autonomous agents.
+
+All inside a **single executable**.
+
+No external database. No Redis. No Elasticsearch. No Kafka. No cloud dependency. Just one binary.
+
+---
+
+# Why not just use RAG?
+
+Classic RAG is document retrieval. Hermem is memory. Traditional RAG usually works like this:
 
 ```
-User Query ──> [Embedder] ──> [Vector Search] ──> Top-K Seeds ──> [CTE Graph Walk] ──> Markdown Context
+
+User ➞ Embedding ➞ Vector Search ➞ Top 5 chunks ➞ LLM
+
 ```
 
-The system stores knowledge as entities (nodes) connected by typed edges. Each `Entity` is a 19‑field umbrella persistence view that decomposes into 5 per-domain models on demand (`Fact` / `Evidence` / `Episode` / `Task` / `Belief`) plus a `Goal` view that re‑views `Task`’s shape with intent. New code prefers the per‑domain types; existing code continues to use `Entity` directly. See **[docs/USAGE.md §15](docs/USAGE.md#15-domain-models)** for the model map, Compose/Decompose helpers, and the Goal‑reduces‑through‑Task contract.
+Hermem works differently:
 
-All 12 domain services use constructor injection — no singletons, no global mutable state, no service locators. Schema is passed per-call so SIGHUP hot-reload swaps config atomically without reconstructing services. See **[docs/service-dependencies.md](docs/service-dependencies.md)** for the full dependency graph, HTTP shell wiring matrix, and data flow diagram.
+```
 
-Each entity belongs to a category defined in `[schema]`:
+User ➞ Embedding ➞ Vector Search ➞ Seed entities ➞ Recursive Graph Walk ➞ Temporal ranking ➞ Centrality scoring ➞ Contradiction filtering ➞ Markdown context ➞ LLM
 
-| Category (default) | Purpose |
-|--------------------|---------|
-| `world` | Facts, definitions, objective knowledge |
-| `opinion` | User preferences, beliefs, subjective views |
-| `experience` | Past events, interactions, what happened |
-| `observation` | Patterns noticed, anomalies, derived insights |
-| `task` (example) | Actionable work items, steps, to-dos with status tracking |
+```
+
+The vector search answers
+
+> "Which memories are probably relevant?"
+
+The graph answers
+
+> "What else is connected to those memories?"
+
+That difference sounds small.
+
+It isn't.
+
+---
+
+# Design philosophy
+
+Hermem intentionally prefers boring technology. Because boring technology survives production. Some examples:
+
+| Instead of... | Hermem uses... |
+|---------------|----------------|
+| PostgreSQL cluster | SQLite |
+| Distributed graph database | Recursive SQL CTE |
+| Separate vector DB | SQLite + embeddings |
+| Huge infrastructure | One executable |
+| Runtime reflection everywhere | Static Go types |
+| Framework magic | Explicit dependency injection |
+
+The goal is not to build the biggest memory system. The goal is to build one that still works six months later.
+
+---
 
 ## Features
 
@@ -479,128 +544,6 @@ The ingestion worker:
 - Merges content of similar entities instead of creating duplicates
 - Creates edges from extracted relations
 
-## File Structure
-
-Post-Cobra-migration layout (commit `8f0bf71`). The old `src/<file>.go`
-flat tree and the `src/cmd/<name>.go` registry are gone. Source lives
-under 13 packages in `src/internal/`.
-
-```
-hermem/
-├── README.md                ← This file (high-level overview + quick start)
-├── docs/
-│   ├── USAGE.md             ← Operator runbook (CLI + HTTP side-by-side,
-│   │                          payload reference, error model, DB schema,
-│   │                          embedding-model notes, operational runbook)
-│   ├── CHANGELOG.md         ← Keep-a-Changelog format, semver
-│   ├── ROADMAP.md           ← (project planning docs)
-│   ├── VISION.md
-│   └── andrey-karpathy-skills.md
-├── skills/hermem/
-│   └── SKILL.md             ← Hermes Agent skill manifest
-├── Dockerfile               ← Multi-stage build, non-root user
-├── docker-compose.yml       ← Local stack orchestration
-├── hermem.ini               ← Sample config (full key reference in §Configuration)
-├── install.sh               ← One-command installer for Hermes Agent
-├── go.mod / go.sum          ← Go module + lockfile (uses gopkg.in/ini.v1, spf13/cobra)
-├── plugins/memory/hermem/   ← Hermes Agent provider plugin (Python)
-│   ├── __init__.py
-│   └── plugin.yaml          # 10 tools: search, store, query, edge, retrieve,
-│                            # timeline, contradictions, task create/status/list
-└── src/
-    ├── main.go              ← Binary entry: loads config + DB + VI + Embedder +
-    │                         Extractor + Reranker + BuildInfo, constructs
-    │                         cli.Env, calls cli.NewRootCommand(env).Execute().
-    │                         Builds SIGHUP reload loop on prod. server (hermem serve).
-    └── internal/            ← Flat domain packages + CLI + server shells
-        ├── ai/              ← LLM client helpers (Ollama + OpenAI + local),
-        │                      extractor base, retrieval prompts
-        ├── cli/             ← Cobra command tree (~44 files; see CLI Commands
-        │                      section above for the user-visible layout)
-        │   ├── root.go      ← NewRootCommand wires top-level + 6 groups
-        │   ├── env/env.go   ← Runtime Env, BuildInfo, ReadStdin, DecodeStdin,
-        │   │                  DecodeString, WriteJSON, ErrStdinRequired
-        │   ├── serve.go | health.go | metrics.go | version.go   ← top-level
-        │   ├── memory/      ← 10 subs: store/search/retrieve/query/response/
-        │   │                  edge/ingest/explain/re-embed/quantize
-        │   ├── task/        ← 8 subs: status/list/show/dep/tree/create/
-        │   │                  rollback/executable (alias `next`)
-        │   ├── graph/       ← 7 subs: plan/recovery-plan/components/
-        │   │                  communities/verify/contradictions/provenance
-        │   ├── time/        ← 2 subs: temporal/timeline
-        │   ├── agent/       ← 1 sub: loop
-        │   └── db/          ← 4 subs: migrate/rollback/verify/schema
-        ├── config/          ← INI loader (gopkg.in/ini.v1), Config.Validate,
-        │                      schema fingerprinting, Reranker factory
-        ├── contradiction/   ← Contradiction detection domain Service
-        ├── core/            ← Public types: Entity, Edge, request/response
-        │                      structs, SchemaConfig, RetrieveContextOptions
-        ├── edge/            ← Relation-edge domain Service
-        ├── graph/           ← Graph analytics domain Service
-        ├── health/          ← Health-probe domain Service (DB ping)
-        ├── httputil/        ← HTTP strict-decode helpers (DecodeStrict,
-        │                      WriteJSON, WriteError, MaxBodyBytes)
-        ├── ingest/          ← Synchronous dialog ingestion Service
-        ├── memory/          ← Memory CRUD domain Service (Store, edge, ingest)
-        ├── metrics/         ← AsyncMetricsWorker + Prometheus exposition
-        ├── migration/       ← Schema migration domain Service
-        ├── orchestrator/    ← AgentLoop + ExecutionPlan (CLI-only)
-        ├── reembed/         ← Background re-embedding Service
-        ├── retention/       ← GC archival domain Service
-        ├── retrieval/       ← Recursive CTE graph walk, ranking pipeline,
-        │                      FormatContextMarkdown, contradiction helpers
-        ├── server/          ← HTTP API server, split into per-domain sub-services
-        │   ├── server.go    ← Slim shell: route registration, ReloadState
-        │   │                  (atomic.Pointer swap), graceful shutdown
-        │   ├── middleware.go ← X-API-Key, request-id, slog, recover, max-body
-        │   ├── contradiction/← GET /contradictions
-        │   ├── edge/        ← POST /edge
-        │   ├── graph/       ← /connected-components, /communities, /graph/verify
-        │   ├── health/      ← /health, /health/live, /health/ready
-        │   ├── ingest/      ← POST /ingest, GET /ingest/jobs
-        │   ├── memory/      ← POST /store
-        │   ├── migration/   ← /db/migrate, /db/rollback, /db/verify, /db/schema
-        │   ├── reembed/     ← POST /admin/re-embed
-        │   ├── retention/   ← POST /admin/retention/run
-        │   ├── retrieval/   ← POST /search, /query, /retrieve, /explain,
-        │   │                  /response, /query/temporal (read)
-        │   ├── task/        ← POST /task/*
-        │   └── timeline/    ← GET /timeline
-        ├── serverstate/     ← atomic.Pointer[State] for SIGHUP-safe config
-        │                      reload across all handlers
-        ├── store/           ← SQL access + migration runner (init, codec,
-        │   │                  entity, edge, task, graph, community, recovery,
-        │   │                  schema)
-        │   ├── migration.go ← InitDB, runMigrations, StoreSchemaFingerprint
-        │   ├── init.go      ← DSN + PRAGMAs (WAL, FK, synchronous=NORMAL,
-        │   │                  auto_vacuum=INCREMENTAL)
-        │   ├── *_test.go    ← 4 test files in this pkg
-        │   └── migrations/  ← Embedded SQL apply-set
-        │       ├── 001_initial_schema.sql
-        │       ├── 002_entity_metadata.sql
-        │       ├── 003_provenance.sql
-        │       ├── 004_episodic_sessions.sql
-        │       ├── 005_centrality.sql
-        │       ├── 006_weighted_edges.sql
-        │       └── 007_task_priorities.sql
-        ├── task/            ← Task lifecycle domain Service
-        ├── timeline/        ← Time-ordered entity projection
-        └── vector/          ← VectorIndex + backends + cosine + quant
-            ├── index.go     ← VectorIndex interface, embedding serialisation,
-            │                  NormalizeVector at ingest
-            ├── inmemory.go  ← InMemoryVectorIndex: flatMatrix + cblas_sgemv
-            │                  (or pure-Go loop), BatchDotProducts
-            ├── cosine.go    ← Pure-Go fallback (build tag: !darwin || !cgo)
-            ├── cosine_darwin.go ← Apple Accelerate (cblas) AMX fast path
-            │                  (build tag: darwin && cgo)
-            ├── quantize.go  ← Scalar int8 roundtrip + compression stats
-            │                  (QuantizeVector / DequantizeVector)
-            └── *_test.go    ← Cosine parity tests + quantize roundtrip
-```
-
-All `*_test.go` files together amount to ~12 test files across the
-`internal/` tree. Each file typically holds 5-15 tests.
-
 ## HTTP API Server
 
 Run Hermem as an HTTP service for integration with Hermes Agent or other systems:
@@ -863,54 +806,172 @@ Benchmarked on Apple M1 Pro (768D embeddings, `topK=10`, 3 runs, medians):
 - **Graph walk** — dominated by SQLite recursive-CTE JOIN
   cost over edges, scales roughly linearly with edge count.
 
-## Testing
+---
 
-A project-wide **pre-push hook** lives at `.githooks/pre-push` (read it
-with `cat .githooks/pre-push` to inspect the exact gates — it's only ~110
-lines) and mirrors CI gates locally — architecture guardrails, `gofmt`,
-`go vet`, `go build`, `go test -race -count=1 -timeout 10m`, optional
-`golangci-lint`, and the AMX Apple-Accelerate guard on Darwin. Activate
-on a fresh clone with:
+## Accelerate
+
+On Apple Silicon, Hermem uses
+
+```
+cblas_sgemv()
+```
+
+through Accelerate. Yes. Your graph memory secretly asks the AMX coprocessor for help. No. Go didn't suddenly become a machine learning framework.
+
+---
+
+## SQLite
+
+SQLite often gets underestimated. Hermem leans heavily on features many people never use:
+
+- recursive CTEs
+- WAL
+- foreign keys
+- triggers
+- blob storage
+- virtual tables
+- embedded migrations
+
+SQLite is not "just a file." It's a surprisingly capable graph engine hiding in plain sight.
+
+---
+
+# Architecture
+
+The project follows a fairly strict rule:
+
+> **Business logic must not know whether it is being called from the CLI or HTTP.**
+
+Everything is implemented as domain services. CLI commands call services. HTTP handlers call the same services. No duplicated logic.
+
+```
+      CLI
+       │
+       ▼
+ Domain Service
+       ▲
+       │
+     HTTP
+```
+
+---
+
+## Dependency injection
+
+Every service receives dependencies through constructors. No globals. No service locators. No mutable package state. Configuration is swapped atomically after SIGHUP without rebuilding the dependency graph. This keeps long-running servers surprisingly boring. Boring infrastructure is good infrastructure.
+
+
+---
+
+# Testing
+
+Hermem has unit tests, integration tests and performance benchmarks.
+
+Typical workflow:
+
+```bash
+go test ./...
+```
+
+Benchmarks:
+
+```bash
+go test \
+  -bench=. \
+  -benchmem
+```
+
+Race detector:
+
+```bash
+go test \
+    -race \
+    ./...
+```
+
+---
+
+## Pre-push hook
+
+The repository includes a pre-push hook that runs the same checks as CI.
+
+```
+gofmt
+go vet
+go build
+go test
+optional golangci-lint
+```
+
+Enable it:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-Verify it took effect (matters if a system / global / worktree `git
-config` layer is stomping on it):
+Now future-you can't accidentally push code written by 2 a.m. caffeine. Well… At least not *unformatted* code written at 2 a.m.
 
-```bash
-git config --get core.hooksPath   # → .githooks
-```
+---
 
-Bypass with `git push --no-verify` if needed.
+# Documentation
 
-```bash
-go test -count=1 ./src                     # full suite (~3s)
-go test -v -count=1 -run TestServer ./...  # strict-decode table only
-go test -bench=BenchmarkInMemorySearch -benchmem -count=3 ./src    # in-memory vector perf
-go test -tags sqlite_vec -bench=BenchmarkSqliteVecSearch -benchmem -count=3 ./...  # sqlite-vec perf
-go test -v -run TestIntegration
-go test -v -run TestTiming
-```
+The repository intentionally separates documentation by audience.
 
-Per-package tests live under each internal package as `*_test.go`.
-The store package's `helpers_test.go → memDB(t)` fixture sets up an
-in-memory SQLite + stub embedder/extractor mocks used by the
-integration tests; `tasks_test.go` and `recovery_test.go` (also in
-`store/`) exercise scheduler-flavoured SQL roundtrips. The file-backed
-test in `store/` (using `verify-test.db`) is the only one that runs
-against the real `PRAGMA journal_mode = WAL` path. The CLI smoke test
-lives at `src/internal/cli/cli_test.go` and asserts the cobra tree
-shape + `--help` rendering.
+| Document | Purpose |
+|----------|---------|
+| README.md | Overview |
+| docs/USAGE.md | Complete operator manual |
+| docs/CHANGELOG.md | Release history |
+| docs/ROADMAP.md | Planned features |
+| docs/VISION.md | Long-term goals |
 
-## Documentation
+The README tells you *what* Hermem is. USAGE tells you *how* to operate it. The code tells you *why it occasionally looked like a good idea at 3 a.m.*
 
-For the full operator runbook — CLI mode and server mode side-by-side,
-request/response reference, the strict-decode error model, DB schema
-notes, embedding-model/dimension gotchas, and operational pitfalls —
-see **[docs/USAGE.md](docs/USAGE.md)**.
+---
 
-## License
+# Why Hermem?
+
+There are already excellent vector databases. There are already excellent graph databases. There are already excellent workflow engines. Hermem intentionally sits somewhere in the overlap. It is designed for agents that need to:
+
+- remember facts
+- remember conversations
+- remember decisions
+- remember failures
+- remember goals
+- remember dependencies
+
+...without deploying Kafka, Neo4j, Elasticsearch, Redis, PostgreSQL, three sidecars, five operators and a small sacrifice to the Kubernetes gods. Sometimes a single SQLite file is enough. Sometimes it isn't. Hermem tries to make the first case really, really good.
+
+---
+
+# Roadmap
+
+Some ideas currently being explored:
+
+- richer graph scoring
+- graph summarization
+- semantic compression
+- graph visualization
+- distributed replication
+- MCP integration
+- CRDT-based synchronization
+- native reranker plugins
+- hybrid lexical/vector retrieval
+- graph-aware agent planning
+- incremental embedding updates
+
+Some of these will happen. Some probably won't. That's the nature of roadmaps.
+
+---
+
+# Contributing
+
+Pull requests are welcome. If you're planning a large architectural change, open an issue first. A discussion is usually much cheaper than a rewrite. Bug reports, benchmarks, weird datasets and profiling results are especially appreciated.
+
+---
+
+# License
 
 MIT
+
+Do whatever you want. Just don't blame SQLite when your LLM confidently remembers that penguins invented Kubernetes.
