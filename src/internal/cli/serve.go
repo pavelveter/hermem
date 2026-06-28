@@ -23,19 +23,21 @@ import (
 // Port is a real cobra flag (--port/-p, default 8420) — no positional arg.
 func newServeCmd(env *clienv.Env) *cobra.Command {
 	var port string
+	var skipEmbedderCheck bool
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the HTTP server (default :8420)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runServe(env, port)
+			return runServe(env, port, skipEmbedderCheck)
 		},
 	}
 	cmd.Flags().StringVarP(&port, "port", "p", "8420", "HTTP port to listen on")
+	cmd.Flags().BoolVar(&skipEmbedderCheck, "skip-embedder-check", false, "Skip embedder health check on startup (for testing)")
 	return cmd
 }
 
-func runServe(env *clienv.Env, port string) error {
+func runServe(env *clienv.Env, port string, skipEmbedderCheck bool) error {
 	slog.Info("hermem starting",
 		"port", port,
 		"version", env.Build.Version,
@@ -44,7 +46,7 @@ func runServe(env *clienv.Env, port string) error {
 	)
 
 	// Validate embedder availability before accepting traffic.
-	if env.Embedder != nil {
+	if env.Embedder != nil && !skipEmbedderCheck {
 		if err := env.Embedder.Ping(env.Ctx); err != nil {
 			return fmt.Errorf("embedder health check failed: %w", err)
 		}
@@ -88,6 +90,7 @@ func runServe(env *clienv.Env, port string) error {
 		Retention: env.Cfg.Retention,
 		APIKey:    env.Cfg.APIKey,
 		Port:      port,
+		Env:       env,
 	})
 }
 
