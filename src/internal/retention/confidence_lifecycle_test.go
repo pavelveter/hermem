@@ -64,12 +64,16 @@ func TestConfidenceLifecycle_ArchivesExpiredLowConfidence(t *testing.T) {
 
 	// Verify only low1 is archived.
 	var archived int
-	db.QueryRow(`SELECT COUNT(*) FROM entities WHERE archived = 1`).Scan(&archived)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE archived = 1`).Scan(&archived); err != nil {
+		t.Fatalf("count archived: %v", err)
+	}
 	if archived != 1 {
 		t.Fatalf("want 1 archived entity, got %d", archived)
 	}
 	var low1Archived int
-	db.QueryRow(`SELECT archived FROM entities WHERE id = 'low1'`).Scan(&low1Archived)
+	if err := db.QueryRow(`SELECT archived FROM entities WHERE id = 'low1'`).Scan(&low1Archived); err != nil {
+		t.Fatalf("scan low1 archived: %v", err)
+	}
 	if low1Archived != 1 {
 		t.Fatal("low1 should be archived")
 	}

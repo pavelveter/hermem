@@ -56,10 +56,10 @@ type RenderingStage interface {
 // Each stage is a pluggable implementation; default implementations
 // delegate to the existing package-level functions.
 type Pipeline struct {
-	expand  CandidateRetrievalStage
-	rank    RankingStage
+	expand   CandidateRetrievalStage
+	rank     RankingStage
 	assemble ContextAssemblyStage
-	render  RenderingStage
+	render   RenderingStage
 }
 
 // NewPipeline creates a Pipeline with default stage implementations.
