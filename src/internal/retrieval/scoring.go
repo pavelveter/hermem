@@ -29,13 +29,28 @@ func defaultCompositeScorer(w core.RankingWeight) core.CompositeScorer {
 	}
 }
 
-// compositeScore computes the linear combination of features minus depth penalty.
+// compositeScore computes the linear combination of features with
+// exponential depth decay. The depth penalty is multiplicative
+// (2^(-depth)) instead of subtractive, so deeper nodes are penalised
+// exponentially rather than linearly.
 func compositeScore(w core.RankingWeight, sim, recency, temporalBoost, centrality, pathWeight float32) float32 {
-	s := w.VectorWeight*sim + w.RecencyWeight*recency + w.TemporalWeight*temporalBoost + w.CentralityWeight*centrality - w.DepthPenalty*pathWeight
+	depthDecay := depthDecay(pathWeight)
+	s := (w.VectorWeight*sim + w.RecencyWeight*recency + w.TemporalWeight*temporalBoost + w.CentralityWeight*centrality) * depthDecay
 	if math.IsNaN(float64(s)) || math.IsInf(float64(s), 0) {
 		return 0
 	}
 	return s
+}
+
+// depthDecay returns 2^(-depth) where depth is derived from pathWeight.
+// pathWeight represents the cumulative hop count from the seed node
+// (each edge adds 1.0 by default). The exponential decay ensures that
+// semantic relevance decreases naturally with graph distance.
+func depthDecay(pathWeight float32) float32 {
+	if pathWeight <= 0 {
+		return 1
+	}
+	return float32(math.Pow(0.5, float64(pathWeight)))
 }
 
 // ScoreComponents holds the raw feature values used by compositeScore.
@@ -87,6 +102,7 @@ func ComputeScoreComponents(node core.GraphNode, nodeVec []float32, queryEmbeddi
 // explain fields on GraphNode / RetrievedFact when Explain=true.
 func BuildScoreBreakdown(c ScoreComponents, w core.RankingWeight) *core.ScoreBreakdown {
 	final := compositeScore(w, c.Sim, c.Recency, c.Temporal, c.Centrality, c.Path)
+	decay := depthDecay(c.Path)
 	weightsCopy := w
 	return &core.ScoreBreakdown{
 		VectorScore:     c.Sim,
@@ -94,7 +110,7 @@ func BuildScoreBreakdown(c ScoreComponents, w core.RankingWeight) *core.ScoreBre
 		TemporalScore:   c.Temporal,
 		CentralityScore: c.Centrality,
 		PathScore:       c.Path,
-		DepthPenalty:    w.DepthPenalty * c.Path,
+		DepthPenalty:    1 - decay, // expressed as the fraction subtracted (1 - decay)
 		FinalScore:      final,
 		Weights:         &weightsCopy,
 	}
