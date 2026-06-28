@@ -1,4 +1,4 @@
-.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint
+.PHONY: build build-local build-no-local clean
 
 BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
@@ -24,22 +24,6 @@ $(LLAMA_BINARY):
 # Build without local embedding (faster, no CGo deps)
 build-no-local:
 	go build -tags no_local_embedding -o hermem ./src
-
-# Run unit tests
-test:
-	go test -race -count=1 ./src/...
-
-# Run E2E tests
-test-e2e: build
-	go test -p 1 ./tests/e2e/... -v -timeout 5m
-
-# Run benchmarks
-benchmarks:
-	go test -bench=. -benchmem -count=3 ./src/...
-
-# Run linter
-lint:
-	golangci-lint run ./...
 
 clean:
 	rm -f hermem

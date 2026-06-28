@@ -238,9 +238,8 @@ func TestRef_StoreConcurrentDistinct(t *testing.T) {
 		}
 		seen[s.Generation] = i
 	}
-	gen := refs.Load().Generation
-	if gen < 2 || gen > uint64(1+N) {
-		t.Fatalf("after %d concurrent Stores: Load().Generation = %d, want [2, %d]",
-			N, gen, 1+N)
+	if refs.Load().Generation != uint64(1+N) {
+		t.Fatalf("after %d concurrent Stores: Load().Generation want %d, got %d",
+			N, 1+N, refs.Load().Generation)
 	}
 }

@@ -179,7 +179,7 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 	}
 	emb, err := s.embedder.Embed(ctx, content)
 	if err != nil {
-		slog.Warn("task.Create: embed failed, storing without embedding", "id", id, "err", err)
+		return "", fmt.Errorf("create: embed: %w", err)
 	}
 	cat := config.FirstStatefulCategory(schema)
 	if cat == "" {

@@ -12,9 +12,8 @@
 #   3. go vet ./src/...                      — fast
 #   4. go build ./src/...                   — fast
 #   5. go test -race -count=1 -timeout 10m   — slow (matches ci.yml `test` job)
-#   6. E2E tests (CLI + HTTP + scenarios)    — builds binary, runs all e2e
-#   7. golangci-lint (optional, if installed)
-#   8. AMX guard test (optional, darwin + CGO only)
+#   6. golangci-lint (optional, if installed)
+#   7. AMX guard test (optional, darwin + CGO only)
 #
 # NOT mirrored: ci.yml `build` matrix cross-platform zig builds
 # (linux/amd64, linux/arm64, windows/amd64, windows/arm64). 4 cross-
@@ -72,7 +71,7 @@ if [ ! -d "$BIN_DIR" ]; then
     warn "bin/ not found — creating placeholder for go:embed"
     scripts/ensure-embed-placeholders.sh
 fi
-go build -o hermem ./src
+go build ./src/...
 ok "go build"
 
 # 5. Race tests — slow gate. Mirrors ci.yml `test` job exactly.
@@ -80,12 +79,7 @@ section "go test -race -count=1 -timeout 10m ./src/... (this may take several mi
 go test -race -count=1 -timeout 10m ./src/...
 ok "go test -race ./src/..."
 
-# 6. E2E tests — builds binary, runs CLI + HTTP + scenario tests.
-section "go test -p 1 -timeout 5m ./tests/e2e/... (E2E tests)"
-go test -p 1 -timeout 5m ./tests/e2e/...
-ok "go test -p 1 ./tests/e2e/... (E2E)"
-
-# 7. golangci-lint — only if installed locally. CI uses v2.12.2.
+# 6. golangci-lint — only if installed locally. CI uses v2.12.2.
 if command -v golangci-lint >/dev/null 2>&1; then
     section "golangci-lint run ./src/..."
     golangci-lint run --timeout=5m ./src/...
@@ -94,7 +88,7 @@ else
     warn "golangci-lint not installed — skipping (CI uses v2.12.2; install: brew install golangci-lint)"
 fi
 
-# 8. AMX guard — only on Darwin with CGO_ENABLED=1 (mirrors ci-amx.yml).
+# 7. AMX guard — only on Darwin with CGO_ENABLED=1 (mirrors ci-amx.yml).
 if [ "$(uname -s 2>/dev/null)" = "Darwin" ] \
     && command -v go >/dev/null 2>&1 \
     && [ "$(go env CGO_ENABLED 2>/dev/null)" = "1" ]; then

@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/lifecycle"
@@ -36,6 +35,8 @@ import (
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
+
+ apipkg "github.com/pavelveter/hermem/api"
 )
 
 // Server is the HTTP shell. It holds a registry of RouteProviders +
@@ -137,6 +138,11 @@ func (s *Server) mount() {
 	mux.Handle("/metrics", s.Metrics.MetricsHandler()) // mux.Handle (NOT HandleFunc): MetricsHandler() returns http.Handler, while HandleFunc expects a func(http.ResponseWriter, *http.Request) value. Passing the method value without invocation would also type-mismatch.
 	// Opt-in Go runtime profiling. Off by default — see RegisterPprof.
 	RegisterPprof(mux)
+	// OpenAPI 3.1 spec endpoints.
+	apiHandler := apipkg.NewHandler()
+	for path, hf := range apiHandler.Routes() {
+		mux.HandleFunc(path, hf)
+	}
 	s.mux = mux
 }
 
@@ -166,7 +172,6 @@ type ServeConfig struct {
 	Retention core.RetentionPolicy
 	APIKey    string
 	Port      string
-	Env       *clienv.Env
 }
 
 // Serve runs the HTTP listener + GC + graceful shutdown. Blocks until
@@ -198,9 +203,6 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
 	handler = SlogMiddleware(handler)
 	handler = RequestIDMiddleware(AuthMiddleware()(handler))
-	if cfg.Env != nil {
-		handler = RuntimeMiddleware(clienv.NewEnvManager(cfg.Env), slog.Default())(handler)
-	}
 	handler = TimeoutMiddleware(120 * time.Second)(handler)
 	handler = RecoveryMiddleware(handler)
 
