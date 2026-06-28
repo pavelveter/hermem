@@ -28,6 +28,14 @@ import (
 // PersistentPreRunE opens the database, which we explicitly don't want.
 var noopPreRun = func(_ *cobra.Command, _ []string) error { return nil }
 
+const banner = `
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███╗   ███╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝████╗ ████║
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ██╔████╔██║
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝`
+
 const longHelp = `hermem houses a knowledge graph + vector store with an LLM-driven
 extraction engine.
 
@@ -123,6 +131,23 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		diagnose.NewCmd(env),
 	)
 	adminops.Register(root, env)
+	root.SetHelpTemplate(`` + banner + `
+
+` + longHelp + `{{if .Commands}}
+
+Available Commands:{{range .Commands}}{{if (not .Hidden)}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+Global Flags:
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.
+
+Documentation: https://github.com/pavelveter/hermem
+`)
 	root.SetContext(env.Ctx)
 	return root
 }
