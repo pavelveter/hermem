@@ -17,13 +17,18 @@ type IngestionWorkerConfig struct {
 	DedupThreshold float32
 	Schema         core.SchemaConfig
 	Detector       contradiction.ContradictionDetector
+	Resolver       contradiction.ContradictionResolver
 }
 
 // NewIngestionWorkerFromConfig creates a worker from a config struct.
 // If Detector is nil, falls back to the default lexical detector.
+// If Resolver is nil, falls back to the default ThresholdResolver.
 func NewIngestionWorkerFromConfig(cfg IngestionWorkerConfig) *IngestionWorker {
 	if cfg.Detector == nil {
 		cfg.Detector = detectors.NewLexicalDetector()
+	}
+	if cfg.Resolver == nil {
+		cfg.Resolver = &contradiction.ThresholdResolver{}
 	}
 	return &IngestionWorker{
 		db:          cfg.DB,
@@ -33,6 +38,7 @@ func NewIngestionWorkerFromConfig(cfg IngestionWorkerConfig) *IngestionWorker {
 		dedupThresh: cfg.DedupThreshold,
 		schema:      cfg.Schema,
 		detector:    cfg.Detector,
+		resolver:    cfg.Resolver,
 	}
 }
 
