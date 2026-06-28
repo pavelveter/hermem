@@ -1,0 +1,21 @@
+name: contradictions
+steps:
+  - name: store_fact_a
+    cli:
+      args: ["memory", "store"]
+      stdin: '{"id":"fact-a","category":"world","content":"Go is a simple language"}'
+    expected:
+      exit_code: 0
+
+  - name: store_contradicting_fact
+    cli:
+      args: ["memory", "store"]
+      stdin: '{"id":"fact-b","category":"world","content":"Go is not a simple language"}'
+    expected:
+      exit_code: 0
+
+  - name: check_contradictions
+    cli:
+      args: ["graph", "contradictions"]
+    expected:
+      exit_code: 0

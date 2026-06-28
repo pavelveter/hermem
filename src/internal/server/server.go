@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/lifecycle"
@@ -165,6 +166,7 @@ type ServeConfig struct {
 	Retention core.RetentionPolicy
 	APIKey    string
 	Port      string
+	Env       *clienv.Env
 }
 
 // Serve runs the HTTP listener + GC + graceful shutdown. Blocks until
@@ -196,6 +198,9 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
 	handler = SlogMiddleware(handler)
 	handler = RequestIDMiddleware(AuthMiddleware()(handler))
+	if cfg.Env != nil {
+		handler = RuntimeMiddleware(clienv.NewEnvManager(cfg.Env), slog.Default())(handler)
+	}
 	handler = TimeoutMiddleware(120 * time.Second)(handler)
 	handler = RecoveryMiddleware(handler)
 

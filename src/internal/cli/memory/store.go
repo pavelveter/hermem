@@ -29,9 +29,10 @@ func newStoreCmd(env *cli.Env) *cobra.Command {
 			if len(req.Embedding) == 0 && env.Embedder != nil {
 				emb, err := env.Embedder.Embed(env.Ctx, req.Content)
 				if err != nil {
-					return fmt.Errorf("embed: %w", err)
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: embed failed (%v), storing without embedding\n", err)
+				} else {
+					req.Embedding = emb
 				}
-				req.Embedding = emb
 			}
 			// Construct per-call (three pointer assignments; cheap) so
 			// CLI never holds onto a stale Service ref between commands.

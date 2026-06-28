@@ -76,7 +76,28 @@ jobs:
         run: scripts/ensure-embed-placeholders.sh
 
       - name: Run tests
-        run: go test -race -count=1 -timeout 10m ./...
+        run: go test -race -count=1 -timeout 10m $(go list ./... | grep -v tests/e2e)
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Create embedding placeholders
+        run: scripts/ensure-embed-placeholders.sh
+
+      - name: Build binary
+        run: go build -o hermem ./src
+
+      - name: Run E2E tests
+        run: go test -p 1 ./tests/e2e/... -timeout 5m
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
