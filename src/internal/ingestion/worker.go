@@ -21,6 +21,7 @@ type IngestionWorker struct {
 	dedupThresh float32
 	schema      core.SchemaConfig
 	detector    contradiction.ContradictionDetector
+	resolver    contradiction.ContradictionResolver
 }
 
 // NewIngestionWorker creates a worker.

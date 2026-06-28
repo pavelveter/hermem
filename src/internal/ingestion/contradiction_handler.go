@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -26,18 +27,22 @@ func (w *IngestionWorker) handleContradiction(existing *core.Entity, incoming co
 		return contradictionNone, "", nil
 	}
 
-	existingConf := existing.Confidence
-	if existingConf == 0 {
-		existingConf = 1.0
+	resolver := w.resolver
+	if resolver == nil {
+		resolver = &contradiction.ThresholdResolver{}
 	}
+	action := resolver.Resolve(*existing, incoming)
 
-	if existingConf >= 0.7 {
+	switch action {
+	case contradiction.ActionKeepBoth:
 		slog.Debug("contradiction detected, keeping both", "existing_id", existing.ID, "incoming_id", incoming.ID)
 		return contradictionKeepBoth, "", nil
+	case contradiction.ActionPreferIncoming:
+		slog.Debug("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", incoming.ID)
+		return contradictionPreferIncoming, existing.ID, []viOp{{kind: viOpRemove, id: existing.ID}}
+	default:
+		return contradictionNone, "", nil
 	}
-
-	slog.Debug("contradiction resolved: preferring incoming", "existing_id", existing.ID, "incoming_id", incoming.ID)
-	return contradictionPreferIncoming, existing.ID, []viOp{{kind: viOpRemove, id: existing.ID}}
 }
 
 // mergeExistingEntity merges the incoming entity into the existing one and returns
