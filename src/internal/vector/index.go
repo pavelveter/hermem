@@ -21,12 +21,23 @@ var (
 )
 
 // NewIndex creates a VectorIndex for the given backend.
-// Currently only the in-memory backend is implemented; unknown backends fall back with a warning.
+// Currently supports:
+//   - "in-memory" (default): brute-force cosine similarity in memory
+//   - "sqlite-vec": sqlite-vec extension (requires the extension to be loaded)
+//
+// Unknown backends fall back to in-memory with a warning logged by the caller.
 func NewIndex(backend string, db *sql.DB, dim int) core.VectorIndex {
-	if backend == "in-memory" || backend == "" {
+	switch backend {
+	case "sqlite-vec":
+		idx, err := NewSQLiteVecIndex(db, dim)
+		if err != nil {
+			// Fall back to in-memory if sqlite-vec is not available.
+			return NewInMemoryVectorIndex(db)
+		}
+		return idx
+	default: // "in-memory" or ""
 		return NewInMemoryVectorIndex(db)
 	}
-	return NewInMemoryVectorIndex(db) // warn-and-fall-back handled by caller if needed
 }
 
 // SearchByVector finds the topK entities most similar to queryEmbedding and hydrates from DB.
