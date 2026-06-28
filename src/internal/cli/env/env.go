@@ -162,6 +162,17 @@ func WriteJSON(w io.Writer, data interface{}) error {
 // so those paths bypass this entirely. PersistentPostRunE on root closes
 // the env after the subcommand returns so callers don't need to do it.
 func (e *Env) EnsureDB() error {
+	return e.ensureDBInternal(false)
+}
+
+// EnsureDBForMigration opens the DB bypassing the §4
+// assertSchemaUpToDate gate — used solely by `hermem db migrate apply`
+// which must open the DB before pending migrations exist.
+func (e *Env) EnsureDBForMigration() error {
+	return e.ensureDBInternal(true)
+}
+
+func (e *Env) ensureDBInternal(skipSchemaCheck bool) error {
 	if e.initDone {
 		return e.initErr
 	}
@@ -177,7 +188,7 @@ func (e *Env) EnsureDB() error {
 	// after §4), refuses with store.ErrMigrationsPending / IntegrityBroken
 	// so K8s liveness probes don't kill pods mid-migration — operator
 	// runs `./hermem db migrate apply` separately.
-	db, err := store.InitDBStrict(config.ResolveDBPath(e.Cfg.DBPath), e.Cfg.VectorDim, e.Cfg.AutoMigrate)
+	db, err := store.InitDBStrictWithOptions(config.ResolveDBPath(e.Cfg.DBPath), e.Cfg.VectorDim, e.Cfg.AutoMigrate, skipSchemaCheck)
 	if err != nil {
 		e.initErr = fmt.Errorf("init db: %w", err)
 		return e.initErr
