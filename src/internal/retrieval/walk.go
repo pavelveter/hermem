@@ -187,7 +187,7 @@ func bucketize(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight
 		if explain {
 			fact.VectorScore = rn.sim
 			fact.RecencyScore = rn.recency
-			fact.DepthPenalty = w.DepthPenalty * rn.node.PathWeight
+			fact.DepthPenalty = 1 - depthDecay(rn.node.PathWeight)
 			fact.RankingScore = rn.score
 		}
 		switch rn.node.Entity.Category {

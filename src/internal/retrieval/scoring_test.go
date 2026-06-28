@@ -52,7 +52,7 @@ func TestWithDefaults_NonZeroFieldsPreserved(t *testing.T) {
 	}
 }
 
-// compositeScore: linear combination minus depth penalty.
+// compositeScore: linear combination with exponential depth decay.
 func TestCompositeScore_LinearComb(t *testing.T) {
 	w := core.RankingWeight{
 		VectorWeight:     0.5,
@@ -61,8 +61,9 @@ func TestCompositeScore_LinearComb(t *testing.T) {
 		CentralityWeight: 0.05,
 		DepthPenalty:     0.05,
 	}
-	got := compositeScore(w, 1.0, 1.0, 1.0, 1.0, 1.0)
-	want := float32(0.5 + 0.3 + 0.1 + 0.05 - 0.05)
+	// pathWeight=0 → depthDecay=1, no penalty
+	got := compositeScore(w, 1.0, 1.0, 1.0, 1.0, 0)
+	want := float32(0.5 + 0.3 + 0.1 + 0.05) // no depth penalty when path=0
 	if !floatNear(got, want) {
 		t.Fatalf("want %v, got %v", want, got)
 	}
@@ -73,9 +74,11 @@ func TestCompositeScore_DepthPenaltySubtractive(t *testing.T) {
 		VectorWeight: 1, RecencyWeight: 0, TemporalWeight: 0, CentralityWeight: 0,
 		DepthPenalty: 0.5,
 	}
+	// pathWeight=2 → depthDecay = 2^(-2) = 0.25
+	// score = 1.0 * 0.25 = 0.25
 	got := compositeScore(w, 1.0, 0, 0, 0, 2.0)
-	if !floatNear(got, 0) {
-		t.Fatalf("depth penalty should reduce score by 1.0 for pathWeight=2: want 0, got %v", got)
+	if !floatNear(got, 0.25) {
+		t.Fatalf("exponential decay for pathWeight=2: want 0.25, got %v", got)
 	}
 }
 
@@ -264,7 +267,7 @@ func TestBuildScoreBreakdown_FinalMatchesCompositeScore(t *testing.T) {
 	if !floatNear(bd.FinalScore, wantFinal) {
 		t.Fatalf("FinalScore %v != compositeScore %v", bd.FinalScore, wantFinal)
 	}
-	// Per-field mapping: VectorScore==Sim, DepthPenalty==DepthPenaltyWeight*Path
+	// Per-field mapping: VectorScore==Sim, DepthPenalty==1-depthDecay(Path)
 	if bd.VectorScore != c.Sim {
 		t.Fatalf("VectorScore=%v want %v", bd.VectorScore, c.Sim)
 	}
@@ -280,14 +283,15 @@ func TestBuildScoreBreakdown_FinalMatchesCompositeScore(t *testing.T) {
 	if bd.PathScore != c.Path {
 		t.Fatalf("PathScore=%v want %v", bd.PathScore, c.Path)
 	}
-	if !floatNear(bd.DepthPenalty, w.DepthPenalty*c.Path) {
-		t.Fatalf("DepthPenalty=%v want %v", bd.DepthPenalty, w.DepthPenalty*c.Path)
+	wantDepthPenalty := float32(1 - depthDecay(c.Path))
+	if !floatNear(bd.DepthPenalty, wantDepthPenalty) {
+		t.Fatalf("DepthPenalty=%v want %v", bd.DepthPenalty, wantDepthPenalty)
 	}
 }
 
 func TestBuildScoreBreakdown_DepthPenaltySubtractsFromFinal(t *testing.T) {
 	// Build a breakdown with high features and a non-zero path;
-	// FinalScore should equal weighted_sum - DepthPenalty.
+	// FinalScore = weighted_sum * 2^(-path).
 	w := core.RankingWeight{
 		VectorWeight: 1.0,
 	}.WithDefaults()
@@ -295,9 +299,10 @@ func TestBuildScoreBreakdown_DepthPenaltySubtractsFromFinal(t *testing.T) {
 		Sim: 0.8, Path: 2.0,
 	}
 	bd := BuildScoreBreakdown(c, w)
-	want := float32(0.8 - w.DepthPenalty*2.0)
+	// depthDecay(2.0) = 0.25, so FinalScore = 0.8 * 0.25 = 0.2
+	want := float32(0.2)
 	if !floatNear(bd.FinalScore, want) {
-		t.Fatalf("FinalScore %v != expected %v (VectorScore*sim - DepthPenalty*path)", bd.FinalScore, want)
+		t.Fatalf("FinalScore %v != expected %v (VectorScore*sim * 2^(-path))", bd.FinalScore, want)
 	}
 }
 
