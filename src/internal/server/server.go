@@ -35,6 +35,8 @@ import (
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
+
+ apipkg "github.com/pavelveter/hermem/api"
 )
 
 // Server is the HTTP shell. It holds a registry of RouteProviders +
@@ -136,6 +138,11 @@ func (s *Server) mount() {
 	mux.Handle("/metrics", s.Metrics.MetricsHandler()) // mux.Handle (NOT HandleFunc): MetricsHandler() returns http.Handler, while HandleFunc expects a func(http.ResponseWriter, *http.Request) value. Passing the method value without invocation would also type-mismatch.
 	// Opt-in Go runtime profiling. Off by default — see RegisterPprof.
 	RegisterPprof(mux)
+	// OpenAPI 3.1 spec endpoints.
+	apiHandler := apipkg.NewHandler()
+	for path, hf := range apiHandler.Routes() {
+		mux.HandleFunc(path, hf)
+	}
 	s.mux = mux
 }
 
