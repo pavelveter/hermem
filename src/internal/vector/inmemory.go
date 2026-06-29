@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -19,6 +20,10 @@ var _ core.VectorIndex = (*InMemoryVectorIndex)(nil)
 // above this ceiling fall through to a per-call make([]T, n) — the
 // threshold is a hot-path optimisation, not a hard limit.
 const maxSearchN = 50_000
+
+// defaultMaxVectors is the default cap for the in-memory vector index.
+// When reached, LRU eviction reclaims the least-recently-accessed entry.
+const defaultMaxVectors = 500_000
 
 // dotBuf / intBuf wrap fixed-size arrays so the sync.Pool boxes a
 // pointer to a stack-sized value instead of pushing a slice header to
@@ -79,12 +84,15 @@ func putInts(d []int) {
 }
 
 type vectorEntry struct {
-	id   string
-	vec  []float32
-	norm float32
+	id        string
+	vec       []float32
+	norm      float32
+	lastAccess time.Time
 }
 
 // InMemoryVectorIndex holds all vectors in memory with a row-major flatMatrix for batch cosine.
+// When maxVectors is set (>0), LRU eviction reclaims the least-recently-accessed
+// entry when the cap is reached.
 type InMemoryVectorIndex struct {
 	db         *sql.DB
 	mu         sync.RWMutex
@@ -92,10 +100,23 @@ type InMemoryVectorIndex struct {
 	flatMatrix []float32
 	cols       int
 	byID       map[string]int
+	maxVectors int
 }
 
+// NewInMemoryVectorIndex creates an index with default capacity.
 func NewInMemoryVectorIndex(db *sql.DB) *InMemoryVectorIndex {
-	idx := &InMemoryVectorIndex{db: db, byID: make(map[string]int)}
+	return NewInMemoryVectorIndexWithCap(db, defaultMaxVectors)
+}
+
+// NewInMemoryVectorIndexWithCap creates an index with a configurable
+// maximum vector count. When the cap is reached, LRU eviction reclaims
+// the least-recently-accessed entry. Set maxVectors <= 0 for unlimited.
+func NewInMemoryVectorIndexWithCap(db *sql.DB, maxVectors int) *InMemoryVectorIndex {
+	idx := &InMemoryVectorIndex{
+		db:         db,
+		byID:       make(map[string]int),
+		maxVectors: maxVectors,
+	}
 	idx.load()
 	return idx
 }
@@ -120,15 +141,15 @@ func (idx *InMemoryVectorIndex) load() {
 				idx.cols = len(emb)
 			}
 			idx.byID[id] = len(idx.entries)
-			idx.entries = append(idx.entries, vectorEntry{id: id, vec: emb, norm: 1})
+			idx.entries = append(idx.entries, vectorEntry{id: id, vec: emb, norm: 1, lastAccess: time.Now()})
 			idx.flatMatrix = append(idx.flatMatrix, emb...)
 		}
 	}
 }
 
 func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float32, limit int) ([]string, error) {
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 	n := len(idx.entries)
 	if n == 0 || idx.cols == 0 {
 		return nil, nil
@@ -156,16 +177,19 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 	if limit > n {
 		limit = n
 	}
+	now := time.Now()
 	out := make([]string, limit)
 	for i := 0; i < limit; i++ {
-		out[i] = idx.entries[idxs[i]].id
+		e := &idx.entries[idxs[i]]
+		e.lastAccess = now
+		out[i] = e.id
 	}
 	return out, nil
 }
 
 func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float32, limit int) ([][]string, error) {
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 	n := len(idx.entries)
 	if n == 0 || idx.cols == 0 {
 		out := make([][]string, len(queries))
@@ -179,6 +203,7 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 	defer putDots(dots)
 	idxs := getInts(n)
 	defer putInts(idxs)
+	now := time.Now()
 	for qi, q := range queries {
 		if len(q) != idx.cols {
 			return nil, fmt.Errorf("%w: query %d has %d, want %d", ErrInvalidQueryDim, qi, len(q), idx.cols)
@@ -199,7 +224,9 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 		}
 		ids := make([]string, l)
 		for i := 0; i < l; i++ {
-			ids[i] = idx.entries[idxs[i]].id
+			e := &idx.entries[idxs[i]]
+			e.lastAccess = now
+			ids[i] = e.id
 		}
 		out[qi] = ids
 	}
@@ -207,12 +234,13 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 }
 
 // Store updates or appends the entry; vec is assumed normalized by caller (dim is sticky from load).
+// When maxVectors is set and the cap is reached, the least-recently-accessed entry is evicted.
 func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	stored := make([]float32, len(vec))
 	copy(stored, vec)
-	entry := vectorEntry{id: id, vec: stored, norm: 1}
+	entry := vectorEntry{id: id, vec: stored, norm: 1, lastAccess: time.Now()}
 	if i, ok := idx.byID[id]; ok {
 		idx.entries[i] = entry
 		if idx.cols > 0 {
@@ -221,6 +249,10 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 	} else {
 		if idx.cols == 0 {
 			idx.cols = len(stored)
+		}
+		// Evict LRU entry if at capacity.
+		if idx.maxVectors > 0 && len(idx.entries) >= idx.maxVectors {
+			idx.evictLRU()
 		}
 		idx.byID[id] = len(idx.entries)
 		idx.entries = append(idx.entries, entry)
@@ -232,13 +264,50 @@ func (idx *InMemoryVectorIndex) Store(_ context.Context, id string, vec []float3
 func (idx *InMemoryVectorIndex) Remove(_ context.Context, ids []string) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	changed := false
 	for _, id := range ids {
-		if i, ok := idx.byID[id]; ok {
+		if _, ok := idx.byID[id]; ok {
 			delete(idx.byID, id)
-			idx.entries[i].vec = nil
+			changed = true
 		}
 	}
+	if changed {
+		idx.compact()
+	}
 	return nil
+}
+
+// evictLRU removes the least-recently-accessed entry and compacts the matrix.
+func (idx *InMemoryVectorIndex) evictLRU() {
+	if len(idx.entries) == 0 {
+		return
+	}
+	oldest := 0
+	for i := 1; i < len(idx.entries); i++ {
+		if idx.entries[i].lastAccess.Before(idx.entries[oldest].lastAccess) {
+			oldest = i
+		}
+	}
+	delete(idx.byID, idx.entries[oldest].id)
+	idx.compact()
+}
+
+// compact rebuilds entries and flatMatrix excluding deleted/evicted entries.
+func (idx *InMemoryVectorIndex) compact() {
+	newEntries := make([]vectorEntry, 0, len(idx.entries))
+	newFlat := make([]float32, 0, len(idx.flatMatrix))
+	newByID := make(map[string]int, len(idx.byID))
+	for _, e := range idx.entries {
+		if _, kept := idx.byID[e.id]; !kept {
+			continue
+		}
+		newByID[e.id] = len(newEntries)
+		newEntries = append(newEntries, e)
+		newFlat = append(newFlat, e.vec...)
+	}
+	idx.entries = newEntries
+	idx.flatMatrix = newFlat
+	idx.byID = newByID
 }
 
 // sortByScoreDesc sorts idxs in descending order of scores[idxs[i]].
