@@ -15,6 +15,13 @@ SQLite. Embeddings. Graph traversal. One binary.
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
   <img src="https://img.shields.io/github/actions/workflow/status/pavelveter/hermem/ci.yml" alt="Build">
 </p>
+<p align="center">
+  <a href="docs/OPENAPI.md"><img src="https://img.shields.io/badge/OpenAPI_3.1-Spec-purple?logo=openapiinit" alt="OpenAPI 3.1"></a>
+  <a href="docs/MCP.md"><img src="https://img.shields.io/badge/MCP-Server-blue?logo=modelcontextprotocol" alt="MCP Server"></a>
+  <a href="docs/SDK.md"><img src="https://img.shields.io/badge/Go-SDK-00ADD8?logo=go" alt="Go SDK"></a>
+  <a href="docs/SDK.md"><img src="https://img.shields.io/badge/Python-SDK-3776AB?logo=python" alt="Python SDK"></a>
+  <a href="docs/SDK.md"><img src="https://img.shields.io/badge/TypeScript-SDK-3178C6?logo=typescript" alt="TypeScript SDK"></a>
+</p>
 
 ---
 
@@ -133,7 +140,7 @@ The goal is not to build the biggest memory system. The goal is to build one tha
 
 ## CLI Commands
 
-Cobra-grouped grammar (`git` / `kubectl` style). Every command reads its payload from stdin. Full command tree: [USAGE.md §4.1](docs/USAGE.md#41-command-tree-cobra-grouped-grammar).
+Cobra-grouped grammar (`git` / `kubectl` style). Every command reads its payload from stdin. Full command tree: [CLI.md](docs/CLI.md).
 
 ## Quick Start
 
@@ -158,7 +165,7 @@ echo '{"id":"hello","category":"world","content":"hello world"}' \
   | ./hermem memory store           # creates hermem.db on first store
 ```
 
-For one-shot CLI use without a server, see [USAGE.md §4.2](docs/USAGE.md#4-cli-mode-runbook).
+For one-shot CLI use without a server, see [CLI.md](docs/CLI.md).
 
 ## Installation
 
@@ -194,13 +201,19 @@ All settings are read from `hermem.ini` **next to the binary executable**. If th
 
 ## Usage
 
-See [docs/USAGE.md](docs/USAGE.md) for the complete operator manual including CLI commands, HTTP API endpoints, configuration, and integration guides.
+See [docs/USAGE.md](docs/USAGE.md) for the complete operator manual including CLI commands, HTTP API endpoints, configuration, and integration guides. For CLI reference see [CLI.md](docs/CLI.md), for server endpoints see [SERVER.md](docs/SERVER.md), and for production ops see [RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [USAGE.md](docs/USAGE.md) | Complete operator manual (CLI, HTTP API, configuration, integration) |
+| [CLI.md](docs/CLI.md) | Full CLI reference — command tree, payloads, response shapes |
+| [SERVER.md](docs/SERVER.md) | Server endpoints, error model, authentication |
+| [RUNBOOK.md](docs/RUNBOOK.md) | Production ops — profiling, observability, admin, architecture, DB schema, diagnose |
+| [USAGE.md](docs/USAGE.md) | Build, configuration, embedding models, domain models, memory evolution subsystem |
+| [OPENAPI.md](docs/OPENAPI.md) | OpenAPI 3.1 spec — served at `/openapi.json` and `/openapi.yaml` |
+| [MCP.md](docs/MCP.md) | MCP server — AI assistant integration (Claude Desktop / Claude Code) |
+| [SDK.md](docs/SDK.md) | Official SDKs — Go, Python, TypeScript |
 | [CHANGELOG.md](docs/CHANGELOG.md) | Release history |
 | [ROADMAP.md](docs/ROADMAP.md) | Planned features |
 | [VISION.md](docs/VISION.md) | Long-term goals |
@@ -469,7 +482,6 @@ Some ideas currently being explored:
 - semantic compression
 - graph visualization
 - distributed replication
-- ~~MCP integration~~ ✅
 - CRDT-based synchronization
 - native reranker plugins
 - hybrid lexical/vector retrieval
