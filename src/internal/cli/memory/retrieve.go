@@ -32,6 +32,7 @@ func newRetrieveCmd(env *cli.Env) *cobra.Command {
 				MaxDepth:          req.MaxDepth,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
+				TokenBudget:       env.Cfg.TokenBudget,
 				RankingWeight:     env.Cfg.Ranking,
 				Reranker:          env.Reranker,
 				Ctx:               env.Ctx,

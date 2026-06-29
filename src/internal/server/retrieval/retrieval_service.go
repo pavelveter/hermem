@@ -70,6 +70,7 @@ func (s *HTTPService) optsFromState() core.RetrieveContextOptions {
 	return core.RetrieveContextOptions{
 		DepthCeiling:      state.DepthCeiling,
 		MaxRetrievedNodes: state.MaxRetrievedNodes,
+		TokenBudget:       state.TokenBudget,
 		RankingWeight:     state.RankingWeight,
 		Reranker:          state.Reranker,
 	}

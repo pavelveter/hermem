@@ -110,6 +110,7 @@ dim = 768                        # embedding dimension for vec0 table (must matc
 [retrieval]
 depth_ceiling = 5                 # hard clamp on requested max_depth
 max_nodes     = 100               # soft cap on nodes per RetrieveContext
+token_budget  = 4000              # soft token limit; 0 = unlimited (uses max_nodes only)
 
 [ranking]                          # tunable ranking weights
 vector_weight         = 0.7       # vector similarity weight (0 = disabled)

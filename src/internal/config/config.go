@@ -30,6 +30,7 @@ type Config struct {
 	DedupThreshold     float32
 	MaxDepthCeiling    int
 	MaxRetrievedNodes  int
+	TokenBudget        int // soft token limit for retrieval; 0 = unlimited
 	VectorBackend      string
 	VectorDim          int
 	APIKey             string

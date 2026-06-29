@@ -9,8 +9,19 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
+// checkRateLimit returns a rate-limit error if the limiter is exhausted.
+func (s *Server) checkRateLimit() error {
+	if s.limiter != nil && !s.limiter.Allow() {
+		return fmt.Errorf("rate limit exceeded — too many concurrent requests, please retry after a moment")
+	}
+	return nil
+}
+
 // handleMemorySearch searches memories by semantic similarity via the retrieval service.
 func (s *Server) handleMemorySearch(ctx context.Context, _ *gomcp.CallToolRequest, in SearchInput) (*gomcp.CallToolResult, any, error) {
+	if err := s.checkRateLimit(); err != nil {
+		return toolError(err.Error())
+	}
 	if in.Query == "" {
 		return toolError("query is required")
 	}
@@ -33,6 +44,9 @@ func (s *Server) handleMemorySearch(ctx context.Context, _ *gomcp.CallToolReques
 
 // handleMemoryStore stores a new memory via the memory service.
 func (s *Server) handleMemoryStore(ctx context.Context, _ *gomcp.CallToolRequest, in StoreInput) (*gomcp.CallToolResult, any, error) {
+	if err := s.checkRateLimit(); err != nil {
+		return toolError(err.Error())
+	}
 	if in.ID == "" || in.Category == "" || in.Content == "" {
 		return toolError("id, category, and content are required")
 	}
@@ -63,6 +77,9 @@ func (s *Server) handleMemoryStore(ctx context.Context, _ *gomcp.CallToolRequest
 
 // handleMemoryRetrieve retrieves contextual memories via the retrieval service.
 func (s *Server) handleMemoryRetrieve(ctx context.Context, _ *gomcp.CallToolRequest, in RetrieveInput) (*gomcp.CallToolResult, any, error) {
+	if err := s.checkRateLimit(); err != nil {
+		return toolError(err.Error())
+	}
 	if len(in.SeedIDs) == 0 {
 		return toolError("seed_ids array is required")
 	}
@@ -77,6 +94,7 @@ func (s *Server) handleMemoryRetrieve(ctx context.Context, _ *gomcp.CallToolRequ
 	if state != nil {
 		opts.DepthCeiling = state.DepthCeiling
 		opts.MaxRetrievedNodes = state.MaxRetrievedNodes
+		opts.TokenBudget = state.TokenBudget
 		opts.RankingWeight = state.RankingWeight
 	}
 
@@ -90,6 +108,9 @@ func (s *Server) handleMemoryRetrieve(ctx context.Context, _ *gomcp.CallToolRequ
 
 // handleTaskCreate creates a new task via the task service.
 func (s *Server) handleTaskCreate(ctx context.Context, _ *gomcp.CallToolRequest, in TaskCreateInput) (*gomcp.CallToolResult, any, error) {
+	if err := s.checkRateLimit(); err != nil {
+		return toolError(err.Error())
+	}
 	if in.Content == "" {
 		return toolError("content is required")
 	}
@@ -189,6 +210,9 @@ func (s *Server) handleGraphComponents(ctx context.Context, _ *gomcp.CallToolReq
 
 // handleIngestDialog ingests a conversation dialog via the ingest service.
 func (s *Server) handleIngestDialog(ctx context.Context, _ *gomcp.CallToolRequest, in IngestDialogInput) (*gomcp.CallToolResult, any, error) {
+	if err := s.checkRateLimit(); err != nil {
+		return toolError(err.Error())
+	}
 	if in.Dialog == "" {
 		return toolError("dialog is required")
 	}
@@ -212,6 +236,9 @@ func (s *Server) handleIngestDialog(ctx context.Context, _ *gomcp.CallToolReques
 
 // handleGraphCommunities runs Louvain community detection via the graph service.
 func (s *Server) handleGraphCommunities(ctx context.Context, _ *gomcp.CallToolRequest, in GraphCommunitiesInput) (*gomcp.CallToolResult, any, error) {
+	if err := s.checkRateLimit(); err != nil {
+		return toolError(err.Error())
+	}
 	maxIter := 10
 	if in.MaxIterations != nil && *in.MaxIterations > 0 {
 		maxIter = *in.MaxIterations

@@ -31,6 +31,7 @@ func newResponseCmd(env *cli.Env) *cobra.Command {
 			opts := core.RetrieveContextOptions{
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
+				TokenBudget:       env.Cfg.TokenBudget,
 				RankingWeight:     env.Cfg.Ranking,
 				Reranker:          env.Reranker,
 				Ctx:               env.Ctx,

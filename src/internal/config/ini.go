@@ -220,6 +220,7 @@ func applyINIFields(cfg *Config, getStr getStrFunc, getInt getIntFunc, getFloat3
 	// Retrieval section
 	cfg.MaxDepthCeiling = getInt("retrieval", "depth_ceiling", cfg.MaxDepthCeiling, 0)
 	cfg.MaxRetrievedNodes = getInt("retrieval", "max_nodes", cfg.MaxRetrievedNodes, 0)
+	cfg.TokenBudget = getInt("retrieval", "token_budget", cfg.TokenBudget, 0)
 
 	// Retention section
 	cfg.Retention.ObservationTTL = getDuration("retention", "observation_ttl", cfg.Retention.ObservationTTL)

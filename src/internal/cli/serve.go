@@ -113,5 +113,6 @@ func buildState(cfg *config.Config, reranker core.Reranker) *serverstate.State {
 		Reranker:           reranker,
 		DepthCeiling:       cfg.MaxDepthCeiling,
 		MaxRetrievedNodes:  cfg.MaxRetrievedNodes,
+		TokenBudget:        cfg.TokenBudget,
 	}
 }
