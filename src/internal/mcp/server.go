@@ -1,6 +1,6 @@
 // Package mcp provides the Model Context Protocol (MCP) server for Hermem.
 // It exposes Hermem memory, task, and graph operations as MCP tools,
-// allowing AI assistants to interact with the knowledge base.
+// allowing AI assistants to interact with the knowledge base directly.
 package mcp
 
 import (
@@ -10,18 +10,34 @@ import (
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/pavelveter/hermem/src/internal/core"
+	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
+	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
+	memdomain "github.com/pavelveter/hermem/src/internal/memory"
+	retrievaldomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
-// Server wraps the MCP server with Hermem dependencies.
+// Deps holds the domain services the MCP server needs.
+type Deps struct {
+	Memory   *memdomain.Service
+	Retrieve *retrievaldomain.Service
+	Task     *taskdomain.Service
+	Graph    *graphdomain.Service
+	Ingest   *ingestdomain.Service
+	Refs     *serverstate.Ref
+}
+
+// Server wraps the MCP server with Hermem domain services.
 type Server struct {
 	mcpServer *gomcp.Server
-	refs      *serverstate.Ref
+	deps      Deps
 }
 
 // NewServer creates a new MCP server with all Hermem tools registered.
-func NewServer(refs *serverstate.Ref) *Server {
-	s := &Server{refs: refs}
+func NewServer(deps Deps) *Server {
+	s := &Server{deps: deps}
 	s.mcpServer = gomcp.NewServer(
 		&gomcp.Implementation{
 			Name:    "hermem",
@@ -130,6 +146,15 @@ type GraphComponentsInput struct {
 
 type IngestDialogInput struct {
 	Dialog string `json:"dialog"`
+}
+
+// schema returns the current schema config from server state.
+func (s *Server) schema() core.SchemaConfig {
+	state := s.deps.Refs.Load()
+	if state == nil {
+		return core.DefaultSchemaConfig(false)
+	}
+	return state.Schema
 }
 
 // outputJSON marshals a value to JSON and returns it as text content.

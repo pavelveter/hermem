@@ -5,11 +5,12 @@ import (
 	"fmt"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// handleMemorySearch handles the memory_search tool.
-func (s *Server) handleMemorySearch(_ context.Context, _ *gomcp.CallToolRequest, in SearchInput) (*gomcp.CallToolResult, any, error) {
+// handleMemorySearch searches memories by semantic similarity via the retrieval service.
+func (s *Server) handleMemorySearch(ctx context.Context, _ *gomcp.CallToolRequest, in SearchInput) (*gomcp.CallToolResult, any, error) {
 	if in.Query == "" {
 		return toolError("query is required")
 	}
@@ -18,20 +19,25 @@ func (s *Server) handleMemorySearch(_ context.Context, _ *gomcp.CallToolRequest,
 		limit = *in.Limit
 	}
 
+	results, err := s.deps.Retrieve.Search(ctx, in.Query, limit)
+	if err != nil {
+		return toolError(fmt.Sprintf("search failed: %v", err))
+	}
+
 	return outputJSON(map[string]interface{}{
-		"query": in.Query,
-		"limit": limit,
-		"note":  "use HTTP API /search endpoint for full semantic search with vector index",
+		"query":   in.Query,
+		"results": results,
+		"count":   len(results),
 	})
 }
 
-// handleMemoryStore handles the memory_store tool.
-func (s *Server) handleMemoryStore(_ context.Context, _ *gomcp.CallToolRequest, in StoreInput) (*gomcp.CallToolResult, any, error) {
+// handleMemoryStore stores a new memory via the memory service.
+func (s *Server) handleMemoryStore(ctx context.Context, _ *gomcp.CallToolRequest, in StoreInput) (*gomcp.CallToolResult, any, error) {
 	if in.ID == "" || in.Category == "" || in.Content == "" {
 		return toolError("id, category, and content are required")
 	}
 
-	state := s.refs.Load()
+	state := s.deps.Refs.Load()
 	if state == nil {
 		return toolError("server state not available")
 	}
@@ -39,16 +45,24 @@ func (s *Server) handleMemoryStore(_ context.Context, _ *gomcp.CallToolRequest, 
 		return toolError(fmt.Sprintf("unknown category: %s", in.Category))
 	}
 
+	err := s.deps.Memory.Store(ctx, core.StoreRequest{
+		ID:       in.ID,
+		Category: in.Category,
+		Content:  in.Content,
+	}, state.Schema)
+	if err != nil {
+		return toolError(fmt.Sprintf("store failed: %v", err))
+	}
+
 	return outputJSON(map[string]interface{}{
 		"status":   "ok",
 		"id":       in.ID,
 		"category": in.Category,
-		"note":     "stored via MCP — use HTTP API /store for full embedding pipeline",
 	})
 }
 
-// handleMemoryRetrieve handles the memory_retrieve tool.
-func (s *Server) handleMemoryRetrieve(_ context.Context, _ *gomcp.CallToolRequest, in RetrieveInput) (*gomcp.CallToolResult, any, error) {
+// handleMemoryRetrieve retrieves contextual memories via the retrieval service.
+func (s *Server) handleMemoryRetrieve(ctx context.Context, _ *gomcp.CallToolRequest, in RetrieveInput) (*gomcp.CallToolResult, any, error) {
 	if len(in.SeedIDs) == 0 {
 		return toolError("seed_ids array is required")
 	}
@@ -58,31 +72,45 @@ func (s *Server) handleMemoryRetrieve(_ context.Context, _ *gomcp.CallToolReques
 		limit = *in.Limit
 	}
 
-	return outputJSON(map[string]interface{}{
-		"seed_ids": in.SeedIDs,
-		"limit":    limit,
-		"note":     "use HTTP API /retrieve for full multi-hop retrieval",
-	})
+	state := s.deps.Refs.Load()
+	opts := core.RetrieveContextOptions{TopK: limit}
+	if state != nil {
+		opts.DepthCeiling = state.DepthCeiling
+		opts.MaxRetrievedNodes = state.MaxRetrievedNodes
+		opts.RankingWeight = state.RankingWeight
+	}
+
+	result, err := s.deps.Retrieve.Retrieve(ctx, in.SeedIDs, opts)
+	if err != nil {
+		return toolError(fmt.Sprintf("retrieve failed: %v", err))
+	}
+
+	return outputJSON(result)
 }
 
-// handleTaskCreate handles the task_create tool.
-func (s *Server) handleTaskCreate(_ context.Context, _ *gomcp.CallToolRequest, in TaskCreateInput) (*gomcp.CallToolResult, any, error) {
+// handleTaskCreate creates a new task via the task service.
+func (s *Server) handleTaskCreate(ctx context.Context, _ *gomcp.CallToolRequest, in TaskCreateInput) (*gomcp.CallToolResult, any, error) {
 	if in.Content == "" {
 		return toolError("content is required")
 	}
 
+	state := s.deps.Refs.Load()
 	id := core.NewTaskID()
+
+	newID, err := s.deps.Task.Create(ctx, id, in.Content, in.ContextIDs, state.Schema)
+	if err != nil {
+		return toolError(fmt.Sprintf("create task failed: %v", err))
+	}
+
 	return outputJSON(map[string]interface{}{
-		"status":      "ok",
-		"id":          id,
-		"content":     in.Content,
-		"context_ids": in.ContextIDs,
-		"note":        "use HTTP API /task/create for full task lifecycle",
+		"status":  "ok",
+		"id":      newID,
+		"content": in.Content,
 	})
 }
 
-// handleTaskList handles the task_list tool.
-func (s *Server) handleTaskList(_ context.Context, _ *gomcp.CallToolRequest, in TaskListInput) (*gomcp.CallToolResult, any, error) {
+// handleTaskList lists tasks via the task service.
+func (s *Server) handleTaskList(ctx context.Context, _ *gomcp.CallToolRequest, in TaskListInput) (*gomcp.CallToolResult, any, error) {
 	status := ""
 	if in.Status != nil {
 		status = *in.Status
@@ -92,60 +120,92 @@ func (s *Server) handleTaskList(_ context.Context, _ *gomcp.CallToolRequest, in 
 		goalID = *in.GoalID
 	}
 
+	state := s.deps.Refs.Load()
+	tasks, err := s.deps.Task.List(ctx, status, goalID, state.Schema)
+	if err != nil {
+		return toolError(fmt.Sprintf("list tasks failed: %v", err))
+	}
+
 	return outputJSON(map[string]interface{}{
-		"status":  status,
-		"goal_id": goalID,
-		"note":    "use HTTP API /task/list for full task listing",
+		"tasks": tasks,
+		"count": len(tasks),
 	})
 }
 
-// handleTaskStatus handles the task_status tool.
-func (s *Server) handleTaskStatus(_ context.Context, _ *gomcp.CallToolRequest, in TaskStatusInput) (*gomcp.CallToolResult, any, error) {
+// handleTaskStatus transitions a task status via the task service.
+func (s *Server) handleTaskStatus(ctx context.Context, _ *gomcp.CallToolRequest, in TaskStatusInput) (*gomcp.CallToolResult, any, error) {
 	if in.ID == "" || in.Status == "" {
 		return toolError("id and status are required")
+	}
+
+	state := s.deps.Refs.Load()
+	err := s.deps.Task.Status(ctx, in.ID, in.Status, state.Schema)
+	if err != nil {
+		return toolError(fmt.Sprintf("status transition failed: %v", err))
 	}
 
 	return outputJSON(map[string]interface{}{
 		"id":     in.ID,
 		"status": in.Status,
-		"note":   "use HTTP API /task/status for full state transitions",
 	})
 }
 
-// handleTaskShow handles the task_show tool.
-func (s *Server) handleTaskShow(_ context.Context, _ *gomcp.CallToolRequest, in TaskShowInput) (*gomcp.CallToolResult, any, error) {
+// handleTaskShow shows task details via the task service.
+func (s *Server) handleTaskShow(ctx context.Context, _ *gomcp.CallToolRequest, in TaskShowInput) (*gomcp.CallToolResult, any, error) {
 	if in.ID == "" {
 		return toolError("id is required")
 	}
 
+	state := s.deps.Refs.Load()
+	entity, blocked, recovers, err := s.deps.Task.Show(ctx, in.ID, state.Schema)
+	if err != nil {
+		return toolError(fmt.Sprintf("show task failed: %v", err))
+	}
+
 	return outputJSON(map[string]interface{}{
-		"id":   in.ID,
-		"note": "use HTTP API /task/show for full task details",
+		"entity":       entity,
+		"blocked_by":   blocked,
+		"recovers_via": recovers,
 	})
 }
 
-// handleGraphComponents handles the graph_components tool.
-func (s *Server) handleGraphComponents(_ context.Context, _ *gomcp.CallToolRequest, in GraphComponentsInput) (*gomcp.CallToolResult, any, error) {
+// handleGraphComponents finds connected components via the graph service.
+func (s *Server) handleGraphComponents(ctx context.Context, _ *gomcp.CallToolRequest, in GraphComponentsInput) (*gomcp.CallToolResult, any, error) {
 	minSize := 2
 	if in.MinSize != nil && *in.MinSize > 0 {
 		minSize = *in.MinSize
 	}
 
+	components, err := s.deps.Graph.Components(ctx, minSize)
+	if err != nil {
+		return toolError(fmt.Sprintf("graph components failed: %v", err))
+	}
+
 	return outputJSON(map[string]interface{}{
-		"min_size": minSize,
-		"note":     "use HTTP API /connected-components for full graph analysis",
+		"components": components,
+		"count":      len(components),
 	})
 }
 
-// handleIngestDialog handles the ingest_dialog tool.
-func (s *Server) handleIngestDialog(_ context.Context, _ *gomcp.CallToolRequest, in IngestDialogInput) (*gomcp.CallToolResult, any, error) {
+// handleIngestDialog ingests a conversation dialog via the ingest service.
+func (s *Server) handleIngestDialog(ctx context.Context, _ *gomcp.CallToolRequest, in IngestDialogInput) (*gomcp.CallToolResult, any, error) {
 	if in.Dialog == "" {
 		return toolError("dialog is required")
 	}
 
+	dedupThreshold := float32(0.8)
+	state := s.deps.Refs.Load()
+	if state != nil && s.deps.Ingest != nil {
+		// Use a default dedup threshold; the HTTP server reads this from config.
+		_ = dedupThreshold
+	}
+
+	err := s.deps.Ingest.Ingest(ctx, in.Dialog, dedupThreshold, s.schema())
+	if err != nil {
+		return toolError(fmt.Sprintf("ingest failed: %v", err))
+	}
+
 	return outputJSON(map[string]interface{}{
 		"status": "ok",
-		"dialog": in.Dialog,
-		"note":   "use HTTP API /ingest for full LLM extraction pipeline",
 	})
 }
