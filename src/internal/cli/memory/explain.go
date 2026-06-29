@@ -59,7 +59,7 @@ func newExplainCmd(env *cli.Env) *cobra.Command {
 func printExplainTree(cmd *cobra.Command, query string, result *core.RetrievalResult, env *cli.Env) error {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Query: %q\n\n", query))
+	fmt.Fprintf(&sb, "Query: %q\n\n", query)
 
 	// Seeds section.
 	sb.WriteString("── Seeds (vector search) ──\n")
@@ -71,8 +71,8 @@ func printExplainTree(cmd *cobra.Command, query string, result *core.RetrievalRe
 			if env.VI != nil {
 				sim = "≈"
 			}
-			sb.WriteString(fmt.Sprintf("  [%s] depth=0 score=%.3f %s\n",
-				seed.Entity.ID, seed.RankingScore, sim))
+			fmt.Fprintf(&sb, "  [%s] depth=0 score=%.3f %s\n",
+				seed.Entity.ID, seed.RankingScore, sim)
 		}
 	}
 	sb.WriteString("\n")
@@ -98,23 +98,23 @@ func printExplainTree(cmd *cobra.Command, query string, result *core.RetrievalRe
 					f.ScoreBreakdown.CentralityScore,
 					f.ScoreBreakdown.DepthPenalty)
 			}
-			sb.WriteString(fmt.Sprintf("  %s %-12s%s%s\n",
-				indent(f.Depth), depthStr, truncate(f.Content, 60), scoreStr))
+			fmt.Fprintf(&sb, "  %s %-12s%s%s\n",
+				indent(f.Depth), depthStr, truncate(f.Content, 60), scoreStr)
 			if parentStr != "" {
-				sb.WriteString(fmt.Sprintf("  %s└─%s\n", indent(f.Depth), parentStr))
+				fmt.Fprintf(&sb, "  %s└─%s\n", indent(f.Depth), parentStr)
 			}
 		}
 	}
 	sb.WriteString("\n")
 
 	// Summary.
-	sb.WriteString(fmt.Sprintf("── Summary ──\n"))
-	sb.WriteString(fmt.Sprintf("  Seeds: %d | World: %d | Opinion: %d | Experience: %d | Observation: %d\n",
+	sb.WriteString("── Summary ──\n")
+	fmt.Fprintf(&sb, "  Seeds: %d | World: %d | Opinion: %d | Experience: %d | Observation: %d\n",
 		len(result.SeedNodes),
 		len(result.WorldFacts),
 		len(result.Opinions),
 		len(result.Experiences),
-		len(result.Observations)))
+		len(result.Observations))
 
 	_, err := fmt.Fprint(cmd.OutOrStdout(), sb.String())
 	return err

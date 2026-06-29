@@ -85,9 +85,9 @@ func putInts(d []int) {
 }
 
 type vectorEntry struct {
-	id        string
-	vec       []float32
-	norm      float32
+	id         string
+	vec        []float32
+	norm       float32
 	lastAccess time.Time
 }
 
