@@ -1,383 +1,388 @@
-# TODO: E2E Test Suite + Public Developer Interfaces
+# Technical Task: Architecture Hardening & Domain Decomposition
+
+## Goal
+
+Continue evolving Hermem from a well-structured application into a maintainable long-term platform.
+
+The objective is **not** to add new features, but to reduce architectural risk, improve separation of concerns, and make future development easier.
 
 ---
 
-## P0 — E2E Test Suite (CLI + HTTP API)
+# General Rules
 
-### Goal
+After completing **every individual task** (including sub-tasks):
 
-Implement a comprehensive end-to-end (E2E) test suite covering every public user-facing interface of Hermem.
+- [ ] Run the complete test suite.
+- [ ] Run all linters and static analysis.
+- [ ] Fix every warning or failure before proceeding.
+- [ ] Ensure there is no behavior regression.
+- [ ] Create a separate Git commit with a meaningful commit message.
+- [ ] Mark every sub-task as done with [x].
 
-### Requirements
+Do **not** continue to the next task until the current one is green.
 
-- Test every CLI command.
-- Test every HTTP endpoint.
-- Verify successful and failure scenarios.
-- Verify JSON schemas where applicable.
-- Verify exit codes.
-- Verify HTTP status codes.
-- Verify persistence across process restarts.
-- Verify compatibility between CLI and HTTP (same database).
+---
 
-### General Principles
+# Priority P0 (Highest)
 
-- Tests must use only public interfaces.
-- No calls into internal Go packages.
-- Every test starts from a clean temporary directory.
-- Every test creates its own `hermem.ini` and SQLite database.
-- Tests must be deterministic.
-- Tests must be runnable in CI.
-- Tests must support Linux and macOS.
+## [x] P0.1 Split Store into Domain Repositories
 
-### Test Layout
+### Problem
+
+The `store` package is steadily becoming a God Repository responsible for every persistence concern.
+
+As the project grows, this will become increasingly difficult to maintain.
+
+### Tasks
+
+- [ ] Identify logical persistence domains.
+- [ ] Split persistence code into dedicated repository files (or packages if appropriate).
+
+Suggested structure:
 
 ```
-tests/
-    e2e/
-        cli/
-        http/
-        fixtures/
-        helpers/
-        snapshots/
+store/
+    entity_repository.go
+    graph_repository.go
+    retrieval_repository.go
+    provenance_repository.go
+    task_repository.go
+    migration_repository.go
+    retention_repository.go
 ```
 
-### Helpers
+- [ ] Move SQL queries close to their owning repository.
+- [ ] Eliminate unrelated responsibilities from each repository.
+- [ ] Keep public API backward compatible whenever possible.
+- [ ] Preserve transaction behavior.
+- [ ] Preserve error semantics.
 
-Helpers should provide:
+Acceptance Criteria
 
-- temporary workspace creation
-- temporary config generation
-- server startup/shutdown
-- free-port allocation
-- HTTP client
-- CLI wrapper
-- JSON comparison
-- polling utilities
-- snapshot helpers
-
-### CLI Coverage
-
-#### Top level
-
-- `serve`
-- `health`
-- `metrics`
-- `version`
-- `diagnose`
-- `bench`
-
-#### Admin
-
-- `admin keys list`
-- `admin keys add`
-- `admin keys rotate`
-- `admin keys revoke`
-
-#### Operations
-
-- `ops stats`
-- `ops integrity`
-- `ops vacuum`
-- `ops rebuild-index`
-
-#### Profiling
-
-- `profile cpu`
-- `profile heap`
-- `profile goroutine`
-- `profile trace`
-
-#### Memory
-
-- `memory store`
-- `memory search`
-- `memory retrieve`
-- `memory query`
-- `memory response`
-- `memory ingest`
-- `memory edge`
-- `memory explain`
-- `memory re-embed`
-- `memory quantize`
-
-#### Task
-
-- `task create`
-- `task status`
-- `task list`
-- `task show`
-- `task dep`
-- `task tree`
-- `task rollback`
-- `task executable`
-- `task next`
-
-#### Graph
-
-- `graph plan`
-- `graph recovery-plan`
-- `graph components`
-- `graph communities`
-- `graph verify`
-- `graph contradictions`
-- `graph provenance`
-
-#### Temporal
-
-- `time temporal`
-- `time timeline`
-
-#### Agent
-
-- `agent loop`
-
-#### Database
-
-- `db migrate`
-- `db dry-run`
-- `db rollback`
-- `db verify`
-- `db schema`
-
-### HTTP Coverage
-
-#### GET
-
-- `/health`
-- `/health/live`
-- `/health/ready`
-- `/metrics`
-- `/timeline`
-- `/provenance`
-- `/contradictions`
-- `/connected-components`
-- `/communities`
-- `/recovery-plan`
-- `/graph/verify`
-
-#### POST
-
-- `/store`
-- `/search`
-- `/retrieve`
-- `/query`
-- `/query/explain`
-- `/query/temporal`
-- `/response`
-- `/ingest`
-- `/edge`
-- `/task/create`
-- `/task/status`
-- `/task/list`
-- `/task/show`
-- `/task/dep`
-- `/task/tree`
-- `/task/rollback`
-- `/task/executable`
-- `/task/next`
-- `/admin/re-embed`
-
-### Positive Scenarios
-
-- valid requests
-- persistence
-- graph traversal
-- vector search
-- ingestion
-- deduplication
-- contradiction detection
-- temporal filtering
-- provenance
-- state transitions
-- dependency resolution
-- recovery plans
-- graph analytics
-- explain mode
-- authentication enabled
-- authentication disabled
-
-### Negative Scenarios
-
-- malformed JSON
-- missing required fields
-- unknown fields
-- invalid category
-- invalid relation
-- invalid task state
-- invalid transition
-- missing entity
-- invalid IDs
-- invalid API key
-- duplicate edges
-- invalid timestamps
-- invalid configuration
-- database locked
-- corrupted database
-- unsupported vector dimension
-
-### Cross-Interface Scenarios
-
-- store via CLI → query via HTTP
-- store via HTTP → query via CLI
-- ingest via HTTP → retrieve via CLI
-- edge via CLI → retrieve via HTTP
-- restart server → data still exists
-- concurrent CLI + HTTP access
-
-### Persistence Scenarios
-
-- restart process
-- WAL recovery
-- migration on existing database
-- empty database
-- populated database
-
-### Authentication
-
-- API key required
-- API key missing
-- API key invalid
-- API key valid
-
-### Performance Sanity
-
-- repeated queries
-- repeated inserts
-- repeated graph walks
-- repeated searches
-
-### Assertions
-
-- exit code
-- HTTP status
-- JSON schema
-- expected fields
-- database contents
-- graph integrity
-- idempotency where expected
-- deterministic output where applicable
-
-### CI
-
-The complete E2E suite must run automatically in GitHub Actions and fail the build on any regression.
-
-### Success Criteria
-
-Every documented CLI command and every documented HTTP endpoint is exercised by at least one positive and one negative end-to-end test, providing confidence that the published interface remains stable across future releases.
+- [ ] No repository owns unrelated domains.
+- [ ] Files remain reasonably sized.
+- [ ] Responsibilities are clearly separated.
 
 ---
 
-## P0 — Scenario Runner (YAML-driven)
+## [x] P0.2 Introduce Retrieval Pipeline
 
-### Goal
+### Problem
 
-YAML-driven scenario runner that executes the same test scenario through both CLI and HTTP interfaces, comparing expected results after each step.
+`RetrieveContext()` continues accumulating responsibilities.
 
-### Testdata Layout
+It should become an orchestration layer rather than containing retrieval logic.
 
-```
-testdata/
-    scenarios/
-        basic_memory.yaml
-        contradictions.yaml
-        task_planner.yaml
-        provenance.yaml
-        retrieval.yaml
-        timeline.yaml
-        communities.yaml
+### Tasks
+
+Create a pipeline architecture.
+
+Suggested interface:
+
+```go
+type Stage interface {
+    Run(ctx *PipelineContext) error
+}
 ```
 
-### Scenario Format
+Possible stages:
 
-Each YAML scenario defines a sequence of steps. Each step specifies an action (CLI or HTTP) with input and expected output. The runner executes every step through both interfaces and asserts correctness.
+- [ ] Candidate collection
+- [ ] Graph expansion
+- [ ] Temporal expansion
+- [ ] Score calculation
+- [ ] Score normalization
+- [ ] Reranking
+- [ ] Deduplication
+- [ ] Rendering
+- [ ] Explainability
 
-### Runner
+Pipeline:
 
-- reads a scenario file
-- runs each step via CLI
-- runs each step via HTTP
-- compares actual vs expected output after each step
-- reports pass/fail per step with diff on failure
+```
+RetrieveContext
+    ↓
+Pipeline
+    ↓
+Stage 1
+Stage 2
+Stage 3
+...
+```
 
-### Scenario Coverage
+Acceptance Criteria
 
-| Scenario | Purpose |
-|----------|---------|
-| `basic_memory.yaml` | store, search, query, edge, deduplication |
-| `contradictions.yaml` | ingest contradicting facts, verify contradicts edges |
-| `task_planner.yaml` | task lifecycle: create → status → dependencies → executable → rollback |
-| `provenance.yaml` | store with provenance, query by conversation_id/message_id/source |
-| `retrieval.yaml` | graph traversal, depth limits, score breakdown, explain mode |
-| `timeline.yaml` | timeline ordering, temporal filtering, created_at DESC |
-| `communities.yaml` | connected components, Louvain community detection, modularity |
-
----
-
-## P0 — README & Documentation
-
-- [x] Update `docs/USAGE.md` with E2E test section.
-- [x] Add `make test-e2e` target.
-- [x] Add CI job for E2E suite in GitHub Actions.
-
----
-
-## Phase 1 — OpenAPI 3.1 Spec (DONE)
-
-- [x] Create `api/openapi.go` — OpenAPI 3.1 spec as Go struct, schemas from `core/types.go`
-- [x] Create `api/handler.go` — JSON/YAML spec endpoints
-- [x] Create `api/openapi_test.go` — 7 tests (spec generation, path coverage, schema coverage, operationId/tags)
-- [x] Register `GET /openapi.json` and `GET /openapi.yaml` in `server/server.go`
+- [ ] RetrieveContext primarily orchestrates stages.
+- [ ] Stages have single responsibilities.
+- [ ] Stages are independently testable.
+- [ ] Existing behavior remains unchanged.
 
 ---
 
-## Phase 2 — Go SDK (DONE)
+# Priority P1
 
-- [x] Create `sdk/go/client.go` — `Client` with sub-clients, retry, context, API key
-- [x] Create `sdk/go/types.go` — Entity, Edge, SearchResult, APIError, request/response types
-- [x] Create `sdk/go/memory.go` — Store, Search, Retrieve, Query, Ingest, Edge, Explain, ReEmbed
-- [x] Create `sdk/go/task.go` — Create, Status, List, Show, Dep, Tree, Rollback, Executable, Next
-- [x] Create `sdk/go/graph.go` — Components, Communities, Verify, Contradictions, Provenance, Timeline, RecoveryPlan
-- [x] Create `sdk/go/admin.go` — Health, Ready, MigrateStatus, Schema, VerifyDB
-- [x] Separate Go module: `github.com/pavelveter/hermem/sdk/go`
-- [x] 5 unit tests in `sdk/go/client_test.go`
+## [x] P1.1 Introduce Application Container
+
+### Problem
+
+Dependency wiring is becoming increasingly complex.
+
+The server currently depends on many individual services.
+
+### Tasks
+
+Introduce a root application container.
+
+Example:
+
+```go
+type Application struct {
+    Retrieval ...
+    Memory ...
+    Graph ...
+    Tasks ...
+    ...
+}
+```
+
+Responsibilities:
+
+- [ ] Construct dependency graph.
+- [ ] Own application lifecycle.
+- [ ] Initialize services.
+- [ ] Hide wiring complexity.
+
+Acceptance Criteria
+
+- [ ] Server receives one root dependency instead of many.
+- [ ] Dependency construction is centralized.
+- [ ] Initialization remains deterministic.
 
 ---
 
-## Phase 3 — Python SDK (DONE)
+## [x] P1.2 Move Bootstrap Logic
 
-- [x] Create `sdk/python/hermem/types.py` — dataclass types matching Go SDK
-- [x] Create `sdk/python/hermem/client.py` — Client, MemoryClient, TaskClient, GraphClient, AdminClient
-- [x] Zero external dependencies (stdlib `urllib.request`)
-- [x] Create `sdk/python/pyproject.toml` — PyPI package config
-- [x] 9 unit tests in `sdk/python/tests/test_client.py`
+### Tasks
+
+Create a dedicated bootstrap layer.
+
+Suggested package:
+
+```
+internal/app
+```
+
+or
+
+```
+internal/bootstrap
+```
+
+Move into it:
+
+- [ ] Dependency construction
+- [ ] Configuration loading
+- [ ] Database initialization
+- [ ] Service creation
+- [ ] Router construction
+- [ ] Background workers
+
+Acceptance Criteria
+
+- [ ] main.go becomes minimal.
+- [ ] Startup logic is isolated.
 
 ---
 
-## Phase 4 — TypeScript SDK (DONE)
+## [x] P1.3 Simplify Renderers
 
-- [x] Create `sdk/typescript/src/types.ts` — type definitions
-- [x] Create `sdk/typescript/src/client.ts` — fetch-based client with APIError
-- [x] Create `sdk/typescript/src/index.ts` — entry point
-- [x] Create `sdk/typescript/package.json`, `tsconfig.json`, `vitest.config.ts`
-- [x] 5 vitest tests in `sdk/typescript/test/client.test.ts`
+### Problem
+
+Renderers duplicate traversal logic.
+
+### Tasks
+
+Extract common rendering infrastructure.
+
+Instead of multiple implementations repeating iteration logic:
+
+```
+Markdown
+Plain Text
+JSON
+```
+
+share common traversal and formatting components.
+
+Acceptance Criteria
+
+- [ ] No duplicated traversal loops.
+- [ ] Rendering formats differ only by formatting behavior.
+- [ ] JSON rendering uses encoding/json whenever practical.
 
 ---
 
-## Phase 5 — MCP Server (DONE)
+# Priority P2
 
-- [x] Create `src/internal/mcp/server.go` — MCP server using official Go SDK
-- [x] Create `src/internal/mcp/tools.go` — 9 tools: memory_search, memory_store, memory_retrieve, task_create, task_list, task_status, task_show, graph_components, ingest_dialog
-- [x] CLI command: `hermem mcp` (stdio transport for Claude Desktop / Claude Code)
+## [x] P2.1 Strengthen Domain Model
+
+### Problem
+
+The project still relies heavily on the generic Entity abstraction.
+
+The domain model should become more explicit.
+
+### Tasks
+
+Gradually move toward typed domain objects.
+
+Examples:
+
+- [ ] Fact
+- [ ] Episode
+- [ ] Evidence
+- [ ] Belief
+- [ ] Observation
+- [ ] Task
+
+Entity should increasingly become a persistence representation rather than the primary domain abstraction.
+
+Acceptance Criteria
+
+- [ ] Domain services operate on domain types whenever practical.
+- [ ] Entity is no longer the default business object.
 
 ---
 
-## Phase 6 — Examples, CI & Documentation (DONE)
+## [x] P2.2 Add Property-Based Tests
 
-- [x] `sdk/go/examples/main.go` — Go SDK usage example
-- [x] `sdk/python/examples/main.py` — Python SDK usage example
-- [x] `sdk/typescript/examples/main.ts` — TypeScript SDK usage example
-- [x] `.github/workflows/sdk.yml` — GitHub Actions for SDK unit tests
-- [x] `docs/MCP.md` — MCP server documentation
-- [x] `docs/OPENAPI.md` — OpenAPI 3.1 spec documentation
-- [x] `docs/SDK.md` — Go/Python/TypeScript SDK documentation
-- [x] README.md — Updated with Public Developer Interfaces section
+Introduce property-based testing for graph algorithms and retrieval.
+
+Potential invariants:
+
+### Graph
+
+- [ ] Every node belongs to exactly one connected component.
+- [ ] Traversal never produces duplicate nodes.
+- [ ] Community detection never loses nodes.
+
+### Retrieval
+
+- [ ] Returned IDs are unique.
+- [ ] Scores remain finite.
+- [ ] Sorting order is deterministic.
+- [ ] Empty database never panics.
+- [ ] Random graph generation never crashes retrieval.
+
+Acceptance Criteria
+
+- [ ] Property tests pass consistently.
+- [ ] Randomized inputs expose no panics.
+
+---
+
+## [x] P2.3 Remove Known-Bug Test Exceptions
+
+### Tasks
+
+Find tests marked as:
+
+- skipped
+- known bug
+- TODO
+- temporary workaround
+
+For each case:
+
+- [ ] Determine root cause.
+- [ ] Fix implementation if practical.
+- [ ] Otherwise create a documented tracking issue.
+- [ ] Remove obsolete skips.
+
+Acceptance Criteria
+
+- [ ] No unexplained skipped tests remain.
+
+---
+
+# Priority P3
+
+## [x] P3.1 Expand ADR Documentation
+
+Create Architecture Decision Records for major architectural choices.
+
+Suggested topics:
+
+- [ ] Retrieval pipeline
+- [ ] Repository decomposition
+- [ ] Domain model
+- [ ] Graph architecture
+- [ ] Ranking strategy
+- [ ] Memory lifecycle
+- [ ] Background workers
+- [ ] Dependency injection
+
+Each ADR should explain:
+
+- [ ] Context
+- [ ] Problem
+- [ ] Decision
+- [ ] Alternatives considered
+- [ ] Consequences
+
+---
+
+## [x] P3.2 Review Package Boundaries
+
+Perform a full architectural review.
+
+For every package ask:
+
+- [ ] Does it own exactly one responsibility?
+- [ ] Does it expose the smallest possible public API?
+- [ ] Does it depend only on lower architectural layers?
+- [ ] Can responsibilities be split further?
+
+Acceptance Criteria
+
+- [ ] Reduced coupling.
+- [ ] Improved cohesion.
+- [ ] Cleaner dependency graph.
+
+---
+
+## [x] P3.3 Reduce Architectural Debt
+
+Perform a final cleanup pass.
+
+Look for:
+
+- [ ] God objects
+- [ ] Large files
+- [ ] Large functions
+- [ ] Circular dependencies
+- [ ] Duplicate code
+- [ ] Manual object wiring
+- [ ] Hidden coupling
+- [ ] Excessive package exports
+
+Acceptance Criteria
+
+- [ ] Overall architecture becomes simpler.
+- [ ] No unnecessary complexity is introduced.
+- [ ] Public APIs remain stable.
+
+---
+
+# Final Validation
+
+Before considering this work complete:
+
+- [ ] All tests pass.
+- [ ] All linters pass.
+- [ ] Static analysis passes.
+- [ ] Benchmarks show no significant regressions.
+- [ ] Public API remains backward compatible.
+- [ ] No new architectural warnings are introduced.
+- [ ] Every completed task has its own Git commit.
+- [ ] Documentation is updated where necessary.

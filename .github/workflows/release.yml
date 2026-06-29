@@ -137,9 +137,18 @@ jobs:
               --wait
 
             rm hermem_notary.zip
-            security delete-keychain "$KEYCHAIN_PATH"
           else
             echo "Skipping signing/notarization — missing Apple credentials"
+          fi
+
+      - name: Clean up signing keychain
+        if: always() && matrix.goos == 'darwin'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_ID" ]; then
+            security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
           fi
 
       - name: Create final release archive
