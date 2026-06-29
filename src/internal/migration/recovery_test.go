@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -89,8 +90,8 @@ func TestRecovery_RollbackToTarget(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	// Get the second-to-last migration as target.
-	rows, err := db.Query("SELECT version FROM schema_migrations ORDER BY applied_at DESC")
+	// Get all applied versions.
+	rows, err := db.Query("SELECT version FROM schema_migrations")
 	if err != nil {
 		t.Fatalf("query migrations: %v", err)
 	}
@@ -106,36 +107,29 @@ func TestRecovery_RollbackToTarget(t *testing.T) {
 	if len(versions) < 2 {
 		t.Skip("need at least 2 applied migrations for target test")
 	}
-	target := versions[len(versions)-2] // second from last = first applied
+	// Sort lexicographically — matches the `version > ?` string
+	// comparison used by RollbackMigration.
+	sort.Strings(versions)
+	target := versions[len(versions)-2] // second-to-last lexicographically
 	svc := New(db)
-	for i := len(versions) - 1; i >= 0; i-- {
-		if versions[i] == target {
-			break
-		}
-		name, err := svc.Rollback(t.Context(), target)
-		if err != nil {
-			t.Fatalf("Rollback to %q: %v", target, err)
-		}
-		if name != target {
-			t.Fatalf("want target %q, got %q", target, name)
-		}
+	name, err := svc.Rollback(t.Context(), target)
+	if err != nil {
+		t.Fatalf("Rollback to %q: %v", target, err)
 	}
-	// Verify only migrations up to target remain.
+	if name != target {
+		t.Fatalf("want target %q, got %q", target, name)
+	}
+	// Verify only migrations with version <= target remain.
 	var remaining int
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&remaining); err != nil {
 		t.Fatalf("count remaining: %v", err)
 	}
-	expected := len(versions) - (len(versions) - 1) // target is first applied
-	// Find target index.
-	targetIdx := -1
-	for i, v := range versions {
-		if v == target {
-			targetIdx = i
-			break
+	// Count how many versions are <= target lexicographically.
+	expected := 0
+	for _, v := range versions {
+		if v <= target {
+			expected++
 		}
-	}
-	if targetIdx >= 0 {
-		expected = targetIdx + 1
 	}
 	if remaining != expected {
 		t.Errorf("want %d remaining migrations, got %d", expected, remaining)
