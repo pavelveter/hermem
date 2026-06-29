@@ -98,8 +98,8 @@ func TestCompositeDetector_PipelineRegression(t *testing.T) {
 	}{
 		{
 			name: "lexical_catches_negation",
-			a:    core.Entity{Content: "Я люблю море"},
-			b:    core.Entity{Content: "Я не люблю море"},
+			a:    core.Entity{Content: "Я люблю море", Embedding: []float32{1, 0, 0}},
+			b:    core.Entity{Content: "Я не люблю море", Embedding: []float32{0.95, 0.31, 0}},
 			want: true,
 		},
 		{

@@ -33,7 +33,9 @@ func (d *LexicalDetector) Detect(existing, incoming core.Entity) contradiction.D
 	if lexicalNegationFlip(existing.Content, incoming.Content) {
 		return contradiction.DetectionResult{Detected: true, Reason: lexicalReasonHit, Confidence: 1.0}
 	}
-	return contradiction.DetectionResult{}
+	// Lexical can't rule out a contradiction — signal inconclusive so
+	// heavier detectors (embedding, LLM) can verify.
+	return contradiction.DetectionResult{Inconclusive: true}
 }
 
 func lexicalNegationFlip(a, b string) bool {
