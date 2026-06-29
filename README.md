@@ -409,6 +409,57 @@ There are already excellent vector databases. There are already excellent graph 
 
 ---
 
+# Public Developer Interfaces
+
+Hermem provides OpenAPI 3.1 specs, official SDKs, and a native MCP server for AI assistant integration.
+
+| Interface | Description | Docs |
+|-----------|-------------|------|
+| **OpenAPI 3.1** | Spec served at `/openapi.json` and `/openapi.yaml` | [docs/OPENAPI.md](docs/OPENAPI.md) |
+| **Go SDK** | `github.com/pavelveter/hermem/sdk/go` | [docs/SDK.md](docs/SDK.md) |
+| **Python SDK** | `pip install hermem` (zero dependencies) | [docs/SDK.md](docs/SDK.md) |
+| **TypeScript SDK** | `npm install hermem` (fetch-based) | [docs/SDK.md](docs/SDK.md) |
+| **MCP Server** | `hermem mcp` — stdio transport for Claude Desktop / Claude Code | [docs/MCP.md](docs/MCP.md) |
+
+### Quick example
+
+```go
+// Go
+client := hermem.New("http://localhost:8420")
+client.Memory.Store(ctx, &hermem.StoreRequest{ID: "paris", Category: "fact", Content: "Paris is the capital of France"})
+results, _ := client.Memory.Search(ctx, &hermem.SearchRequest{Query: "capital of France", TopK: 5})
+```
+
+```python
+# Python
+client = Client("http://localhost:8420")
+client.memory.store(StoreRequest(id="paris", category="fact", content="Paris is the capital of France"))
+results = client.memory.search(SearchRequest(query="capital of France", limit=5))
+```
+
+```typescript
+// TypeScript
+const client = new Client("http://localhost:8420");
+await client.memory.store({ id: "paris", category: "fact", content: "Paris is the capital of France" });
+const results = await client.memory.search({ query: "capital of France", limit: 5 });
+```
+
+### MCP integration
+
+```json
+// Claude Desktop config
+{
+  "mcpServers": {
+    "hermem": {
+      "command": "hermem",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+---
+
 # Roadmap
 
 Some ideas currently being explored:
@@ -418,7 +469,7 @@ Some ideas currently being explored:
 - semantic compression
 - graph visualization
 - distributed replication
-- MCP integration
+- ~~MCP integration~~ ✅
 - CRDT-based synchronization
 - native reranker plugins
 - hybrid lexical/vector retrieval

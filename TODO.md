@@ -371,9 +371,13 @@ Each YAML scenario defines a sequence of steps. Each step specifies an action (C
 
 ---
 
-## Phase 6 — Examples & CI
+## Phase 6 — Examples, CI & Documentation (DONE)
 
-- [ ] `sdk/go/examples/main.go` — Go SDK usage example
-- [ ] `sdk/python/examples/main.py` — Python SDK usage example
-- [ ] `sdk/typescript/examples/main.ts` — TypeScript SDK usage example
-- [ ] CI: GitHub Actions for SDK unit tests
+- [x] `sdk/go/examples/main.go` — Go SDK usage example
+- [x] `sdk/python/examples/main.py` — Python SDK usage example
+- [x] `sdk/typescript/examples/main.ts` — TypeScript SDK usage example
+- [x] `.github/workflows/sdk.yml` — GitHub Actions for SDK unit tests
+- [x] `docs/MCP.md` — MCP server documentation
+- [x] `docs/OPENAPI.md` — OpenAPI 3.1 spec documentation
+- [x] `docs/SDK.md` — Go/Python/TypeScript SDK documentation
+- [x] README.md — Updated with Public Developer Interfaces section
