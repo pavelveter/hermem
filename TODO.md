@@ -1,6 +1,4 @@
-# TODO: End-to-End Test Suite
-
-Comprehensive E2E test suite covering every public user-facing interface of Hermem.
+# TODO: E2E Test Suite + Public Developer Interfaces
 
 ---
 
@@ -320,3 +318,62 @@ Each YAML scenario defines a sequence of steps. Each step specifies an action (C
 - [x] Update `docs/USAGE.md` with E2E test section.
 - [x] Add `make test-e2e` target.
 - [x] Add CI job for E2E suite in GitHub Actions.
+
+---
+
+## Phase 1 — OpenAPI 3.1 Spec (DONE)
+
+- [x] Create `api/openapi.go` — OpenAPI 3.1 spec as Go struct, schemas from `core/types.go`
+- [x] Create `api/handler.go` — JSON/YAML spec endpoints
+- [x] Create `api/openapi_test.go` — 7 tests (spec generation, path coverage, schema coverage, operationId/tags)
+- [x] Register `GET /openapi.json` and `GET /openapi.yaml` in `server/server.go`
+
+---
+
+## Phase 2 — Go SDK (DONE)
+
+- [x] Create `sdk/go/client.go` — `Client` with sub-clients, retry, context, API key
+- [x] Create `sdk/go/types.go` — Entity, Edge, SearchResult, APIError, request/response types
+- [x] Create `sdk/go/memory.go` — Store, Search, Retrieve, Query, Ingest, Edge, Explain, ReEmbed
+- [x] Create `sdk/go/task.go` — Create, Status, List, Show, Dep, Tree, Rollback, Executable, Next
+- [x] Create `sdk/go/graph.go` — Components, Communities, Verify, Contradictions, Provenance, Timeline, RecoveryPlan
+- [x] Create `sdk/go/admin.go` — Health, Ready, MigrateStatus, Schema, VerifyDB
+- [x] Separate Go module: `github.com/pavelveter/hermem/sdk/go`
+- [x] 5 unit tests in `sdk/go/client_test.go`
+
+---
+
+## Phase 3 — Python SDK (DONE)
+
+- [x] Create `sdk/python/hermem/types.py` — dataclass types matching Go SDK
+- [x] Create `sdk/python/hermem/client.py` — Client, MemoryClient, TaskClient, GraphClient, AdminClient
+- [x] Zero external dependencies (stdlib `urllib.request`)
+- [x] Create `sdk/python/pyproject.toml` — PyPI package config
+- [x] 9 unit tests in `sdk/python/tests/test_client.py`
+
+---
+
+## Phase 4 — TypeScript SDK (DONE)
+
+- [x] Create `sdk/typescript/src/types.ts` — type definitions
+- [x] Create `sdk/typescript/src/client.ts` — fetch-based client with APIError
+- [x] Create `sdk/typescript/src/index.ts` — entry point
+- [x] Create `sdk/typescript/package.json`, `tsconfig.json`, `vitest.config.ts`
+- [x] 5 vitest tests in `sdk/typescript/test/client.test.ts`
+
+---
+
+## Phase 5 — MCP Server (DONE)
+
+- [x] Create `src/internal/mcp/server.go` — MCP server using official Go SDK
+- [x] Create `src/internal/mcp/tools.go` — 9 tools: memory_search, memory_store, memory_retrieve, task_create, task_list, task_status, task_show, graph_components, ingest_dialog
+- [x] CLI command: `hermem mcp` (stdio transport for Claude Desktop / Claude Code)
+
+---
+
+## Phase 6 — Examples & CI
+
+- [ ] `sdk/go/examples/main.go` — Go SDK usage example
+- [ ] `sdk/python/examples/main.py` — Python SDK usage example
+- [ ] `sdk/typescript/examples/main.ts` — TypeScript SDK usage example
+- [ ] CI: GitHub Actions for SDK unit tests

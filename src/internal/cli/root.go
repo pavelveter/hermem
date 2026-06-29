@@ -41,6 +41,7 @@ extraction engine.
 
 Group layout:
   serve|health|metrics|version    top-level server ops
+  mcp        MCP server for AI assistant integration (stdio)
   memory     store / search / retrieve / query / response / edge / ingest /
              explain / re-embed / quantize
   task       status / list / show / dep / tree / create / rollback / next
@@ -119,6 +120,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		newHealthCmd(env),
 		newMetricsCmd(env),
 		newVersionCmd(env),
+		newMCPCmd(env),
 		admin.NewCmd(env),
 		memory.NewCmd(env),
 		task.NewCmd(env),
