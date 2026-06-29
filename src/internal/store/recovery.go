@@ -102,15 +102,15 @@ func cascadeRollback(db *sql.DB, schema core.SchemaConfig, id, errorContext stri
 	task.Content = newContent
 	result := []core.Task{task}
 
-	// Find all tasks blocked-by this one.
-	blocked, err := GetBlockedBy(db, schema, id)
+	// Find all tasks that this task blocks (dependents).
+	dependents, err := GetDependents(db, schema, id)
 	if err != nil {
 		return result, fmt.Errorf("cascade rollback: dependents of %s: %w", id, err)
 	}
 
 	var firstErr error
-	for _, edge := range blocked {
-		sub, err := cascadeRollback(db, schema, edge.SourceID, errorContext, visited)
+	for _, edge := range dependents {
+		sub, err := cascadeRollback(db, schema, edge.TargetID, errorContext, visited)
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
