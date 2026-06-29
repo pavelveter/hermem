@@ -31,12 +31,18 @@ var quantCodePool = sync.Pool{
 // QuantizeVector quantizes a float32 vector to int8 using the min-max scheme.
 //
 //	bytes per vector: 8 (min/max) + dim (codes) — about 4x smaller than float32.
+//
+// NaN/Inf values in the input are clamped to finite bounds to prevent
+// garbage quantization codes.
 func QuantizeVector(v []float32) QuantizedVector {
 	if len(v) == 0 {
 		return QuantizedVector{}
 	}
 	min, max := v[0], v[0]
 	for _, x := range v {
+		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
+			continue
+		}
 		if x < min {
 			min = x
 		}
@@ -44,8 +50,15 @@ func QuantizeVector(v []float32) QuantizedVector {
 			max = x
 		}
 	}
+	// All NaN/Inf — return zero codes.
+	if math.IsNaN(float64(min)) || math.IsInf(float64(min), 0) {
+		return QuantizedVector{Min: 0, Max: 0, Codes: make([]int8, len(v))}
+	}
 	scale := float32(127) / (max - min)
 	if max == min {
+		scale = 1
+	}
+	if math.IsNaN(float64(scale)) || math.IsInf(float64(scale), 0) {
 		scale = 1
 	}
 	// 2-index slice expression preserves the underlying array's capacity
@@ -55,7 +68,17 @@ func QuantizeVector(v []float32) QuantizedVector {
 	qc := quantCodePool.Get().(*quantCodes) //nolint:errcheck // sync.Pool.New() invariant
 	codes := qc.buf[:len(v)]
 	for i, x := range v {
-		codes[i] = int8((x - min) * scale)
+		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
+			codes[i] = 0
+			continue
+		}
+		val := (x - min) * scale
+		if val < -128 {
+			val = -128
+		} else if val > 127 {
+			val = 127
+		}
+		codes[i] = int8(val)
 	}
 	q := QuantizedVector{Min: min, Max: max, Codes: codes}
 	quantCodePool.Put(qc)
@@ -65,6 +88,10 @@ func QuantizeVector(v []float32) QuantizedVector {
 // DequantizeVector inverts QuantizeVector back to float32 — approximate due to int8 precision loss.
 func DequantizeVector(qv QuantizedVector) []float32 {
 	v := make([]float32, len(qv.Codes))
+	if math.IsNaN(float64(qv.Min)) || math.IsNaN(float64(qv.Max)) ||
+		math.IsInf(float64(qv.Min), 0) || math.IsInf(float64(qv.Max), 0) {
+		return v
+	}
 	scale := (qv.Max - qv.Min) / 127
 	if qv.Max == qv.Min {
 		scale = 1
