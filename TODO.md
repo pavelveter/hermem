@@ -1,121 +1,66 @@
-# TODO: Retrieval Engine Improvements
+# TODO: Public Developer Interfaces
 
-This document tracks architectural improvements that should be implemented after the current stabilization phase.
-
-The goal is to improve flexibility, explainability and long-term maintainability without introducing unnecessary complexity.
+OpenAPI 3.1 spec, official SDKs (Go/Python/TypeScript), and native MCP server.
 
 ---
 
-## P0 — Explainable Retrieval
+## Phase 1 — OpenAPI 3.1 Spec
 
-- [x] **Explain Mode** — Added `ScoreBreakdown` value object with all scoring components (`VectorScore`, `RecencyScore`, `TemporalScore`, `CentralityScore`, `PathScore`, `DepthPenalty`, `FinalScore`) and `Weights` for full explainability. Populate when `Explain=true`.
-
----
-
-## P0 — Contradiction Resolution Strategy
-
-- [x] **Pluggable Interface** — Added `ContradictionResolver` interface with `Resolve(existing, incoming) ResolutionAction`. Ingest pipeline depends only on the interface.
-- [x] **ThresholdResolver** — Initial implementation replaces hardcoded 0.7 threshold with configurable value.
+- [ ] Create `api/openapi.go` — OpenAPI 3.1 spec as Go struct, schemas from `core/types.go`
+- [ ] Create `api/spec.go` — JSON/YAML renderers
+- [ ] Register `GET /openapi.json` and `GET /openapi.yaml` in `server/server.go`
+- [ ] Add `--swagger-ui` flag to `serve` command (embedded Swagger UI + ReDoc)
+- [ ] Add `make openapi-check` CI target (diff generated vs committed spec)
 
 ---
 
-## P0 — Ranking Strategy
+## Phase 2 — Go SDK
 
-- [x] **RankingStrategy Interface** — Added `RankingStrategy` interface with `Name()` and `Weights()`.
-- [x] **Built-in Policies** — `DefaultRanking`, `FreshnessFirst`, `SemanticSearch`, `GraphExpansion`.
-- [x] **Selection** — `RankingStrategyByName(name)` for config-driven policy selection.
-
----
-
-## P1 — Exponential Depth Decay
-
-- [x] **Replace Linear Penalty** — Depth penalty changed from `w.DepthPenalty * pathWeight` (linear) to `2^(-depth)` (exponential). `DepthPenalty` field now represents `1 - decay`.
+- [ ] Create `sdk/go/hermem.go` — `HermemClient` with sub-clients
+- [ ] Create `sdk/go/memory.go` — Store, Search, Query, Retrieve, Ingest, Edge, Explain
+- [ ] Create `sdk/go/task.go` — Create, Status, List, Show, Dep, Tree, Rollback, Executable
+- [ ] Create `sdk/go/graph.go` — Components, Communities, Verify, Contradictions, Provenance, Timeline
+- [ ] Create `sdk/go/errors.go` — typed error mapping
+- [ ] Features: configurable base URL, API key, timeout, retries, context support
+- [ ] Write integration tests
 
 ---
 
-## P1 — Adaptive Auto-Link Threshold
+## Phase 3 — Python SDK
 
-- [x] **Infrastructure** — Added `AdaptiveLinkThreshold` function that scales threshold by local graph density. Disabled by default, ready for production metrics.
-
----
-
-## P1 — Confidence Lifecycle
-
-- [x] **TTL-based Cleanup** — Added `ConfidenceLifecycle` service that archives low-confidence entities after configurable TTL.
-- [x] **Audit Logging** — `slog.Info`/`slog.Debug` logging for archived entities.
-- [x] **Optional** — Disabled by default via `ConfidenceLifecycleConfig.Enabled`.
+- [ ] Generate models from OpenAPI spec via `openapi-python-client`
+- [ ] Create `sdk/python/hermem/client.py` — handcrafted ergonomic client
+- [ ] Add async client via `httpx`
+- [ ] Typed errors mapping HTTP → Python exceptions
+- [ ] `pyproject.toml`, docstrings, examples
 
 ---
 
-## P1 — Property-Based Tests
+## Phase 4 — TypeScript SDK
 
-- [x] **Ranking Invariants** — Deterministic ordering, identical inputs → identical scores.
-- [x] **Scoring Invariants** — Similarity ∈ [0,1], recency ≥ 0, BuildScoreBreakdown matches compositeScore.
-- [x] **Graph Invariants** — MaxDepth respected, no duplicate IDs.
-
----
-
-## P1 — Ranking Benchmarks
-
-- [x] **Per-Strategy Benchmarks** — `BenchmarkCompositeScore_Default/FreshnessFirst`, `BenchmarkComputeScoreComponents`, `BenchmarkBuildScoreBreakdown`, `BenchmarkDepthDecay`, `BenchmarkSortByScoreDesc_100`.
+- [ ] Generate types from OpenAPI spec via `openapi-typescript`
+- [ ] Create `sdk/typescript/src/client.ts` — handcrafted ergonomic client
+- [ ] Dual ESM + CJS, browser-safe
+- [ ] Zod schemas for runtime validation
+- [ ] `package.json`, JSDoc, examples
 
 ---
 
-## P2 — Configuration Profiles
+## Phase 5 — MCP Server
 
-- [x] **RetrievalProfile** — Named profiles bundling ranking weights + retrieval tuning: `Default`, `FreshnessFirst`, `SemanticSearch`, `GraphExpansion`, `ConversationMemory`.
-- [x] **Selection** — `RetrievalProfileByName(name)` for config-driven profile selection.
-
----
-
-## P2 — Config Hot Reload
-
-- [x] **AtomicConfig** — `AtomicConfig` wrapper using `atomic.Pointer` for lock-free reads and atomic replacement. Methods: `Load()`, `Store()`, `Swap()`.
+- [ ] Create `mcp/server.go` — MCP protocol over stdio + optional SSE
+- [ ] Create `mcp/tools.go` — 17 tool definitions with JSON Schema
+- [ ] Reuse domain services (no duplicated logic)
+- [ ] CLI command: `hermem mcp [--transport stdio|sse] [--port 8421]`
 
 ---
 
-## P2 — Score Normalization Research
+## Phase 6 — Examples & CI
 
-- [x] **ScoreNormalizer Interface** — `Normalize(raw) float32` for [0,1] output.
-- [x] **Implementations** — `LinearNormalizer`, `LogNormalizer`, `SigmoidNormalizer`, `TanhNormalizer`.
-- [x] **Factory** — `NormalizerByName(name, min, max)` for config-driven selection.
-
----
-
-## P2 — sqlite-vec Backend
-
-- [x] **SQLiteVecIndex** — Stub implementation of `core.VectorIndex` backed by sqlite-vec extension. Falls back to in-memory when unavailable.
-- [x] **Architecture** — `NewIndex(backend, db, dim)` supports "sqlite-vec" backend with graceful fallback.
-
----
-
-## P3 — Retrieval Pipeline
-
-- [x] **Pipeline Type** — Explicit `Pipeline` struct with pluggable stages: `CandidateRetrievalStage`, `RankingStage`, `ContextAssemblyStage`, `RenderingStage`.
-- [x] **Default Implementations** — Delegate to existing package-level functions.
-- [x] **Composition** — `SetExpand()`, `SetRank()`, `SetAssembly()`, `SetRender()` for stage replacement.
-
----
-
-## P3 — ADR Improvements
-
-- [x] **ADR-001** — Explainable Retrieval via ScoreBreakdown.
-- [x] **ADR-002** — Pluggable Contradiction Resolution Strategy.
-- [x] **ADR-003** — Ranking Strategy Interface.
-- [x] **ADR-004** — Exponential Depth Decay.
-
-Each ADR includes: Context, Decision, Alternatives Considered, Trade-offs Accepted.
-
----
-
-## Explicitly Deferred
-
-The following ideas are intentionally postponed until profiling demonstrates a measurable need:
-
-- sync.Pool
-- worker-based ingest pipeline
-- replacing recursive CTE with Go BFS
-- aggressive interface extraction
-- premature micro-optimizations
-
-Hermem should remain simple, deterministic and maintainable until real workloads justify additional complexity.
+- [ ] `examples/openai/` — Function calling with Hermem context
+- [ ] `examples/ollama/` — Local offline pipeline
+- [ ] `examples/claude-desktop/` — Native MCP integration
+- [ ] `examples/cursor/` — MCP tool configuration
+- [ ] `examples/vscode/` — Extension integration
+- [ ] `examples/mcp-client/` — Generic Python/TypeScript scripts
+- [ ] CI: OpenAPI diff check, SDK tests, MCP compliance tests
