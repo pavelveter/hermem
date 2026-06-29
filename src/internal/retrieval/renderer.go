@@ -1,6 +1,7 @@
 package retrieval
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -12,20 +13,30 @@ type Renderer interface {
 	Render(result *core.RetrievalResult) string
 }
 
+// FactFormatter formats a single RetrievedFact for display.
+type FactFormatter func(f core.RetrievedFact) string
+
+// traverseBuckets iterates over the four fact categories and calls fn for each.
+func traverseBuckets(result *core.RetrievalResult, fn func(category string, facts []core.RetrievedFact)) {
+	if result == nil || len(result.SeedNodes) == 0 {
+		return
+	}
+	fn("WORLD", result.WorldFacts)
+	fn("OPINION", result.Opinions)
+	fn("EXPERIENCE", result.Experiences)
+	fn("OBSERVATION", result.Observations)
+}
+
 // MarkdownRenderer renders a RetrievalResult as markdown.
 type MarkdownRenderer struct{}
 
 // Render implements Renderer.
 func (r *MarkdownRenderer) Render(result *core.RetrievalResult) string {
-	if result == nil || len(result.SeedNodes) == 0 {
-		return ""
-	}
 	var sb strings.Builder
 	sb.WriteString("# Memory Context\n\n")
-	writeBucket(&sb, "WORLD", result.WorldFacts)
-	writeBucket(&sb, "OPINION", result.Opinions)
-	writeBucket(&sb, "EXPERIENCE", result.Experiences)
-	writeBucket(&sb, "OBSERVATION", result.Observations)
+	traverseBuckets(result, func(cat string, facts []core.RetrievedFact) {
+		writeBucket(&sb, cat, facts)
+	})
 	return sb.String()
 }
 
@@ -34,18 +45,14 @@ type PlainTextRenderer struct{}
 
 // Render implements Renderer.
 func (r *PlainTextRenderer) Render(result *core.RetrievalResult) string {
-	if result == nil || len(result.SeedNodes) == 0 {
-		return ""
-	}
 	var sb strings.Builder
-	writePlainTextBucket(&sb, "WORLD", result.WorldFacts)
-	writePlainTextBucket(&sb, "OPINION", result.Opinions)
-	writePlainTextBucket(&sb, "EXPERIENCE", result.Experiences)
-	writePlainTextBucket(&sb, "OBSERVATION", result.Observations)
+	traverseBuckets(result, func(cat string, facts []core.RetrievedFact) {
+		writePlainTextBucket(&sb, cat, facts)
+	})
 	return sb.String()
 }
 
-// JSONRenderer renders a RetrievalResult as a simple JSON-like text.
+// JSONRenderer renders a RetrievalResult using encoding/json.
 type JSONRenderer struct{}
 
 // Render implements Renderer.
@@ -53,14 +60,28 @@ func (r *JSONRenderer) Render(result *core.RetrievalResult) string {
 	if result == nil || len(result.SeedNodes) == 0 {
 		return "{}"
 	}
-	var sb strings.Builder
-	sb.WriteString("{\n")
-	writeJSONBucket(&sb, "world_facts", result.WorldFacts, true)
-	writeJSONBucket(&sb, "opinions", result.Opinions, true)
-	writeJSONBucket(&sb, "experiences", result.Experiences, true)
-	writeJSONBucket(&sb, "observations", result.Observations, false)
-	sb.WriteString("}")
-	return sb.String()
+	out := map[string][]string{
+		"world_facts":  renderFactsJSON(result.WorldFacts),
+		"opinions":     renderFactsJSON(result.Opinions),
+		"experiences":  renderFactsJSON(result.Experiences),
+		"observations": renderFactsJSON(result.Observations),
+	}
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func renderFactsJSON(facts []core.RetrievedFact) []string {
+	if len(facts) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(facts))
+	for _, f := range facts {
+		out = append(out, f.Content)
+	}
+	return out
 }
 
 func writeBucket(sb *strings.Builder, heading string, facts []core.RetrievedFact) {
@@ -91,23 +112,4 @@ func writePlainTextBucket(sb *strings.Builder, heading string, facts []core.Retr
 		}
 	}
 	sb.WriteString("\n")
-}
-
-func writeJSONBucket(sb *strings.Builder, key string, facts []core.RetrievedFact, comma bool) {
-	if len(facts) == 0 {
-		return
-	}
-	fmt.Fprintf(sb, "  \"%s\": [\n", key)
-	for i, f := range facts {
-		fmt.Fprintf(sb, "    \"%s\"", f.Content)
-		if i < len(facts)-1 {
-			sb.WriteString(",")
-		}
-		sb.WriteString("\n")
-	}
-	if comma {
-		sb.WriteString("  ],\n")
-	} else {
-		sb.WriteString("  ]\n")
-	}
 }
