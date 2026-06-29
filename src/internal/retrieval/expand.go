@@ -40,15 +40,15 @@ func expandGraph(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions,
 	query := fmt.Sprintf(`
 		WITH RECURSIVE graph_walk AS (
 			SELECT e.id, e.category, e.content, e.updated_at, e.embedding, e.degree, 0 as depth, 0.0 as path_weight, '' as parent_id, '' as relation_type, char(31) || e.id || char(31) as visited
-			FROM entities e WHERE e.id IN (%s) AND e.archived = 0`+timeFilter+`
+			FROM entities e WHERE e.id IN (%s) AND e.archived = 0%s
 			UNION ALL
 			SELECT e.id, e.category, e.content, e.updated_at, e.embedding, e.degree, gw.depth + 1, gw.path_weight + COALESCE(ed.weight, 1.0), gw.id, ed.relation_type, gw.visited || e.id || char(31)
 			FROM graph_walk gw JOIN edges ed ON (ed.source_id = gw.id OR ed.target_id = gw.id)
 			JOIN entities e ON (CASE WHEN ed.source_id = gw.id THEN ed.target_id = e.id ELSE ed.source_id = e.id END)
-			WHERE gw.depth < ? AND instr(gw.visited, char(31) || e.id || char(31)) = 0 AND e.archived = 0`+timeFilter+`
+			WHERE gw.depth < ? AND instr(gw.visited, char(31) || e.id || char(31)) = 0 AND e.archived = 0
 		)
 		SELECT DISTINCT id, category, content, updated_at, embedding, degree, depth, path_weight, parent_id, relation_type FROM graph_walk ORDER BY depth ASC, category ASC
-	`, phs)
+	`, phs, timeFilter)
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
