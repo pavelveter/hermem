@@ -43,6 +43,7 @@ func newTemporalCmd(env *cli.Env) *cobra.Command {
 				MaxDepth:          2,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
+				TokenBudget:       env.Cfg.TokenBudget,
 				QueryEmbedding:    emb,
 				QueryText:         req.Query,
 				RankingWeight:     env.Cfg.Ranking,

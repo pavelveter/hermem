@@ -277,6 +277,7 @@ type RetrieveContextOptions struct {
 	MaxDepth          int
 	DepthCeiling      int
 	MaxRetrievedNodes int
+	TokenBudget       int // soft token limit; 0 = unlimited (use MaxRetrievedNodes only)
 	QueryEmbedding    []float32
 	CompositeScorer   CompositeScorer
 	Ctx               context.Context

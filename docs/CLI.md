@@ -124,6 +124,33 @@ echo '{"query":"Tell me about France"}' | ./hermem memory query
 # → {"context":"## world\n- Paris is the capital of France\n…"}
 ```
 
+### `hermem memory explain`
+
+Explains the retrieval reasoning path: which nodes became seeds, which
+edges were traversed, and how scores were computed. Outputs an ASCII
+tree by default; use `--json` for raw JSON.
+
+```bash
+echo '{"query":"coffee preferences"}' | ./hermem memory explain
+# Query: "coffee preferences"
+#
+# ── Seeds (vector search) ──
+#   [entity-42] depth=0 score=0.892 ≈
+#
+# ── Graph walk (edges traversed) ──
+#   d=0 -0.000       coffee is best consumed in the morning [score=0.892 vec=0.912 rec=0.800 cent=0.301 depth=0.000]
+#   d=1 -1.000       espresso uses finely ground beans (via 'related_to' from entity-42) [score=0.756 ...]
+#
+# ── Summary ──
+#   Seeds: 1 | World: 3 | Opinion: 1 | Experience: 0 | Observation: 0
+```
+
+Use `--json` flag to get raw `RetrievalResult` JSON instead:
+
+```bash
+echo '{"query":"coffee"}' | ./hermem memory explain --json
+```
+
 `MaxDepth` for the graph walk uses the value from `[retrieval]`
 (`depth_ceiling` is the hard clamp; the CLI always uses 2 by default).
 

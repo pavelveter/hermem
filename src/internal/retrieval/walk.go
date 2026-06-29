@@ -94,6 +94,12 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 	if opts.Explain {
 		logRetrievalExplanation(result, len(seedIDs), effDepth)
 	}
+
+	// Token budget enforcement: trim facts to fit within the budget.
+	if opts.TokenBudget > 0 {
+		result = TrimByTokenBudget(result, opts.TokenBudget)
+	}
+
 	return result, nil
 }
 

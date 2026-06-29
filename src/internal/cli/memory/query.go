@@ -32,6 +32,7 @@ func newQueryCmd(env *cli.Env) *cobra.Command {
 				MaxDepth:          2,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
+				TokenBudget:       env.Cfg.TokenBudget,
 				QueryText:         req.Query,
 				Ctx:               env.Ctx,
 				RankingWeight:     env.Cfg.Ranking,

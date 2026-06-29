@@ -41,6 +41,7 @@ type State struct {
 	ValidRelationTypes map[string]bool
 	DepthCeiling       int
 	MaxRetrievedNodes  int
+	TokenBudget        int
 	RankingWeight      core.RankingWeight
 	Reranker           core.Reranker
 	Generation         uint64
