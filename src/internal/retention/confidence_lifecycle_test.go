@@ -14,7 +14,7 @@ func TestConfidenceLifecycle_DisabledNoOp(t *testing.T) {
 	}
 	defer db.Close()
 
-	cl := NewConfidenceLifecycle(db)
+	cl := NewConfidenceLifecycle(db, nil)
 	cfg := DefaultConfidenceLifecycleConfig() // Enabled=false
 	rep, err := cl.RunOnce(t.Context(), cfg)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestConfidenceLifecycle_ArchivesExpiredLowConfidence(t *testing.T) {
 	db.Exec(`INSERT INTO entities (id, category, content, confidence, updated_at, archived) VALUES (?, ?, ?, ?, ?, 0)`,
 		"low2", "world", "recent low", 0.4, recent)
 
-	cl := NewConfidenceLifecycle(db)
+	cl := NewConfidenceLifecycle(db, nil)
 	cfg := ConfidenceLifecycleConfig{
 		Enabled:             true,
 		ConfidenceThreshold: 0.7,
@@ -91,7 +91,7 @@ func TestConfidenceLifecycle_SkipsZeroConfidence(t *testing.T) {
 	db.Exec(`INSERT INTO entities (id, category, content, confidence, updated_at, archived) VALUES (?, ?, ?, ?, ?, 0)`,
 		"zero", "world", "zero conf", 0, old)
 
-	cl := NewConfidenceLifecycle(db)
+	cl := NewConfidenceLifecycle(db, nil)
 	cfg := ConfidenceLifecycleConfig{
 		Enabled:             true,
 		ConfidenceThreshold: 0.7,

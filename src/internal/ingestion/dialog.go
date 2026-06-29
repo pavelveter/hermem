@@ -349,7 +349,9 @@ func IsIngestionContradiction(a, b string) bool {
 // barriers the function exit.
 func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ch <-chan core.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
-	const maxParallel = 8
+	// Sequential processing guarantees FIFO ordering — critical for
+	// temporal consistency in playback and timeline queries.
+	const maxParallel = 1
 	sem := make(chan struct{}, maxParallel)
 	var wg sync.WaitGroup
 	for msg := range ch {
