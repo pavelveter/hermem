@@ -47,6 +47,9 @@ banner.pngout.txt
 out.txt
 devtools.txt
 
+# Local config file (each developer has their own)
+hermem.ini
+
 # Local GGUF models (too large for git)
 models/
 src/internal/ai/bin/
