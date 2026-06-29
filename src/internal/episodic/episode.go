@@ -233,8 +233,10 @@ func scanEpisode(row *sql.Row) (*Episode, error) {
 		t := hermemtime.TimeFromUnixMillis(endedAtMs.Int64)
 		ep.EndedAt = &t
 	}
-	if err := json.Unmarshal([]byte(metaJSON), &ep.Metadata); err != nil {
-		return nil, fmt.Errorf("episodic: scan unmarshal metadata: %w", err)
+	if metaJSON != "" && metaJSON != "null" {
+		if err := json.Unmarshal([]byte(metaJSON), &ep.Metadata); err != nil {
+			return nil, fmt.Errorf("episodic: scan unmarshal metadata: %w", err)
+		}
 	}
 	if ep.Metadata == nil {
 		ep.Metadata = map[string]any{}
@@ -266,8 +268,10 @@ func scanEpisodeRows(rows *sql.Rows) (*Episode, error) {
 		t := hermemtime.TimeFromUnixMillis(endedAtMs.Int64)
 		ep.EndedAt = &t
 	}
-	if err := json.Unmarshal([]byte(metaJSON), &ep.Metadata); err != nil {
-		return nil, fmt.Errorf("episodic: scan unmarshal metadata: %w", err)
+	if metaJSON != "" && metaJSON != "null" {
+		if err := json.Unmarshal([]byte(metaJSON), &ep.Metadata); err != nil {
+			return nil, fmt.Errorf("episodic: scan unmarshal metadata: %w", err)
+		}
 	}
 	if ep.Metadata == nil {
 		ep.Metadata = map[string]any{}

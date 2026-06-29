@@ -106,6 +106,60 @@ func (s *EventService) CreateEvent(ctx context.Context, event Event) error {
 	return nil
 }
 
+// CreateEvents inserts multiple events in a single transaction,
+// reducing fsync overhead for batch ingestions. All events must
+// belong to the same episode. If any insert fails, the entire
+// batch is rolled back.
+func (s *EventService) CreateEvents(ctx context.Context, events []Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("episodic: CreateEvents begin: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // committed below
+
+	stmt, err := tx.PrepareContext(ctx,
+		`INSERT INTO events (id, episode_id, type, content, timestamp_ms, metadata)
+		 VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("episodic: CreateEvents prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, event := range events {
+		if event.ID == "" || event.EpisodeID == "" {
+			return fmt.Errorf("episodic: CreateEvents: id and episode_id required")
+		}
+		if !validEventTypes[event.Type] {
+			return fmt.Errorf("episodic: CreateEvents: invalid type %q", event.Type)
+		}
+		if event.Timestamp.IsZero() {
+			event.Timestamp = time.Now()
+		}
+		meta := event.Metadata
+		if meta == nil {
+			meta = map[string]any{}
+		}
+		metaJSON, err := json.Marshal(meta)
+		if err != nil {
+			return fmt.Errorf("episodic: CreateEvents marshal metadata: %w", err)
+		}
+		if _, err := stmt.ExecContext(ctx,
+			event.ID, event.EpisodeID, string(event.Type), event.Content,
+			hermemtime.UnixMillisFromTime(event.Timestamp), string(metaJSON),
+		); err != nil {
+			return fmt.Errorf("episodic: CreateEvents insert: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("episodic: CreateEvents commit: %w", err)
+	}
+	return nil
+}
+
 // ListEventsByEpisode returns all events for the given episode,
 // ordered by timestamp_ms ASC then id (stable tiebreak). Reading
 // the INTEGER ms column and converting back to time.Time via
@@ -185,8 +239,10 @@ func scanEvent(rows *sql.Rows) (*Event, error) {
 	}
 	ev.Type = EventType(typ)
 	ev.Timestamp = hermemtime.TimeFromUnixMillis(timestampMs)
-	if err := json.Unmarshal([]byte(metaJSON), &ev.Metadata); err != nil {
-		return nil, fmt.Errorf("episodic: scan event unmarshal metadata: %w", err)
+	if metaJSON != "" && metaJSON != "null" {
+		if err := json.Unmarshal([]byte(metaJSON), &ev.Metadata); err != nil {
+			return nil, fmt.Errorf("episodic: scan event unmarshal metadata: %w", err)
+		}
 	}
 	if ev.Metadata == nil {
 		ev.Metadata = map[string]any{}

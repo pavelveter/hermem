@@ -85,8 +85,10 @@ func (s *SessionService) GetSession(ctx context.Context, id string) (*Session, e
 		t := endedAt.Time
 		sess.EndedAt = &t
 	}
-	if err := json.Unmarshal([]byte(metaJSON), &sess.Metadata); err != nil {
-		return nil, fmt.Errorf("episodic: GetSession unmarshal metadata: %w", err)
+	if metaJSON != "" && metaJSON != "null" {
+		if err := json.Unmarshal([]byte(metaJSON), &sess.Metadata); err != nil {
+			return nil, fmt.Errorf("episodic: GetSession unmarshal metadata: %w", err)
+		}
 	}
 	if sess.Metadata == nil {
 		sess.Metadata = map[string]any{}
@@ -141,8 +143,10 @@ func (s *SessionService) ListSessions(ctx context.Context, limit int) ([]Session
 			t := endedAt.Time
 			sess.EndedAt = &t
 		}
-		if err := json.Unmarshal([]byte(metaJSON), &sess.Metadata); err != nil {
-			return nil, fmt.Errorf("episodic: ListSessions unmarshal metadata: %w", err)
+		if metaJSON != "" && metaJSON != "null" {
+			if err := json.Unmarshal([]byte(metaJSON), &sess.Metadata); err != nil {
+				return nil, fmt.Errorf("episodic: ListSessions unmarshal metadata: %w", err)
+			}
 		}
 		if sess.Metadata == nil {
 			sess.Metadata = map[string]any{}

@@ -187,6 +187,14 @@ func (s *Service) RunOnce(ctx context.Context, policy core.RetentionPolicy) (rep
 		slog.Warn("retention: vi.Remove post-commit fault", "count", len(ids), "err", verr)
 	}
 	rep.Swept = len(ids)
+
+	// Reclaim free pages after successful archive. incremental_vacuum
+	// runs in the background (non-blocking) and reclaims up to 1000 pages
+	// per call. Without this, deleted rows leave free-list pages that
+	// SQLite never returns to the OS, causing unbounded DB file growth.
+	if _, verr := s.db.ExecContext(ctx, "PRAGMA incremental_vacuum(1000)"); verr != nil {
+		slog.Warn("retention: incremental_vacuum failed", "err", verr)
+	}
 	return
 }
 
