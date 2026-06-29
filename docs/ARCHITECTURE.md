@@ -26,10 +26,9 @@
 │                               PERSISTENCE (store)                                   │
 │  SQLite schema · migrations · entity CRUD · edge CRUD · task queries · codec        │
 │  StoreEntityWithEmbedding() · SetStatus() · AddEdge() · VerifyGraph()               │
-└──┬────────────────────────────┬────────────────────────────────┬────────────────────┘
-   │                            │                                │
-   ▼                            ▼                                ▼
-┌──────────────┐  ┌───────────────────────────┐  ┌────────────────────────────────────┐
+└──────┬────────────────────────┬────────────────────────────────┬────────────────────┘
+       │                        │                                │
+┌──────▼───────┐  ┌─────────────▼─────────────┐  ┌───────────────▼────────────────────┐
 │    vector    │  │     graph/community       │  │          migrations/               │
 │  InMemory    │  │  Louvain community detect │  │     SQL migration files            │
 │  SQLiteVec   │  │  LoadGraph() · Detect()   │  │     (embedded)                     │
@@ -48,9 +47,9 @@
 │  │           │ │           │ │ Rollback │ │ Response()   │ │  LexicalDet.      │  │
 │  │           │ │           │ │ Tree()   │ │ Explain()    │ │  EmbeddingDet.    │  │
 │  │           │ │           │ │ Exec()   │ │ Provenance() │ │  CompositeDet.    │  │
-│  └─────┬─────┘ └──────┬────┘ └────┬─────┘ └──────┬───────┘ └───────┬───────────┘  │
-│        │              │           │              │                 │              │
-│  ┌─────┴──┐  ┌────────┴──┐  ┌─────┴─────┐  ┌─────┴──────┐  ┌───────┴─────────┐    │
+│  └────┬──────┘ └────┬──────┘ └────┬─────┘ └──────┬───────┘ └───────┬───────────┘  │
+│       │             │             │              │                 │              │
+│  ┌────┴───┐  ┌──────┴────┐  ┌─────┴─────┐  ┌─────┴──────┐  ┌───────┴─────────┐    │
 │  │ ingest │  │ migration │  │   goal    │  │  timeline  │  │     graph       │    │
 │  │Ingest()│  │Status()   │  │ Status()  │  │ Timeline() │  │ Components()    │    │
 │  └────┬───┘  │Rollback() │  │ List()    │  └────────────┘  │ Communities()   │    │
@@ -80,29 +79,29 @@
 │  └──────────────┘ │  NDCG/MRR    │                                                │
 │                   └──────────────┘                                                │
 └───────────────────────────────────────────────────────────────────────────────────┘
-                │
-┌───────────────▼─────────────────────────────────────────────────────────────────────┐
-│                                   TRANSPORT                                         │
-│                                                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐   │
-│  │  HTTP server/ (12 HTTPService sub-shells)                                    │   │
-│  │  memory · edge · retrieval · task · graph · contradiction · timeline         │   │
-│  │  health · ingest · migration · retention · reembed · shared                  │   │
-│  │                                                                              │   │
-│  │  Middleware: Recovery → Timeout → Runtime → RequestID → Auth → Slog          │   │
-│  │  Observability: metrics/ (Prometheus) · tracing/ (OpenTelemetry)             │   │
-│  └──────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐   │
-│  │  CLI cli/ (6 command groups, ~40 subcommands)                                │   │
-│  │  memory · task · graph · time · db · agent · serve · health · metrics        │   │
-│  │  admin · ops · diagnose · profile · bench · version · re-embed · quantize    │   │
-│  │                                                                              │   │
-│  │  cli/env (Env singleton) ← DI container for all services                     │   │
-│  └──────────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────────────────────────────┐
+                                        │
+┌───────────────────────────────────────▼────────────────────────────────────────────┐
+│                                   TRANSPORT                                        │
+│                                                                                    │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
+│  │  HTTP server/ (12 HTTPService sub-shells)                                    │  │
+│  │  memory · edge · retrieval · task · graph · contradiction · timeline         │  │
+│  │  health · ingest · migration · retention · reembed · shared                  │  │
+│  │                                                                              │  │
+│  │  Middleware: Recovery → Timeout → Runtime → RequestID → Auth → Slog          │  │
+│  │  Observability: metrics/ (Prometheus) · tracing/ (OpenTelemetry)             │  │
+│  └──────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                    │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
+│  │  CLI cli/ (6 command groups, ~40 subcommands)                                │  │
+│  │  memory · task · graph · time · db · agent · serve · health · metrics        │  │
+│  │  admin · ops · diagnose · profile · bench · version · re-embed · quantize    │  │
+│  │                                                                              │  │
+│  │  cli/env (Env singleton) ← DI container for all services                     │  │
+│  └──────────────────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────────────┘
+                                         │
+┌────────────────────────────────────────▼────────────────────────────────────────────┐
 │                                  INFRASTRUCTURE                                     │
 │                                                                                     │
 │   ┌────────────┐  ┌───────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
