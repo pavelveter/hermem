@@ -115,6 +115,41 @@ func GetBlockedBy(db *sql.DB, schema core.SchemaConfig, id string) ([]core.Edge,
 	return QueryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE target_id = ? AND relation_type = ?", id, schema.RelationBlocking)
 }
 
+// GetDependents returns edges where source_id = id and relation_type = blocked_by.
+// These are the tasks that are blocked BY the given task (its dependents).
+func GetDependents(db *sql.DB, schema core.SchemaConfig, id string) ([]core.Edge, error) {
+	return QueryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE source_id = ? AND relation_type = ?", id, schema.RelationBlocking)
+}
+
+// AbortDependents cascadingly sets all pending tasks that depend on the
+// given task (via blocked_by edges) to the specified terminal status.
+// Uses a recursive CTE to walk the dependency graph transitively.
+// Already-terminal tasks (not pending) are skipped.
+func AbortDependents(db *sql.DB, schema core.SchemaConfig, taskID, terminalStatus string) error {
+	if terminalStatus == "" {
+		terminalStatus = "failed"
+	}
+	_, err := db.Exec(`
+		WITH RECURSIVE downstream AS (
+			SELECT target_id AS task_id
+			FROM edges
+			WHERE source_id = ? AND relation_type = ?
+			UNION
+			SELECT e.target_id
+			FROM edges e
+			JOIN downstream d ON e.source_id = d.task_id
+			WHERE e.relation_type = ?
+		)
+		UPDATE entities
+		SET status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id IN (SELECT task_id FROM downstream) AND status = 'pending' AND archived = 0
+	`, taskID, schema.RelationBlocking, schema.RelationBlocking, terminalStatus)
+	if err != nil {
+		return fmt.Errorf("abort dependents of %s: %w", taskID, err)
+	}
+	return nil
+}
+
 // GetRecoversVia returns edges of type recovers_via where target_id = id.
 func GetRecoversVia(db *sql.DB, schema core.SchemaConfig, id string) ([]core.Edge, error) {
 	return QueryEdges(db, "SELECT source_id, target_id, relation_type, COALESCE(weight, 1.0) FROM edges WHERE target_id = ? AND relation_type = ?", id, schema.RelationRecovery)

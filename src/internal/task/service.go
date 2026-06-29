@@ -60,6 +60,15 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 		}
 		return fmt.Errorf("status: %w", err)
 	}
+	// Cascade: when a task transitions to a terminal error state,
+	// abort all downstream pending dependents.
+	if newStatus == "failed" || newStatus == "cancelled" {
+		if err := store.AbortDependents(s.db, schema, id, newStatus); err != nil {
+			// Log but don't fail the status update — the root task
+			// transition succeeded; cascade failure is a best-effort.
+			slog.Warn("cascade abort failed", "task_id", id, "err", err)
+		}
+	}
 	return nil
 }
 

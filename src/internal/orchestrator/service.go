@@ -51,21 +51,30 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 		if len(tasks) == 0 {
 			break
 		}
-		for _, task := range tasks {
-			func() {
-				defer func() {
-					if rec := recover(); rec != nil {
-						slog.Error("agent loop: exec panic", "task_id", task.ID, "recover", rec)
-					}
-				}()
-				if err := execFunc(ctx, core.ComposeFromTask(task)); err != nil {
-					slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
+	for _, task := range tasks {
+		execFailed := false
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("agent loop: exec panic", "task_id", task.ID, "recover", rec)
+					execFailed = true
 				}
 			}()
+			if err := execFunc(ctx, core.ComposeFromTask(task)); err != nil {
+				slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
+				execFailed = true
+			}
+		}()
+		if execFailed {
+			if err := store.SetStatus(s.db, schema, task.ID, "failed"); err != nil {
+				return fmt.Errorf("agent loop: set failed status %s: %w", task.ID, err)
+			}
+		} else {
 			if err := store.SetStatus(s.db, schema, task.ID, schema.StateUnblocking); err != nil {
 				return fmt.Errorf("agent loop: set status %s: %w", task.ID, err)
 			}
 		}
+	}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
