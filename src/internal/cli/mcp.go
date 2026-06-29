@@ -4,8 +4,13 @@ import (
 	"github.com/spf13/cobra"
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
+	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
+	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	mcpserver "github.com/pavelveter/hermem/src/internal/mcp"
+	memdomain "github.com/pavelveter/hermem/src/internal/memory"
+	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
+	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
 // newMCPCmd starts the MCP server over stdio for AI assistant integration.
@@ -49,6 +54,22 @@ Usage with Claude Desktop or Claude Code:
 
 func runMCP(env *clienv.Env) error {
 	refs := serverstate.NewRef(buildState(env.Cfg, env.Reranker))
-	srv := mcpserver.NewServer(refs)
+
+	// Construct domain services (same pattern as wireAll).
+	memSvc := memdomain.New(env.DB, env.VI, env.Embedder)
+	retSvc := retdomain.New(env.DB, env.VI, env.Embedder)
+	env.Retriever = retSvc
+	taskSvc := taskdomain.New(env.DB, env.Embedder, env.VI)
+	graphSvc := graphdomain.New(env.DB)
+	ingestSvc := ingestdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
+
+	srv := mcpserver.NewServer(mcpserver.Deps{
+		Memory:   memSvc,
+		Retrieve: retSvc,
+		Task:     taskSvc,
+		Graph:    graphSvc,
+		Ingest:   ingestSvc,
+		Refs:     refs,
+	})
 	return srv.Run(env.Ctx)
 }

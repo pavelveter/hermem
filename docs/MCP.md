@@ -121,16 +121,16 @@ Add to your MCP config (`~/Library/Application Support/Claude/claude_desktop_con
 
 ## Architecture
 
-The MCP server uses the [official Go SDK](https://github.com/modelcontextprotocol/go-sdk) and runs over stdio transport. It wraps the same domain services as the HTTP API — no duplicated logic.
+The MCP server uses the [official Go SDK](https://github.com/modelcontextprotocol/go-sdk) and runs over stdio transport. It wraps the same domain services as the HTTP API — no duplicated logic. Each tool calls domain service methods directly (e.g., `Memory.Store()`, `Retrieve.Search()`, `Task.Create()`).
 
 ```
 hermem mcp
   └─ mcp.Server
        ├─ MCP tools (memory_search, task_create, ...)
-       └─ serverstate.Ref (same config as HTTP server)
+       ├─ memory.Service    ← domain store
+       ├─ retrieval.Service ← search, retrieve
+       ├─ task.Service      ← task lifecycle
+       ├─ graph.Service     ← connected components
+       ├─ ingest.Service    ← dialog ingestion
+       └─ serverstate.Ref   ← schema config
 ```
-
-## Limitations
-
-- The MCP server reads from `serverstate.Ref` but does not directly invoke domain services (store, search, etc.). For full operations, use the HTTP API endpoints (`/store`, `/search`, `/retrieve`, etc.).
-- Embedding-based semantic search requires the vector index and embedder to be available in the server state.
