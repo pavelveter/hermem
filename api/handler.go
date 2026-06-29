@@ -23,23 +23,23 @@ func (h *Handler) Routes() map[string]http.HandlerFunc {
 	}
 }
 
-func (h *Handler) handleJSON(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleJSON(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.WriteHeader(http.StatusOK)
-	w.Write(h.spec.JSON())
+	_, _ = w.Write(h.spec.JSON())
 }
 
-func (h *Handler) handleYAML(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleYAML(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	b, err := h.spec.MarshalYAML()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal YAML"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal YAML"})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(b)
+	_, _ = w.Write(b)
 }
