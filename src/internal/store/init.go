@@ -120,6 +120,14 @@ func InitDBStrictWithOptions(dbPath string, vectorDim int, autoMigrate bool, ski
 		db.Close()
 		return nil, fmt.Errorf("auto_vacuum: %w", err)
 	}
+	if _, err := db.Exec("PRAGMA journal_size_limit = 67108864"); err != nil { // 64MB
+		db.Close()
+		return nil, fmt.Errorf("journal_size_limit: %w", err)
+	}
+	if _, err := db.Exec("PRAGMA cache_size = -20000"); err != nil { // 20MB
+		db.Close()
+		return nil, fmt.Errorf("cache_size: %w", err)
+	}
 	if _, err := verifyPragmaOrder(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("pragma verify: %w", err)
