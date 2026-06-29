@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -124,8 +125,24 @@ func NewInMemoryVectorIndexWithCap(db *sql.DB, maxVectors int) *InMemoryVectorIn
 // load pulls every non-archived entity from the DB on startup.
 // Vectors are normalized on load so Search can skip per-row norm division.
 func (idx *InMemoryVectorIndex) load() {
+	start := time.Now()
+
+	// Pre-count rows to right-size slices and avoid repeated reallocations.
+	var count int
+	if err := idx.db.QueryRow(`SELECT COUNT(*) FROM entities WHERE archived = 0 AND embedding IS NOT NULL`).Scan(&count); err != nil {
+		count = 0
+	}
+	if count > 0 {
+		idx.entries = make([]vectorEntry, 0, count)
+		// flatMatrix capacity unknown until first row (dim is sticky), but
+		// pre-count at least avoids the initial growth from zero.
+		idx.flatMatrix = make([]float32, 0, count*3) // rough estimate, will grow
+		idx.byID = make(map[string]int, count)
+	}
+
 	rows, err := idx.db.Query(`SELECT e.id, e.embedding FROM entities e WHERE e.archived = 0`)
 	if err != nil {
+		slog.Warn("vector index: load query failed", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -133,18 +150,22 @@ func (idx *InMemoryVectorIndex) load() {
 		var id string
 		var blob []byte
 		if err := rows.Scan(&id, &blob); err != nil {
+			slog.Warn("vector index: load scan failed", "err", err)
 			continue
 		}
 		if emb := store.BytesToEmbedding(blob); emb != nil {
 			NormalizeVector(emb)
 			if idx.cols == 0 {
 				idx.cols = len(emb)
+				// Now that dim is known, right-size flatMatrix.
+				idx.flatMatrix = make([]float32, 0, count*idx.cols)
 			}
 			idx.byID[id] = len(idx.entries)
 			idx.entries = append(idx.entries, vectorEntry{id: id, vec: emb, norm: 1, lastAccess: time.Now()})
 			idx.flatMatrix = append(idx.flatMatrix, emb...)
 		}
 	}
+	slog.Info("vector index loaded", "vectors", len(idx.entries), "dim", idx.cols, "duration", time.Since(start).Round(time.Millisecond))
 }
 
 func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float32, limit int) ([]string, error) {

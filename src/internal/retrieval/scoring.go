@@ -144,5 +144,11 @@ func centralityScore(degree int) float32 {
 	if degree <= 0 {
 		return 0
 	}
+	// Cap effective degree to prevent inflation from self-loops,
+	// parallel edges, or dense local clusters. log10 dampening
+	// already reduces impact, but this hard cap prevents extreme values.
+	if degree > 100 {
+		degree = 100
+	}
 	return float32(math.Log10(float64(1 + degree)))
 }
