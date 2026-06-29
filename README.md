@@ -217,6 +217,7 @@ See [docs/USAGE.md](docs/USAGE.md) for the complete operator manual including CL
 | [CHANGELOG.md](docs/CHANGELOG.md) | Release history |
 | [ROADMAP.md](docs/ROADMAP.md) | Planned features |
 | [VISION.md](docs/VISION.md) | Long-term goals |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module Dependency Diagram |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 
 ## How it works
@@ -351,6 +352,8 @@ Everything is implemented as domain services. CLI commands call services. HTTP h
        │
      HTTP
 ```
+
+The more detaled diagram in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
