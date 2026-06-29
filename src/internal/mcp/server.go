@@ -39,11 +39,15 @@ type Deps struct {
 type Server struct {
 	mcpServer *gomcp.Server
 	deps      Deps
+	limiter   *RateLimiter
 }
 
 // NewServer creates a new MCP server with all Hermem tools registered.
 func NewServer(deps Deps) *Server {
-	s := &Server{deps: deps}
+	s := &Server{
+		deps:    deps,
+		limiter: NewRateLimiter(10, 2), // 10 burst, 2 req/s sustained
+	}
 	s.mcpServer = gomcp.NewServer(
 		&gomcp.Implementation{
 			Name:    "hermem",

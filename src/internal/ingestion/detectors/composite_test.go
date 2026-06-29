@@ -8,20 +8,20 @@ import (
 )
 
 type stubDetector struct {
-	detected    bool
+	detected     bool
 	inconclusive bool
-	reason      string
-	confidence  float32
-	calls       int
+	reason       string
+	confidence   float32
+	calls        int
 }
 
 func (s *stubDetector) Detect(_, _ core.Entity) contradiction.DetectionResult {
 	s.calls++
 	return contradiction.DetectionResult{
-		Detected:    s.detected,
+		Detected:     s.detected,
 		Inconclusive: s.inconclusive,
-		Reason:      s.reason,
-		Confidence:  s.confidence,
+		Reason:       s.reason,
+		Confidence:   s.confidence,
 	}
 }
 

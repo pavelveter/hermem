@@ -25,9 +25,9 @@ import "github.com/pavelveter/hermem/src/internal/core"
 // NOT participate in that gradient — the substring scan is
 // deterministic, so its result is binary.
 type DetectionResult struct {
-	Detected    bool
-	Reason      string
-	Confidence  float32
+	Detected     bool
+	Reason       string
+	Confidence   float32
 	Inconclusive bool // true = "I'm not sure, check heavier detectors"
 }
 
