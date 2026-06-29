@@ -30,6 +30,14 @@ func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) erro
 // normalizes each embedding here (idempotent, fast) and lets
 // processOneItemOnce write the vec entry after its own tx commits.
 func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialog string, prov core.Provenance) error {
+	// Wrap extraction + embedding in a context timeout to prevent
+	// goroutine leaks when LLM providers hang on socket reads.
+	// The HTTP client has its own timeout, but this provides a
+	// hard upper bound at the application level.
+	const extractionTimeout = 5 * time.Minute
+	ctx, cancel := context.WithTimeout(ctx, extractionTimeout)
+	defer cancel()
+
 	result, err := w.extractor.ExtractEntities(ctx, dialog)
 	if err != nil {
 		return fmt.Errorf("extract entities: %w", err)
