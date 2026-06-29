@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
-	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -65,12 +64,15 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 				execFailed = true
 			}
 		}()
+		// Use task.Service.Status() instead of store.SetStatus directly
+		// to trigger cascade abort of downstream dependents on failure.
+		svc := taskdomain.New(s.db, nil, nil)
 		if execFailed {
-			if err := store.SetStatus(s.db, schema, task.ID, "failed"); err != nil {
+			if err := svc.Status(ctx, task.ID, "failed", schema); err != nil {
 				return fmt.Errorf("agent loop: set failed status %s: %w", task.ID, err)
 			}
 		} else {
-			if err := store.SetStatus(s.db, schema, task.ID, schema.StateUnblocking); err != nil {
+			if err := svc.Status(ctx, task.ID, schema.StateUnblocking, schema); err != nil {
 				return fmt.Errorf("agent loop: set status %s: %w", task.ID, err)
 			}
 		}

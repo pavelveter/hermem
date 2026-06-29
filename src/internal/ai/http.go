@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -54,7 +55,22 @@ func newHTTPClient(baseURL, apiKey string, timeout time.Duration, attempts int) 
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	c := &http.Client{Timeout: timeout}
+	// Custom transport with socket-level deadlines prevents goroutines
+	// from hanging indefinitely in syscalls when a remote peer stalls
+	// after sending headers. Without this, a hung Ollama instance can
+	// block a goroutine for up to 2 hours (OS TCP keepalive timeout).
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   timeout,
+			KeepAlive: timeout,
+		}).DialContext,
+		ResponseHeaderTimeout: timeout,
+		IdleConnTimeout:       timeout,
+	}
+	c := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
 	return &httpClient{
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		apiKey:    apiKey,
