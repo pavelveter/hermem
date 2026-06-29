@@ -221,6 +221,15 @@ func TestSpecBuilderBasic(t *testing.T) {
 }
 
 func TestSnapshotJSON(t *testing.T) {
+	specOnce = sync.Once{}
+	cachedSpec = nil
+	origVersion := BuildVersion
+	BuildVersion = "dev"
+	defer func() {
+		BuildVersion = origVersion
+		specOnce = sync.Once{}
+		cachedSpec = nil
+	}()
 	spec := GenerateSpec()
 	b := spec.JSON()
 
