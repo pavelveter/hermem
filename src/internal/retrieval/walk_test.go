@@ -7,8 +7,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -204,17 +206,117 @@ func TestRetrieveContext_DuplicateContentCollapsed(t *testing.T) {
 }
 
 // --- time filter ---
-//
-// walk.go currently has an off-by-N bind parameter bug: when TimeFrom or
-// TimeTo is set, the SQL has placeholders duplicated across the recursive
-// CTE but the Go code does not duplicate the args. Any call with TimeFrom /
-// TimeTo set panics with "not enough args to execute query". Documented here
-// so the regression test suite does NOT lock in the broken behavior.
-// TODO(retrieval/walk.go): drop the duplicated timeFilter bind (only inline it once)
-// and unskip TestRetrieveContext_TimeFromFilter when fixed.
 
-func TestRetrieveContext_TimeFromFilter_SkippedKnownBug(t *testing.T) {
-	t.Skip("walk.go binds time-filter placeholders twice in recursive CTE without duplicating args; tracked separately")
+func TestRetrieveContext_TimeFromFilter(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now()
+	old := now.Add(-24 * time.Hour)
+	veryOld := now.Add(-48 * time.Hour)
+
+	// Seed entities with explicit created_at timestamps.
+	for _, tc := range []struct {
+		id        string
+		createdAt time.Time
+	}{
+		{"recent", now},
+		{"old", old},
+		{"very_old", veryOld},
+	} {
+		emb := store.EmbeddingToBytes([]float32{1, 0, 0})
+		if _, err := db.Exec(
+			`INSERT INTO entities (id, category, content, embedding, created_at) VALUES (?, 'world', ?, ?, ?)`,
+			tc.id, "content-"+tc.id, emb, tc.createdAt,
+		); err != nil {
+			t.Fatalf("seed %s: %v", tc.id, err)
+		}
+	}
+	seedEdge(t, db, "recent", "old", "related_to")
+	seedEdge(t, db, "old", "very_old", "related_to")
+
+	// TimeFrom = 36h ago should include "recent" and "old" but not "very_old".
+	timeFrom := now.Add(-36 * time.Hour)
+	res, err := RetrieveContext(db, []string{"recent"}, core.RetrieveContextOptions{
+		MaxDepth: 5,
+		TimeFrom: timeFrom,
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	ids := factIDs(res)
+	if containsID(ids, "very_old") {
+		t.Fatalf("very_old should be excluded by TimeFrom filter, got %v", ids)
+	}
+	if !containsID(ids, "old") {
+		t.Fatalf("old should be included, got %v", ids)
+	}
+}
+
+func TestRetrieveContext_TimeToFilter(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now()
+	old := now.Add(-24 * time.Hour)
+
+	emb := store.EmbeddingToBytes([]float32{1, 0, 0})
+	if _, err := db.Exec(
+		`INSERT INTO entities (id, category, content, embedding, created_at) VALUES (?, 'world', ?, ?, ?)`,
+		"recent", "content", emb, now,
+	); err != nil {
+		t.Fatalf("seed recent: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO entities (id, category, content, embedding, created_at) VALUES (?, 'world', ?, ?, ?)`,
+		"old", "content", emb, old,
+	); err != nil {
+		t.Fatalf("seed old: %v", err)
+	}
+	seedEdge(t, db, "recent", "old", "related_to")
+
+	// TimeTo = 12h ago should include "old" but not "recent".
+	timeTo := now.Add(-12 * time.Hour)
+	res, err := RetrieveContext(db, []string{"recent"}, core.RetrieveContextOptions{
+		MaxDepth: 5,
+		TimeTo:   timeTo,
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	ids := factIDs(res)
+	if containsID(ids, "recent") {
+		t.Fatalf("recent should be excluded by TimeTo filter, got %v", ids)
+	}
+}
+
+// factIDs extracts entity IDs from all buckets in a RetrievalResult.
+func factIDs(res *core.RetrievalResult) []string {
+	if res == nil {
+		return nil
+	}
+	var ids []string
+	for _, f := range res.WorldFacts {
+		ids = append(ids, f.ParentID)
+	}
+	for _, f := range res.Opinions {
+		ids = append(ids, f.ParentID)
+	}
+	for _, f := range res.Experiences {
+		ids = append(ids, f.ParentID)
+	}
+	for _, f := range res.Observations {
+		ids = append(ids, f.ParentID)
+	}
+	for _, n := range res.SeedNodes {
+		ids = append(ids, n.Entity.ID)
+	}
+	return ids
+}
+
+func containsID(ids []string, target string) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }
 
 // --- cycle safety ---

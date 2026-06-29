@@ -1,6 +1,8 @@
 package retrieval
 
 import (
+	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -191,6 +193,123 @@ func TestTraversal_NoDuplicateIDs(t *testing.T) {
 		if seen[f.ParentID] {
 			// ParentID is the edge parent, not the fact ID; skip dedup on parent.
 			continue
+		}
+	}
+}
+
+// --- Empty database invariants ---
+
+// TestProperty_EmptyDatabaseNeverPanics verifies that RetrieveContext
+// returns gracefully on an empty database with various seed inputs.
+func TestProperty_EmptyDatabaseNeverPanics(t *testing.T) {
+	db := openTestDB(t)
+	cases := [][]string{
+		{},
+		{"nonexistent"},
+		{"a", "b", "c"},
+	}
+	for _, seeds := range cases {
+		res, err := RetrieveContext(db, seeds, core.RetrieveContextOptions{MaxDepth: 1})
+		if err != nil {
+			t.Fatalf("empty DB with seeds %v: unexpected error: %v", seeds, err)
+		}
+		if res == nil {
+			t.Fatalf("empty DB with seeds %v: nil result", seeds)
+		}
+	}
+}
+
+// --- Score finiteness ---
+
+// TestProperty_ScoresRemainFinite verifies that composite scoring
+// never produces NaN or Inf for any combination of valid inputs.
+func TestProperty_ScoresRemainFinite(t *testing.T) {
+	w := core.RankingWeight{}.WithDefaults()
+	scorer := defaultCompositeScorer(w)
+	for trial := 0; trial < 200; trial++ {
+		node := core.GraphNode{
+			Entity: core.Entity{
+				ID:        "test",
+				UpdatedAt: core.TimePtr(time.Now().Add(-time.Duration(trial) * time.Second)),
+				Degree:    trial % 50,
+			},
+			PathWeight: float32(trial%10) * 0.1,
+		}
+		vec := randomVector(3)
+		query := randomVector(3)
+		qnorm := vector.VectorNorm(query)
+		score := scorer(node, vec, query, qnorm)
+		if score != score { // NaN check
+			t.Fatalf("trial %d: score is NaN", trial)
+		}
+		if math.IsInf(float64(score), 0) {
+			t.Fatalf("trial %d: score is Inf", trial)
+		}
+	}
+}
+
+// --- Ranking ordering ---
+
+// TestProperty_RankingStableAcrossRuns verifies that the same sorted
+// input always produces the same output order across multiple runs.
+func TestProperty_RankingStableAcrossRuns(t *testing.T) {
+	type entry struct {
+		id    string
+		score float32
+	}
+	orig := []entry{
+		{"a", 0.5},
+		{"b", 0.9},
+		{"c", 0.3},
+		{"d", 0.9},
+	}
+	var firstIDs []string
+	for trial := 0; trial < 50; trial++ {
+		nodes := make([]rankedNode, len(orig))
+		for i, e := range orig {
+			nodes[i] = rankedNode{node: core.GraphNode{Entity: core.Entity{ID: e.id}}, score: e.score}
+		}
+		sortByScoreDesc(nodes)
+		ids := make([]string, len(nodes))
+		for i, n := range nodes {
+			ids[i] = n.node.Entity.ID
+		}
+		if firstIDs == nil {
+			firstIDs = ids
+			continue
+		}
+		for i := range ids {
+			if ids[i] != firstIDs[i] {
+				t.Fatalf("trial %d: non-deterministic ordering at index %d: got %v, want %v", trial, i, ids, firstIDs)
+			}
+		}
+	}
+}
+
+// --- Random graph traversal ---
+
+// TestProperty_RandomGraphNeverCrashesRetrieval verifies that random
+// graph structures never cause panics in RetrieveContext.
+func TestProperty_RandomGraphNeverCrashesRetrieval(t *testing.T) {
+	for trial := 0; trial < 20; trial++ {
+		db := openTestDB(t)
+		n := 5 + trial%10
+		for i := 0; i < n; i++ {
+			seedEntityWithEmbedding(t, db, fmt.Sprintf("n%d", i), "world",
+				fmt.Sprintf("fact %d", i), randomVector(3))
+		}
+		// Random edges
+		for i := 0; i < n; i++ {
+			src := fmt.Sprintf("n%d", i%n)
+			dst := fmt.Sprintf("n%d", (i+1)%n)
+			db.Exec(`INSERT INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, 'related_to', 1.0)`, src, dst)
+		}
+		res, err := RetrieveContext(db, []string{"n0"}, core.RetrieveContextOptions{MaxDepth: 3})
+		if err != nil {
+			t.Fatalf("trial %d: unexpected error: %v", trial, err)
+		}
+		if res == nil {
+			t.Fatalf("trial %d: nil result", trial)
 		}
 	}
 }
