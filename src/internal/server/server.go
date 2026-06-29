@@ -36,7 +36,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 
- apipkg "github.com/pavelveter/hermem/api"
+	apipkg "github.com/pavelveter/hermem/api"
 )
 
 // Server is the HTTP shell. It holds a registry of RouteProviders +
