@@ -4,16 +4,25 @@ BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
 LLAMA_LIBS := $(BIN_DIR)/llama-libs
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+LDFLAGS := -X 'github.com/pavelveter/hermem/api.BuildVersion=$(VERSION)' \
+           -X 'main.version=$(VERSION)' \
+           -X 'main.buildDate=$(BUILD_DATE)' \
+           -X 'main.gitCommit=$(GIT_COMMIT)'
+
 # Default build — works with or without local embedding binary
 build:
 	@if [ ! -d "$(BIN_DIR)" ]; then \
 		scripts/ensure-embed-placeholders.sh; \
 	fi
-	go build -o hermem ./src
+	go build -ldflags "$(LDFLAGS)" -o hermem ./src
 
 # Build with real llama-embedding binary (for local embedding)
 build-local: $(LLAMA_BINARY)
-	go build -o hermem ./src
+	go build -ldflags "$(LDFLAGS)" -o hermem ./src
 
 $(LLAMA_BINARY):
 	@echo "Place llama-embedding + dylibs in $(BIN_DIR)/ before building"
@@ -23,7 +32,7 @@ $(LLAMA_BINARY):
 
 # Build without local embedding (faster, no CGo deps)
 build-no-local:
-	go build -tags no_local_embedding -o hermem ./src
+	go build -ldflags "$(LDFLAGS)" -tags no_local_embedding -o hermem ./src
 
 # Run unit tests
 test:

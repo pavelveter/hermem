@@ -1,0 +1,2354 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hermem API",
+    "description": "Persistent graph memory for LLM agents. SQLite. Embeddings. Graph traversal. One binary.",
+    "version": "dev",
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8420",
+      "description": "Local development"
+    }
+  ],
+  "paths": {
+    "/admin/re-embed": {
+      "post": {
+        "summary": "Re-embed all entities",
+        "description": "Batch re-embed all entities after model/dimension change.",
+        "operationId": "reEmbed",
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReEmbedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReEmbedResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/communities": {
+      "get": {
+        "summary": "Community detection",
+        "description": "Louvain community detection with modularity scoring.",
+        "operationId": "communities",
+        "tags": [
+          "graph"
+        ],
+        "parameters": [
+          {
+            "name": "min_size",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "max_iterations",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Communities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "communities": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Community"
+                      }
+                    },
+                    "global_modularity": {
+                      "type": "number",
+                      "format": "double"
+                    },
+                    "total_communities": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connected-components": {
+      "get": {
+        "summary": "Connected components",
+        "description": "BFS-based connected components in the graph.",
+        "operationId": "connectedComponents",
+        "tags": [
+          "graph"
+        ],
+        "parameters": [
+          {
+            "name": "min_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 2
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Components",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectedComponent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contradictions": {
+      "get": {
+        "summary": "List contradictions",
+        "description": "All contradicts edges. Optional ?id=X filters to specific entity.",
+        "operationId": "contradictions",
+        "tags": [
+          "graph"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contradiction pairs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContradictionPair"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/db/migrate": {
+      "get": {
+        "summary": "Migration status",
+        "description": "Shows applied and pending migrations.",
+        "operationId": "dbMigrate",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MigStatus"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/db/rollback": {
+      "post": {
+        "summary": "Roll back migration",
+        "description": "Roll back the most recently applied migration.",
+        "operationId": "dbRollback",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Rolled back"
+          }
+        }
+      }
+    },
+    "/db/schema": {
+      "get": {
+        "summary": "Schema fingerprint",
+        "description": "Stored vs current schema fingerprint comparison.",
+        "operationId": "dbSchema",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Schema report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/db/verify": {
+      "get": {
+        "summary": "Schema integrity",
+        "description": "Checksum integrity check across all migrations.",
+        "operationId": "dbVerify",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Result"
+          }
+        }
+      }
+    },
+    "/edge": {
+      "post": {
+        "summary": "Create an edge",
+        "description": "Add a typed edge between two entities. Set auto_create=true to create missing entities.",
+        "operationId": "createEdge",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdgeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/graph/verify": {
+      "get": {
+        "summary": "Graph integrity check",
+        "description": "Checks entities, edges, embeddings, orphan edges, invalid types.",
+        "operationId": "graphVerify",
+        "tags": [
+          "graph"
+        ],
+        "responses": {
+          "200": {
+            "description": "Verify report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Liveness check",
+        "description": "Basic liveness check — no DB hit beyond the open connection. Always returns 200.",
+        "operationId": "health",
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "summary": "Kubernetes liveness probe",
+        "operationId": "healthLive",
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Healthy"
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Readiness probe",
+        "description": "Runs dependency checks (DB, vector index, embedder, LLM extractor, disk). Returns 503 on critical failure.",
+        "operationId": "healthReady",
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Degraded"
+          }
+        }
+      }
+    },
+    "/health/startup": {
+      "get": {
+        "summary": "Startup probe",
+        "operationId": "healthStartup",
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Started"
+          }
+        }
+      }
+    },
+    "/ingest": {
+      "post": {
+        "summary": "Ingest dialog",
+        "description": "Extract entities from dialog text, deduplicate, and store.",
+        "operationId": "ingest",
+        "tags": [
+          "ingest"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ingested"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "operationId": "metrics",
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Metrics in Prometheus exposition format"
+          }
+        }
+      }
+    },
+    "/provenance": {
+      "get": {
+        "summary": "Query by provenance",
+        "description": "Filter entities by memory origin (conversation_id, message_id, source).",
+        "operationId": "provenance",
+        "tags": [
+          "graph"
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Entity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/query": {
+      "post": {
+        "summary": "Full pipeline query",
+        "description": "Embed → search → graph walk → markdown context.",
+        "operationId": "query",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Markdown context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/query/explain": {
+      "post": {
+        "summary": "Query with score breakdown",
+        "description": "Full pipeline with per-fact explainability (ScoreBreakdown).",
+        "operationId": "queryExplain",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retrieval result with score breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/query/temporal": {
+      "post": {
+        "summary": "Time-windowed query",
+        "description": "Full pipeline filtered by time range (RFC3339).",
+        "operationId": "queryTemporal",
+        "tags": [
+          "memory",
+          "temporal"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  },
+                  "time_from": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "time_to": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "top_k": {
+                    "type": "integer",
+                    "default": 5
+                  }
+                },
+                "required": [
+                  "query"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retrieval result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/recovery-plan": {
+      "get": {
+        "summary": "Recovery plan",
+        "description": "Walk recovers_via chain from a failed task.",
+        "operationId": "recoveryPlan",
+        "tags": [
+          "task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recovery chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Entity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/response": {
+      "post": {
+        "summary": "Full pipeline with LLM response",
+        "description": "Full pipeline + LLM-generated response.",
+        "operationId": "response",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/retrieve": {
+      "post": {
+        "summary": "Graph walk retrieval",
+        "description": "Walk the graph from seed entities and return ranked results.",
+        "operationId": "retrieve",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrieveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retrieval result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/search": {
+      "post": {
+        "summary": "Vector similarity search",
+        "description": "Find entities most similar to the query by cosine similarity.",
+        "operationId": "search",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SearchResult"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/store": {
+      "post": {
+        "summary": "Store an entity",
+        "description": "Upsert an entity. Embedding is computed automatically if omitted.",
+        "operationId": "store",
+        "tags": [
+          "memory"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored",
+            "content": {
+              "application/json": {
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/create": {
+      "post": {
+        "summary": "Create a task",
+        "description": "Create a new task entity, optionally linked to context entities.",
+        "operationId": "taskCreate",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/dep": {
+      "post": {
+        "summary": "Manage task dependencies",
+        "description": "Add or remove a dependency edge between tasks.",
+        "operationId": "taskDep",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskDepRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/executable": {
+      "post": {
+        "summary": "List executable tasks",
+        "description": "Pending tasks whose blocked_by dependencies are all completed.",
+        "operationId": "taskExecutable",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExecutableResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/list": {
+      "post": {
+        "summary": "List tasks",
+        "description": "Filter by status and/or goal_id.",
+        "operationId": "taskList",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExecutableResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/next": {
+      "post": {
+        "summary": "Alias for executable",
+        "operationId": "taskNext",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExecutableResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/rollback": {
+      "post": {
+        "summary": "Find rollback task",
+        "description": "Find the task linked via recovers_via from a failed task.",
+        "operationId": "taskRollback",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRollbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rollback task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRollbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/show": {
+      "post": {
+        "summary": "Show task details",
+        "description": "Returns task entity plus blocked_by and recovers_via edges.",
+        "operationId": "taskShow",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskShowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskShowResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/status": {
+      "post": {
+        "summary": "Update task status",
+        "description": "Transition a task entity to a new lifecycle state.",
+        "operationId": "taskStatus",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid state transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/tree": {
+      "post": {
+        "summary": "Task dependency tree",
+        "description": "ASCII rendering of the task dependency tree.",
+        "operationId": "taskTree",
+        "tags": [
+          "task"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskTreeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tree",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTreeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/timeline": {
+      "get": {
+        "summary": "Recent entities",
+        "description": "Entities ordered by created_at DESC.",
+        "operationId": "timeline",
+        "tags": [
+          "temporal"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Timeline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TimelineEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Community": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modularity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "ConnectedComponent": {
+        "type": "object",
+        "properties": {
+          "avg_degree": {
+            "type": "number",
+            "format": "double"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "ContradictionPair": {
+        "type": "object",
+        "properties": {
+          "source_content": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_content": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          }
+        }
+      },
+      "Edge": {
+        "type": "object",
+        "properties": {
+          "relation_type": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id",
+          "relation_type"
+        ]
+      },
+      "EdgeRequest": {
+        "type": "object",
+        "properties": {
+          "auto_create": {
+            "type": "boolean",
+            "default": false
+          },
+          "relation_type": {
+            "type": "string",
+            "enum": [
+              "prefers",
+              "uses",
+              "mentions",
+              "related_to",
+              "part_of",
+              "causes",
+              "contradicts",
+              "blocked_by",
+              "recovers_via"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number",
+            "default": 1,
+            "format": "float"
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id",
+          "relation_type"
+        ]
+      },
+      "Entity": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "category": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "format": "float"
+          },
+          "content": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "degree": {
+            "type": "integer"
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "extracted_from": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_accessed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valid_to": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "content"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "GraphNode": {
+        "type": "object",
+        "properties": {
+          "depth": {
+            "type": "integer"
+          },
+          "entity": {
+            "$ref": "#/components/schemas/Entity"
+          },
+          "parent_id": {
+            "type": "string"
+          },
+          "path_weight": {
+            "type": "number",
+            "format": "float"
+          },
+          "ranking_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "relation_type": {
+            "type": "string"
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Edge"
+            }
+          },
+          "score_breakdown": {
+            "$ref": "#/components/schemas/ScoreBreakdown"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "IngestRequest": {
+        "type": "object",
+        "properties": {
+          "dialog": {
+            "type": "string",
+            "description": "Conversational text to ingest"
+          }
+        },
+        "required": [
+          "dialog"
+        ]
+      },
+      "IntegrityIssue": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "warning",
+              "info"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "IntegrityReport": {
+        "type": "object",
+        "properties": {
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrityIssue"
+            }
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MigStatus": {
+        "type": "object",
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "applied_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checksum_match": {
+            "type": "boolean"
+          },
+          "checksum_sha256": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "QueryResponse": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Markdown-formatted context"
+          }
+        }
+      },
+      "ReEmbedRequest": {
+        "type": "object",
+        "properties": {
+          "batch_size": {
+            "type": "integer",
+            "default": 50
+          },
+          "dim": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dim"
+        ]
+      },
+      "ReEmbedResult": {
+        "type": "object",
+        "properties": {
+          "batches": {
+            "type": "integer"
+          },
+          "elapsed": {
+            "type": "string"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "new_dim": {
+            "type": "integer"
+          },
+          "old_dim": {
+            "type": "integer"
+          },
+          "re_embedded": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "total_entities": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReadyResponse": {
+        "type": "object",
+        "properties": {
+          "checks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "critical": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "latency_ms": {
+                  "type": "integer"
+                },
+                "ok": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "latency_ms": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ResponseResult": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string"
+          }
+        }
+      },
+      "RetrievalResult": {
+        "type": "object",
+        "properties": {
+          "experiences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievedFact"
+            }
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievedFact"
+            }
+          },
+          "opinions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievedFact"
+            }
+          },
+          "seed_nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphNode"
+            }
+          },
+          "world_facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievedFact"
+            }
+          }
+        }
+      },
+      "RetrieveRequest": {
+        "type": "object",
+        "properties": {
+          "max_depth": {
+            "type": "integer",
+            "default": 2
+          },
+          "seed_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "seed_ids"
+        ]
+      },
+      "RetrievedFact": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "parent_id": {
+            "type": "string"
+          },
+          "ranking_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "relation_type": {
+            "type": "string"
+          },
+          "score_breakdown": {
+            "$ref": "#/components/schemas/ScoreBreakdown"
+          }
+        }
+      },
+      "SchemaReport": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "drift_detected": {
+            "type": "boolean"
+          },
+          "stored": {
+            "type": "string"
+          }
+        }
+      },
+      "ScoreBreakdown": {
+        "type": "object",
+        "properties": {
+          "centrality_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "depth_penalty": {
+            "type": "number",
+            "format": "float"
+          },
+          "final_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "path_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "recency_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "temporal_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "vector_score": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "SearchRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query text"
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Number of results",
+            "default": 5
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "SearchResult": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "$ref": "#/components/schemas/Entity"
+          },
+          "similarity": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "Stats": {
+        "type": "object",
+        "properties": {
+          "archived_count": {
+            "type": "integer"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contradiction_count": {
+            "type": "integer"
+          },
+          "db_size_bytes": {
+            "type": "integer"
+          },
+          "edge_count": {
+            "type": "integer"
+          },
+          "embedding_coverage": {
+            "type": "number",
+            "format": "float"
+          },
+          "last_gc_archived": {
+            "type": "integer"
+          },
+          "last_gc_run_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "node_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "StoreRequest": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "world",
+              "opinion",
+              "experience",
+              "observation",
+              "task"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "description": "Entity content text"
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique entity identifier"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "content"
+        ]
+      },
+      "TaskCreateRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "context_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Auto-generated if omitted"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "TaskCreateResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskDepRequest": {
+        "type": "object",
+        "properties": {
+          "add": {
+            "type": "boolean",
+            "default": true
+          },
+          "relation_type": {
+            "type": "string",
+            "default": "blocked_by"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id"
+        ]
+      },
+      "TaskExecutableResponse": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            }
+          }
+        }
+      },
+      "TaskListRequest": {
+        "type": "object",
+        "properties": {
+          "goal_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskRollbackRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "TaskRollbackResponse": {
+        "type": "object",
+        "properties": {
+          "rollback_task_id": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskShowRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "TaskShowResponse": {
+        "type": "object",
+        "properties": {
+          "blocked_by": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Edge"
+            }
+          },
+          "entity": {
+            "$ref": "#/components/schemas/Entity"
+          },
+          "recovers_via": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Edge"
+            }
+          }
+        }
+      },
+      "TaskStatusRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "TaskTreeRequest": {
+        "type": "object",
+        "properties": {
+          "goal_id": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskTreeResponse": {
+        "type": "object",
+        "properties": {
+          "tree": {
+            "type": "string",
+            "description": "ASCII tree rendering"
+          }
+        }
+      },
+      "TimelineEntry": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          }
+        }
+      },
+      "VerifyReport": {
+        "type": "object",
+        "properties": {
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "memory",
+      "description": "Entity storage, search, and retrieval"
+    },
+    {
+      "name": "ingest",
+      "description": "Dialog ingestion and entity extraction"
+    },
+    {
+      "name": "task",
+      "description": "Task lifecycle management"
+    },
+    {
+      "name": "graph",
+      "description": "Graph analytics and integrity"
+    },
+    {
+      "name": "temporal",
+      "description": "Time-based queries and timeline"
+    },
+    {
+      "name": "admin",
+      "description": "Administrative operations"
+    },
+    {
+      "name": "health",
+      "description": "Health checks and metrics"
+    }
+  ]
+}
