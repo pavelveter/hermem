@@ -112,3 +112,41 @@ func BoolMapInClause(values map[string]bool) (string, []interface{}) {
 	}
 	return strings.Join(ph, ","), args
 }
+
+// GetExplainEntity fetches entity data needed for ScoreBreakdown computation.
+// Returns the core.Entity, its decoded embedding, and the node degree
+// (edge count from the edges table where source_id or target_id = id).
+// Returns sql.ErrNoRows if the entity doesn't exist.
+func GetExplainEntity(db *sql.DB, id string) (core.Entity, []float32, int, error) {
+	var e core.Entity
+	var embBytes []byte
+	var updatedAt, createdAt sql.NullTime
+	err := db.QueryRow(
+		`SELECT id, content, embedding, updated_at, created_at FROM entities WHERE id = ? AND archived = 0`,
+		id,
+	).Scan(&e.ID, &e.Content, &embBytes, &updatedAt, &createdAt)
+	if err != nil {
+		return e, nil, 0, err
+	}
+	if updatedAt.Valid {
+		t := updatedAt.Time
+		e.UpdatedAt = &t
+	}
+	if createdAt.Valid {
+		t := createdAt.Time
+		e.CreatedAt = &t
+	}
+
+	var degree int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM edges WHERE source_id = ? OR target_id = ?`, id, id).Scan(&degree); err != nil {
+		degree = 0
+	}
+	e.Degree = degree
+
+	var embedding []float32
+	if len(embBytes) > 0 {
+		embedding = BytesToEmbedding(embBytes)
+	}
+
+	return e, embedding, degree, nil
+}

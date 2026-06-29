@@ -51,3 +51,71 @@ func FindRollbackTask(db *sql.DB, schema core.SchemaConfig, failedTaskID string)
 	}
 	return targetID, nil
 }
+
+// CascadeRollback rolls back a failed task and all tasks blocked-by it
+// (transitive dependents). The errorContext is appended to each rolled-back
+// task's content as a "[ROLLBACK: ...]" annotation. Already-rolled-back
+// tasks are skipped (idempotent).
+//
+// Cycle safety: a visited set prevents infinite recursion when blocked_by
+// edges form a cycle.
+//
+// Returns the list of tasks that were rolled back (root + dependents).
+// Partial failure does not abort the cascade — errored branches are
+// skipped and the partial result is returned alongside the first error.
+func CascadeRollback(db *sql.DB, schema core.SchemaConfig, id, errorContext string) ([]core.Task, error) {
+	return cascadeRollback(db, schema, id, errorContext, make(map[string]bool))
+}
+
+func cascadeRollback(db *sql.DB, schema core.SchemaConfig, id, errorContext string, visited map[string]bool) ([]core.Task, error) {
+	if visited[id] {
+		return nil, nil
+	}
+	visited[id] = true
+
+	// Already rolled back? Skip.
+	task, err := GetTaskByID(db, schema, id)
+	if err != nil {
+		return nil, fmt.Errorf("cascade rollback: get %s: %w", id, err)
+	}
+	if task.Status == schema.StateUnblocking {
+		return nil, nil
+	}
+
+	// Annotate content with error context.
+	newContent := task.Content
+	if errorContext != "" {
+		newContent = task.Content + "\n[ROLLBACK: " + errorContext + "]"
+	}
+
+	unblocking := schema.StateUnblocking
+	if unblocking == "" {
+		unblocking = "rolled_back"
+	}
+
+	if _, err := db.Exec(`UPDATE entities SET status = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		unblocking, newContent, id); err != nil {
+		return nil, fmt.Errorf("cascade rollback: update %s: %w", id, err)
+	}
+
+	task.Status = unblocking
+	task.Content = newContent
+	result := []core.Task{task}
+
+	// Find all tasks blocked-by this one.
+	blocked, err := GetBlockedBy(db, schema, id)
+	if err != nil {
+		return result, fmt.Errorf("cascade rollback: dependents of %s: %w", id, err)
+	}
+
+	var firstErr error
+	for _, edge := range blocked {
+		sub, err := cascadeRollback(db, schema, edge.SourceID, errorContext, visited)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		result = append(result, sub...)
+	}
+
+	return result, firstErr
+}

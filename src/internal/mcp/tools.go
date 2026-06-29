@@ -209,3 +209,139 @@ func (s *Server) handleIngestDialog(ctx context.Context, _ *gomcp.CallToolReques
 		"status": "ok",
 	})
 }
+
+// handleGraphCommunities runs Louvain community detection via the graph service.
+func (s *Server) handleGraphCommunities(ctx context.Context, _ *gomcp.CallToolRequest, in GraphCommunitiesInput) (*gomcp.CallToolResult, any, error) {
+	maxIter := 10
+	if in.MaxIterations != nil && *in.MaxIterations > 0 {
+		maxIter = *in.MaxIterations
+	}
+
+	communities, globalQ, err := s.deps.Graph.Communities(ctx, maxIter)
+	if err != nil {
+		return toolError(fmt.Sprintf("graph communities failed: %v", err))
+	}
+
+	return outputJSON(map[string]interface{}{
+		"communities":       communities,
+		"count":             len(communities),
+		"global_modularity": globalQ,
+	})
+}
+
+// handleGraphVerify runs graph integrity checks via the graph service.
+func (s *Server) handleGraphVerify(ctx context.Context, _ *gomcp.CallToolRequest, _ GraphVerifyInput) (*gomcp.CallToolResult, any, error) {
+	state := s.deps.Refs.Load()
+	schema := core.DefaultSchemaConfig(false)
+	dim := s.deps.VectorDim
+	if state != nil {
+		schema = state.Schema
+	}
+
+	report, err := s.deps.Graph.Verify(ctx, schema, dim)
+	if err != nil {
+		return toolError(fmt.Sprintf("graph verify failed: %v", err))
+	}
+
+	return outputJSON(map[string]interface{}{
+		"pass":   report.Pass(),
+		"issues": report.Issues,
+		"count":  len(report.Issues),
+	})
+}
+
+// handleTaskTree renders the task dependency tree via the task service.
+func (s *Server) handleTaskTree(ctx context.Context, _ *gomcp.CallToolRequest, in TaskTreeInput) (*gomcp.CallToolResult, any, error) {
+	goalID := ""
+	if in.GoalID != nil {
+		goalID = *in.GoalID
+	}
+
+	state := s.deps.Refs.Load()
+	schema := core.DefaultSchemaConfig(false)
+	if state != nil {
+		schema = state.Schema
+	}
+
+	tree, err := s.deps.Task.Tree(ctx, goalID, schema)
+	if err != nil {
+		return toolError(fmt.Sprintf("task tree failed: %v", err))
+	}
+
+	return outputJSON(map[string]interface{}{
+		"tree": tree,
+	})
+}
+
+// handleTaskRollback cascade-rollbacks a failed task via the task service.
+func (s *Server) handleTaskRollback(ctx context.Context, _ *gomcp.CallToolRequest, in TaskRollbackInput) (*gomcp.CallToolResult, any, error) {
+	if in.ID == "" {
+		return toolError("id is required")
+	}
+
+	state := s.deps.Refs.Load()
+	schema := core.DefaultSchemaConfig(false)
+	if state != nil {
+		schema = state.Schema
+	}
+
+	rolledBack, err := s.deps.Task.RollbackCascade(ctx, in.ID, in.ErrorContext, schema)
+
+	result := map[string]interface{}{
+		"rolled_back": rolledBack,
+		"count":       len(rolledBack),
+	}
+	if err != nil {
+		result["error"] = err.Error()
+		result["partial"] = true
+	}
+	return outputJSON(result)
+}
+
+// handleGraphContradictions lists contradiction edges via the contradiction service.
+func (s *Server) handleGraphContradictions(ctx context.Context, _ *gomcp.CallToolRequest, in GraphContradictionsInput) (*gomcp.CallToolResult, any, error) {
+	entityID := ""
+	if in.ID != nil {
+		entityID = *in.ID
+	}
+
+	if s.deps.Contradictions == nil {
+		return toolError("contradiction service not available")
+	}
+
+	pairs, err := s.deps.Contradictions.List(ctx, entityID)
+	if err != nil {
+		return toolError(fmt.Sprintf("graph contradictions failed: %v", err))
+	}
+
+	return outputJSON(map[string]interface{}{
+		"pairs": pairs,
+		"count": len(pairs),
+	})
+}
+
+// handleMemoryExplain returns a ScoreBreakdown for a single memory node by ID.
+func (s *Server) handleMemoryExplain(ctx context.Context, _ *gomcp.CallToolRequest, in MemoryExplainInput) (*gomcp.CallToolResult, any, error) {
+	if in.ID == "" {
+		return toolError("id is required")
+	}
+
+	queryText := ""
+	if in.Query != nil {
+		queryText = *in.Query
+	}
+
+	breakdown, err := s.deps.Retrieve.ExplainNode(ctx, in.ID, queryText)
+	if err != nil {
+		return toolError(fmt.Sprintf("memory explain failed: %v", err))
+	}
+
+	if breakdown == nil {
+		return toolError(fmt.Sprintf("entity not found: %s", in.ID))
+	}
+
+	return outputJSON(map[string]interface{}{
+		"id":              in.ID,
+		"score_breakdown": breakdown,
+	})
+}

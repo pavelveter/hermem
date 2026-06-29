@@ -179,6 +179,47 @@ func (s *Service) Explain(ctx context.Context, query string, topK int, opts core
 	return result, nil
 }
 
+// ExplainNode returns a ScoreBreakdown for a single entity by ID.
+// When queryText is non-empty, it embeds the query and includes vector
+// similarity in the breakdown. Otherwise VectorScore is 0.
+//
+// Computes recency (from UpdatedAt), temporal decay (from CreatedAt),
+// and centrality (from edge degree). PathScore and DepthPenalty are 0
+// (no graph-walk context). Returns nil if the entity is not found.
+func (s *Service) ExplainNode(ctx context.Context, id, queryText string) (*core.ScoreBreakdown, error) {
+	if id == "" {
+		return nil, fmt.Errorf("explain node: id required")
+	}
+
+	entity, embedding, _, err := store.GetExplainEntity(s.db, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("explain node: %w", err)
+	}
+
+	// Use zero-value weights so callers see the raw feature values.
+	w := core.RankingWeight{}.WithDefaults()
+
+	var queryEmbedding []float32
+	var queryNorm float32
+	if queryText != "" {
+		if emb, err := s.embedder.Embed(ctx, queryText); err == nil && len(emb) > 0 {
+			queryEmbedding = emb
+			queryNorm = vector.VectorNorm(emb)
+		}
+	}
+
+	node := core.GraphNode{
+		Entity:     entity,
+		PathWeight: 0,
+	}
+
+	comps := ComputeScoreComponents(node, embedding, queryEmbedding, queryNorm, w)
+	return BuildScoreBreakdown(comps, w), nil
+}
+
 // Provenance queries entities by provenance triple (conversation_id,
 // message_id, source). Empty triple + non-positive limit returns a
 // reasonable default.

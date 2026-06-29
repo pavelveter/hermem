@@ -214,3 +214,18 @@ func (s *Service) RecoveryPlan(_ context.Context, id string, schema core.SchemaC
 	}
 	return store.GenerateRecoveryPlan(s.db, schema, id)
 }
+
+// RollbackCascade rolls back a failed task and all tasks blocked-by it
+// (transitive dependents). The errorContext is appended to each rolled-back
+// task's content. Already-rolled-back tasks are skipped (idempotent).
+//
+// Returns the list of rolled-back tasks (root + dependents) in DFS order.
+func (s *Service) RollbackCascade(_ context.Context, id, errorContext string, schema core.SchemaConfig) ([]core.Task, error) {
+	if id == "" {
+		return nil, fmt.Errorf("rollback cascade: id required")
+	}
+	if !schema.StatefulEnabled {
+		return nil, fmt.Errorf("rollback cascade: stateful mode is disabled — enable via [schema] stateful_categories")
+	}
+	return store.CascadeRollback(s.db, schema, id, errorContext)
+}
