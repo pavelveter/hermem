@@ -1,0 +1,57 @@
+name: task_planner
+steps:
+  - name: create_root_task
+    cli:
+      args: ["task", "create"]
+      stdin: '{"id":"task-1","content":"Root task"}'
+    expected:
+      exit_code: 0
+
+  - name: create_child_task
+    cli:
+      args: ["task", "create"]
+      stdin: '{"id":"task-2","content":"Child task"}'
+    expected:
+      exit_code: 0
+
+  - name: add_dependency
+    cli:
+      args: ["task", "dep"]
+      stdin: '{"source_id":"task-2","target_id":"task-1","relation_type":"blocked_by","add":true}'
+    expected:
+      exit_code: 0
+
+  - name: list_tasks
+    cli:
+      args: ["task", "list"]
+      stdin: '{}'
+    expected:
+      exit_code: 0
+
+  - name: show_task
+    cli:
+      args: ["task", "show"]
+      stdin: '{"id":"task-1"}'
+    expected:
+      exit_code: 0
+
+  - name: executable_tasks
+    cli:
+      args: ["task", "executable"]
+      stdin: '{}'
+    expected:
+      exit_code: 0
+
+  - name: update_status
+    cli:
+      args: ["task", "status"]
+      stdin: '{"id":"task-1","status":"in_progress"}'
+    expected:
+      exit_code: 0
+
+  - name: task_tree
+    cli:
+      args: ["task", "tree"]
+      stdin: '{"goal_id":"task-1"}'
+    expected:
+      exit_code: 0

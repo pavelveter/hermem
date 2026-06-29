@@ -90,8 +90,8 @@ func (s *Server) registerTools() {
 // Input types for tools.
 
 type SearchInput struct {
-	Query string  `json:"query"`
-	Limit *int    `json:"limit,omitempty"`
+	Query string `json:"query"`
+	Limit *int   `json:"limit,omitempty"`
 }
 
 type StoreInput struct {

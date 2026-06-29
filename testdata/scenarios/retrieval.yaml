@@ -1,0 +1,36 @@
+name: retrieval
+steps:
+  - name: store_entities
+    cli:
+      args: ["memory", "store"]
+      stdin: '{"id":"e1","category":"world","content":"Paris is the capital of France"}'
+    expected:
+      exit_code: 0
+
+  - name: store_related
+    cli:
+      args: ["memory", "store"]
+      stdin: '{"id":"e2","category":"world","content":"France is in Europe"}'
+    expected:
+      exit_code: 0
+
+  - name: create_edge
+    cli:
+      args: ["memory", "edge"]
+      stdin: '{"source_id":"e1","target_id":"e2","relation_type":"part_of"}'
+    expected:
+      exit_code: 0
+
+  - name: retrieve_with_depth
+    cli:
+      args: ["memory", "retrieve"]
+      stdin: '{"seed_ids":["e1"],"max_depth":2}'
+    expected:
+      exit_code: 0
+
+  - name: explain_mode
+    cli:
+      args: ["memory", "explain"]
+      stdin: '{"query":"capital of France"}'
+    expected:
+      exit_code: 0
