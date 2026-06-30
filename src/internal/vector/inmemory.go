@@ -228,6 +228,9 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 		}
 		NormalizeVector(q)
 		qNorm := VectorNorm(q)
+		// O(n) scan per query — inherent to brute-force cosine. To improve
+		// beyond O(n·q) total, switch to an ANN index (HNSW, IVF) which
+		// trades exactness for sub-linear query time. See docs/perf-budgets.md.
 		BatchDotProducts(q, idx.flatMatrix, n, idx.cols, dots)
 		for i := range dots {
 			dots[i] /= qNorm
