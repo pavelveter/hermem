@@ -330,7 +330,7 @@ proxy for how widely this code is touched.
 
 ---
 
-## [ ] H4. Typed enums with `UnmarshalText`/JSON validators
+## [x] H4. Typed enums with `UnmarshalText`/JSON validators
 
 `TaskStatus`, `BeliefStatus`, `Polarity*`, `Action*`, `LinkRole*` are
 string aliases. JSON clients can send arbitrary strings and silently
@@ -339,12 +339,13 @@ at the parser boundary.
 
 ### Sub-tasks
 
-- [ ] H4.1 Inventory every string-typed enum in `internal/core`,
+- [x] H4.1 Inventory every string-typed enum in `internal/core`,
       `internal/memory/belief`, `internal/memory/evidence`,
       `internal/contradiction/resolver`, `internal/episodic/linking`.
-- [ ] H4.2 For each, implement `UnmarshalText` and `UnmarshalJSON` that
+      _(Found 3: Polarity, EventType, TimelineEntryKind.)_
+- [x] H4.2 For each, implement `UnmarshalText` and `UnmarshalJSON` that
       reject unknown values with `core.ErrInvalidInput`.
-- [ ] H4.3 Add `MarshalText` round-trip property test per enum.
+- [x] H4.3 Add `MarshalText` round-trip property test per enum.
 - [ ] H4.4 Replace ad-hoc string comparisons in handlers with the parsed
       enum.
 - [ ] H4.5 Document the enum surface in OpenAPI (`enum: [...]`).

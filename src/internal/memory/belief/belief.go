@@ -222,13 +222,13 @@ func (s *service) MarkSuperseded(ctx context.Context, id, byID int64) error {
 	now := time.Now().UTC()
 	const q = `
 UPDATE beliefs
-   SET status        = 'Superseded',
+   SET status        = ?,
        superseded_by = ?,
        archived_at   = ?,
        updated_at    = ?
  WHERE id = ?
 `
-	res, err := tx.ExecContext(ctx, q, byID, now, now, id)
+	res, err := tx.ExecContext(ctx, q, StatusSuperseded, byID, now, now, id)
 	if err != nil {
 		return fmt.Errorf("belief: mark superseded: %w", err)
 	}
