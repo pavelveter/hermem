@@ -28,6 +28,13 @@ var (
 	gitCommit = "unknown"
 )
 
+// signalInit ignores SIGPIPE so that writing to a closed pipe (e.g. hermem
+// serve | head) exits cleanly instead of crashing with EPIPE.
+//
+// IMPORTANT: signal.Ignore is process-wide. Any code that calls
+// signal.Notify for a different signal must not rely on SIGPIPE being
+// un-ignored — it will be. This call lives in main() because it must
+// run exactly once before any goroutine writes to stdout/stderr.
 func signalInit() {
 	signal.Ignore(syscall.SIGPIPE)
 }
