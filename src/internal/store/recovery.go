@@ -2,10 +2,17 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 )
+
+const defaultCascadeLimit = 4096
+
+// ErrCascadeLimit is returned when a cascade rollback exceeds the
+// configured depth/edge cap. The partial result is still valid.
+var ErrCascadeLimit = errors.New("cascade rollback limit exceeded")
 
 // GenerateRecoveryPlan walks the recovers_via chain forward from a failed task,
 // returning the ordered list of recovery tasks to execute.
@@ -57,64 +64,90 @@ func FindRollbackTask(db *sql.DB, schema core.SchemaConfig, failedTaskID string)
 // task's content as a "[ROLLBACK: ...]" annotation. Already-rolled-back
 // tasks are skipped (idempotent).
 //
-// Cycle safety: a visited set prevents infinite recursion when blocked_by
+// Cycle safety: a visited set prevents infinite loops when blocked_by
 // edges form a cycle.
+//
+// Depth safety: a hard cap (schema.CascadeLimit, default 4096) limits
+// total tasks processed per invocation. Returns ErrCascadeLimit when
+// exceeded — the partial result up to the cap is still returned.
 //
 // Returns the list of tasks that were rolled back (root + dependents).
 // Partial failure does not abort the cascade — errored branches are
 // skipped and the partial result is returned alongside the first error.
 func CascadeRollback(db *sql.DB, schema core.SchemaConfig, id, errorContext string) ([]core.Task, error) {
-	return cascadeRollback(db, schema, id, errorContext, make(map[string]bool))
-}
-
-func cascadeRollback(db *sql.DB, schema core.SchemaConfig, id, errorContext string, visited map[string]bool) ([]core.Task, error) {
-	if visited[id] {
-		return nil, nil
-	}
-	visited[id] = true
-
-	// Already rolled back? Skip.
-	task, err := GetTaskByID(db, schema, id)
-	if err != nil {
-		return nil, fmt.Errorf("cascade rollback: get %s: %w", id, err)
-	}
-	if task.Status == schema.StateUnblocking {
-		return nil, nil
+	limit := schema.CascadeLimit
+	if limit <= 0 {
+		limit = defaultCascadeLimit
 	}
 
-	// Annotate content with error context.
-	newContent := task.Content
-	if errorContext != "" {
-		newContent = task.Content + "\n[ROLLBACK: " + errorContext + "]"
-	}
-
-	unblocking := schema.StateUnblocking
-	if unblocking == "" {
-		unblocking = "rolled_back"
-	}
-
-	if _, err := db.Exec(`UPDATE entities SET status = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		unblocking, newContent, id); err != nil {
-		return nil, fmt.Errorf("cascade rollback: update %s: %w", id, err)
-	}
-
-	task.Status = unblocking
-	task.Content = newContent
-	result := []core.Task{task}
-
-	// Find all tasks that this task blocks (dependents).
-	dependents, err := GetDependents(db, schema, id)
-	if err != nil {
-		return result, fmt.Errorf("cascade rollback: dependents of %s: %w", id, err)
-	}
-
+	visited := make(map[string]bool)
+	var result []core.Task
 	var firstErr error
-	for _, edge := range dependents {
-		sub, err := cascadeRollback(db, schema, edge.TargetID, errorContext, visited)
-		if err != nil && firstErr == nil {
-			firstErr = err
+
+	// BFS queue — replaces recursive calls.
+	queue := []string{id}
+
+	for len(queue) > 0 {
+		if len(result) >= limit {
+			return result, fmt.Errorf("%w: %d tasks", ErrCascadeLimit, limit)
 		}
-		result = append(result, sub...)
+
+		current := queue[0]
+		queue = queue[1:]
+
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+
+		// Already rolled back? Skip entirely (including dependents).
+		task, err := GetTaskByID(db, schema, current)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("cascade rollback: get %s: %w", current, err)
+			}
+			continue
+		}
+		if task.Status == schema.StateUnblocking {
+			continue
+		}
+
+		// Annotate content with error context.
+		newContent := task.Content
+		if errorContext != "" {
+			newContent = task.Content + "\n[ROLLBACK: " + errorContext + "]"
+		}
+
+		unblocking := schema.StateUnblocking
+		if unblocking == "" {
+			unblocking = "rolled_back"
+		}
+
+		if _, err := db.Exec(`UPDATE entities SET status = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			unblocking, newContent, current); err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("cascade rollback: update %s: %w", current, err)
+			}
+			continue
+		}
+
+		task.Status = unblocking
+		task.Content = newContent
+		result = append(result, task)
+
+		// Enqueue dependents for next BFS level.
+		dependents, err := GetDependents(db, schema, current)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("cascade rollback: dependents of %s: %w", current, err)
+			}
+			continue
+		}
+		for _, edge := range dependents {
+			if !visited[edge.TargetID] {
+				queue = append(queue, edge.TargetID)
+			}
+		}
 	}
 
 	return result, firstErr
