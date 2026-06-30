@@ -49,9 +49,9 @@ type httpClient struct {
 //   - Trimming any trailing `/` from baseURL so path joins are deterministic.
 //   - Building a fresh *http.Client with the supplied timeout so a fixed
 //     timeout can be re-applied per request without sharing state.
-//   - Wiring that client into a ResilientClient with the supplied attempt
-//     count (1 initial + N retries, where N == attempts-1).
-func newHTTPClient(baseURL, apiKey string, timeout time.Duration, attempts int) *httpClient {
+//   - Wiring that client into a ResilientClient with the supplied policy.
+//     Zero-value fields in policy are resolved via resolvePolicy.
+func newHTTPClient(baseURL, apiKey string, timeout time.Duration, policy RetryPolicy) *httpClient {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
@@ -74,7 +74,7 @@ func newHTTPClient(baseURL, apiKey string, timeout time.Duration, attempts int) 
 	return &httpClient{
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		apiKey:    apiKey,
-		resilient: NewResilientClient(c, attempts, DefaultBackoffs()),
+		resilient: NewResilientClient(c, policy),
 	}
 }
 
