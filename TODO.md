@@ -253,7 +253,7 @@ a contract test so this can never regress silently.
       tracking note under `docs/known-issues/` if the empty-method field
       is an extractor artifact, not a real gap. _(Confirmed: extractor
       artifact — routes registered without method prefix.)_
-- [ ] H1.6 Snapshot `api/openapi.json` and commit. Any spec change
+- [x] H1.6 Snapshot `api/openapi.json` and commit. Any spec change
       must be intentional and reviewed.
 - [x] H1.7 ADR `docs/adr/015-openapi-as-source-of-truth.md`.
 
