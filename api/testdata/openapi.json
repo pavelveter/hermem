@@ -42,6 +42,14 @@
                   "$ref": "#/components/schemas/ReEmbedResult"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -50,6 +58,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -110,6 +126,14 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -143,6 +167,14 @@
                   "items": {
                     "$ref": "#/components/schemas/ConnectedComponent"
                   }
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -179,6 +211,14 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -204,6 +244,14 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -219,7 +267,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Rolled back"
+            "description": "Rolled back",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -241,6 +297,14 @@
                   "$ref": "#/components/schemas/SchemaReport"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -256,7 +320,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Result"
+            "description": "Result",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -281,7 +353,15 @@
         },
         "responses": {
           "200": {
-            "description": "Created"
+            "description": "Created",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad request",
@@ -289,6 +369,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -301,6 +389,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "422": {
@@ -309,6 +405,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -338,6 +442,14 @@
                   "$ref": "#/components/schemas/VerifyReport"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -360,6 +472,14 @@
                   "$ref": "#/components/schemas/HealthResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -374,7 +494,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Healthy"
+            "description": "Healthy",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -396,10 +524,26 @@
                   "$ref": "#/components/schemas/ReadyResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "503": {
-            "description": "Degraded"
+            "description": "Degraded",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -413,7 +557,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Started"
+            "description": "Started",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -438,7 +590,15 @@
         },
         "responses": {
           "200": {
-            "description": "Ingested"
+            "description": "Ingested",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad request",
@@ -446,6 +606,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -456,6 +624,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -477,7 +653,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Metrics in Prometheus exposition format"
+            "description": "Metrics in Prometheus exposition format",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -532,6 +716,14 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -564,6 +756,14 @@
                   "$ref": "#/components/schemas/QueryResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -574,6 +774,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -582,6 +790,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -621,6 +837,14 @@
                   "$ref": "#/components/schemas/RetrievalResult"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -631,6 +855,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -639,6 +871,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -699,6 +939,14 @@
                   "$ref": "#/components/schemas/RetrievalResult"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -709,6 +957,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -717,6 +973,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -759,6 +1023,14 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -791,6 +1063,14 @@
                   "$ref": "#/components/schemas/ResponseResult"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -801,6 +1081,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -809,6 +1097,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -848,6 +1144,14 @@
                   "$ref": "#/components/schemas/RetrievalResult"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -858,6 +1162,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -866,6 +1178,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -908,6 +1228,14 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -918,6 +1246,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -926,6 +1262,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -965,6 +1309,14 @@
                   "status": "ok"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -973,6 +1325,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -985,6 +1345,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "422": {
@@ -993,6 +1361,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1032,6 +1408,14 @@
                   "$ref": "#/components/schemas/TaskCreateResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -1042,6 +1426,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -1050,6 +1442,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1082,7 +1482,15 @@
         },
         "responses": {
           "200": {
-            "description": "Updated"
+            "description": "Updated",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad request",
@@ -1090,6 +1498,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1100,6 +1516,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1139,6 +1563,14 @@
                   "$ref": "#/components/schemas/TaskExecutableResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -1147,6 +1579,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1186,6 +1626,14 @@
                   "$ref": "#/components/schemas/TaskExecutableResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
         },
@@ -1220,6 +1668,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskExecutableResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1259,6 +1715,14 @@
                   "$ref": "#/components/schemas/TaskRollbackResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -1267,6 +1731,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1306,6 +1778,14 @@
                   "$ref": "#/components/schemas/TaskShowResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -1314,6 +1794,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1346,7 +1834,15 @@
         },
         "responses": {
           "204": {
-            "description": "Updated"
+            "description": "Updated",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad request",
@@ -1354,6 +1850,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1366,6 +1870,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "422": {
@@ -1374,6 +1886,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1411,6 +1931,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskTreeResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1451,6 +1979,14 @@
                   "items": {
                     "$ref": "#/components/schemas/TimelineEntry"
                   }
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }

@@ -55,6 +55,18 @@ func (b *SpecBuilder) SecurityScheme(name string, scheme SecurityScheme) *SpecBu
 	return b
 }
 
+// GlobalResponseHeader adds a header to every response in every operation.
+func (b *SpecBuilder) GlobalResponseHeader(name string, desc string, typ string) *SpecBuilder {
+	if b.spec.GlobalResponseHeaders == nil {
+		b.spec.GlobalResponseHeaders = map[string]ResponseHeader{}
+	}
+	b.spec.GlobalResponseHeaders[name] = ResponseHeader{
+		Description: desc,
+		Schema:      &Schema{Type: typ},
+	}
+	return b
+}
+
 func (b *SpecBuilder) Schemas(s map[string]*Schema) *SpecBuilder {
 	for k, v := range s {
 		b.spec.Components.Schemas[k] = v
@@ -70,7 +82,32 @@ func (b *SpecBuilder) Paths(p map[string]*PathItem) *SpecBuilder {
 }
 
 func (b *SpecBuilder) Build() *Spec {
+	b.injectGlobalHeaders()
 	return b.spec
+}
+
+// injectGlobalHeaders adds GlobalResponseHeaders to every operation's
+// every response in the spec.
+func (b *SpecBuilder) injectGlobalHeaders() {
+	if len(b.spec.GlobalResponseHeaders) == 0 {
+		return
+	}
+	for _, item := range b.spec.Paths {
+		for _, op := range []*Operation{item.Get, item.Post, item.Delete, item.Put} {
+			if op == nil {
+				continue
+			}
+			for code, resp := range op.Responses {
+				if resp.Headers == nil {
+					resp.Headers = map[string]ResponseHeader{}
+				}
+				for name, hdr := range b.spec.GlobalResponseHeaders {
+					resp.Headers[name] = hdr
+				}
+				op.Responses[code] = resp
+			}
+		}
+	}
 }
 
 func ref(name string) *Schema {
