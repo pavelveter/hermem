@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/pavelveter/hermem/src/internal/app"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
@@ -30,10 +31,9 @@ import (
 	timelinedomain "github.com/pavelveter/hermem/src/internal/timeline"
 )
 
-// wireAll constructs all domain services and HTTP shells, returning a
-// fully wired *server.Server ready to serve. This centralizes the
-// construction boilerplate so adding a new service requires changes in
-// only this function (plus the Server struct and NewServer signature).
+// wireAll constructs all domain services and HTTP shells from an
+// *clienv.Env, returning a fully wired *server.Server. Deprecated:
+// use WireFromApplication with *app.Application instead.
 func wireAll(env *clienv.Env, refs *serverstate.Ref) *server.Server {
 	// Domain services
 	memSvc := memdomain.New(env.DB, env.VI, env.Embedder)
@@ -73,4 +73,49 @@ func wireAll(env *clienv.Env, refs *serverstate.Ref) *server.Server {
 		healthsrv.New(healthSvc),
 		env.Metrics,
 	)
+}
+
+// WireFromApplication constructs all domain services and HTTP shells
+// from an *app.Application, returning a fully wired *server.Server.
+// This is the new entry point replacing wireAll; the dependency
+// graph is identical but sourced from the typed DI container instead
+// of the lazy Env bag.
+func WireFromApplication(a *app.Application, refs *serverstate.Ref) *server.Server {
+	// Domain services
+	memSvc := memdomain.New(a.DB, a.VI, a.Embedder)
+	edgeSvc := edgedomain.New(a.DB, a.VI, a.Embedder)
+	timelineSvc := timelinedomain.New(a.DB)
+	healthSvc := healthdomain.New(
+		healthdomain.DBProbe(a.DB),
+		healthdomain.VectorIndexProbe(a.VI, a.Cfg.VectorDim),
+		healthdomain.EmbedderProbe(a.Embedder),
+		healthdomain.ExtractorProbe(a.Extractor),
+		healthdomain.DiskSpaceProbe(a.Cfg.DBPath),
+	).WithMetrics(a.Metrics)
+	reembedSvc := reembeddomain.New(a.DB, a.VI, a.Embedder)
+	retSvc := retdomain.New(a.DB, a.VI, a.Embedder)
+	cndSvc := contradictdomain.New(a.DB)
+	taskSvc := taskdomain.New(a.DB, a.Embedder, a.VI)
+	graphSvc := graphdomain.New(a.DB)
+	migrSvc := migrationdomain.New(a.DB)
+	ingestSvc := ingestdomain.New(a.DB, a.VI, a.Embedder, a.Extractor)
+	retentionSvc := retentiondomain.New(a.DB, a.VI)
+
+	// HTTP shells + server
+	return server.NewServerFromDeps(server.ServerDeps{
+		Refs:          refs,
+		Retrieval:     ret.New(retSvc, a.Metrics, refs),
+		Task:          tasksvc.New(taskSvc, a.Metrics, refs),
+		Memory:        mem.New(memSvc, a.Metrics, refs, a.Cfg.DedupThreshold),
+		Edge:          edge.New(edgeSvc, a.Metrics, refs),
+		Timeline:      timeline.New(timelineSvc, a.Metrics),
+		Ingest:        ingsrv.New(ingestSvc, a.Metrics, refs, a.Cfg.DedupThreshold),
+		Contradiction: cnd.New(cndSvc, a.Metrics),
+		Graph:         graphsrv.New(graphSvc, a.Metrics, refs, a.Cfg.VectorDim),
+		Migration:     migrsrv.New(migrSvc, a.Metrics, refs),
+		Retention:     retention.New(retentionSvc, a.Metrics, refs, a.Cfg.Retention),
+		Reembed:       reembed.New(reembedSvc, a.Metrics),
+		Health:        healthsrv.New(healthSvc),
+		Metrics:       a.Metrics,
+	})
 }
