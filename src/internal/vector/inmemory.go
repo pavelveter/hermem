@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -328,11 +329,7 @@ func (idx *InMemoryVectorIndex) compact() {
 // sortByScoreDesc sorts idxs in descending order of scores[idxs[i]].
 // Insertion sort — n is small enough in practice and the function avoids reflection overhead.
 func sortByScoreDesc(idxs []int, scores []float32) {
-	for i := 0; i < len(idxs); i++ {
-		for j := i + 1; j < len(idxs); j++ {
-			if scores[idxs[j]] > scores[idxs[i]] {
-				idxs[i], idxs[j] = idxs[j], idxs[i]
-			}
-		}
-	}
+	sort.Slice(idxs, func(i, j int) bool {
+		return scores[idxs[i]] > scores[idxs[j]]
+	})
 }
