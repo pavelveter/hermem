@@ -15,48 +15,39 @@ const (
 // strength values using the given selector. Returns 0 for a polarity
 // group when no evidence of that type exists.
 func AggregateEvidence(all []*evidence.Evidence, selector Aggregator) (support, refute float64) {
-	var sSum, rSum float64
-	var sCount, rCount int
-	var sMin, rMin float64
-	firstS, firstR := true, true
+	support = aggregatePolarity(all, evidence.PolaritySupport, selector)
+	refute = aggregatePolarity(all, evidence.PolarityRefute, selector)
+	return
+}
+
+// aggregatePolarity computes the aggregate strength for a single polarity.
+func aggregatePolarity(all []*evidence.Evidence, pol evidence.Polarity, selector Aggregator) float64 {
+	var sum float64
+	var count int
+	var min float64
+	first := true
 
 	for _, e := range all {
-		switch e.Polarity {
-		case evidence.PolaritySupport:
-			sSum += e.Strength
-			sCount++
-			if firstS || e.Strength < sMin {
-				sMin = e.Strength
-				firstS = false
-			}
-		case evidence.PolarityRefute:
-			rSum += e.Strength
-			rCount++
-			if firstR || e.Strength < rMin {
-				rMin = e.Strength
-				firstR = false
-			}
+		if e.Polarity != pol {
+			continue
+		}
+		sum += e.Strength
+		count++
+		if first || e.Strength < min {
+			min = e.Strength
+			first = false
 		}
 	}
 
+	if count == 0 {
+		return 0
+	}
 	switch selector {
 	case AggregatorAvg:
-		if sCount > 0 {
-			support = sSum / float64(sCount)
-		}
-		if rCount > 0 {
-			refute = rSum / float64(rCount)
-		}
+		return sum / float64(count)
 	case AggregatorMin:
-		if !firstS {
-			support = sMin
-		}
-		if !firstR {
-			refute = rMin
-		}
+		return min
 	default:
-		support = sSum
-		refute = rSum
+		return sum
 	}
-	return
 }

@@ -58,3 +58,50 @@ func TestAggregateEvidence_Empty(t *testing.T) {
 		t.Errorf("expected 0, got support=%f refute=%f", s, r)
 	}
 }
+
+// TestAggregateEvidence_TableDriven covers all polarity/selector combinations.
+func TestAggregateEvidence_TableDriven(t *testing.T) {
+	tests := []struct {
+		name       string
+		evidence   []*evidence.Evidence
+		selector   Aggregator
+		wantSup    float64
+		wantRef    float64
+	}{
+		{
+			name:     "support_only_sum",
+			evidence: []*evidence.Evidence{{Polarity: evidence.PolaritySupport, Strength: 0.3}, {Polarity: evidence.PolaritySupport, Strength: 0.7}},
+			selector: AggregatorSum, wantSup: 1.0, wantRef: 0,
+		},
+		{
+			name:     "refute_only_avg",
+			evidence: []*evidence.Evidence{{Polarity: evidence.PolarityRefute, Strength: 0.4}, {Polarity: evidence.PolarityRefute, Strength: 0.8}},
+			selector: AggregatorAvg, wantSup: 0, wantRef: 0.6,
+		},
+		{
+			name: "mixed_min",
+			evidence: []*evidence.Evidence{
+				{Polarity: evidence.PolaritySupport, Strength: 0.5},
+				{Polarity: evidence.PolarityRefute, Strength: 0.1},
+			},
+			selector: AggregatorMin, wantSup: 0.5, wantRef: 0.1,
+		},
+		{
+			name:     "empty",
+			evidence: nil,
+			selector: AggregatorSum, wantSup: 0, wantRef: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, r := AggregateEvidence(tt.evidence, tt.selector)
+			if roundTo(s, 6) != roundTo(tt.wantSup, 6) {
+				t.Errorf("support: want %f, got %f", tt.wantSup, s)
+			}
+			if roundTo(r, 6) != roundTo(tt.wantRef, 6) {
+				t.Errorf("refute: want %f, got %f", tt.wantRef, r)
+			}
+		})
+	}
+}
