@@ -101,18 +101,18 @@ shippable steps.
 
 #### C2.A Foundation
 
-- [ ] C2.A.1 Create `src/internal/app` package.
-- [ ] C2.A.2 Define `app.Application` struct with **non-nil** fields:
+- [x] C2.A.1 Create `src/internal/app` package.
+- [x] C2.A.2 Define `app.Application` struct with **non-nil** fields:
       `DB`, `VI`, `Worker`, `Embedder`, `Extractor`, `Reranker`,
       `Metrics`, `Tracer`, `Logger`, `Cfg`, `Build`.
-- [ ] C2.A.3 Define `app.New(ctx context.Context, cfg *config.Config)
+- [x] C2.A.3 Define `app.New(ctx context.Context, cfg *config.Config)
       (*Application, error)` that constructs every dependency eagerly.
       No method on `Application` may return a nil dependency.
-- [ ] C2.A.4 Implement `app.Application.Start(ctx) error` and
+- [x] C2.A.4 Implement `app.Application.Start(ctx) error` and
       `Stop(ctx) error` with explicit lifecycle order
       (worker → http server → DB last).
-- [ ] C2.A.5 Add unit test asserting no field is nil after `app.New`.
-- [ ] C2.A.6 Add ADR `docs/adr/012-application-container.md`.
+- [x] C2.A.5 Add unit test asserting no field is nil after `app.New`.
+- [x] C2.A.6 Add ADR `docs/adr/012-application-container.md`.
 
 #### C2.B Server migration (consumer first, low risk)
 
