@@ -35,7 +35,7 @@ func NewOllamaReranker(baseURL, model string, timeout time.Duration) *OllamaRera
 	return &OllamaReranker{
 		BaseURL: baseURL,
 		Model:   model,
-		http:    newHTTPClient(baseURL, "", timeout, 3), // 1 + 2 retries; graceful-degrade after
+		http:    newHTTPClient(baseURL, "", timeout, RetryPolicy{MaxAttempts: 3}),
 	}
 }
 
@@ -89,7 +89,7 @@ func NewOpenAIReranker(baseURL, model, key string, timeout time.Duration) *OpenA
 		BaseURL: baseURL,
 		APIKey:  key,
 		Model:   model,
-		http:    newHTTPClient(baseURL, key, timeout, 3),
+		http:    newHTTPClient(baseURL, key, timeout, RetryPolicy{MaxAttempts: 3}),
 	}
 }
 

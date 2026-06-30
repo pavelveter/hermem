@@ -16,10 +16,10 @@ func TestResilientClient_HappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &ResilientClient{
-		Attempts: 3,
-		Backoffs: []time.Duration{1 * time.Millisecond, 2 * time.Millisecond},
-	}
+	c := NewResilientClient(nil, RetryPolicy{
+		MaxAttempts: 3,
+		Backoff:     []time.Duration{1 * time.Millisecond, 2 * time.Millisecond},
+	})
 	req, err := http.NewRequest("GET", srv.URL, nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
@@ -46,10 +46,10 @@ func TestResilientClient_Retries5xxThenSucceeds(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &ResilientClient{
-		Attempts: 4,
-		Backoffs: []time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond},
-	}
+	c := NewResilientClient(nil, RetryPolicy{
+		MaxAttempts: 4,
+		Backoff:     []time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond},
+	})
 	req, _ := http.NewRequest("GET", srv.URL, nil)
 	resp, err := c.Do(t.Context(), req)
 	if err != nil {
@@ -73,10 +73,10 @@ func TestResilientClient_AttemptsExhaustedReturnsLastErr(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &ResilientClient{
-		Attempts: 2,
-		Backoffs: []time.Duration{1 * time.Millisecond},
-	}
+	c := NewResilientClient(nil, RetryPolicy{
+		MaxAttempts: 2,
+		Backoff:     []time.Duration{1 * time.Millisecond},
+	})
 	req, _ := http.NewRequest("GET", srv.URL, nil)
 	resp, err := c.Do(t.Context(), req)
 	if resp != nil {
@@ -108,10 +108,10 @@ func TestResilientClient_CtxCancelAbortsRetries(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	c := &ResilientClient{
-		Attempts: 5,
-		Backoffs: []time.Duration{50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond},
-	}
+	c := NewResilientClient(nil, RetryPolicy{
+		MaxAttempts: 5,
+		Backoff:     []time.Duration{50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond},
+	})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancelled
 	req, _ := http.NewRequest("GET", srv.URL, nil)

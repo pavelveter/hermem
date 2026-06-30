@@ -30,7 +30,7 @@ func TestHTTPClient_DoPOSTHappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newHTTPClient(srv.URL, "", 5*time.Second, 1)
+	c := newHTTPClient(srv.URL, "", 5*time.Second, RetryPolicy{MaxAttempts: 1})
 	var resp map[string]string
 	if err := c.doPOST(t.Context(), "/api/test", map[string]string{"k": "v"}, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
@@ -56,7 +56,7 @@ func TestHTTPClient_DoPOSTNon200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newHTTPClient(srv.URL, "", 5*time.Second, 1)
+	c := newHTTPClient(srv.URL, "", 5*time.Second, RetryPolicy{MaxAttempts: 1})
 	var resp map[string]string
 	err := c.doPOST(t.Context(), "/api/test", nil, &resp)
 	if err == nil {
@@ -80,7 +80,7 @@ func TestHTTPClient_DoPOSTAuthHeaderWithKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newHTTPClient(srv.URL, "sk-test-key", 5*time.Second, 1)
+	c := newHTTPClient(srv.URL, "sk-test-key", 5*time.Second, RetryPolicy{MaxAttempts: 1})
 	var resp map[string]string
 	if err := c.doPOST(t.Context(), "/x", nil, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
@@ -101,7 +101,7 @@ func TestHTTPClient_DoPOSTAuthHeaderNoKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newHTTPClient(srv.URL, "", 5*time.Second, 1)
+	c := newHTTPClient(srv.URL, "", 5*time.Second, RetryPolicy{MaxAttempts: 1})
 	var resp map[string]string
 	if err := c.doPOST(t.Context(), "/x", nil, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
@@ -129,7 +129,7 @@ func TestHTTPClient_DoPOSTPathConcatenation(t *testing.T) {
 	// to exercise the trim path. The recorded path on the server should
 	// still be exactly /api/foo with no // artifacts.
 	trimmedURL := srv.URL + "/"
-	c := newHTTPClient(trimmedURL, "", 5*time.Second, 1)
+	c := newHTTPClient(trimmedURL, "", 5*time.Second, RetryPolicy{MaxAttempts: 1})
 	var resp map[string]string
 	if err := c.doPOST(t.Context(), "/api/foo", nil, &resp); err != nil {
 		t.Fatalf("doPOST: %v", err)
@@ -170,7 +170,7 @@ func TestHTTPClient_DoPOSTRetryReplaysBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newHTTPClient(srv.URL, "", 5*time.Second, 3) // 1 + 2 retries
+	c := newHTTPClient(srv.URL, "", 5*time.Second, RetryPolicy{MaxAttempts: 3})
 	var resp map[string]string
 	if err := c.doPOST(t.Context(), "/retry", map[string]string{"k": "v"}, &resp); err != nil {
 		t.Fatalf("doPOST: %v (retry contract likely broken)", err)
@@ -202,7 +202,7 @@ func TestHTTPClient_DoPOSTTimeoutPropagates(t *testing.T) {
 	}()
 
 	// Tight timeout — 50ms — so the test runs in well under a second.
-	c := newHTTPClient(srv.URL, "", 50*time.Millisecond, 1)
+	c := newHTTPClient(srv.URL, "", 50*time.Millisecond, RetryPolicy{MaxAttempts: 1})
 	var resp map[string]string
 	start := time.Now()
 	err := c.doPOST(t.Context(), "/hang", nil, &resp)

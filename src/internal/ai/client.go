@@ -9,15 +9,50 @@ import (
 	"time"
 )
 
-// defaultBackoffs is the exponential backoff ladder applied by
-// ResilientClient when Backoffs is left empty. 200ms / 500ms / 1s / 2s
-// matches the spec in TODO.md 5.4 — tight enough to fail fast in
-// interactive paths, long enough to ride out a model-load spike.
-var defaultBackoffs = []time.Duration{
-	200 * time.Millisecond,
-	500 * time.Millisecond,
-	1 * time.Second,
-	2 * time.Second,
+const (
+	// defaultMaxAttempts is the maximum number of attempts (1 initial +
+	// N retries) when RetryPolicy.MaxAttempts is zero. Chosen to
+	// accommodate the default backoff ladder (4 slots) with room for
+	// extrapolation before the wall-clock guard (C1.4) kicks in.
+	defaultMaxAttempts = 10
+)
+
+var (
+	defaultBackoffs = []time.Duration{
+		200 * time.Millisecond,
+		500 * time.Millisecond,
+		1 * time.Second,
+		2 * time.Second,
+	}
+
+	defaultRetryableStatus = map[int]bool{
+		429: true,
+		500: true, 502: true, 503: true, 504: true,
+	}
+)
+
+// RetryPolicy configures the retry behaviour of ResilientClient.Do.
+// A zero-value RetryPolicy is valid and applies sensible defaults:
+//
+//   - MaxAttempts → defaultMaxAttempts (10)
+//   - Backoff     → DefaultBackoffs() (200 ms / 500 ms / 1 s / 2 s)
+//   - RetryableStatus → {429, 500, 502, 503, 504}
+//
+// Thread-safe: a RetryPolicy may be shared across goroutines after
+// construction; the map is read-only during Do.
+type RetryPolicy struct {
+	// MaxAttempts is the total number of attempts (initial + retries).
+	// 0 → defaultMaxAttempts.
+	MaxAttempts int
+
+	// Backoff is the ordered list of sleep durations between retries.
+	// nil/empty → DefaultBackoffs(). When i ≥ len(Backoff) the last
+	// value is doubled each step (exponential extrapolation).
+	Backoff []time.Duration
+
+	// RetryableStatus is the set of HTTP status codes that trigger a
+	// retry alongside network errors. nil/empty → defaultRetryableStatus.
+	RetryableStatus map[int]bool
 }
 
 // DefaultBackoffs returns a copy of the default backoff ladder.
@@ -25,6 +60,26 @@ func DefaultBackoffs() []time.Duration {
 	dst := make([]time.Duration, len(defaultBackoffs))
 	copy(dst, defaultBackoffs)
 	return dst
+}
+
+// resolvePolicy returns a copy of p with zero fields replaced by
+// defaults. The returned Backoff slice is always non-nil and safe to
+// index; RetryableStatus is always non-nil and safe to look up.
+func resolvePolicy(p RetryPolicy) RetryPolicy {
+	out := p
+	if out.MaxAttempts <= 0 {
+		out.MaxAttempts = defaultMaxAttempts
+	}
+	if len(out.Backoff) == 0 {
+		out.Backoff = DefaultBackoffs()
+	}
+	if len(out.RetryableStatus) == 0 {
+		out.RetryableStatus = make(map[int]bool, len(defaultRetryableStatus))
+		for k, v := range defaultRetryableStatus {
+			out.RetryableStatus[k] = v
+		}
+	}
+	return out
 }
 
 // ResilientClient wraps an *http.Client with a configurable retry
@@ -36,48 +91,49 @@ func DefaultBackoffs() []time.Duration {
 //  1. Idempotency. Do is safe ONLY for idempotent requests. The wrapper
 //     replays the body and re-issues the request on transient failures;
 //     callers issuing non-idempotent operations (POST that mutates) must
-//     either set Attempts=1 or accept at-least-once semantics.
+//     set MaxAttempts=1 or accept at-least-once semantics.
 //  2. Body replay. http.NewRequest does NOT set req.GetBody for arbitrary
 //     io.Reader bodies; it does for *bytes.Buffer, *bytes.Reader, and
 //     *strings.Reader. Callers passing custom readers MUST attach a
 //     GetBody closure or the second attempt will silently replay an empty
 //     body. Missing GetBody on a request that needs a retry is a caller
 //     bug, not a runtime error — Do does not detect it.
-//  3. What triggers a retry: network error from inner.Do, HTTP 429, or
-//     HTTP 5xx. Other 4xx are returned to the caller verbatim.
+//  3. What triggers a retry: network error from inner.Do, or any HTTP
+//     status code listed in RetryPolicy.RetryableStatus (default:
+//     429, 500, 502, 503, 504). Other 4xx are returned to the caller
+//     verbatim.
 //  4. Context propagation. ctx is attached to every retry-attempt's
 //     cloned request AND every inter-attempt sleep. A ctx cancel
 //     mid-sleep aborts the loop immediately and returns ctx.Err(). A
 //     ctx cancel between the inner Do error and the next sleep also
 //     short-circuits.
-//  5. Body draining. On a retried 5xx/429 response, the resp.Body is
-//     drained to io.Discard and closed so the underlying TCP connection
-//     can return to the keep-alive pool instead of being RST.
+//  5. Body draining. On a retried response, the resp.Body is drained
+//     to io.Discard and closed so the underlying TCP connection can
+//     return to the keep-alive pool instead of being RST.
 //  6. Default policy. A zero-value ResilientClient{} is valid: Inner
-//     falls back to http.DefaultClient, Attempts to len(Backoffs)+1,
-//     Backoffs to DefaultBackoffs() (200ms/500ms/1s/2s).
+//     falls back to http.DefaultClient, Policy fields are resolved
+//     via resolvePolicy (see above).
 //  7. No wall-clock guard yet — see C1.4. The parent ctx deadline is
 //     today's only ceiling on total retry duration.
 //  8. Thread-safety. ResilientClient is stateless after construction so
-//     a single instance can be shared across goroutines. Backoffs is
-//     copied on Default fallback, never mutated in place.
+//     a single instance can be shared across goroutines. Backoff is
+//     copied on resolvePolicy, never mutated in place.
 type ResilientClient struct {
-	Inner    *http.Client    // nil → http.DefaultClient
-	Attempts int             // 0 → len(Backoffs)+1
-	Backoffs []time.Duration // nil/empty → DefaultBackoffs
+	Inner  *http.Client // nil → http.DefaultClient
+	Policy RetryPolicy  // zero-value → resolvePolicy defaults
 }
 
 // NewResilientClient is the only constructor callers should use. The
 // zero-value ResilientClient{} also works (defaults kick in on Do) but
 // prefer this for explicit intent at the call site.
-func NewResilientClient(inner *http.Client, attempts int, backoffs []time.Duration) *ResilientClient {
-	return &ResilientClient{Inner: inner, Attempts: attempts, Backoffs: backoffs}
+func NewResilientClient(inner *http.Client, policy RetryPolicy) *ResilientClient {
+	return &ResilientClient{Inner: inner, Policy: policy}
 }
 
 // Do issues req with ctx attached and applies the configured backoff
-// ladder on 5xx / 429 / network errors. Returns the first 2xx/3xx/4xx
-// response (other than 429) or the last error after attempts are
-// exhausted.
+// ladder on transient failures. Returns the first response whose
+// status code is NOT in RetryPolicy.RetryableStatus, or the last
+// error after attempts are exhausted.
 //
 // See the ResilientClient type comment for the full contract
 // (idempotency, body-replay, ctx propagation, body-draining).
@@ -86,22 +142,14 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 	if inner == nil {
 		inner = http.DefaultClient
 	}
-	backoffs := c.Backoffs
-	if len(backoffs) == 0 {
-		backoffs = DefaultBackoffs()
-	}
-	attempts := c.Attempts
-	if attempts <= 0 {
-		attempts = len(backoffs) + 1
-	}
+	p := resolvePolicy(c.Policy)
+
 	var lastErr error
-	for i := 0; i < attempts; i++ {
+	for i := 0; i < p.MaxAttempts; i++ {
 		if i > 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
-			} // Refresh the body before retrying. Without GetBody we
-			// can't replay a consumed Body, so callers must supply
-			// a GetBody closure on their *http.Request.
+			}
 			if req.GetBody != nil {
 				body, err := req.GetBody()
 				if err != nil {
@@ -110,33 +158,26 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 				req.Body = body
 			}
 		}
-		// Clone + WithContext each attempt so a per-call ctx override
-		// (e.g. a tighter parent deadline) takes effect while still
-		// preserving the original req's URL/method/headers.
-		c := req.Clone(ctx)
-		resp, err := inner.Do(c)
+		clone := req.Clone(ctx)
+		resp, err := inner.Do(clone)
 		if err != nil {
 			lastErr = err
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if !backoffSleep(ctx, backoffFor(backoffs, i)) {
+			if !backoffSleep(ctx, backoffFor(p.Backoff, i)) {
 				return nil, ctx.Err()
 			}
 			continue
 		}
-		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
-			// Drain so the underlying TCP connection is returned to
-			// the keep-alive pool instead of being reset on Close.
-			// Reading only 256 bytes (the previous behaviour) left the
-			// remainder on the wire and forced a RST on the next retry.
+		if p.RetryableStatus[resp.StatusCode] {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d (transient)", resp.StatusCode)
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if !backoffSleep(ctx, backoffFor(backoffs, i)) {
+			if !backoffSleep(ctx, backoffFor(p.Backoff, i)) {
 				return nil, ctx.Err()
 			}
 			continue
