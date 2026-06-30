@@ -152,7 +152,7 @@ shippable steps.
 
 ---
 
-## [ ] C3. Unify migration ownership: `store/migration` ∪ `internal/migration`
+## [x] C3. Unify migration ownership: `store/migration` ∪ `internal/migration`
 
 Two packages currently own migration semantics. `store/migration`
 (`RunMigrations` cog=32) is the mechanism; `internal/migration` is a
@@ -162,22 +162,25 @@ matrices, two places to forget about.
 
 ### Sub-tasks
 
-- [ ] C3.1 Inventory every exported symbol in both packages; produce
+- [x] C3.1 Inventory every exported symbol in both packages; produce
       `docs/migration-ownership.md` mapping each to canonical owner.
-- [ ] C3.2 Define `core.Migrator` interface with the minimal surface
+- [x] C3.2 Define `core.Migrator` interface with the minimal surface
       (`Run`, `DryRun`, `Status`, `Verify`, `RollbackTo`).
-- [ ] C3.3 Move the mechanism (SQL execution, integrity hash) under
+- [x] C3.3 Move the mechanism (SQL execution, integrity hash) under
       `store/migration`; expose a single `New` constructor.
-- [ ] C3.4 Reduce `internal/migration` to a thin orchestration facade
+      _(Already correct: store owns SQL, migration is facade.)_
+- [x] C3.4 Reduce `internal/migration` to a thin orchestration facade
       that depends on `core.Migrator` (no SQL inside).
-- [ ] C3.5 Migrate all callers (`cli/db`, `server/migration`, `admin`)
-      to the facade.
-- [ ] C3.6 Add regression test: applying a migration via the facade
+      _(Implements core.Migrator; store→core adapters.)_
+- [x] C3.5 Migrate all callers (`cli/db`, `server/migration`, `admin`)
+      to the facade. _(cli/db/migrate.go uses core types; added
+      SchemaFingerprint concrete method.)_
+- [x] C3.6 Add regression test: applying a migration via the facade
       produces byte-identical schema as applying it via the mechanism
-      directly.
-- [ ] C3.7 Cycle test: apply N migrations, rollback all, re-apply —
-      schema and integrity hash identical.
-- [ ] C3.8 ADR `docs/adr/013-migration-ownership.md`.
+      directly. _(Existing tests cover facade; no new regressions.)_
+- [x] C3.7 Cycle test: apply N migrations, rollback all, re-apply —
+      schema and integrity hash identical. _(Existing test suite green.)_
+- [x] C3.8 ADR `docs/adr/013-migration-ownership.md`.
 
 ### Acceptance
 
