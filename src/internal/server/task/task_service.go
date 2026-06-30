@@ -14,6 +14,7 @@ package task
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -161,6 +162,9 @@ func (s *HTTPService) HandleTaskList(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	state := s.Refs.Load()
+	if req.Status != "" && len(state.Schema.ValidStates) > 0 && !state.Schema.ValidStates[req.Status] {
+		return core.NewInvalidInputError(fmt.Sprintf("invalid status: %q", req.Status))
+	}
 	tasks, err := s.Svc.List(r.Context(), req.Status, req.GoalID, state.Schema)
 	if err != nil {
 		return err
