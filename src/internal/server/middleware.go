@@ -223,3 +223,17 @@ func GetRuntime(ctx context.Context) *clienv.Env {
 	}
 	return nil
 }
+
+// APIVersionMiddleware sets the X-Hermem-API-Version response header
+// on every response. The value is the server's MAJOR.MINOR version
+// (e.g. "0.3.0"). SDKs use this for SemVer negotiation: if the
+// server's MAJOR differs from the SDK's MAJOR, the SDK should warn
+// or fail.
+func APIVersionMiddleware(version string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Hermem-API-Version", version)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
