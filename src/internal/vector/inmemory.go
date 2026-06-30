@@ -169,8 +169,8 @@ func (idx *InMemoryVectorIndex) load() {
 }
 
 func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float32, limit int) ([]string, error) {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	n := len(idx.entries)
 	if n == 0 || idx.cols == 0 {
 		return nil, nil
@@ -198,19 +198,16 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 	if limit > n {
 		limit = n
 	}
-	now := time.Now()
 	out := make([]string, limit)
 	for i := 0; i < limit; i++ {
-		e := &idx.entries[idxs[i]]
-		e.lastAccess = now
-		out[i] = e.id
+		out[i] = idx.entries[idxs[i]].id
 	}
 	return out, nil
 }
 
 func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float32, limit int) ([][]string, error) {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	n := len(idx.entries)
 	if n == 0 || idx.cols == 0 {
 		out := make([][]string, len(queries))
@@ -224,7 +221,6 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 	defer putDots(dots)
 	idxs := getInts(n)
 	defer putInts(idxs)
-	now := time.Now()
 	for qi, q := range queries {
 		if len(q) != idx.cols {
 			return nil, fmt.Errorf("%w: query %d has %d, want %d", ErrInvalidQueryDim, qi, len(q), idx.cols)
@@ -245,9 +241,7 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 		}
 		ids := make([]string, l)
 		for i := 0; i < l; i++ {
-			e := &idx.entries[idxs[i]]
-			e.lastAccess = now
-			ids[i] = e.id
+			ids[i] = idx.entries[idxs[i]].id
 		}
 		out[qi] = ids
 	}

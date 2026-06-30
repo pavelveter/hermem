@@ -190,12 +190,12 @@ func (s *HTTPService) HandleTaskShow(w http.ResponseWriter, r *http.Request) err
 		return nil
 	}
 	state := s.Refs.Load()
-	entity, blocked, recovers, err := s.Svc.Show(r.Context(), req.ID, state.Schema)
+	showResult, err := s.Svc.Show(r.Context(), req.ID, state.Schema)
 	if err != nil {
 		return err
 	}
 	s.Metrics.IncTaskShow()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskShowResponse{Entity: entity, BlockedBy: blocked, RecoversVia: recovers})
+	httputil.WriteJSON(w, http.StatusOK, core.TaskShowResponse{Entity: showResult.Task, BlockedBy: showResult.BlockedBy, RecoversVia: showResult.RecoversVia})
 	return nil
 }
 

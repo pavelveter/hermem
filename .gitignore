@@ -53,3 +53,6 @@ hermem.ini
 # Local GGUF models (too large for git)
 models/
 src/internal/ai/bin/
+
+# Node.js dependencies
+node_modules/

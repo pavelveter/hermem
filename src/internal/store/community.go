@@ -10,8 +10,8 @@ import (
 
 // DetectCommunities runs Louvain community detection on the graph.
 // Deprecated: Use community.LoadGraph + community.DetectCommunities directly.
-func DetectCommunities(db *sql.DB, maxIterations int) ([]core.Community, float64, error) {
-	g, err := community.LoadGraph(context.Background(), db)
+func DetectCommunities(ctx context.Context, db *sql.DB, maxIterations int) ([]core.Community, float64, error) {
+	g, err := community.LoadGraph(ctx, db)
 	if err != nil {
 		return nil, 0, err
 	}

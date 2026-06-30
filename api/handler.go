@@ -26,8 +26,15 @@ func (h *Handler) Routes() map[string]http.HandlerFunc {
 func (h *Handler) handleJSON(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
+	b, err := h.spec.JSON()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal JSON"})
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(h.spec.JSON())
+	_, _ = w.Write(b)
 }
 
 func (h *Handler) handleYAML(w http.ResponseWriter, _ *http.Request) {

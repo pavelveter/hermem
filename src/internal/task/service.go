@@ -96,23 +96,31 @@ func (s *Service) List(_ context.Context, status, goalID string, schema core.Sch
 	return store.ListTasks(s.db, schema, status, goalID)
 }
 
+// TaskShowResult is the return type for Show — groups task entity with
+// its dependency edges for forward-compatible extension.
+type TaskShowResult struct {
+	Task        core.Task
+	BlockedBy   []core.Edge
+	RecoversVia []core.Edge
+}
+
 // Show returns one task entity plus its blocked_by + recovers_via
 // edge lists.
 //
 // Errors: returns core.NewNotFoundError if the entity doesn't exist;
 // other store errors are wrapped as-is.
-func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (core.Task, []core.Edge, []core.Edge, error) {
+func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (TaskShowResult, error) {
 	if id == "" {
-		return core.Task{}, nil, nil, core.NewInvalidInputError("id required")
+		return TaskShowResult{}, core.NewInvalidInputError("id required")
 	}
 	task, blocked, recovers, err := store.GetTaskWithRelations(s.db, schema, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return core.Task{}, nil, nil, core.NewNotFoundError(err.Error())
+			return TaskShowResult{}, core.NewNotFoundError(err.Error())
 		}
-		return core.Task{}, nil, nil, fmt.Errorf("show: %w", err)
+		return TaskShowResult{}, fmt.Errorf("show: %w", err)
 	}
-	return task, blocked, recovers, nil
+	return TaskShowResult{Task: task, BlockedBy: blocked, RecoversVia: recovers}, nil
 }
 
 // Dep adds or removes a dependency edge between two tasks. The HTTP
@@ -120,12 +128,12 @@ func (s *Service) Show(_ context.Context, id string, schema core.SchemaConfig) (
 // the domain treats relationType as opaque and just passes through to
 // store.AddEdge / store.DeleteEdge. A missing edge on delete is
 // non-fatal, a duplicate edge on add is non-fatal.
-func (s *Service) Dep(_ context.Context, sourceID, targetID, relationType string, add bool) error {
+func (s *Service) Dep(ctx context.Context, sourceID, targetID, relationType string, add bool) error {
 	if sourceID == "" || targetID == "" {
 		return core.NewInvalidInputError("dep: source_id and target_id required")
 	}
 	if add {
-		if err := store.AddEdge(s.db, sourceID, targetID, relationType, 1.0); err != nil {
+		if err := store.AddEdge(ctx, s.db, sourceID, targetID, relationType, 1.0); err != nil {
 			slog.Warn("task.Dep: add edge failed", "source", sourceID, "target", targetID, "relation", relationType, "err", err)
 		}
 	} else {
@@ -205,7 +213,7 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 	}
 	for _, cid := range contextIDs {
 		if cid != "" {
-			if err := store.AddEdge(s.db, id, cid, "related_to", 1.0); err != nil {
+			if err := store.AddEdge(ctx, s.db, id, cid, "related_to", 1.0); err != nil {
 				slog.Warn("task.Create: add context edge failed", "task_id", id, "context_id", cid, "err", err)
 			}
 		}

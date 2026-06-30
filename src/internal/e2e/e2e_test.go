@@ -51,7 +51,7 @@ func TestE2E_StoreEdgeRetrieve(t *testing.T) {
 		t.Fatalf("store b: %v", err)
 	}
 
-	if err := store.AddEdge(db, "e2e-a", "e2e-b", "related_to", 1.0); err != nil {
+	if err := store.AddEdge(context.Background(), db, "e2e-a", "e2e-b", "related_to", 1.0); err != nil {
 		t.Fatalf("add edge: %v", err)
 	}
 
@@ -135,10 +135,10 @@ func TestE2E_TaskLifecycle(t *testing.T) {
 	}
 
 	// blocked_by direction: source blocks target → task1 blocks task2, task2 blocks task3
-	if err := store.AddEdge(db, "e2e-task1", "e2e-task2", schema.RelationBlocking, 1.0); err != nil {
+	if err := store.AddEdge(context.Background(), db, "e2e-task1", "e2e-task2", schema.RelationBlocking, 1.0); err != nil {
 		t.Fatalf("add dep 1->2: %v", err)
 	}
-	if err := store.AddEdge(db, "e2e-task2", "e2e-task3", schema.RelationBlocking, 1.0); err != nil {
+	if err := store.AddEdge(context.Background(), db, "e2e-task2", "e2e-task3", schema.RelationBlocking, 1.0); err != nil {
 		t.Fatalf("add dep 2->3: %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestE2E_ProvenanceAndContradictions(t *testing.T) {
 	}
 
 	// Add a contradicts edge
-	if err := store.AddEdge(db, "p1", "p2", "contradicts", 1.0); err != nil {
+	if err := store.AddEdge(context.Background(), db, "p1", "p2", "contradicts", 1.0); err != nil {
 		t.Fatalf("add contradicts: %v", err)
 	}
 
@@ -355,7 +355,7 @@ func TestE2E_GraphIntegrity(t *testing.T) {
 	}
 
 	// Cycle detection
-	if err := store.AddEdge(db, "gi3", "gi1", "related_to", 1.0); err == nil {
+	if err := store.AddEdge(context.Background(), db, "gi3", "gi1", "related_to", 1.0); err == nil {
 		t.Fatal("expected cycle detection error for gi3->gi1")
 	}
 }
@@ -430,7 +430,7 @@ func storeEntity(t *testing.T, db *sql.DB, vi *vector.InMemoryVectorIndex, schem
 
 func mustAddEdge(t *testing.T, db *sql.DB, src, dst, rel string) {
 	t.Helper()
-	if err := store.AddEdge(db, src, dst, rel, 1.0); err != nil {
+	if err := store.AddEdge(context.Background(), db, src, dst, rel, 1.0); err != nil {
 		t.Fatalf("add edge %s->%s: %v", src, dst, err)
 	}
 }

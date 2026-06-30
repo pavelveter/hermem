@@ -47,7 +47,7 @@ func (s *Service) Search(ctx context.Context, query string, topK int) ([]core.Se
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
 	}
-	results, err := vector.SearchByVector(s.db, s.vi, embedding, topK)
+	results, err := vector.SearchByVector(ctx, s.db, s.vi, embedding, topK)
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
 	}
@@ -99,7 +99,7 @@ func (s *Service) ResolveSeeds(ctx context.Context, query string, topK int) ([]s
 	if err != nil {
 		return nil, fmt.Errorf("resolve seeds: %w", err)
 	}
-	results, _ := vector.SearchByVector(s.db, s.vi, embedding, topK)
+	results, _ := vector.SearchByVector(ctx, s.db, s.vi, embedding, topK)
 	seedIDs := make([]string, 0, len(results))
 	for _, r := range results {
 		seedIDs = append(seedIDs, r.Entity.ID)
@@ -163,7 +163,7 @@ func (s *Service) Explain(ctx context.Context, query string, topK int, opts core
 		topK = DefaultQueryTopK
 	}
 	embedding, _ := s.embedder.Embed(ctx, query)
-	results, _ := vector.SearchByVector(s.db, s.vi, embedding, topK)
+	results, _ := vector.SearchByVector(ctx, s.db, s.vi, embedding, topK)
 	seedIDs := make([]string, 0, len(results))
 	for _, r := range results {
 		seedIDs = append(seedIDs, r.Entity.ID)

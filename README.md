@@ -173,7 +173,12 @@ For one-shot CLI use without a server, see [CLI.md](docs/CLI.md).
 # Build (Go 1.21+, CGO enabled)
 make build   # or: go build -o hermem ./src
 
-# Copy to PATH
+# Build + sign (macOS) + copy to ~/.local/bin
+make install
+# Override target dir:
+make install INSTALL_DIR=/usr/local/bin
+
+# Or copy manually
 cp hermem /usr/local/bin/
 
 # Configure — place hermem.ini next to the binary

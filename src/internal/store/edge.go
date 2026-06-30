@@ -23,8 +23,8 @@ import (
 // explicit intent at the call site means a future driver swap to one
 // that defaults to LevelRepeatableRead won't silently drop the
 // strict-serial contract).
-func AddEdge(db *sql.DB, src, dst, rel string, weight float32) error {
-	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
+func AddEdge(ctx context.Context, db *sql.DB, src, dst, rel string, weight float32) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin edge tx (Serializable): %w", err)
 	}
