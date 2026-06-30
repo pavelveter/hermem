@@ -56,66 +56,47 @@ type Config struct {
 	AutoMigrate bool
 }
 
-// orDefault returns val if non-empty, else fallback.
-func orDefault(val, fallback string) string {
-	if val != "" {
-		return val
-	}
-	return fallback
-}
-
 // NewEmbedder creates an embedder from config.
-// If ModelPath is set and the file exists, returns a local in-process embedder.
-// Otherwise falls back to Ollama/OpenAI network embedder.
+// Delegates to ai.Factory for construction.
 func (c *Config) NewEmbedder() core.Embedder {
-	if c.ModelPath != "" {
-		if _, err := os.Stat(c.ModelPath); err == nil {
-			e, err := ai.NewLocalEmbedder(c.ModelPath, c.EmbedderTimeout)
-			if err != nil {
-				slog.Error("local embedder init failed, falling back to network", "err", err)
-			} else {
-				slog.Info("using local embedder", "model_path", c.ModelPath)
-				return e
-			}
-		} else {
-			slog.Warn("model_path specified but file not found, falling back to network", "path", c.ModelPath, "err", err)
-		}
-	}
-	switch c.Provider {
-	case "openai":
-		return ai.NewOpenAIEmbedder(c.URL, c.Key, c.Model, c.EmbedderTimeout)
-	default:
-		return ai.NewOllamaEmbedder(c.URL, c.Model, c.EmbedderTimeout)
-	}
+	return c.aiFactory().NewEmbedder()
 }
 
 // NewExtractor creates an LLM extractor from config.
+// Delegates to ai.Factory for construction.
 func (c *Config) NewExtractor() core.LLMExtractor {
-	provider := orDefault(c.ExtractProvider, c.Provider)
-	url := orDefault(c.ExtractURL, c.URL)
-	key := orDefault(c.ExtractKey, c.Key)
-	switch provider {
-	case "openai":
-		return ai.NewOpenAILLMExtractor(url, key, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout)
-	default:
-		return ai.NewOllamaLLMExtractor(url, c.ExtractModel, c.ExtractTemperature, c.ExtractTimeout)
-	}
+	return c.aiFactory().NewExtractor()
 }
 
 // NewReranker creates a reranker from config.
+// Delegates to ai.Factory for construction.
 func (c *Config) NewReranker() core.Reranker {
-	if c.RerankerProvider == "" {
-		return &ai.NoopReranker{}
-	}
-	url := orDefault(c.RerankerURL, c.URL)
-	model := orDefault(c.RerankerModel, c.Model)
-	key := orDefault(c.RerankerKey, c.Key)
-	switch c.RerankerProvider {
-	case "openai":
-		return ai.NewOpenAIReranker(url, model, key, c.RerankerTimeout)
-	default:
-		return ai.NewOllamaReranker(url, model, c.RerankerTimeout)
-	}
+	return c.aiFactory().NewReranker()
+}
+
+func (c *Config) aiFactory() *ai.Factory {
+	return ai.NewFactory(ai.Config{
+		Provider: c.Provider,
+		URL:      c.URL,
+		Key:      c.Key,
+		Model:    c.Model,
+
+		ExtractProvider:    c.ExtractProvider,
+		ExtractURL:         c.ExtractURL,
+		ExtractModel:       c.ExtractModel,
+		ExtractKey:         c.ExtractKey,
+		ExtractTemperature: c.ExtractTemperature,
+		ExtractTimeout:     c.ExtractTimeout,
+
+		RerankerProvider: c.RerankerProvider,
+		RerankerURL:      c.RerankerURL,
+		RerankerModel:    c.RerankerModel,
+		RerankerKey:      c.RerankerKey,
+		RerankerTimeout:  c.RerankerTimeout,
+
+		EmbedderTimeout: c.EmbedderTimeout,
+		ModelPath:       c.ModelPath,
+	})
 }
 
 // ResolveDBPath interprets a DB path relative to the binary, following symlinks.
