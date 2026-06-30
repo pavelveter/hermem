@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Type, TypeVar
+import warnings
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 from urllib.parse import urlencode
 
 import urllib.request
@@ -42,6 +43,8 @@ from hermem.types import (
     VerifyReport,
 )
 
+SDK_VERSION = "0.1.0"
+
 T = TypeVar("T")
 
 
@@ -62,12 +65,28 @@ class Client:
 
         # Search
         results = client.memory.search(SearchRequest(query="capital of France"))
+
+    Version mismatch behavior:
+        By default, a warning is emitted if the server's MAJOR version
+        differs from the SDK's MAJOR version. Set ``strict=True`` to
+        raise ``APIError`` instead. Provide a custom ``on_version_mismatch``
+        callback to override both behaviors.
     """
 
-    def __init__(self, base_url: str, api_key: str = "", timeout: float = 30.0):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str = "",
+        timeout: float = 30.0,
+        strict: bool = False,
+        on_version_mismatch: Optional[Callable[[str, str], None]] = None,
+    ):
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._timeout = timeout
+        self._strict = strict
+        self._on_version_mismatch = on_version_mismatch
+        self._version_checked = False
         self.memory = MemoryClient(self)
         self.task = TaskClient(self)
         self.graph = GraphClient(self)
@@ -95,6 +114,7 @@ class Client:
 
         try:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                self._check_version(resp)
                 resp_body = resp.read().decode()
                 if result_type and resp_body:
                     return json.loads(resp_body)
@@ -111,6 +131,35 @@ class Client:
                 )
             except (json.JSONDecodeError, KeyError):
                 raise APIError(status_code=e.code, message=resp_body)
+
+    def _check_version(self, resp: Any) -> None:
+        """Check X-Hermem-API-Version header for MAJOR mismatch (once)."""
+        if self._version_checked:
+            return
+        self._version_checked = True
+
+        server_version = resp.headers.get("X-Hermem-API-Version", "")
+        if not server_version:
+            return
+
+        server_major = _parse_major(server_version)
+        sdk_major = _parse_major(SDK_VERSION)
+        if server_major == sdk_major:
+            return
+
+        if self._on_version_mismatch:
+            self._on_version_mismatch(server_version, SDK_VERSION)
+        elif self._strict:
+            raise APIError(
+                status_code=0,
+                message=f"version mismatch: server={server_version} sdk={SDK_VERSION}",
+            )
+        else:
+            warnings.warn(
+                f"hermem: server version {server_version} differs from "
+                f"SDK version {SDK_VERSION} (MAJOR mismatch)",
+                stacklevel=3,
+            )
 
     def _get(self, path: str) -> Any:
         return self._do("GET", path)
@@ -333,3 +382,11 @@ def _parse_retrieval_result(data: Dict[str, Any]) -> RetrievalResult:
         experiences=[RetrievedFact(**f) for f in data.get("experiences", [])],
         observations=[RetrievedFact(**f) for f in data.get("observations", [])],
     )
+
+
+def _parse_major(version: str) -> int:
+    """Extract the MAJOR component from a semver string."""
+    try:
+        return int(version.split(".")[0])
+    except (ValueError, IndexError):
+        return 0

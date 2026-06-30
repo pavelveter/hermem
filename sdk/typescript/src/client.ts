@@ -36,6 +36,12 @@ import type {
   VerifyReport,
 } from "./types";
 
+export const SDK_VERSION = "0.1.0";
+
+export interface APIErrorListeners {
+  versionMismatch: (serverVersion: string, sdkVersion: string) => void;
+}
+
 export class APIError extends Error {
   statusCode: number;
   code: string;
@@ -53,12 +59,16 @@ export class APIError extends Error {
 export interface ClientOptions {
   apiKey?: string;
   timeout?: number;
+  /** Called (once) on first response when server MAJOR differs from SDK MAJOR. */
+  onVersionMismatch?: (serverVersion: string, sdkVersion: string) => void;
 }
 
 export class Client {
   private baseUrl: string;
   private apiKey: string;
   private timeout: number;
+  private onVersionMismatch?: (serverVersion: string, sdkVersion: string) => void;
+  private versionChecked = false;
 
   readonly memory: MemoryClient;
   readonly task: TaskClient;
@@ -69,6 +79,7 @@ export class Client {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey ?? "";
     this.timeout = options.timeout ?? 30_000;
+    this.onVersionMismatch = options.onVersionMismatch;
     this.memory = new MemoryClient(this);
     this.task = new TaskClient(this);
     this.graph = new GraphClient(this);
@@ -100,6 +111,8 @@ export class Client {
         signal: controller.signal,
       });
 
+      this.checkVersionMismatch(resp);
+
       if (!resp.ok) {
         const text = await resp.text();
         try {
@@ -120,6 +133,25 @@ export class Client {
       clearTimeout(timer);
     }
   }
+
+  private checkVersionMismatch(resp: Response): void {
+    if (this.versionChecked) return;
+    this.versionChecked = true;
+
+    const serverVersion = resp.headers.get("X-Hermem-API-Version");
+    if (!serverVersion) return;
+
+    const serverMajor = parseMajor(serverVersion);
+    const sdkMajor = parseMajor(SDK_VERSION);
+    if (serverMajor !== sdkMajor && this.onVersionMismatch) {
+      this.onVersionMismatch(serverVersion, SDK_VERSION);
+    }
+  }
+}
+
+function parseMajor(version: string): number {
+  const major = parseInt(version.split(".")[0], 10);
+  return isNaN(major) ? 0 : major;
 }
 
 class MemoryClient {

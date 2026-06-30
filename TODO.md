@@ -265,7 +265,7 @@ a contract test so this can never regress silently.
 
 ---
 
-## [x] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
+## [ ] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
 
 Three SDKs (`sdk/go`, `sdk/python`, `sdk/typescript`) live in-repo with
 independent versioning. Decided policy: **server MAJOR == sdk MAJOR**.
@@ -276,7 +276,7 @@ Implement and enforce it.
 - [x] H2.1 Document the policy in `docs/SDK.md` and `README.md`.
 - [x] H2.2 Add `X-Hermem-API-Version` response header on every route
       (middleware in `internal/server/middleware.go`).
-- [ ] H2.3 Each SDK reads the header on first request and warns/errors
+- [x] H2.3 Each SDK reads the header on first request and warns/errors
       on MAJOR mismatch:
       - Go: `client.OnVersionMismatch func(server, sdk string)`,
       - Python: `warnings.warn` by default, `strict=True` raises,
