@@ -265,7 +265,7 @@ a contract test so this can never regress silently.
 
 ---
 
-## [ ] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
+## [x] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
 
 Three SDKs (`sdk/go`, `sdk/python`, `sdk/typescript`) live in-repo with
 independent versioning. Decided policy: **server MAJOR == sdk MAJOR**.
@@ -281,14 +281,14 @@ Implement and enforce it.
       - Go: `client.OnVersionMismatch func(server, sdk string)`,
       - Python: `warnings.warn` by default, `strict=True` raises,
       - TS: emit on `client.on('versionMismatch')`.
-- [ ] H2.4 Add `X-Hermem-API-Version` to the OpenAPI spec global response
+- [x] H2.4 Add `X-Hermem-API-Version` to the OpenAPI spec global response
       headers.
-- [ ] H2.5 CI matrix in `.github/workflows/sdk.yml`: for each SDK build
+- [x] H2.5 CI matrix in `.github/workflows/sdk.yml`: for each SDK build
       against the **current** server tag and confirm the version
       negotiation tests pass.
-- [ ] H2.6 Add release-workflow check that bumps MAJOR atomically across
+- [x] H2.6 Add release-workflow check that bumps MAJOR atomically across
       `go.mod` (sdk/go), `pyproject.toml`, `package.json`.
-- [ ] H2.7 ADR `docs/adr/016-sdk-server-semver.md`.
+- [x] H2.7 ADR `docs/adr/016-sdk-server-semver.md`.
 
 ### Acceptance
 
