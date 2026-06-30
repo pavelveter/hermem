@@ -324,47 +324,62 @@ func safeStreamFetch(ctx context.Context, inner *http.Client, url string, maxByt
 				return nil, ctx.Err()
 			}
 		}
-		resp, err := inner.Do(req.Clone(ctx))
-		if err != nil {
+		body, err := safeStreamFetchOnce(ctx, inner, req, maxBytes)
+		if err != nil && isTransientHTTPError(err) {
 			lastErr = err
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
 			continue
 		}
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			// Drain so the connection returns to the keep-alive pool.
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d (transient)", resp.StatusCode)
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			continue
-		}
-		// Terminal response — read + close on every code path.
-		defer resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			snippet, _ := io.ReadAll(io.LimitReader(resp.Body, safeStreamFetchSnippetBytes))
-			return nil, fmt.Errorf("%d: %s", resp.StatusCode, string(snippet))
-		}
-		if maxBytes <= 0 {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			return []byte{}, nil
-		}
-		// Read up to maxBytes+1 to detect overflow without committing
-		// the full read. If we read more than maxBytes, return
-		// ErrResponseTooLarge; the partial body is discarded.
-		buf, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 		if err != nil {
-			return nil, fmt.Errorf("read body: %w", err)
+			return nil, err
 		}
-		if int64(len(buf)) > maxBytes {
-			return nil, fmt.Errorf("%w: body=%d bytes (cap=%d)", ErrResponseTooLarge, len(buf), maxBytes)
-		}
-		return buf, nil
+		return body, nil
 	}
 	return nil, lastErr
+}
+
+// safeStreamFetchOnce executes a single attempt. Returns body on 2xx,
+// error on 4xx/5xx/429. Transient errors (5xx, 429, network) are
+// distinguishable via isTransientHTTPError for the retry loop.
+func safeStreamFetchOnce(ctx context.Context, client *http.Client, req *http.Request, maxBytes int64) ([]byte, error) {
+	resp, err := client.Do(req.Clone(ctx))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("HTTP %d (transient)", resp.StatusCode)
+	}
+	if resp.StatusCode >= 400 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, safeStreamFetchSnippetBytes))
+		return nil, fmt.Errorf("%d: %s", resp.StatusCode, string(snippet))
+	}
+	if maxBytes <= 0 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return []byte{}, nil
+	}
+	buf, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if int64(len(buf)) > maxBytes {
+		return nil, fmt.Errorf("%w: body=%d bytes (cap=%d)", ErrResponseTooLarge, len(buf), maxBytes)
+	}
+	return buf, nil
+}
+
+// isTransientHTTPError reports whether err is a retryable transient
+// failure (network error, 5xx, 429).
+func isTransientHTTPError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "(transient)") || strings.Contains(msg, "execute request:")
 }
 
 // MaxResponseBodyBytes is the recommended cap for SafeStreamFetch and

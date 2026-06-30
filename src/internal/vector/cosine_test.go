@@ -193,3 +193,81 @@ func TestBatchDotProducts_DoesNotMutateMatrix(t *testing.T) {
 		t.Fatalf("dot not stored: %v", dots[0])
 	}
 }
+
+// --- Property tests ---
+
+func TestProperty_CosineSimilarity_Range(t *testing.T) {
+	t.Parallel()
+	vectors := [][]float32{
+		{1, 0, 0}, {0, 1, 0}, {0, 0, 1},
+		{1, 1, 0}, {1, 1, 1}, {-1, 0, 0},
+		{0.5, 0.5, 0.5}, {1, 2, 3}, {3, 2, 1},
+	}
+	for i, a := range vectors {
+		for j, b := range vectors {
+			sim := CosineSimilarity(a, b)
+			if sim < -1-eps || sim > 1+eps {
+				t.Errorf("CosineSimilarity(v[%d], v[%d]) = %v, want [-1, 1]", i, j, sim)
+			}
+		}
+	}
+}
+
+func TestProperty_CosineSimilarity_Symmetry(t *testing.T) {
+	t.Parallel()
+	pairs := []struct {
+		a, b []float32
+	}{
+		{[]float32{1, 2, 3}, []float32{4, 5, 6}},
+		{[]float32{0.1, 0.9}, []float32{0.8, 0.2}},
+		{[]float32{-1, 0, 1}, []float32{1, -1, 0}},
+	}
+	for _, p := range pairs {
+		sab := CosineSimilarity(p.a, p.b)
+		sba := CosineSimilarity(p.b, p.a)
+		if !floatNear(sab, sba) {
+			t.Errorf("asymmetry: cos(a,b)=%v, cos(b,a)=%v", sab, sba)
+		}
+	}
+}
+
+func TestProperty_CosineSimilarity_Identity(t *testing.T) {
+	t.Parallel()
+	vectors := [][]float32{
+		{1, 0, 0}, {0.5, 0.5, 0.5}, {1, 2, 3, 4, 5},
+	}
+	for _, v := range vectors {
+		sim := CosineSimilarity(v, v)
+		if !floatNear(sim, 1) {
+			t.Errorf("cos(v, v) = %v, want 1", sim)
+		}
+	}
+}
+
+func TestProperty_NormalizeVector_UnitNorm(t *testing.T) {
+	t.Parallel()
+	vectors := [][]float32{
+		{3, 4}, {1, 1, 1}, {-1, 0, 0, 1},
+		{0.1, 0.2, 0.3, 0.4, 0.5},
+	}
+	for _, v := range vectors {
+		NormalizeVector(v)
+		norm := VectorNorm(v)
+		if !floatNear(norm, 1) {
+			t.Errorf("NormalizeVector(%v) resulted in norm %v, want 1", v, norm)
+		}
+	}
+}
+
+func TestProperty_NormalizeVector_PreservesDirection(t *testing.T) {
+	t.Parallel()
+	a := []float32{3, 4}
+	b := []float32{6, 8} // same direction, 2x magnitude
+	simBefore := CosineSimilarity(a, b)
+	NormalizeVector(a)
+	NormalizeVector(b)
+	simAfter := CosineSimilarity(a, b)
+	if !floatNear(simBefore, simAfter) {
+		t.Errorf("normalization changed direction: before=%v after=%v", simBefore, simAfter)
+	}
+}
