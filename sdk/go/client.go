@@ -26,8 +26,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
+
+// SDKVersion is the Go SDK's semantic version. Must match the server's
+// MAJOR version for compatibility.
+const SDKVersion = "0.1.0"
 
 // Client is the Hermem API client.
 type Client struct {
@@ -39,6 +46,14 @@ type Client struct {
 	Task   *TaskClient
 	Graph  *GraphClient
 	Admin  *AdminClient
+
+	// OnVersionMismatch is called (at most once) when the server's
+	// MAJOR version differs from the SDK's MAJOR version. The
+	// arguments are (serverVersion, sdkVersion). If nil, version
+	// mismatches are silently ignored.
+	OnVersionMismatch func(server, sdk string)
+
+	versionCheckOnce sync.Once
 }
 
 // Option configures the client.
@@ -107,6 +122,8 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}, 
 	}
 	defer resp.Body.Close()
 
+	c.checkVersionMismatch(resp)
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
@@ -144,4 +161,34 @@ func (c *Client) doNoContent(ctx context.Context, method, path string, body inte
 // doGet sends a GET request and decodes the response.
 func (c *Client) doGet(ctx context.Context, path string, result interface{}) error {
 	return c.do(ctx, http.MethodGet, path, nil, result)
+}
+
+// checkVersionMismatch reads the X-Hermem-API-Version header and calls
+// OnVersionMismatch once if the server MAJOR differs from the SDK MAJOR.
+func (c *Client) checkVersionMismatch(resp *http.Response) {
+	if c.OnVersionMismatch == nil {
+		return
+	}
+	c.versionCheckOnce.Do(func() {
+		serverVersion := resp.Header.Get("X-Hermem-API-Version")
+		if serverVersion == "" {
+			return
+		}
+		serverMajor := parseMajor(serverVersion)
+		sdkMajor := parseMajor(SDKVersion)
+		if serverMajor != sdkMajor {
+			c.OnVersionMismatch(serverVersion, SDKVersion)
+		}
+	})
+}
+
+// parseMajor extracts the MAJOR component from a semver string.
+// Returns 0 for any unparseable input.
+func parseMajor(v string) int {
+	major, _, _ := strings.Cut(v, ".")
+	n, err := strconv.Atoi(major)
+	if err != nil {
+		return 0
+	}
+	return n
 }

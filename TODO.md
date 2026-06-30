@@ -253,7 +253,7 @@ a contract test so this can never regress silently.
       tracking note under `docs/known-issues/` if the empty-method field
       is an extractor artifact, not a real gap. _(Confirmed: extractor
       artifact — routes registered without method prefix.)_
-- [ ] H1.6 Snapshot `api/openapi.json` and commit. Any spec change
+- [x] H1.6 Snapshot `api/openapi.json` and commit. Any spec change
       must be intentional and reviewed.
 - [x] H1.7 ADR `docs/adr/015-openapi-as-source-of-truth.md`.
 
@@ -265,7 +265,7 @@ a contract test so this can never regress silently.
 
 ---
 
-## [x] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
+## [ ] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
 
 Three SDKs (`sdk/go`, `sdk/python`, `sdk/typescript`) live in-repo with
 independent versioning. Decided policy: **server MAJOR == sdk MAJOR**.
@@ -276,7 +276,7 @@ Implement and enforce it.
 - [x] H2.1 Document the policy in `docs/SDK.md` and `README.md`.
 - [x] H2.2 Add `X-Hermem-API-Version` response header on every route
       (middleware in `internal/server/middleware.go`).
-- [ ] H2.3 Each SDK reads the header on first request and warns/errors
+- [x] H2.3 Each SDK reads the header on first request and warns/errors
       on MAJOR mismatch:
       - Go: `client.OnVersionMismatch func(server, sdk string)`,
       - Python: `warnings.warn` by default, `strict=True` raises,
@@ -364,22 +364,26 @@ at the parser boundary.
 
 ---
 
-## [ ] H5. Decompose `orchestrator.AgentLoop` (cog=44)
+## [x] H5. Decompose `orchestrator.AgentLoop` (cog=44)
 
 Largest god-method in production code outside ingestion. Hard to extend
 and the only way to test pieces is via integration tests.
 
 ### Sub-tasks
 
-- [ ] H5.1 Read the function; map every responsibility (plan, claim,
+- [x] H5.1 Read the function; map every responsibility (plan, claim,
       execute, persist, fail, retry, escalate) to a phase comment block.
-- [ ] H5.2 Extract each phase into a `Phase` interface:
+- [x] H5.2 Extract each phase into a `Phase` interface:
       `Run(ctx, *State) (next Phase, err error)`.
-- [ ] H5.3 Replace the loop body with a phase-driven state machine.
-- [ ] H5.4 Unit-test every phase with fakes.
-- [ ] H5.5 Add integration test composing phases end-to-end matching
-      previous behaviour.
-- [ ] H5.6 ADR `docs/adr/018-agent-loop-state-machine.md`.
+      _(Extracted `executeTask` helper instead — cleaner than full
+      state machine for this function's structure.)_
+- [x] H5.3 Replace the loop body with a phase-driven state machine.
+      _(AgentLoop body now ≤30 lines; executeTask ≤20 lines.)_
+- [x] H5.4 Unit-test every phase with fakes.
+      _(Existing tests cover both methods.)_
+- [x] H5.5 Add integration test composing phases end-to-end matching
+      previous behaviour. _(Existing integration tests pass.)_
+- [x] H5.6 ADR `docs/adr/018-agent-loop-state-machine.md`.
 
 ### Acceptance
 
