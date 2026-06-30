@@ -454,3 +454,30 @@ func TestResilientClient_AttemptCapInvariant(t *testing.T) {
 		})
 	}
 }
+
+// BenchmarkResilientClient_DoHappyPath measures the allocation overhead
+// of Do on the happy path (200 OK, no retries). Use b.ReportAllocs in
+// the benchmark runner to surface allocs/op.
+func BenchmarkResilientClient_DoHappyPath(b *testing.B) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c := NewResilientClient(nil, RetryPolicy{
+		MaxAttempts: 4,
+		Backoff:     []time.Duration{1 * time.Millisecond},
+	})
+	req, _ := http.NewRequest("GET", srv.URL, nil)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resp, err := c.Do(b.Context(), req)
+		if err != nil {
+			b.Fatalf("Do: %v", err)
+		}
+		resp.Body.Close()
+	}
+}
