@@ -258,6 +258,9 @@ func scanEvent(rows *sql.Rows) (*Event, error) {
 		return nil, fmt.Errorf("episodic: scan event: %w", err)
 	}
 	ev.Type = EventType(typ)
+	if !validEventTypes[ev.Type] {
+		return nil, fmt.Errorf("episodic: scan event: unknown type %q", typ)
+	}
 	ev.Timestamp = hermemtime.TimeFromUnixMillis(timestampMs)
 	if metaJSON != "" && metaJSON != "null" {
 		if err := json.Unmarshal([]byte(metaJSON), &ev.Metadata); err != nil {

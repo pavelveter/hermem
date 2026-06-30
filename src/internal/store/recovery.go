@@ -10,6 +10,10 @@ import (
 
 const defaultCascadeLimit = 4096
 
+// StatusRolledBack is the fallback terminal status when
+// schema.StateUnblocking is empty.
+const StatusRolledBack = "rolled_back"
+
 // ErrCascadeLimit is returned when a cascade rollback exceeds the
 // configured depth/edge cap. The partial result is still valid.
 var ErrCascadeLimit = errors.New("cascade rollback limit exceeded")
@@ -120,7 +124,7 @@ func CascadeRollback(db *sql.DB, schema core.SchemaConfig, id, errorContext stri
 
 		unblocking := schema.StateUnblocking
 		if unblocking == "" {
-			unblocking = "rolled_back"
+			unblocking = StatusRolledBack
 		}
 
 		if _, err := db.Exec(`UPDATE entities SET status = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
