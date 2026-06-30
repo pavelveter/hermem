@@ -4,29 +4,14 @@
 //
 // OUT OF SCOPE (deliberately stays in store/):
 //   - store.RunMigrations(db)         — apply pending migrations; called
-//     from main.go at boot. Does not
-//     belong on the HTTP request
-//     surface (would need apply
-//     transaction wrapping + per-stmt
-//     idempotency logging in the new
-//     pkg).
-//   - store.StoreSchemaFingerprint(db) — overwrite the stored
-//     fingerprint; called from
-//     cli/serve.go's SIGHUP reload
-//     loop after ReloadState. Same
-//     reasoning — bootstrapping
-//     mutation, not request-time
-//     read.
+//     from main.go at boot. Does not belong on the HTTP request surface.
+//   - store.StoreSchemaFingerprint(db) — overwrite the stored fingerprint;
+//     called from cli/serve.go's SIGHUP reload loop.
 //
 // Both stay in `store/` because they are bootstrapping mutating
-// hooks that fire outside the request lifecycle. They are NOT
-// re-homed here.
+// hooks that fire outside the request lifecycle.
 //
-// Mirrors the PHASE 3.x flat-pkg + transport-agnostic pattern:
-// Service struct holds { db } only. Per-call args include `schema
-// core.SchemaConfig` when schema-dependent (only the Schema
-// method). No Refs/Metrics coupling — HTTP shell increments
-// counters on its own; the domain service is pure.
+// Implements core.Migrator — the minimal interface for migration ops.
 package migration
 
 import (
@@ -39,26 +24,32 @@ import (
 )
 
 // Service is the transport-agnostic migration / schema domain service.
+// Implements core.Migrator.
 type Service struct {
 	db *sql.DB
 }
 
-// NewService constructs a Service. db must be non-nil.
+// Compile-time interface assertion.
+var _ core.Migrator = (*Service)(nil)
+
+// New constructs a Service. db must be non-nil.
 func New(db *sql.DB) *Service {
 	return &Service{db: db}
 }
 
 // Status returns the applied/pending state of every embedded
 // migration file in lexicographic order.
-func (s *Service) Status(_ context.Context) ([]store.MigStatus, error) {
-	return store.MigrationStatus(s.db)
+func (s *Service) Status(_ context.Context) ([]core.MigrationStatus, error) {
+	storeStatus, err := store.MigrationStatus(s.db)
+	if err != nil {
+		return nil, err
+	}
+	return toCoreStatus(storeStatus), nil
 }
 
 // Rollback removes the last-applied migration. When target is
 // non-empty, rolls back every migration applied after (and not
-// including) the target version. No actual schema reverse — rows
-// are DELETEd from `schema_migrations` and `migration_checksums`;
-// the SQL schema itself is NOT reversed.
+// including) the target version.
 func (s *Service) Rollback(_ context.Context, target string) (string, error) {
 	name, err := store.RollbackMigration(s.db, target)
 	if err != nil {
@@ -70,13 +61,17 @@ func (s *Service) Rollback(_ context.Context, target string) (string, error) {
 // Verify returns every migration whose stored checksum diverges
 // from the current FNV-1a hash of the embedded migration file.
 // Empty result → no integrity drift.
-func (s *Service) Verify(_ context.Context) ([]store.MigMismatch, error) {
-	return store.VerifyMigrationIntegrity(s.db)
+func (s *Service) Verify(_ context.Context) ([]core.MigrationMismatch, error) {
+	storeMismatches, err := store.VerifyMigrationIntegrity(s.db)
+	if err != nil {
+		return nil, err
+	}
+	return toCoreMismatch(storeMismatches), nil
 }
 
 // Run applies every pending migration in lexicographic order and
 // returns the post-apply status snapshot.
-func (s *Service) Run(ctx context.Context) ([]store.MigStatus, error) {
+func (s *Service) Run(ctx context.Context) ([]core.MigrationStatus, error) {
 	if err := store.RunMigrations(s.db); err != nil {
 		return nil, fmt.Errorf("migration apply: %w", err)
 	}
@@ -85,12 +80,12 @@ func (s *Service) Run(ctx context.Context) ([]store.MigStatus, error) {
 
 // DryRun returns the list of pending migrations (not yet applied)
 // with their SHA-256 checksums, without applying anything.
-func (s *Service) DryRun(_ context.Context) ([]store.MigStatus, error) {
-	status, err := store.MigrationStatus(s.db)
+func (s *Service) DryRun(ctx context.Context) ([]core.MigrationStatus, error) {
+	status, err := s.Status(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("dry-run: %w", err)
 	}
-	pending := make([]store.MigStatus, 0, len(status))
+	pending := make([]core.MigrationStatus, 0, len(status))
 	for _, m := range status {
 		if !m.Applied {
 			pending = append(pending, m)
@@ -99,12 +94,7 @@ func (s *Service) DryRun(_ context.Context) ([]store.MigStatus, error) {
 	return pending, nil
 }
 
-// SchemaReport is the typed envelope returned by Schema. JSON tags
-// live here (transport concern) and not in the store schema. The
-// drift boolean derives from (stored != "") && (stored != current)
-// — the first run returns stored == "" and drift_detected ==
-// false (no prior stored fingerprint to drift from, so no drift
-// to detect on first boot).
+// SchemaReport is the typed envelope returned by Schema.
 type SchemaReport struct {
 	Stored        string `json:"stored"`
 	Current       string `json:"current"`
@@ -112,10 +102,7 @@ type SchemaReport struct {
 }
 
 // Schema compares the current schema fingerprint against the
-// stored value in the meta table. On first run (no stored row) it
-// inserts the current fingerprint and returns stored == "". Schema
-// is per-call so SIGHUP-driven config reloads apply without
-// reconstructing the service.
+// stored value in the meta table.
 func (s *Service) Schema(_ context.Context, schema core.SchemaConfig) (SchemaReport, error) {
 	stored, current, err := store.CheckSchemaFingerprint(s.db, schema)
 	if err != nil {
@@ -126,4 +113,40 @@ func (s *Service) Schema(_ context.Context, schema core.SchemaConfig) (SchemaRep
 		Current:       current,
 		DriftDetected: stored != "" && stored != current,
 	}, nil
+}
+
+// SchemaFingerprint overwrites the stored schema fingerprint.
+// This is a bootstrapping mutation (called from SIGHUP reload)
+// and deliberately kept as a concrete method rather than on
+// core.Migrator — it is not a read-only inspection op.
+func (s *Service) SchemaFingerprint(_ context.Context, schema core.SchemaConfig) error {
+	return store.StoreSchemaFingerprint(s.db, schema)
+}
+
+// --- type adapters (store → core) ---
+
+func toCoreStatus(in []store.MigStatus) []core.MigrationStatus {
+	out := make([]core.MigrationStatus, len(in))
+	for i, s := range in {
+		out[i] = core.MigrationStatus{
+			Name:           s.Name,
+			Applied:        s.Applied,
+			AppliedAt:      s.AppliedAt,
+			ChecksumSHA256: s.ChecksumSHA256,
+			ChecksumMatch:  s.ChecksumMatch,
+		}
+	}
+	return out
+}
+
+func toCoreMismatch(in []store.MigMismatch) []core.MigrationMismatch {
+	out := make([]core.MigrationMismatch, len(in))
+	for i, m := range in {
+		out[i] = core.MigrationMismatch{
+			Name:            m.Name,
+			StoredChecksum:  m.StoredChecksum,
+			CurrentChecksum: m.CurrentChecksum,
+		}
+	}
+	return out
 }

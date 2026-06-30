@@ -53,7 +53,7 @@ func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 }
 
 // HandleMigrationStatus — GET /db/migrate. Returns the raw
-// `[]store.MigStatus` as JSON.
+// `[]core.MigrationStatus` as JSON.
 //
 // §3.2 — error-returning handler. The pre-§3.2 4-line
 // IncErr+WriteError block became a single `return err`.
