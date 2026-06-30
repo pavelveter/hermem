@@ -1,8 +1,10 @@
-.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint
+.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign
 
 BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
 LLAMA_LIBS := $(BIN_DIR)/llama-libs
+
+INSTALL_DIR ?= $(HOME)/.local/bin
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -49,6 +51,22 @@ benchmarks:
 # Run linter
 lint:
 	golangci-lint run ./...
+
+# Re-sign binary with clean ad-hoc signature (fixes "Code Signature Invalid" on macOS)
+sign: hermem
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		codesign --force --sign - hermem && \
+		echo "Signed: hermem"; \
+	else \
+		echo "sign: skipped (not Darwin)"; \
+	fi
+
+# Build, sign, and install to ~/.local/bin (override with INSTALL_DIR=...)
+install: build sign
+	@mkdir -p "$(INSTALL_DIR)"
+	@cp hermem "$(INSTALL_DIR)/hermem"
+	@if [ -f hermem.ini ]; then cp hermem.ini "$(INSTALL_DIR)/hermem.ini"; fi
+	@echo "Installed: $(INSTALL_DIR)/hermem"
 
 clean:
 	rm -f hermem

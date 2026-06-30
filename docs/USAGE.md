@@ -59,10 +59,23 @@ make build-no-local
 Install into `$PATH`:
 
 ```bash
+# Recommended: build, sign (macOS), and copy to ~/.local/bin
+make install
+# Override target dir:
+make install INSTALL_DIR=/usr/local/bin
+
+# Manual alternative:
 sudo cp hermem /usr/local/bin/    # Linux/macOS, system-wide
 # or user-local:
 mkdir -p ~/.local/bin && cp hermem ~/.local/bin/
 ```
+
+> **macOS note:** Go's `linker-signed` signature can be rejected by Gatekeeper
+> with `SIGKILL (Code Signature Invalid)` when the binary is launched from a
+> non-system path (e.g. `~/.local/bin`). `make install` re-signs the binary
+> with a clean ad-hoc signature (`codesign --force --sign -`) to avoid this.
+> If you copy the binary manually, run `make sign` first or apply
+> `codesign --force --sign - <path-to-hermem>` yourself.
 
 ### Smoke test
 
