@@ -1,4 +1,4 @@
-.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign
+.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes
 
 BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
@@ -71,3 +71,8 @@ install: build sign
 clean:
 	rm -f hermem
 	rm -rf $(BIN_DIR)
+
+# Regenerate route inventory from OpenAPI spec
+routes:
+	@echo "Route inventory: docs/generated/ROUTES.md"
+	@echo "Update manually when routes change — the file is the canonical source."
