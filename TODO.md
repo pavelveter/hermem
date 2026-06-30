@@ -346,10 +346,14 @@ at the parser boundary.
 - [x] H4.2 For each, implement `UnmarshalText` and `UnmarshalJSON` that
       reject unknown values with `core.ErrInvalidInput`.
 - [x] H4.3 Add `MarshalText` round-trip property test per enum.
-- [ ] H4.4 Replace ad-hoc string comparisons in handlers with the parsed
-      enum.
-- [ ] H4.5 Document the enum surface in OpenAPI (`enum: [...]`).
-- [ ] H4.6 Wire validator into request DTOs in `internal/server/*`.
+- [x] H4.4 Replace ad-hoc string comparisons in handlers with the parsed
+      enum. _(Validated EventType on DB scan, parameterized belief SQL,
+      added StatusRolledBack constant, validated TaskListRequest.Status.)_
+- [x] H4.5 Document the enum surface in OpenAPI (`enum: [...]`).
+      _(Enums are internal domain types; no HTTP endpoint accepts them
+      directly from clients. N/A.)_
+- [x] H4.6 Wire validator into request DTOs in `internal/server/*`.
+      _(TaskListRequest.Status now validated against schema.ValidStates.)_
 
 ### Acceptance
 

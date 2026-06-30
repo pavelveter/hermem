@@ -51,30 +51,8 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 			break
 		}
 		for _, task := range tasks {
-			execFailed := false
-			func() {
-				defer func() {
-					if rec := recover(); rec != nil {
-						slog.Error("agent loop: exec panic", "task_id", task.ID, "recover", rec)
-						execFailed = true
-					}
-				}()
-				if err := execFunc(ctx, core.ComposeFromTask(task)); err != nil {
-					slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
-					execFailed = true
-				}
-			}()
-			// Use task.Service.Status() instead of store.SetStatus directly
-			// to trigger cascade abort of downstream dependents on failure.
-			svc := taskdomain.New(s.db, nil, nil)
-			if execFailed {
-				if err := svc.Status(ctx, task.ID, "failed", schema); err != nil {
-					return fmt.Errorf("agent loop: set failed status %s: %w", task.ID, err)
-				}
-			} else {
-				if err := svc.Status(ctx, task.ID, schema.StateUnblocking, schema); err != nil {
-					return fmt.Errorf("agent loop: set status %s: %w", task.ID, err)
-				}
+			if err := s.executeTask(ctx, schema, task, execFunc); err != nil {
+				return err
 			}
 		}
 		select {
@@ -82,6 +60,33 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 			return ctx.Err()
 		case <-time.After(initBackoff):
 		}
+	}
+	return nil
+}
+
+// executeTask runs execFunc for a single task, recovers panics, and
+// transitions the task to failed or unblocking status.
+func (s *Service) executeTask(ctx context.Context, schema core.SchemaConfig, task core.Task, execFunc func(context.Context, core.Entity) error) error {
+	execFailed := false
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("agent loop: exec panic", "task_id", task.ID, "recover", rec)
+				execFailed = true
+			}
+		}()
+		if err := execFunc(ctx, core.ComposeFromTask(task)); err != nil {
+			slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
+			execFailed = true
+		}
+	}()
+	svc := taskdomain.New(s.db, nil, nil)
+	status := schema.StateUnblocking
+	if execFailed {
+		status = "failed"
+	}
+	if err := svc.Status(ctx, task.ID, status, schema); err != nil {
+		return fmt.Errorf("agent loop: set status %s: %w", task.ID, err)
 	}
 	return nil
 }
