@@ -1,6 +1,7 @@
 package compression
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -75,5 +76,72 @@ func TestClusterer_FixedEmbeddings(t *testing.T) {
 	}
 	if !memberSet["a"] || !memberSet["b"] {
 		t.Fatalf("expected cluster [a b], got %v", clusters[0])
+	}
+}
+
+// TestGreedyCluster_Property_Invariants verifies cluster invariants:
+// 1. No entity appears in more than one cluster.
+// 2. Every cluster has size >= MinClusterSize.
+// 3. No cluster exceeds MaxClusterSize.
+// 4. Total members <= total input entities.
+func TestGreedyCluster_Property_Invariants(t *testing.T) {
+	t.Parallel()
+
+	scenarios := []struct {
+		name      string
+		n         int
+		dim       int
+		threshold float64
+		minSize   int
+		maxSize   int
+	}{
+		{"empty", 0, 3, 0.75, 2, 10},
+		{"below_min", 1, 3, 0.75, 2, 10},
+		{"all_similar", 10, 3, 0.0, 2, 10},
+		{"all_distant", 10, 3, 0.99, 2, 10},
+		{"mixed", 20, 5, 0.7, 2, 5},
+		{"large_batch", 100, 8, 0.6, 3, 8},
+	}
+
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			ids := make([]string, sc.n)
+			vecs := make([][]float64, sc.n)
+			for i := range ids {
+				ids[i] = fmt.Sprintf("e%d", i)
+				vecs[i] = make([]float64, sc.dim)
+				for j := range vecs[i] {
+					vecs[i][j] = float64(i*sc.dim+j) * 0.01
+				}
+			}
+
+			cfg := ClustererConfig{
+				SimilarityThreshold: sc.threshold,
+				MinClusterSize:      sc.minSize,
+				MaxClusterSize:      sc.maxSize,
+			}
+			clusters := greedyCluster(ids, vecs, cfg)
+
+			seen := make(map[string]bool)
+			totalMembers := 0
+			for _, cl := range clusters {
+				if len(cl) < sc.minSize {
+					t.Errorf("cluster size %d < MinClusterSize %d", len(cl), sc.minSize)
+				}
+				if len(cl) > sc.maxSize {
+					t.Errorf("cluster size %d > MaxClusterSize %d", len(cl), sc.maxSize)
+				}
+				for _, id := range cl {
+					if seen[id] {
+						t.Errorf("entity %q appears in multiple clusters", id)
+					}
+					seen[id] = true
+				}
+				totalMembers += len(cl)
+			}
+			if totalMembers > sc.n {
+				t.Errorf("total members %d > input count %d", totalMembers, sc.n)
+			}
+		})
 	}
 }
