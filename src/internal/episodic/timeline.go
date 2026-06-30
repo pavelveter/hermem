@@ -3,6 +3,8 @@ package episodic
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -19,6 +21,36 @@ const (
 	TimelineMemory TimelineEntryKind = "memory"
 	TimelineTask   TimelineEntryKind = "task"
 )
+
+// validTimelineEntryKinds is the set of accepted TimelineEntryKind values.
+var validTimelineEntryKinds = map[TimelineEntryKind]bool{
+	TimelineEvent:  true,
+	TimelineMemory: true,
+	TimelineTask:   true,
+}
+
+// ErrInvalidTimelineEntryKind is returned when an unknown TimelineEntryKind
+// is provided to UnmarshalText/UnmarshalJSON.
+var ErrInvalidTimelineEntryKind = errors.New("episodic: invalid timeline entry kind")
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (k *TimelineEntryKind) UnmarshalText(data []byte) error {
+	v := TimelineEntryKind(data)
+	if !validTimelineEntryKinds[v] {
+		return fmt.Errorf("%w: %q", ErrInvalidTimelineEntryKind, string(data))
+	}
+	*k = v
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (k *TimelineEntryKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	return k.UnmarshalText([]byte(s))
+}
 
 // TimelineEntry is one row of a reconstructed episode timeline.
 // Kind discriminates the source so callers can render / filter

@@ -13,6 +13,7 @@ package evidence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -27,6 +28,32 @@ const (
 	PolaritySupport Polarity = "support"
 	PolarityRefute  Polarity = "refute"
 )
+
+// validPolarities is the set of accepted Polarity values.
+var validPolarities = map[Polarity]bool{
+	PolaritySupport: true,
+	PolarityRefute:  true,
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+// Rejects unknown values with ErrInvalidPolarity.
+func (p *Polarity) UnmarshalText(data []byte) error {
+	v := Polarity(data)
+	if !validPolarities[v] {
+		return fmt.Errorf("%w: %q", ErrInvalidPolarity, string(data))
+	}
+	*p = v
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (p *Polarity) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	return p.UnmarshalText([]byte(s))
+}
 
 var (
 	ErrNotFound        = errors.New("evidence: not found")
