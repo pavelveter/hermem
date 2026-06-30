@@ -1,11 +1,38 @@
 """Tests for the Hermem Python SDK."""
 
 import json
+import threading
 import unittest
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from unittest.mock import MagicMock, patch
 
 from hermem import Client, APIError, StoreRequest, SearchRequest
+from hermem.client import SDK_VERSION, _parse_major
 from hermem.types import Entity, SearchResult, RetrievalResult
+
+
+class _VersionHandler(BaseHTTPRequestHandler):
+    """HTTP handler that returns a configurable X-Hermem-API-Version."""
+
+    server_version = "0.1.0"
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("X-Hermem-API-Version", self.server_version)
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok"}')
+
+    def log_message(self, format, *args):
+        pass  # suppress logs
+
+
+def _start_server(version="0.1.0"):
+    _VersionHandler.server_version = version
+    srv = HTTPServer(("127.0.0.1", 0), _VersionHandler)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    return srv
 
 
 class TestClient(unittest.TestCase):
@@ -54,6 +81,98 @@ class TestAPIError(unittest.TestCase):
     def test_error_with_code(self):
         err = APIError(status_code=404, message="not found", code="not_found")
         self.assertEqual(err.code, "not_found")
+
+
+class TestVersionNegotiation(unittest.TestCase):
+    def test_same_major_no_warning(self):
+        srv = _start_server("0.5.0")
+        try:
+            c = Client(f"http://127.0.0.1:{srv.server_address[1]}")
+            calls = []
+            c._on_version_mismatch = lambda s, k: calls.append((s, k))
+            c.admin.health()
+            self.assertEqual(calls, [])
+        finally:
+            srv.shutdown()
+
+    def test_different_major_calls_callback(self):
+        srv = _start_server("1.0.0")
+        try:
+            c = Client(f"http://127.0.0.1:{srv.server_address[1]}")
+            calls = []
+            c._on_version_mismatch = lambda s, k: calls.append((s, k))
+            c.admin.health()
+            self.assertEqual(calls, [("1.0.0", SDK_VERSION)])
+        finally:
+            srv.shutdown()
+
+    def test_strict_mode_raises(self):
+        srv = _start_server("1.0.0")
+        try:
+            c = Client(f"http://127.0.0.1:{srv.server_address[1]}", strict=True)
+            with self.assertRaises(APIError) as ctx:
+                c.admin.health()
+            self.assertIn("version mismatch", str(ctx.exception))
+        finally:
+            srv.shutdown()
+
+    def test_custom_callback(self):
+        srv = _start_server("2.0.0")
+        try:
+            captured = []
+            c = Client(
+                f"http://127.0.0.1:{srv.server_address[1]}",
+                on_version_mismatch=lambda s, k: captured.append((s, k)),
+            )
+            c.admin.health()
+            self.assertEqual(captured, [("2.0.0", SDK_VERSION)])
+        finally:
+            srv.shutdown()
+
+    def test_checked_once(self):
+        srv = _start_server("1.0.0")
+        try:
+            c = Client(f"http://127.0.0.1:{srv.server_address[1]}")
+            calls = []
+            c._on_version_mismatch = lambda s, k: calls.append((s, k))
+            for _ in range(3):
+                c.admin.health()
+            self.assertEqual(len(calls), 1)
+        finally:
+            srv.shutdown()
+
+    def test_no_header_skips_check(self):
+        class _NoHeaderHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+            def log_message(self, format, *args):
+                pass
+
+        srv = HTTPServer(("127.0.0.1", 0), _NoHeaderHandler)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            c = Client(f"http://127.0.0.1:{srv.server_address[1]}")
+            calls = []
+            c._on_version_mismatch = lambda s, k: calls.append((s, k))
+            c.admin.health()
+            self.assertEqual(calls, [])
+        finally:
+            srv.shutdown()
+
+
+class TestParseMajor(unittest.TestCase):
+    def test_valid(self):
+        self.assertEqual(_parse_major("0.3.0"), 0)
+        self.assertEqual(_parse_major("1.0.0"), 1)
+        self.assertEqual(_parse_major("2.1.3"), 2)
+
+    def test_invalid(self):
+        self.assertEqual(_parse_major(""), 0)
+        self.assertEqual(_parse_major("abc"), 0)
 
 
 if __name__ == "__main__":
