@@ -63,6 +63,91 @@ func TestVacuumRunner_EmptyDB(t *testing.T) {
 	}
 }
 
+// TestVacuumRunner_Idempotent verifies vacuum is idempotent — running
+// it twice does not decrease entity count or error.
+func TestVacuumRunner_Idempotent(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY, data TEXT)`)
+	for i := 0; i < 500; i++ {
+		db.Exec("INSERT INTO t (data) VALUES (?)", randomString(100))
+	}
+
+	vr := NewVacuumRunner(db)
+	if _, err := vr.Run(t.Context()); err != nil {
+		t.Fatalf("first vacuum: %v", err)
+	}
+
+	var count int
+	db.QueryRow("SELECT count(*) FROM t").Scan(&count)
+	if count != 500 {
+		t.Fatalf("entity count changed after vacuum: got %d, want 500", count)
+	}
+
+	if _, err := vr.Run(t.Context()); err != nil {
+		t.Fatalf("second vacuum: %v", err)
+	}
+
+	db.QueryRow("SELECT count(*) FROM t").Scan(&count)
+	if count != 500 {
+		t.Fatalf("entity count changed after second vacuum: got %d, want 500", count)
+	}
+}
+
+// TestVacuumRunner_Property_EntityCountNeverDecreases is a property test:
+// for any sequence of inserts + deletes, vacuum never decreases entity count.
+func TestVacuumRunner_Property_EntityCountNeverDecreases(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY, data TEXT)`)
+
+	scenarios := []struct {
+		name   string
+		insert int
+		delete int
+	}{
+		{"no_data", 0, 0},
+		{"insert_only", 100, 0},
+		{"insert_delete_half", 200, 100},
+		{"insert_delete_all", 50, 50},
+		{"large_batch", 5000, 2500},
+	}
+
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			for i := 0; i < sc.insert; i++ {
+				db.Exec("INSERT INTO t (data) VALUES (?)", randomString(50))
+			}
+			if sc.delete > 0 {
+				db.Exec("DELETE FROM t WHERE id IN (SELECT id FROM t ORDER BY id LIMIT ?)", sc.delete)
+			}
+
+			var before int
+			db.QueryRow("SELECT count(*) FROM t").Scan(&before)
+
+			vr := NewVacuumRunner(db)
+			if _, err := vr.Run(t.Context()); err != nil {
+				t.Fatalf("vacuum: %v", err)
+			}
+
+			var after int
+			db.QueryRow("SELECT count(*) FROM t").Scan(&after)
+
+			if after != before {
+				t.Errorf("vacuum changed entity count: before=%d after=%d", before, after)
+			}
+		})
+	}
+}
+
 func randomString(n int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
