@@ -51,6 +51,13 @@ func (c *Clusterer) Cluster(ctx context.Context, entityIDs []string) ([][]string
 		vecs = append(vecs, vec)
 	}
 
+	return greedyCluster(ids, vecs, c.config), nil
+}
+
+// greedyCluster assigns entities to clusters using a greedy single-pass
+// algorithm. Each unassigned entity becomes a seed; similar entities
+// (above SimilarityThreshold) are absorbed into its cluster.
+func greedyCluster(ids []string, vecs [][]float64, cfg ClustererConfig) [][]string {
 	pool := make([]int, len(ids))
 	for i := range pool {
 		pool[i] = i
@@ -63,16 +70,16 @@ func (c *Clusterer) Cluster(ctx context.Context, entityIDs []string) ([][]string
 		var remaining []int
 		for _, idx := range pool {
 			sim := cosineSimilarity(vecs[seed], vecs[idx])
-			if sim >= c.config.SimilarityThreshold {
+			if sim >= cfg.SimilarityThreshold {
 				cluster = append(cluster, idx)
 			} else {
 				remaining = append(remaining, idx)
 			}
 		}
 		pool = remaining
-		if len(cluster) >= c.config.MinClusterSize {
-			if len(cluster) > c.config.MaxClusterSize {
-				cluster = cluster[:c.config.MaxClusterSize]
+		if len(cluster) >= cfg.MinClusterSize {
+			if len(cluster) > cfg.MaxClusterSize {
+				cluster = cluster[:cfg.MaxClusterSize]
 			}
 			members := make([]string, len(cluster))
 			for i, idx := range cluster {
@@ -81,7 +88,7 @@ func (c *Clusterer) Cluster(ctx context.Context, entityIDs []string) ([][]string
 			clusters = append(clusters, members)
 		}
 	}
-	return clusters, nil
+	return clusters
 }
 
 func (c *Clusterer) loadEmbeddings(ctx context.Context, ids []string) (map[string][]float64, error) {
