@@ -1,0 +1,57 @@
+
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███╗   ███╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝████╗ ████║
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ██╔████╔██║
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝
+
+hermem houses a knowledge graph + vector store with an LLM-driven
+extraction engine.
+
+Group layout:
+  serve|health|metrics|version    top-level server ops
+  mcp        MCP server for AI assistant integration (stdio)
+  memory     store / search / retrieve / query / response / edge / ingest /
+             explain / re-embed / quantize
+  task       status / list / show / dep / tree / create / rollback / next
+  graph      plan / recovery-plan / components / communities /
+             verify / contradictions / provenance
+  time       temporal / timeline
+  agent      loop
+  db         migrate / rollback / verify / schema
+  profile    cpu / heap / goroutine / trace
+  diagnose   self-check of database and memory subsystem
+  (group --help shows only its own subcommands.)
+
+All commands that take a JSON payload read it from stdin. Optional flags
+use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
+group usage; "hermem --help" prints the full tree.
+
+Available Commands:
+  admin       Admin operations (keys, config)
+  agent       Agentic flows (loop)
+  bench       Synthesize N observations into each duration histogram and report latency percentiles
+  completion  Generate the autocompletion script for the specified shell
+  db          Database housekeeping (migrate / rollback / verify / schema)
+  diagnose    Run self-diagnostics on the database and memory subsystem
+  graph       Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)
+  health      Health probe (pings the DB; mirrors /health/ready)
+  help        Help about any command
+  mcp         Start the MCP server (stdio transport for AI assistants)
+  memory      Knowledge CRUD and retrieval (store / search / retrieve / query / response / edge / ingest / explain / re-embed / quantize)
+  metrics     Prometheus exposition (mirrors GET /metrics)
+  ops         Offline DB operations: stats, integrity, vacuum, rebuild-index
+  profile     Ad-hoc profiling: cpu / heap / goroutine / trace
+  serve       Start the HTTP server (default :8420)
+  task        Task lifecycle (status / list / show / dep / tree / create / rollback / next)
+  time        Temporal queries (temporal / timeline)
+  version     Print build version (Version / BuildDate / GitCommit)
+
+Flags:
+  -h, --help      help for hermem
+  -v, --version   version for hermem
+
+Use "hermem [command] --help" for more information about a command.
+
+Documentation: https://github.com/pavelveter/hermem

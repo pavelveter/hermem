@@ -1,0 +1,46 @@
+
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███╗   ███╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝████╗ ████║
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ██╔████╔██║
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝
+
+hermem houses a knowledge graph + vector store with an LLM-driven
+extraction engine.
+
+Group layout:
+  serve|health|metrics|version    top-level server ops
+  mcp        MCP server for AI assistant integration (stdio)
+  memory     store / search / retrieve / query / response / edge / ingest /
+             explain / re-embed / quantize
+  task       status / list / show / dep / tree / create / rollback / next
+  graph      plan / recovery-plan / components / communities /
+             verify / contradictions / provenance
+  time       temporal / timeline
+  agent      loop
+  db         migrate / rollback / verify / schema
+  profile    cpu / heap / goroutine / trace
+  diagnose   self-check of database and memory subsystem
+  (group --help shows only its own subcommands.)
+
+All commands that take a JSON payload read it from stdin. Optional flags
+use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
+group usage; "hermem --help" prints the full tree.
+
+Available Commands:
+  create      Create a task (auto-embeds content and assigns the first stateful category)
+  dep         Add or remove a blocking dependency between two tasks (body {add:true|false})
+  executable  List currently-executable tasks (blockers all done). Aliases: next
+  list        List tasks filtered by status and/or goal_id
+  rollback    Find the rollback task for a given task (companion recovery task)
+  show        Show one task with its blocked-by and recovers-via relations
+  status      Update a task's status (e.g. /* done */ / *blocked*)
+  tree        Render task tree (ASCII) under a goal_id
+
+Flags:
+  -h, --help   help for task
+
+Use "hermem task [command] --help" for more information about a command.
+
+Documentation: https://github.com/pavelveter/hermem

@@ -1,0 +1,43 @@
+
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███╗   ███╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝████╗ ████║
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ██╔████╔██║
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝
+
+hermem houses a knowledge graph + vector store with an LLM-driven
+extraction engine.
+
+Group layout:
+  serve|health|metrics|version    top-level server ops
+  mcp        MCP server for AI assistant integration (stdio)
+  memory     store / search / retrieve / query / response / edge / ingest /
+             explain / re-embed / quantize
+  task       status / list / show / dep / tree / create / rollback / next
+  graph      plan / recovery-plan / components / communities /
+             verify / contradictions / provenance
+  time       temporal / timeline
+  agent      loop
+  db         migrate / rollback / verify / schema
+  profile    cpu / heap / goroutine / trace
+  diagnose   self-check of database and memory subsystem
+  (group --help shows only its own subcommands.)
+
+All commands that take a JSON payload read it from stdin. Optional flags
+use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
+group usage; "hermem --help" prints the full tree.
+
+Available Commands:
+  dry-run     Show pending migrations without applying them
+  migrate     Manage schema migrations (status / apply)
+  rollback    Roll back the most-recent applied migration
+  schema      Show schema fingerprint (current vs stored in DB)
+  verify      Verify migration checksums (exit 1 on mismatch)
+
+Flags:
+  -h, --help   help for db
+
+Use "hermem db [command] --help" for more information about a command.
+
+Documentation: https://github.com/pavelveter/hermem

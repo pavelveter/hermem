@@ -1,0 +1,48 @@
+
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███╗   ███╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝████╗ ████║
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ██╔████╔██║
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝
+
+hermem houses a knowledge graph + vector store with an LLM-driven
+extraction engine.
+
+Group layout:
+  serve|health|metrics|version    top-level server ops
+  mcp        MCP server for AI assistant integration (stdio)
+  memory     store / search / retrieve / query / response / edge / ingest /
+             explain / re-embed / quantize
+  task       status / list / show / dep / tree / create / rollback / next
+  graph      plan / recovery-plan / components / communities /
+             verify / contradictions / provenance
+  time       temporal / timeline
+  agent      loop
+  db         migrate / rollback / verify / schema
+  profile    cpu / heap / goroutine / trace
+  diagnose   self-check of database and memory subsystem
+  (group --help shows only its own subcommands.)
+
+All commands that take a JSON payload read it from stdin. Optional flags
+use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
+group usage; "hermem --help" prints the full tree.
+
+Available Commands:
+  edge        Add or auto-create a relation edge between two entities (--auto-create creates missing endpoints)
+  explain     Explain the reasoning path from query to retrieved entities
+  ingest      Drain a dialog through the LLM extractor and ingest extracted facts
+  quantize    Quantize a single embedding locally (no DB / no embedder call)
+  query       Embed → vector search → graph walk → Markdown context blob
+  re-embed    Re-embed all entities (use after model change)
+  response    Generate an LLM response using retrieved graph context as evidence
+  retrieve    Graph-walk retrieval from explicit seed IDs (no embedding step)
+  search      Top-K nearest neighbors by query embedding
+  store       Store an entity (JSON stdin: id/category/content + optional embedding)
+
+Flags:
+  -h, --help   help for memory
+
+Use "hermem memory [command] --help" for more information about a command.
+
+Documentation: https://github.com/pavelveter/hermem

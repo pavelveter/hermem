@@ -83,7 +83,7 @@ func TestVacuumRunner_Idempotent(t *testing.T) {
 	}
 
 	var count int
-	db.QueryRow("SELECT count(*) FROM t").Scan(&count)
+	_ = db.QueryRow("SELECT count(*) FROM t").Scan(&count)
 	if count != 500 {
 		t.Fatalf("entity count changed after vacuum: got %d, want 500", count)
 	}
@@ -92,7 +92,7 @@ func TestVacuumRunner_Idempotent(t *testing.T) {
 		t.Fatalf("second vacuum: %v", err)
 	}
 
-	db.QueryRow("SELECT count(*) FROM t").Scan(&count)
+	_ = db.QueryRow("SELECT count(*) FROM t").Scan(&count)
 	if count != 500 {
 		t.Fatalf("entity count changed after second vacuum: got %d, want 500", count)
 	}
@@ -131,7 +131,7 @@ func TestVacuumRunner_Property_EntityCountNeverDecreases(t *testing.T) {
 			}
 
 			var before int
-			db.QueryRow("SELECT count(*) FROM t").Scan(&before)
+			_ = db.QueryRow("SELECT count(*) FROM t").Scan(&before)
 
 			vr := NewVacuumRunner(db)
 			if _, err := vr.Run(t.Context()); err != nil {
@@ -139,7 +139,7 @@ func TestVacuumRunner_Property_EntityCountNeverDecreases(t *testing.T) {
 			}
 
 			var after int
-			db.QueryRow("SELECT count(*) FROM t").Scan(&after)
+			_ = db.QueryRow("SELECT count(*) FROM t").Scan(&after)
 
 			if after != before {
 				t.Errorf("vacuum changed entity count: before=%d after=%d", before, after)

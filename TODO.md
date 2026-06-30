@@ -393,19 +393,19 @@ and the only way to test pieces is via integration tests.
 
 ---
 
-## [ ] H6. Decompose `admin.vacuum.Run` (cog=41)
+## [x] H6. Decompose `admin.vacuum.Run` (cog=41)
 
 Vacuum mixes pre-flight, page-shrink, integrity verification, post-step,
 and metrics emission in one method.
 
 ### Sub-tasks
 
-- [ ] H6.1 Extract `preflight`, `vacuum`, `verifyIntegrity`,
+- [x] H6.1 Extract `preflight`, `vacuum`, `verifyIntegrity`,
       `postReport` into separate methods.
-- [ ] H6.2 Make each idempotent and individually testable.
-- [ ] H6.3 Add property test: vacuum never decreases entity count or
+- [x] H6.2 Make each idempotent and individually testable.
+- [x] H6.3 Add property test: vacuum never decreases entity count or
       increases free-list pages beyond a threshold.
-- [ ] H6.4 Emit metrics from the orchestrator, not from each step.
+- [x] H6.4 Emit metrics from the orchestrator, not from each step.
 
 ### Acceptance
 
@@ -414,7 +414,7 @@ and metrics emission in one method.
 
 ---
 
-## [ ] H7. Decompose `ingestion.dialog.MemoryWorkerResilient*` (cog=70)
+## [x] H7. Decompose `ingestion.dialog.MemoryWorkerResilient*` (cog=70)
 
 Highest cognitive complexity in the entire production codebase. Touches
 retries, dedup, contradiction handling, embeddings, persistence,
@@ -422,16 +422,16 @@ clustering.
 
 ### Sub-tasks
 
-- [ ] H7.1 Map current responsibilities; produce a phase diagram in
+- [x] H7.1 Map current responsibilities; produce a phase diagram in
       `docs/ingestion-flow.md`.
-- [ ] H7.2 Extract a `Pipeline` analogous to the retrieval pipeline
+- [x] H7.2 Extract a `Pipeline` analogous to the retrieval pipeline
       (already done in P0.2 of the old TODO):
       Extract → Embed → Dedup → Contradict → Persist → Cluster → Link.
-- [ ] H7.3 Move retry/backoff into a single decorator
+- [x] H7.3 Move retry/backoff into a single decorator
       (`ResilientStage`) wrapping each stage.
-- [ ] H7.4 Unit-test each stage with table-driven cases.
-- [ ] H7.5 Update existing integration tests to assert stage boundaries.
-- [ ] H7.6 ADR `docs/adr/019-ingestion-pipeline.md`.
+- [x] H7.4 Unit-test each stage with table-driven cases.
+- [x] H7.5 Update existing integration tests to assert stage boundaries.
+- [x] H7.6 ADR `docs/adr/019-ingestion-pipeline.md`.
 
 ### Acceptance
 
@@ -441,7 +441,7 @@ clustering.
 
 ---
 
-## [ ] H8. Eliminate `linear_scan_in_loop` on hot paths
+## [x] H8. Eliminate `linear_scan_in_loop` on hot paths
 
 Static analysis flags 12 functions with `linear_scan_in_loop>=1`. The
 production hot path is `vector.sqlitevec.SearchBatch`. Others are tests
@@ -449,14 +449,14 @@ or one-shot code.
 
 ### Sub-tasks
 
-- [ ] H8.1 Profile `SearchBatch` under realistic batch sizes (50, 200,
+- [x] H8.1 Profile `SearchBatch` under realistic batch sizes (50, 200,
       1000); record baseline `bench/sqlitevec_baseline.txt`.
-- [ ] H8.2 Replace the inner scan with a precomputed map or sorted
+- [x] H8.2 Replace the inner scan with a precomputed map or sorted
       lookup. Justify with `benchstat`.
-- [ ] H8.3 Add regression bench gate in CI (>5% regression fails).
-- [ ] H8.4 Audit `store/migration.splitSQL` — keep as-is if not hot, but
+- [x] H8.3 Add regression bench gate in CI (>5% regression fails).
+- [x] H8.4 Audit `store/migration.splitSQL` — keep as-is if not hot, but
       add a comment + bench.
-- [ ] H8.5 Document remaining accepted scans in `docs/perf-budgets.md`.
+- [x] H8.5 Document remaining accepted scans in `docs/perf-budgets.md`.
 
 ### Acceptance
 
@@ -465,21 +465,21 @@ or one-shot code.
 
 ---
 
-## [ ] H9. Extract AI factory from `config` package
+## [x] H9. Extract AI factory from `config` package
 
 `config.NewEmbedder/NewExtractor/NewReranker` builds AI clients directly,
 breaking SRP and making tests pay for AI wiring.
 
 ### Sub-tasks
 
-- [ ] H9.1 Define `internal/ai.Factory` taking a typed
+- [x] H9.1 Define `internal/ai.Factory` taking a typed
       `ai.Config` struct (provider, URL, model, timeouts).
-- [ ] H9.2 Move construction code from `internal/config/config.go` into
+- [x] H9.2 Move construction code from `internal/config/config.go` into
       `internal/ai/factory.go`.
-- [ ] H9.3 `config` returns only parsed typed values; consumers call
+- [x] H9.3 `config` returns only parsed typed values; consumers call
       `ai.Factory(cfg.AI)`.
-- [ ] H9.4 Update C2 `Application` wiring to call the factory.
-- [ ] H9.5 Add fakes in `internal/ai/aitest` for tests.
+- [x] H9.4 Update C2 `Application` wiring to call the factory.
+- [x] H9.5 Add fakes in `internal/ai/aitest` for tests.
 
 ### Acceptance
 
@@ -488,18 +488,18 @@ breaking SRP and making tests pay for AI wiring.
 
 ---
 
-## [ ] H10. CLI output stability contract
+## [x] H10. CLI output stability contract
 
 40 sub-commands. No snapshot tests on `--help` or stable error formats.
 A casual refactor can break downstream shell scripts.
 
 ### Sub-tasks
 
-- [ ] H10.1 Add `cli_snapshot_test.go` snapshotting `--help` for every
+- [x] H10.1 Add `cli_snapshot_test.go` snapshotting `--help` for every
       group and leaf command.
-- [ ] H10.2 Snapshot canonical error messages (one per error code).
-- [ ] H10.3 Document the stability contract in `docs/CLI.md`.
-- [ ] H10.4 Add a "stability fence" comment near each exported flag
+- [x] H10.2 Snapshot canonical error messages (one per error code).
+- [x] H10.3 Document the stability contract in `docs/CLI.md`.
+- [x] H10.4 Add a "stability fence" comment near each exported flag
       pointing to the snapshot.
 
 ### Acceptance
