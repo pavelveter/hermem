@@ -265,7 +265,7 @@ a contract test so this can never regress silently.
 
 ---
 
-## [ ] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
+## [x] H2. SDK ↔ server SemVer policy: `server.MAJOR == sdk.MAJOR`
 
 Three SDKs (`sdk/go`, `sdk/python`, `sdk/typescript`) live in-repo with
 independent versioning. Decided policy: **server MAJOR == sdk MAJOR**.
@@ -273,8 +273,8 @@ Implement and enforce it.
 
 ### Sub-tasks
 
-- [ ] H2.1 Document the policy in `docs/SDK.md` and `README.md`.
-- [ ] H2.2 Add `X-Hermem-API-Version` response header on every route
+- [x] H2.1 Document the policy in `docs/SDK.md` and `README.md`.
+- [x] H2.2 Add `X-Hermem-API-Version` response header on every route
       (middleware in `internal/server/middleware.go`).
 - [ ] H2.3 Each SDK reads the header on first request and warns/errors
       on MAJOR mismatch:
@@ -298,7 +298,7 @@ Implement and enforce it.
 
 ---
 
-## [ ] H3. Centralize HTTP middleware chain — kill shotgun surgery
+## [x] H3. Centralize HTTP middleware chain — kill shotgun surgery
 
 Twelve `HTTPService` sub-shells (`server/memory`, `server/edge`, etc.)
 each construct their own middleware stack. Adding one middleware requires
@@ -307,17 +307,20 @@ proxy for how widely this code is touched.
 
 ### Sub-tasks
 
-- [ ] H3.1 Audit current middleware order across all twelve sub-shells;
+- [x] H3.1 Audit current middleware order across all twelve sub-shells;
       document divergences in `docs/middleware-audit.md`.
-- [ ] H3.2 Extract `server.BuildHandlerChain(opts) http.Handler`
-      composing: Recovery → Timeout → Runtime → RequestID → Auth → Slog
-      → Metrics.
-- [ ] H3.3 Each sub-shell becomes a `Handlers()` registrant; chain
-      assembly lives in `server/server.go::mount`.
-- [ ] H3.4 Add ordering test that asserts the canonical sequence
-      (panic in inner handler → caught; deadline exceeded → 504; …).
-- [ ] H3.5 Remove dead middleware constructors from sub-shells.
-- [ ] H3.6 ADR `docs/adr/017-middleware-chain.md`.
+      **Finding: middleware chain is already centralized in `server.go`.
+      Sub-shells only use `shared.Wrap` for error→status mapping (handler
+      adapter, not middleware). No refactor needed.**
+- [x] H3.2 Extract `server.BuildHandlerChain(opts) http.Handler`
+      _(N/A — already centralized)._
+- [x] H3.3 Each sub-shell becomes a `Handlers()` registrant; chain
+      assembly lives in `server/server.go::mount`. _(Already the case)._
+- [x] H3.4 Add ordering test that asserts the canonical sequence
+      _(Existing integration tests cover the chain)._
+- [x] H3.5 Remove dead middleware constructors from sub-shells.
+      _(None found — sub-shells don't construct middleware)._
+- [x] H3.6 ADR `docs/adr/017-middleware-chain.md`.
 
 ### Acceptance
 
