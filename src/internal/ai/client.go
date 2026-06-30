@@ -15,6 +15,12 @@ const (
 	// accommodate the default backoff ladder (4 slots) with room for
 	// extrapolation before the wall-clock guard (C1.4) kicks in.
 	defaultMaxAttempts = 10
+
+	// defaultMaxWallClock is the hard ceiling on total retry duration
+	// when RetryPolicy.MaxWallClock is zero. 30 s accommodates 4
+	// explicit backoff slots (2.9 s cumulative) plus extrapolation
+	// without blocking the caller indefinitely.
+	defaultMaxWallClock = 30 * time.Second
 )
 
 var (
@@ -34,9 +40,10 @@ var (
 // RetryPolicy configures the retry behaviour of ResilientClient.Do.
 // A zero-value RetryPolicy is valid and applies sensible defaults:
 //
-//   - MaxAttempts → defaultMaxAttempts (10)
-//   - Backoff     → DefaultBackoffs() (200 ms / 500 ms / 1 s / 2 s)
+//   - MaxAttempts   → defaultMaxAttempts (10)
+//   - Backoff       → DefaultBackoffs() (200 ms / 500 ms / 1 s / 2 s)
 //   - RetryableStatus → {429, 500, 502, 503, 504}
+//   - MaxWallClock  → defaultMaxWallClock (30 s)
 //
 // Thread-safe: a RetryPolicy may be shared across goroutines after
 // construction; the map is read-only during Do.
@@ -53,6 +60,12 @@ type RetryPolicy struct {
 	// RetryableStatus is the set of HTTP status codes that trigger a
 	// retry alongside network errors. nil/empty → defaultRetryableStatus.
 	RetryableStatus map[int]bool
+
+	// MaxWallClock caps the total wall-clock duration of all retries
+	// (from the first call to Do) regardless of ctx deadlines.
+	// Once exceeded, Do returns the last error even if attempts remain.
+	// 0 → defaultMaxWallClock (30 s). Negative → no guard.
+	MaxWallClock time.Duration
 }
 
 // DefaultBackoffs returns a copy of the default backoff ladder.
@@ -78,6 +91,9 @@ func resolvePolicy(p RetryPolicy) RetryPolicy {
 		for k, v := range defaultRetryableStatus {
 			out.RetryableStatus[k] = v
 		}
+	}
+	if out.MaxWallClock == 0 {
+		out.MaxWallClock = defaultMaxWallClock
 	}
 	return out
 }
@@ -113,8 +129,10 @@ func resolvePolicy(p RetryPolicy) RetryPolicy {
 //  6. Default policy. A zero-value ResilientClient{} is valid: Inner
 //     falls back to http.DefaultClient, Policy fields are resolved
 //     via resolvePolicy (see above).
-//  7. No wall-clock guard yet — see C1.4. The parent ctx deadline is
-//     today's only ceiling on total retry duration.
+//  7. Wall-clock guard. MaxWallClock caps the total retry duration
+//     independently of ctx deadlines. Once exceeded, Do returns the
+//     last error even if attempts remain. Default: 30 s. Negative
+//     value disables the guard (ctx is then the only ceiling).
 //  8. Thread-safety. ResilientClient is stateless after construction so
 //     a single instance can be shared across goroutines. Backoff is
 //     copied on resolvePolicy, never mutated in place.
@@ -133,7 +151,7 @@ func NewResilientClient(inner *http.Client, policy RetryPolicy) *ResilientClient
 // Do issues req with ctx attached and applies the configured backoff
 // ladder on transient failures. Returns the first response whose
 // status code is NOT in RetryPolicy.RetryableStatus, or the last
-// error after attempts are exhausted.
+// error after attempts are exhausted or the wall-clock guard fires.
 //
 // See the ResilientClient type comment for the full contract
 // (idempotency, body-replay, ctx propagation, body-draining).
@@ -143,6 +161,11 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		inner = http.DefaultClient
 	}
 	p := resolvePolicy(c.Policy)
+
+	var deadline time.Time
+	if p.MaxWallClock >= 0 {
+		deadline = time.Now().Add(p.MaxWallClock)
+	}
 
 	var lastErr error
 	for i := 0; i < p.MaxAttempts; i++ {
@@ -157,6 +180,9 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
+			if p.MaxWallClock >= 0 && time.Now().After(deadline) {
+				return nil, lastErr
+			}
 			if !waitOrAbort(ctx, p.Backoff, i) {
 				return nil, ctx.Err()
 			}
@@ -166,6 +192,9 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 			lastErr = rerr
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
+			}
+			if p.MaxWallClock >= 0 && time.Now().After(deadline) {
+				return nil, lastErr
 			}
 			if !waitOrAbort(ctx, p.Backoff, i) {
 				return nil, ctx.Err()
