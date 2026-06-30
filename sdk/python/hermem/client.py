@@ -116,7 +116,7 @@ class Client:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 self._check_version(resp)
                 resp_body = resp.read().decode()
-                if result_type and resp_body:
+                if resp_body:
                     return json.loads(resp_body)
                 return None
         except urllib.error.HTTPError as e:
@@ -158,7 +158,7 @@ class Client:
             warnings.warn(
                 f"hermem: server version {server_version} differs from "
                 f"SDK version {SDK_VERSION} (MAJOR mismatch)",
-                stacklevel=3,
+                stacklevel=4,
             )
 
     def _get(self, path: str) -> Any:
