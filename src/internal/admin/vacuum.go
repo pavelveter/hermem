@@ -17,11 +17,28 @@ func NewVacuumRunner(db *sql.DB) *VacuumRunner {
 }
 
 func (v *VacuumRunner) Run(ctx context.Context) (int64, error) {
-	preSize, err := v.dbSize(ctx)
+	preSize, err := v.preflight(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	postSize, err := v.executeVacuum(ctx, preSize)
+	if err != nil {
+		return 0, err
+	}
+
+	return v.postReport(preSize, postSize), nil
+}
+
+func (v *VacuumRunner) preflight(ctx context.Context) (int64, error) {
+	size, err := v.dbSize(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("vacuum: pre-size: %w", err)
 	}
+	return size, nil
+}
 
+func (v *VacuumRunner) executeVacuum(ctx context.Context, preSize int64) (int64, error) {
 	done := make(chan struct{})
 	var vacuumErr error
 	var postSize int64
@@ -29,42 +46,56 @@ func (v *VacuumRunner) Run(ctx context.Context) (int64, error) {
 	go func() {
 		_, vacuumErr = v.db.ExecContext(ctx, "VACUUM")
 		if vacuumErr == nil {
-			postSize, vacuumErr = v.dbSize(ctx)
+			postSize, _ = v.dbSize(ctx)
 		}
 		close(done)
 	}()
 
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		case <-done:
-			break loop
-		case <-ticker.C:
-			if v.onProgress != nil {
-				currentSize, err := v.dbSize(ctx)
-				if err == nil && preSize > 0 {
-					pct := int((preSize - currentSize) * 100 / preSize)
-					if pct < 0 {
-						pct = 0
-					}
-					if pct > 99 {
-						pct = 99
-					}
-					v.onProgress(pct, preSize-currentSize)
-				}
-			}
-		}
+	if err := v.waitForVacuum(ctx, preSize, done); err != nil {
+		return 0, err
 	}
 
 	if vacuumErr != nil {
 		return 0, fmt.Errorf("vacuum: %w", vacuumErr)
 	}
+	return postSize, nil
+}
 
+func (v *VacuumRunner) waitForVacuum(ctx context.Context, preSize int64, done <-chan struct{}) error {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+			return nil
+		case <-ticker.C:
+			v.reportProgress(ctx, preSize)
+		}
+	}
+}
+
+func (v *VacuumRunner) reportProgress(ctx context.Context, preSize int64) {
+	if v.onProgress == nil {
+		return
+	}
+	currentSize, err := v.dbSize(ctx)
+	if err != nil || preSize <= 0 {
+		return
+	}
+	pct := int((preSize - currentSize) * 100 / preSize)
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 99 {
+		pct = 99
+	}
+	v.onProgress(pct, preSize-currentSize)
+}
+
+func (v *VacuumRunner) postReport(preSize, postSize int64) int64 {
 	reclaimed := preSize - postSize
 	if reclaimed < 0 {
 		reclaimed = 0
@@ -72,7 +103,7 @@ loop:
 	if v.onProgress != nil {
 		v.onProgress(100, reclaimed)
 	}
-	return reclaimed, nil
+	return reclaimed
 }
 
 func (v *VacuumRunner) dbSize(ctx context.Context) (int64, error) {

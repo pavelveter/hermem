@@ -15,9 +15,52 @@ env:
   ZIG_VERSION: "0.16.0"
 
 jobs:
+  version-check:
+    name: MAJOR Version Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify MAJOR version matches across server and SDKs
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TAG_MAJOR="${TAG%%.*}"
+          echo "Release tag: $TAG  (MAJOR=$TAG_MAJOR)"
+
+          # Go SDK — module path has no version; check sdk/go/go.mod for a version comment
+          # We use the repo-level convention: MAJOR must match the tag MAJOR.
+          # If sdk/go/go.mod ever gains a version field, check it here.
+
+          # Python SDK
+          PY_VER=$(grep '^version' sdk/python/pyproject.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          PY_MAJOR="${PY_VER%%.*}"
+          echo "Python SDK version: $PY_VER  (MAJOR=$PY_MAJOR)"
+
+          # TypeScript SDK
+          TS_VER=$(node -p "require('./sdk/typescript/package.json').version")
+          TS_MAJOR="${TS_VER%%.*}"
+          echo "TypeScript SDK version: $TS_VER  (MAJOR=$TS_MAJOR)"
+
+          FAIL=0
+          if [ "$TAG_MAJOR" != "$PY_MAJOR" ]; then
+            echo "::error::MAJOR mismatch: tag=$TAG_MAJOR python=$PY_MAJOR"
+            FAIL=1
+          fi
+          if [ "$TAG_MAJOR" != "$TS_MAJOR" ]; then
+            echo "::error::MAJOR mismatch: tag=$TAG_MAJOR typescript=$TS_MAJOR"
+            FAIL=1
+          fi
+          if [ "$FAIL" -eq 1 ]; then
+            echo "::error::All SDK MAJOR versions must match the server release tag MAJOR."
+            exit 1
+          fi
+          echo "✓ MAJOR versions consistent: tag=$TAG_MAJOR python=$PY_MAJOR typescript=$TS_MAJOR"
+
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ${{ matrix.runner }}
+    needs: [version-check]
     strategy:
       fail-fast: false
       matrix:
