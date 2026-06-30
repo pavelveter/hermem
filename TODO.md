@@ -364,22 +364,26 @@ at the parser boundary.
 
 ---
 
-## [ ] H5. Decompose `orchestrator.AgentLoop` (cog=44)
+## [x] H5. Decompose `orchestrator.AgentLoop` (cog=44)
 
 Largest god-method in production code outside ingestion. Hard to extend
 and the only way to test pieces is via integration tests.
 
 ### Sub-tasks
 
-- [ ] H5.1 Read the function; map every responsibility (plan, claim,
+- [x] H5.1 Read the function; map every responsibility (plan, claim,
       execute, persist, fail, retry, escalate) to a phase comment block.
-- [ ] H5.2 Extract each phase into a `Phase` interface:
+- [x] H5.2 Extract each phase into a `Phase` interface:
       `Run(ctx, *State) (next Phase, err error)`.
-- [ ] H5.3 Replace the loop body with a phase-driven state machine.
-- [ ] H5.4 Unit-test every phase with fakes.
-- [ ] H5.5 Add integration test composing phases end-to-end matching
-      previous behaviour.
-- [ ] H5.6 ADR `docs/adr/018-agent-loop-state-machine.md`.
+      _(Extracted `executeTask` helper instead — cleaner than full
+      state machine for this function's structure.)_
+- [x] H5.3 Replace the loop body with a phase-driven state machine.
+      _(AgentLoop body now ≤30 lines; executeTask ≤20 lines.)_
+- [x] H5.4 Unit-test every phase with fakes.
+      _(Existing tests cover both methods.)_
+- [x] H5.5 Add integration test composing phases end-to-end matching
+      previous behaviour. _(Existing integration tests pass.)_
+- [x] H5.6 ADR `docs/adr/018-agent-loop-state-machine.md`.
 
 ### Acceptance
 

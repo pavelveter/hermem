@@ -190,9 +190,9 @@ func TestResilientClient_MaxWallClockStopsRetries(t *testing.T) {
 	defer srv.Close()
 
 	c := NewResilientClient(nil, RetryPolicy{
-		MaxAttempts:   20,
-		Backoff:       []time.Duration{50 * time.Millisecond},
-		MaxWallClock:  80 * time.Millisecond,
+		MaxAttempts:  20,
+		Backoff:      []time.Duration{50 * time.Millisecond},
+		MaxWallClock: 80 * time.Millisecond,
 	})
 	req, _ := http.NewRequest("GET", srv.URL, nil)
 	start := time.Now()
@@ -254,8 +254,8 @@ func TestResilientClient_CustomRetryableStatus(t *testing.T) {
 	defer srv.Close()
 
 	c := NewResilientClient(nil, RetryPolicy{
-		MaxAttempts:    3,
-		Backoff:        []time.Duration{1 * time.Millisecond},
+		MaxAttempts:     3,
+		Backoff:         []time.Duration{1 * time.Millisecond},
 		RetryableStatus: map[int]bool{429: true}, // only 429
 	})
 	req, _ := http.NewRequest("GET", srv.URL, nil)
@@ -388,10 +388,10 @@ func TestResolvePolicy_DefaultsApplied(t *testing.T) {
 func TestResolvePolicy_CustomValuesPreserved(t *testing.T) {
 	custom := map[int]bool{418: true}
 	p := resolvePolicy(RetryPolicy{
-		MaxAttempts:    7,
-		Backoff:        []time.Duration{10 * time.Millisecond},
+		MaxAttempts:     7,
+		Backoff:         []time.Duration{10 * time.Millisecond},
 		RetryableStatus: custom,
-		MaxWallClock:   5 * time.Second,
+		MaxWallClock:    5 * time.Second,
 	})
 	if p.MaxAttempts != 7 {
 		t.Fatalf("MaxAttempts: want 7, got %d", p.MaxAttempts)
@@ -414,9 +414,9 @@ func TestResolvePolicy_CustomValuesPreserved(t *testing.T) {
 // overwhelming the provider.
 func TestResilientClient_AttemptCapInvariant(t *testing.T) {
 	tests := []struct {
-		name       string
+		name        string
 		maxAttempts int
-		backoff    []time.Duration
+		backoff     []time.Duration
 	}{
 		{"1 attempt, no backoff", 1, nil},
 		{"1 attempt, long backoff", 1, []time.Duration{10 * time.Second}},
@@ -435,9 +435,9 @@ func TestResilientClient_AttemptCapInvariant(t *testing.T) {
 			defer srv.Close()
 
 			c := NewResilientClient(nil, RetryPolicy{
-				MaxAttempts:   tt.maxAttempts,
-				Backoff:       tt.backoff,
-				MaxWallClock:  -1, // disabled — rely on attempt cap only
+				MaxAttempts:  tt.maxAttempts,
+				Backoff:      tt.backoff,
+				MaxWallClock: -1, // disabled — rely on attempt cap only
 			})
 			req, _ := http.NewRequest("GET", srv.URL, nil)
 			resp, err := c.Do(t.Context(), req)

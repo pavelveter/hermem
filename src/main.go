@@ -64,7 +64,7 @@ func main() {
 	if err != nil {
 		clienv.Fatal("app: %v", err)
 	}
-	defer a.Stop(context.Background())
+	defer func() { _ = a.Stop(context.Background()) }()
 
 	// Convert to *clienv.Env for backward compatibility with CLI
 	// commands that still accept *clienv.Env. This adapter will be
@@ -73,14 +73,14 @@ func main() {
 
 	if err := cli.NewRootCommand(env).Execute(); err != nil {
 		if code := signalExitCode(ctx); code != 0 {
-			a.Stop(context.Background())
+			_ = a.Stop(context.Background())
 			os.Exit(code)
 		}
-		a.Stop(context.Background())
+		_ = a.Stop(context.Background())
 		clienv.Fatal("%v", err)
 	}
 	if code := signalExitCode(ctx); code != 0 {
-		a.Stop(context.Background())
+		_ = a.Stop(context.Background())
 		os.Exit(code)
 	}
 }

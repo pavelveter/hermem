@@ -483,9 +483,9 @@ type MigrationStatus struct {
 
 // MigrationMismatch mirrors store.MigMismatch for the core package.
 type MigrationMismatch struct {
-	Name             string `json:"name"`
-	StoredChecksum   string `json:"stored_checksum"`
-	CurrentChecksum  string `json:"current_checksum"`
+	Name            string `json:"name"`
+	StoredChecksum  string `json:"stored_checksum"`
+	CurrentChecksum string `json:"current_checksum"`
 }
 
 // Migrator is the minimal interface for migration operations.

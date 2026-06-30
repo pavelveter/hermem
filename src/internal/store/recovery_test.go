@@ -202,7 +202,7 @@ func TestCascadeRollback_DeepChain(t *testing.T) {
 	for i := 1; i <= depth; i++ {
 		seedEntity(t, db, "n"+itoa(i), "task", "chain")
 	}
-	var prev string = "root"
+	var prev = "root"
 	for i := 1; i <= depth; i++ {
 		id := "n" + itoa(i)
 		seedEdge(t, db, prev, id, schema.RelationBlocking, 1)
@@ -289,7 +289,7 @@ func TestCascadeRollback_LimitExceeded(t *testing.T) {
 
 	// Chain of 20 tasks; limit=5 should cap at 5.
 	seedEntity(t, db, "root", "task", "root")
-	var prev string = "root"
+	var prev = "root"
 	for i := 1; i <= 20; i++ {
 		id := "c" + itoa(i)
 		seedEntity(t, db, id, "task", id)

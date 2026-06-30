@@ -97,7 +97,14 @@
 │  │  memory · task · graph · time · db · agent · serve · health · metrics        │  │
 │  │  admin · ops · diagnose · profile · bench · version · re-embed · quantize    │  │
 │  │                                                                              │  │
-│  │  cli/env (Env singleton) ← DI container for all services                     │  │
+│  │  cli/env (Env) ← transitional adapter (being replaced by app.Application)   │  │
+│  └──────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                    │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
+│  │  app.Application ← typed DI container (C2)                                  │  │
+│  │  New() constructs ALL dependencies eagerly; no nil fields, no lazy init.     │  │
+│  │  Start()/Stop() with explicit lifecycle ordering.                           │  │
+│  │  main.go constructs Application → converts to clienv.Env for CLI commands.   │  │
 │  └──────────────────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────────────┘
                                          │
@@ -159,6 +166,9 @@ Layer 3 — Transport:
   server/ (→ all Layer 2 + serverstate, metrics, auth, httputil, lifecycle)
   cli/ (→ all Layer 2 + cli/env, config, store, server, serverstate)
 
-Layer 4 — Top-level:
-  main.go (→ cli, cli/env, config, metrics, tracing)
+Layer 4 — Application container:
+  app (→ config, core, metrics, retrieval, store, tracing, vector)
+
+Layer 5 — Top-level:
+  main.go (→ app, cli, cli/env, config)
 ```
