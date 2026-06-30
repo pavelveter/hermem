@@ -140,8 +140,8 @@ shippable steps.
 - [x] C2.D.1 `clienv` retained as thin adapter; deleted once all
       commands accept `*app.Application`.
 - [x] C2.D.2 Update `main.go` to construct `*app.Application` directly.
-- [ ] C2.D.3 Update `docs/ARCHITECTURE.md` dependency diagram.
-- [ ] C2.D.4 Confirm via `golangci-lint` no dead exports remain.
+- [x] C2.D.3 Update `docs/ARCHITECTURE.md` dependency diagram.
+- [x] C2.D.4 Confirm via `golangci-lint` no dead exports remain.
 
 ### Acceptance
 
@@ -804,15 +804,15 @@ constraint and move the call next to the stdout writers if practical.
 
 All items below should be on `main` before C-items close.
 
-- [ ] CI-1. `go vet ./...` on every PR.
-- [ ] CI-2. `golangci-lint run ./...` blocks merge.
-- [ ] CI-3. `gofmt -s -d` blocks merge.
-- [ ] CI-4. `go test -race -shuffle=on -count=1 ./...` blocks merge.
-- [ ] CI-5. Short fuzz (10s per target) on every PR (M4 dependency).
-- [ ] CI-6. `benchstat` regression gate on hot paths (M6 dependency).
-- [ ] CI-7. OpenAPI route↔spec contract test blocks merge (H1 dependency).
-- [ ] CI-8. SDK matrix build on every release tag (H2 dependency).
-- [ ] CI-9. AMX guard test on Darwin runners (already present — confirm).
+- [x] CI-1. `go vet ./...` on every PR.
+- [x] CI-2. `golangci-lint run ./...` blocks merge.
+- [x] CI-3. `gofmt -s -d` blocks merge.
+- [x] CI-4. `go test -race -shuffle=on -count=1 ./...` blocks merge.
+- [x] CI-5. Short fuzz (10s per target) on every PR (M4 dependency).
+- [x] CI-6. `benchstat` regression gate on hot paths (M6 dependency).
+- [x] CI-7. OpenAPI route↔spec contract test blocks merge (H1 dependency).
+- [x] CI-8. SDK matrix build on every release tag (H2 dependency).
+- [x] CI-9. AMX guard test on Darwin runners (already present — confirm).
 
 ---
 
@@ -820,17 +820,17 @@ All items below should be on `main` before C-items close.
 
 This list is closed when **all** of the following hold:
 
-- [ ] No item remains unchecked.
-- [ ] Every ADR is merged in `docs/adr/`.
-- [ ] No production function has cognitive complexity > 25.
-- [ ] No production function has unguarded recursion.
-- [ ] OpenAPI spec is the single source of truth for routes;
+- [x] No item remains unchecked.
+- [x] Every ADR is merged in `docs/adr/`.
+- [x] No production function has cognitive complexity > 25.
+- [x] No production function has unguarded recursion.
+- [x] OpenAPI spec is the single source of truth for routes;
       contract tests green.
-- [ ] SDK compatibility matrix is green on the current release tag.
-- [ ] `make test`, `make test-e2e`, `make lint` all green on `main`.
-- [ ] Public API surface documented and stable (CLI snapshot tests,
+- [x] SDK compatibility matrix is green on the current release tag.
+- [x] `make test`, `make test-e2e`, `make lint` all green on `main`.
+- [x] Public API surface documented and stable (CLI snapshot tests,
       OpenAPI spec, SDK reference).
-- [ ] `docs/ARCHITECTURE.md` reflects the post-refactor dependency
+- [x] `docs/ARCHITECTURE.md` reflects the post-refactor dependency
       graph.
 
 ---
