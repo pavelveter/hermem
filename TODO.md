@@ -190,7 +190,7 @@ matrices, two places to forget about.
 
 ---
 
-## [ ] C4. Recursion + depth guards: `cascadeRollback` and friends
+## [x] C4. Recursion + depth guards: `cascadeRollback` and friends
 
 `store/recovery.cascadeRollback` is genuinely recursive
 (`transitive_loop_depth=5`, recursion-in-loop, cog=10) with no depth cap.
@@ -201,22 +201,22 @@ note it in the ADR but no code change needed.
 
 ### Sub-tasks
 
-- [ ] C4.1 Convert `cascadeRollback` to iterative BFS using an explicit
+- [x] C4.1 Convert `cascadeRollback` to iterative BFS using an explicit
       queue. Preserve the existing visited-set semantics.
-- [ ] C4.2 Add hard depth/edge cap (config-driven, default 4096) that
+- [x] C4.2 Add hard depth/edge cap (config-driven, default 4096) that
       returns a typed `ErrCascadeLimit` instead of panicking.
-- [ ] C4.3 Preserve current return semantics (`[]core.Task, error`):
+- [x] C4.3 Preserve current return semantics (`[]core.Task, error`):
       partial result + first error.
-- [ ] C4.4 Add tests:
+- [x] C4.4 Add tests:
       - chain depth = 10_000,
       - 50_000 dependents on one root,
       - cycle in deps (must terminate),
       - limit exceeded → `ErrCascadeLimit`.
-- [ ] C4.5 Audit other static-analysis recursion hits and document each
+- [x] C4.5 Audit other static-analysis recursion hits and document each
       false positive in the ADR: `Logger.Error`, `serverstate.Load/Store`,
       `middleware.Write/WriteHeader`, `task.ClaimNextTask`,
       `evaluation.report.Format`, `tracing.context.StartSpan`.
-- [ ] C4.6 ADR `docs/adr/014-recursion-and-depth-guards.md`.
+- [x] C4.6 ADR `docs/adr/014-recursion-and-depth-guards.md`.
 
 ### Acceptance
 

@@ -63,6 +63,7 @@ type SchemaConfig struct {
 	StateUnblocking     string
 	RelationRecovery    string
 	StatefulEnabled     bool
+	CascadeLimit        int // max tasks per cascade rollback; 0 = default (4096)
 }
 
 // DefaultSchemaConfig returns a SchemaConfig with built-in defaults.
