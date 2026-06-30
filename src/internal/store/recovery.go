@@ -69,7 +69,7 @@ func FindRollbackTask(db *sql.DB, schema core.SchemaConfig, failedTaskID string)
 // tasks are skipped (idempotent).
 //
 // Cycle safety: a visited set prevents infinite loops when blocked_by
-// edges form a cycle.
+// edges form a cycle. Depth is capped by CascadeLimit (see ADR-014).
 //
 // Depth safety: a hard cap (schema.CascadeLimit, default 4096) limits
 // total tasks processed per invocation. Returns ErrCascadeLimit when
