@@ -467,3 +467,41 @@ type TaskCreateResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 }
+
+// --- Migration types (C3.2) ---
+
+// MigrationStatus mirrors store.MigStatus for the core package.
+// The migration.Service adapter converts between the two.
+type MigrationStatus struct {
+	Name           string `json:"name"`
+	Applied        bool   `json:"applied"`
+	AppliedAt      string `json:"applied_at,omitempty"`
+	ChecksumSHA256 string `json:"checksum_sha256"`
+	ChecksumMatch  *bool  `json:"checksum_match,omitempty"`
+}
+
+// MigrationMismatch mirrors store.MigMismatch for the core package.
+type MigrationMismatch struct {
+	Name             string `json:"name"`
+	StoredChecksum   string `json:"stored_checksum"`
+	CurrentChecksum  string `json:"current_checksum"`
+}
+
+// Migrator is the minimal interface for migration operations.
+// migration.Service satisfies this interface. CLI commands and HTTP
+// shells depend on Migrator (or *migration.Service) rather than
+// calling store functions directly.
+type Migrator interface {
+	// Run applies all pending migrations and returns the post-apply status.
+	Run(ctx context.Context) ([]MigrationStatus, error)
+	// DryRun returns pending migrations without applying them.
+	DryRun(ctx context.Context) ([]MigrationStatus, error)
+	// Status returns the applied/pending state of every migration.
+	Status(ctx context.Context) ([]MigrationStatus, error)
+	// Verify returns migrations whose stored checksum diverges from the
+	// current embedded file. Empty result = no drift.
+	Verify(ctx context.Context) ([]MigrationMismatch, error)
+	// Rollback removes applied migrations back to the target version.
+	// Empty target rolls back the last applied migration.
+	Rollback(ctx context.Context, target string) (string, error)
+}

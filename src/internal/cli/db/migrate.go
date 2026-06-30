@@ -6,8 +6,8 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
+	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/migration"
-	"github.com/pavelveter/hermem/src/internal/store"
 )
 
 // newMigrateCmd is the parent of the migration subcommands.
@@ -129,7 +129,7 @@ Examples:
 			// already-applied migrations don't inflate the count if
 			// a future refactor makes `Run` permissive about pristine
 			// state).
-			var applied []store.MigStatus
+			var applied []core.MigrationStatus
 			for _, m := range post {
 				if !m.Applied {
 					continue
