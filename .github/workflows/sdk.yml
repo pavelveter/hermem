@@ -3,6 +3,7 @@ name: SDK Tests
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
     paths:
       - "sdk/**"
       - ".github/workflows/sdk.yml"

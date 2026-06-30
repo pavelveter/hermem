@@ -1,6 +1,6 @@
 /** @hermem/sdk — Official TypeScript SDK for the Hermem API. */
 
-export { Client, APIError, type ClientOptions } from "./client";
+export { Client, APIError, SDK_VERSION, type ClientOptions } from "./client";
 export type {
   Entity,
   Edge,
