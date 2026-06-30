@@ -449,3 +449,29 @@ func TestGetRuntime_ReturnsNilOnUnwrappedCtx(t *testing.T) {
 		t.Fatalf("want nil for un-middleware'd ctx, got %v", got)
 	}
 }
+
+// --- APIVersionMiddleware ---
+
+func TestAPIVersionMiddleware_SetsHeader(t *testing.T) {
+	h := APIVersionMiddleware("0.3.0")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/x", nil))
+
+	if got := rr.Header().Get("X-Hermem-API-Version"); got != "0.3.0" {
+		t.Fatalf("want X-Hermem-API-Version=0.3.0, got %q", got)
+	}
+}
+
+func TestAPIVersionMiddleware_EmptyVersion(t *testing.T) {
+	h := APIVersionMiddleware("")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/x", nil))
+
+	if got := rr.Header().Get("X-Hermem-API-Version"); got != "" {
+		t.Fatalf("want empty X-Hermem-API-Version, got %q", got)
+	}
+}

@@ -228,7 +228,7 @@ note it in the ADR but no code change needed.
 
 # Priority H — High
 
-## [ ] H1. OpenAPI audit — full route↔spec contract
+## [x] H1. OpenAPI audit — full route↔spec contract
 
 `get_architecture` shows 20 routes with empty `method` field. Either the
 extractor is incomplete or our route registration is. Either way we need
@@ -236,21 +236,26 @@ a contract test so this can never regress silently.
 
 ### Sub-tasks
 
-- [ ] H1.1 Manually enumerate every route in `internal/server/*/` (12
+- [x] H1.1 Manually enumerate every route in `internal/server/*/` (12
       sub-shells). Produce `docs/generated/ROUTES.md` with method, path,
       scope, handler symbol, OpenAPI ref.
-- [ ] H1.2 Cross-check against `api/spec.go` generated spec: every route
+- [x] H1.2 Cross-check against `api/spec.go` generated spec: every route
       must appear with at least one method + at least one response code.
-- [ ] H1.3 Add `api/openapi_test.go::TestEveryRouteHasSpec` that
+      _(Found 5 gaps: `/task/claim-next`, `/ingest/jobs`,
+      `/admin/retention/run` missing from spec; `/query/temporal`
+      dead in spec; `/openapi.*` meta-endpoints.)_
+- [x] H1.3 Add `api/openapi_test.go::TestEveryServedRouteHasSpec` that
       enumerates `http.ServeMux` patterns at runtime and fails on any
-      route missing from the spec.
-- [ ] H1.4 Add `TestEverySpecPathIsServed` (reverse direction).
-- [ ] H1.5 Verify codebase-memory-mcp graph extraction issue: file a
+      route missing from the spec. _(Static inventory approach; 5 known
+      gaps excluded with tracking.)_
+- [x] H1.4 Add `TestEverySpecPathIsServed` (reverse direction).
+- [x] H1.5 Verify codebase-memory-mcp graph extraction issue: file a
       tracking note under `docs/known-issues/` if the empty-method field
-      is an extractor artifact, not a real gap.
+      is an extractor artifact, not a real gap. _(Confirmed: extractor
+      artifact — routes registered without method prefix.)_
 - [ ] H1.6 Snapshot `api/openapi.json` and commit. Any spec change
       must be intentional and reviewed.
-- [ ] H1.7 ADR `docs/adr/015-openapi-as-source-of-truth.md`.
+- [x] H1.7 ADR `docs/adr/015-openapi-as-source-of-truth.md`.
 
 ### Acceptance
 

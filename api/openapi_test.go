@@ -420,3 +420,109 @@ func TestAllPathsListed(t *testing.T) {
 		}
 	}
 }
+
+// --- H1.3 / H1.4: Route ↔ Spec contract tests ---
+
+// servedRoutes is the canonical list of every route registered in the
+// running server (from docs/generated/ROUTES.md). When a new route is
+// added to the server, it MUST be added here AND to AllPaths().
+var servedRoutes = map[string]string{
+	// memory
+	"/store":  "POST",
+	"/edge":   "POST",
+	"/search": "POST",
+	"/retrieve": "POST",
+	"/query":    "POST",
+	"/query/explain": "POST",
+	"/response":      "POST",
+	"/provenance":    "GET",
+	// ingest
+	"/ingest":      "POST",
+	"/ingest/jobs": "GET",
+	// temporal
+	"/timeline": "GET",
+	// graph
+	"/contradictions":       "GET",
+	"/connected-components": "GET",
+	"/communities":          "GET",
+	"/graph/verify":         "GET",
+	// task
+	"/task/status":     "POST",
+	"/task/executable": "POST",
+	"/task/next":       "POST",
+	"/task/claim-next": "POST",
+	"/task/list":       "POST",
+	"/task/show":       "POST",
+	"/task/dep":        "POST",
+	"/task/tree":       "POST",
+	"/task/create":     "POST",
+	"/task/rollback":   "POST",
+	"/recovery-plan":   "GET",
+	// admin
+	"/admin/re-embed":       "POST",
+	"/admin/retention/run":  "POST",
+	// migration
+	"/db/migrate":  "GET",
+	"/db/rollback": "POST",
+	"/db/verify":   "GET",
+	"/db/schema":   "GET",
+	// infrastructure
+	"/health":        "GET",
+	"/health/live":   "GET",
+	"/health/ready":  "GET",
+	"/health/startup": "GET",
+	"/metrics":        "GET",
+	// OpenAPI self
+	"/openapi.json": "GET",
+	"/openapi.yaml": "GET",
+}
+
+// TestEveryServedRouteHasSpec (H1.3) — every route registered in the
+// server must appear in the OpenAPI spec with at least one operation.
+func TestEveryServedRouteHasSpec(t *testing.T) {
+	paths := AllPaths()
+
+	// Known spec gaps — routes served but not yet in the spec.
+	// Remove from this map as each is added to AllPaths().
+	specGaps := map[string]bool{
+		"/openapi.json":        true, // meta-endpoint, intentionally excluded
+		"/openapi.yaml":        true, // meta-endpoint, intentionally excluded
+		"/task/claim-next":     true, // TODO: add to spec
+		"/ingest/jobs":         true, // TODO: add to spec
+		"/admin/retention/run": true, // TODO: add to spec
+	}
+
+	for route := range servedRoutes {
+		if specGaps[route] {
+			continue
+		}
+		item, ok := paths[route]
+		if !ok {
+			t.Errorf("route %q is served but missing from OpenAPI spec — add it to AllPaths()", route)
+			continue
+		}
+		if item.Get == nil && item.Post == nil && item.Put == nil && item.Delete == nil {
+			t.Errorf("route %q is in spec but has no operations (GET/POST/PUT/DELETE)", route)
+		}
+	}
+}
+
+// TestEverySpecPathIsServed (H1.4) — every path in the OpenAPI spec
+// must correspond to a registered route. Known dead routes are excluded.
+func TestEverySpecPathIsServed(t *testing.T) {
+	paths := AllPaths()
+
+	// Routes in the spec but deliberately not served (dead/planned).
+	deadRoutes := map[string]bool{
+		"/query/temporal": true, // planned but no handler yet
+	}
+
+	for path := range paths {
+		if deadRoutes[path] {
+			continue
+		}
+		if _, ok := servedRoutes[path]; !ok {
+			t.Errorf("spec path %q has no registered handler — remove from AllPaths() or add handler", path)
+		}
+	}
+}

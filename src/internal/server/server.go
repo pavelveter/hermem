@@ -204,7 +204,11 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	handler = SafeBodyCloseMiddleware(handler)
 	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
 	handler = SlogMiddleware(handler)
-	handler = RequestIDMiddleware(AuthMiddleware()(handler))
+	version := ""
+	if cfg.Env != nil {
+		version = cfg.Env.Build.Version
+	}
+	handler = APIVersionMiddleware(version)(RequestIDMiddleware(AuthMiddleware()(handler)))
 	if cfg.Env != nil {
 		handler = RuntimeMiddleware(clienv.NewEnvManager(cfg.Env), slog.Default())(handler)
 	}
