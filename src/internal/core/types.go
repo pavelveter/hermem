@@ -125,9 +125,9 @@ type RankingWeight struct {
 }
 
 // WithDefaults returns w with zero-valued fields replaced by the canonical
-// ranking defaults. This is the single source of truth for the default
-// values; both config/ini.go (after LoadConfigFromBinaryDir) and
-// retrieval/walk.go call it to finalize a partially-populated weight.
+// ranking defaults (see ADR-022). This is the single source of truth for
+// the default values; both config/ini.go (after LoadConfigFromBinaryDir)
+// and retrieval/walk.go call it to finalize a partially-populated weight.
 func (w RankingWeight) WithDefaults() RankingWeight {
 	if w.VectorWeight == 0 {
 		w.VectorWeight = 0.7

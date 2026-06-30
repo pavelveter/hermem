@@ -21,7 +21,7 @@ import (
 // cblas, build-tag drift, cgo disabled at link time), the test must
 // fail the build when the path is unexpectedly slow. The Test form
 // below does that via a 2ms per-call ceiling — see the threshold
-// rationale inline.
+// rationale inline. See ADR-021.
 
 // amxHotRows / amxHotCols match the §10 retrieval hot path: 1K
 // candidate facts × 768-dim embeddings. 1024 × 768 is the realistic
