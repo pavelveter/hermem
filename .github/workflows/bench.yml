@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
+    paths:
+      - "src/**/*.go"
+      - "bench/baseline/**"
+      - ".github/workflows/bench.yml"
 
 permissions:
   contents: read
@@ -34,9 +39,24 @@ jobs:
       - name: Install benchstat
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
-      - name: Analyze results
+      - name: Compare against baseline
+        if: hashFiles('bench/baseline/baseline.txt') != ''
         run: |
-          benchstat bench_results.txt > bench_report.txt
+          benchstat bench/baseline/baseline.txt bench_results.txt | tee bench_report.txt
+          # Check for >5% regression on hot paths
+          if grep -qE 'delta.*\+[5-9][0-9]\.%|\+1[0-9][0-9]\.%|\+2[0-9][0-9]\.%|\+3[0-9][0-9]\.%|\+4[0-9][0-9]\.%|\+5[0-9][0-9]\.%' bench_report.txt; then
+            echo "::error::Benchmark regression >5% detected on a hot path"
+            exit 1
+          fi
+          echo "No significant regression detected"
+
+      - name: Analyze results (standalone)
+        if: hashFiles('bench/baseline/baseline.txt') == ''
+        run: |
+          benchstat bench_results.txt | tee bench_report.txt
+
+      - name: Generate report
+        run: |
           echo "## Benchmark Results (${{ github.ref_name }})" > bench_report.md
           echo '```' >> bench_report.md
           cat bench_report.txt >> bench_report.md
