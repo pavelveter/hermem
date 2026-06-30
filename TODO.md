@@ -511,19 +511,19 @@ A casual refactor can break downstream shell scripts.
 
 # Priority M — Medium
 
-## [ ] M1. Move belief/evidence lifecycle into their domain packages
+## [x] M1. Move belief/evidence lifecycle into their domain packages
 
 `evolution` currently owns trust/propagation/aggregation while the data
 types live in `memory/belief` and `memory/evidence`. Inverted layering.
 
 ### Sub-tasks
 
-- [ ] M1.1 Move pure-domain helpers (no DB) into `memory/belief` and
+- [x] M1.1 Move pure-domain helpers (no DB) into `memory/belief` and
       `memory/evidence`.
-- [ ] M1.2 Reduce `evolution` to a cross-domain orchestrator that calls
+- [x] M1.2 Reduce `evolution` to a cross-domain orchestrator that calls
       the domain services.
-- [ ] M1.3 Update ADR-008 (domain model) with the new boundaries.
-- [ ] M1.4 Confirm import graph: `evolution → memory/{belief,evidence}`
+- [x] M1.3 Update ADR-008 (domain model) with the new boundaries.
+- [x] M1.4 Confirm import graph: `evolution → memory/{belief,evidence}`
       only, never the reverse.
 
 ### Acceptance
@@ -533,21 +533,21 @@ types live in `memory/belief` and `memory/evidence`. Inverted layering.
 
 ---
 
-## [ ] M2. Builder DSL for integration & E2E tests
+## [x] M2. Builder DSL for integration & E2E tests
 
 `TestIntegration_FullPipeline` cog=55, `TestE2E_TaskLifecycle` cog=20.
 Each test reconstructs the world by hand.
 
 ### Sub-tasks
 
-- [ ] M2.1 Design `scenario.New(t).WithFact(...).WithTask(...).Run()`
+- [x] M2.1 Design `scenario.New(t).WithFact(...).WithTask(...).Run()`
       DSL in `tests/e2e/helpers/scenario.go`.
-- [ ] M2.2 Migrate at least 5 god-tests onto it
+- [x] M2.2 Migrate at least 5 god-tests onto it
       (`TestIntegration_FullPipeline`,
       `TestIntegration_ParallelSubtests`, `TestE2E_TaskLifecycle`,
       `TestE2E_StoreEdgeRetrieve`, `TestIntegration_SearchWithFilters`).
-- [ ] M2.3 Target max integration cognitive ≤ 15 after migration.
-- [ ] M2.4 Document the DSL in `tests/e2e/README.md`.
+- [x] M2.3 Target max integration cognitive ≤ 15 after migration.
+- [x] M2.4 Document the DSL in `tests/e2e/README.md`.
 
 ### Acceptance
 
@@ -556,21 +556,21 @@ Each test reconstructs the world by hand.
 
 ---
 
-## [ ] M3. Property-based tests across more domains
+## [x] M3. Property-based tests across more domains
 
 Currently `retrieval` has property tests; rest of the codebase doesn't.
 
 ### Sub-tasks
 
-- [ ] M3.1 `vector/cosine`: range, symmetry, identity, normalization
+- [x] M3.1 `vector/cosine`: range, symmetry, identity, normalization
       invariants.
-- [ ] M3.2 `graph/community.DetectCommunities`: total members preserved,
+- [x] M3.2 `graph/community.DetectCommunities`: total members preserved,
       no duplicate assignments, deterministic when seeded.
-- [ ] M3.3 `task` cascade: rolling back root rolls back exactly the
+- [x] M3.3 `task` cascade: rolling back root rolls back exactly the
       reachable dependent set.
-- [ ] M3.4 `compression/cluster.Cluster`: centroid distance bounds,
+- [x] M3.4 `compression/cluster.Cluster`: centroid distance bounds,
       cluster-count monotonicity.
-- [ ] M3.5 `store/codec`: vector codec round-trip survives any finite
+- [x] M3.5 `store/codec`: vector codec round-trip survives any finite
       `[]float32`.
 
 ### Acceptance
@@ -579,17 +579,17 @@ Currently `retrieval` has property tests; rest of the codebase doesn't.
 
 ---
 
-## [ ] M4. Fuzz harnesses
+## [x] M4. Fuzz harnesses
 
 `go test -fuzz` is currently unused.
 
 ### Sub-tasks
 
-- [ ] M4.1 Fuzz `config/ini.applyINIFields` (cog=30).
-- [ ] M4.2 Fuzz `store/codec` (NaN/Inf already guarded — fuzz proves it).
-- [ ] M4.3 Fuzz HTTP `JSON ingest` body parsing for each public route.
-- [ ] M4.4 Fuzz `core.normalize` (text normalization for embeddings).
-- [ ] M4.5 CI: short fuzz on every PR; long fuzz nightly.
+- [x] M4.1 Fuzz `config/ini.applyINIFields` (cog=30).
+- [x] M4.2 Fuzz `store/codec` (NaN/Inf already guarded — fuzz proves it).
+- [x] M4.3 Fuzz HTTP `JSON ingest` body parsing for each public route.
+- [x] M4.4 Fuzz `core.normalize` (text normalization for embeddings).
+- [x] M4.5 CI: short fuzz on every PR; long fuzz nightly.
 
 ### Acceptance
 
@@ -597,7 +597,7 @@ Currently `retrieval` has property tests; rest of the codebase doesn't.
 
 ---
 
-## [ ] M5. Document magic constants with ADRs
+## [x] M5. Document magic constants with ADRs
 
 Found constants without context: `DefaultSearchTopK`, `DefaultQueryTopK`,
 `DefaultRetrieveMaxDepth`, `DefaultProvenanceLimit`, `MaxChainDepth`,
@@ -605,9 +605,9 @@ Found constants without context: `DefaultSearchTopK`, `DefaultQueryTopK`,
 
 ### Sub-tasks
 
-- [ ] M5.1 Group constants by domain; create one ADR per group.
-- [ ] M5.2 Each constant gets a source comment linking the ADR ID.
-- [ ] M5.3 Where the value depends on tuning, expose it via config.
+- [x] M5.1 Group constants by domain; create one ADR per group.
+- [x] M5.2 Each constant gets a source comment linking the ADR ID.
+- [x] M5.3 Where the value depends on tuning, expose it via config.
 
 ### Acceptance
 
@@ -615,18 +615,18 @@ Found constants without context: `DefaultSearchTopK`, `DefaultQueryTopK`,
 
 ---
 
-## [ ] M6. Benchmark regression gates
+## [x] M6. Benchmark regression gates
 
 `.github/workflows/bench.yml` exists but without `benchstat` baseline
 diff there's no signal.
 
 ### Sub-tasks
 
-- [ ] M6.1 Commit `bench/baseline/` per release tag.
-- [ ] M6.2 CI runs current bench, diffs against baseline with
+- [x] M6.1 Commit `bench/baseline/` per release tag.
+- [x] M6.2 CI runs current bench, diffs against baseline with
       `benchstat`, fails on >5% regression on a designated hot-path set
       (cosine, sqlitevec, retrieval pipeline, ingestion).
-- [ ] M6.3 Document the protocol in `docs/profiling.md`.
+- [x] M6.3 Document the protocol in `docs/profiling.md`.
 
 ### Acceptance
 
@@ -635,18 +635,18 @@ diff there's no signal.
 
 ---
 
-## [ ] M7. Make `serverstate` snapshot explicit
+## [x] M7. Make `serverstate` snapshot explicit
 
 `serverstate.Ref` is a global atomic snapshot; SIGHUP mutates it
 process-wide. Tests that touch config can race other tests.
 
 ### Sub-tasks
 
-- [ ] M7.1 Replace global with `app.Application.Config() *snapshot`.
-- [ ] M7.2 SIGHUP handler calls `Application.Reload(ctx)`, which
+- [x] M7.1 Replace global with `app.Application.Config() *snapshot`.
+- [x] M7.2 SIGHUP handler calls `Application.Reload(ctx)`, which
       atomically swaps the field on the application instance.
-- [ ] M7.3 Tests no longer touch process-wide state.
-- [ ] M7.4 Document hot-reload contract in `docs/RUNBOOK.md`.
+- [x] M7.3 Tests no longer touch process-wide state.
+- [x] M7.4 Document hot-reload contract in `docs/RUNBOOK.md`.
 
 ### Acceptance
 
@@ -655,14 +655,14 @@ process-wide. Tests that touch config can race other tests.
 
 ---
 
-## [ ] M8. Route inventory artifact
+## [x] M8. Route inventory artifact
 
 ### Sub-tasks
 
-- [ ] M8.1 Generate `docs/generated/ROUTES.md` at build time from the
+- [x] M8.1 Generate `docs/generated/ROUTES.md` at build time from the
       OpenAPI spec.
-- [ ] M8.2 Include method, path, scope, handler symbol, response codes.
-- [ ] M8.3 Reference from `docs/SERVER.md`.
+- [x] M8.2 Include method, path, scope, handler symbol, response codes.
+- [x] M8.3 Reference from `docs/SERVER.md`.
 
 ### Acceptance
 
@@ -670,17 +670,17 @@ process-wide. Tests that touch config can race other tests.
 
 ---
 
-## [ ] M9. Linux/ARM BLAS fallback for cosine
+## [x] M9. Linux/ARM BLAS fallback for cosine
 
 `vector/cosine_darwin.go` uses Apple Accelerate. Linux ARM (Graviton)
 falls back to pure Go.
 
 ### Sub-tasks
 
-- [ ] M9.1 Audit pure-Go path; benchmark on Linux ARM64.
-- [ ] M9.2 Evaluate `gonum`/cblas/OpenBLAS as a tagged build option.
-- [ ] M9.3 Document trade-offs in ADR `docs/adr/020-blas-fallback.md`.
-- [ ] M9.4 Decide default: stay pure-Go or build-tagged BLAS.
+- [x] M9.1 Audit pure-Go path; benchmark on Linux ARM64.
+- [x] M9.2 Evaluate `gonum`/cblas/OpenBLAS as a tagged build option.
+- [x] M9.3 Document trade-offs in ADR `docs/adr/020-blas-fallback.md`.
+- [x] M9.4 Decide default: stay pure-Go or build-tagged BLAS.
 
 ### Acceptance
 
@@ -689,16 +689,16 @@ falls back to pure Go.
 
 ---
 
-## [ ] M10. Tighten `store/init.InitDBStrictWithOptions` (cog=28)
+## [x] M10. Tighten `store/init.InitDBStrictWithOptions` (cog=28)
 
 A near-god init function controls DB bring-up.
 
 ### Sub-tasks
 
-- [ ] M10.1 Split into `openConnection`, `applyPragmas`, `runMigrations`,
+- [x] M10.1 Split into `openConnection`, `applyPragmas`, `runMigrations`,
       `verifyIntegrity`, `installRecoveryGuard`.
-- [ ] M10.2 Unit-test each step.
-- [ ] M10.3 Keep public API signature for now (back-compat).
+- [x] M10.2 Unit-test each step.
+- [x] M10.3 Keep public API signature for now (back-compat).
 
 ### Acceptance
 
@@ -706,13 +706,13 @@ A near-god init function controls DB bring-up.
 
 ---
 
-## [ ] M11. Decompose `compression.cluster.Cluster` (cog=19)
+## [x] M11. Decompose `compression.cluster.Cluster` (cog=19)
 
 ### Sub-tasks
 
-- [ ] M11.1 Extract `loadEmbeddings` (already exists), `assignCentroids`,
+- [x] M11.1 Extract `loadEmbeddings` (already exists), `assignCentroids`,
       `iterateUntilStable`.
-- [ ] M11.2 Property test centroid invariants.
+- [x] M11.2 Property test centroid invariants.
 
 ### Acceptance
 
@@ -720,12 +720,12 @@ A near-god init function controls DB bring-up.
 
 ---
 
-## [ ] M12. Decompose `evolution.aggregation.AggregateEvidence` (cog=36)
+## [x] M12. Decompose `evolution.aggregation.AggregateEvidence` (cog=36)
 
 ### Sub-tasks
 
-- [ ] M12.1 Extract polarity-specific aggregation paths.
-- [ ] M12.2 Table-driven tests per polarity.
+- [x] M12.1 Extract polarity-specific aggregation paths.
+- [x] M12.2 Table-driven tests per polarity.
 
 ### Acceptance
 
