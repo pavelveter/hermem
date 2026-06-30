@@ -8,6 +8,7 @@ import (
 
 // MaxChainDepth caps belief revision chain traversal to prevent
 // infinite loops from circular parent_chain_id references.
+// See ADR-022 for rationale.
 const MaxChainDepth = 32
 
 // RevisionNode is one step in a belief revision chain.

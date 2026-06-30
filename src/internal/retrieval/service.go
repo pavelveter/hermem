@@ -15,10 +15,10 @@ import (
 
 // Default topK/maxDepth/limit values.
 const (
-	DefaultSearchTopK       = 5
-	DefaultQueryTopK        = 3
-	DefaultRetrieveMaxDepth = 2
-	DefaultProvenanceLimit  = 50
+	DefaultSearchTopK       = 5   // ADR-020: balances recall vs latency for typical queries
+	DefaultQueryTopK        = 3   // ADR-020: focused results for LLM context window
+	DefaultRetrieveMaxDepth = 2   // ADR-020: two-hop captures friends-of-friends
+	DefaultProvenanceLimit  = 50  // ADR-020: caps audit trail response size
 )
 
 // Service is the transport-agnostic read-side domain API.

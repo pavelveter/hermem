@@ -5,7 +5,8 @@ endpoints, error model, and authentication.
 
 For CLI reference, see [CLI.md](CLI.md). For configuration, see
 [USAGE.md](USAGE.md). For production operations, see
-[RUNBOOK.md](RUNBOOK.md).
+[RUNBOOK.md](RUNBOOK.md). For the full route inventory, see
+[generated/ROUTES.md](generated/ROUTES.md).
 
 ---
 
