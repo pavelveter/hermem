@@ -63,3 +63,45 @@ func TestBytesToFloat32Safe_RejectsBadLength(t *testing.T) {
 		t.Fatal("expected length error for non-multiple-of-4 blob")
 	}
 }
+
+// TestProperty_CodecRoundTrip verifies that EmbeddingToBytes → BytesToEmbedding
+// round-trips any finite float32 slice without data loss.
+func TestProperty_CodecRoundTrip(t *testing.T) {
+	t.Parallel()
+	vectors := [][]float32{
+		{0, 0, 0},
+		{1, -1, 0.5},
+		{1e-10, 1e10, -1e10},
+		{math.MaxFloat32, -math.MaxFloat32, 0},
+		make([]float32, 768), // typical embedding dim
+	}
+	// Fill the 768-dim vector with non-zero values
+	for i := range vectors[4] {
+		vectors[4][i] = float32(i) * 0.001
+	}
+
+	for i, orig := range vectors {
+		blob := EmbeddingToBytes(orig)
+		got := BytesToEmbedding(blob)
+		if len(got) != len(orig) {
+			t.Errorf("vector %d: length mismatch: want %d, got %d", i, len(orig), len(got))
+			continue
+		}
+		for j := range orig {
+			if orig[j] != got[j] {
+				t.Errorf("vector %d[%d]: want %v, got %v", i, j, orig[j], got[j])
+			}
+		}
+	}
+}
+
+// TestProperty_EmbeddingToBytes_EmptyReturnsNil verifies edge case.
+func TestProperty_EmbeddingToBytes_EmptyReturnsNil(t *testing.T) {
+	t.Parallel()
+	if got := EmbeddingToBytes(nil); got != nil {
+		t.Errorf("nil input: want nil, got %v", got)
+	}
+	if got := EmbeddingToBytes([]float32{}); got != nil {
+		t.Errorf("empty input: want nil, got %v", got)
+	}
+}
