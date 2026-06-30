@@ -147,37 +147,27 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 	var lastErr error
 	for i := 0; i < p.MaxAttempts; i++ {
 		if i > 0 {
-			if err := ctx.Err(); err != nil {
+			if err := prepareRequest(ctx, req); err != nil {
 				return nil, err
 			}
-			if req.GetBody != nil {
-				body, err := req.GetBody()
-				if err != nil {
-					return nil, fmt.Errorf("retry: get body: %w", err)
-				}
-				req.Body = body
-			}
 		}
-		clone := req.Clone(ctx)
-		resp, err := inner.Do(clone)
+		resp, err := executeOnce(ctx, req, inner)
 		if err != nil {
 			lastErr = err
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if !backoffSleep(ctx, backoffFor(p.Backoff, i)) {
+			if !waitOrAbort(ctx, p.Backoff, i) {
 				return nil, ctx.Err()
 			}
 			continue
 		}
-		if p.RetryableStatus[resp.StatusCode] {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d (transient)", resp.StatusCode)
+		if retry, rerr := classifyResponse(resp, p.RetryableStatus); retry {
+			lastErr = rerr
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if !backoffSleep(ctx, backoffFor(p.Backoff, i)) {
+			if !waitOrAbort(ctx, p.Backoff, i) {
 				return nil, ctx.Err()
 			}
 			continue
@@ -185,6 +175,50 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		return resp, nil
 	}
 	return nil, lastErr
+}
+
+// prepareRequest checks for context cancellation and, on retries
+// (attempt > 0), refreshes the request body via GetBody. Returns a
+// non-nil error only when ctx is cancelled or GetBody fails.
+func prepareRequest(ctx context.Context, req *http.Request) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err != nil {
+			return fmt.Errorf("retry: get body: %w", err)
+		}
+		req.Body = body
+	}
+	return nil
+}
+
+// executeOnce clones req with ctx and issues it via inner.Do. The
+// clone ensures the per-call ctx override is attached while the
+// original req's URL/method/headers are preserved for retries.
+func executeOnce(ctx context.Context, req *http.Request, inner *http.Client) (*http.Response, error) {
+	clone := req.Clone(ctx)
+	return inner.Do(clone)
+}
+
+// classifyResponse checks whether resp.StatusCode is retryable. If so,
+// it drains and closes the body (returning to keep-alive pool) and
+// returns (true, wrappedError). Otherwise it returns (false, nil) and
+// the caller should return the response to its user.
+func classifyResponse(resp *http.Response, retryable map[int]bool) (bool, error) {
+	if !retryable[resp.StatusCode] {
+		return false, nil
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	return true, fmt.Errorf("HTTP %d (transient)", resp.StatusCode)
+}
+
+// waitOrAbort sleeps for the backoff duration at attempt index i (plus
+// small jitter), or returns false immediately if ctx is cancelled.
+func waitOrAbort(ctx context.Context, backoff []time.Duration, attempt int) bool {
+	return backoffSleep(ctx, backoffFor(backoff, attempt))
 }
 
 // backoffFor returns the sleep duration before the i-th retry
