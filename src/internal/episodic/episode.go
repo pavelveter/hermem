@@ -27,6 +27,10 @@ import (
 // string-matching.
 var ErrNotFound = errors.New("episodic: not found")
 
+// ErrInvalidEventType is returned when an unknown EventType is
+// provided to UnmarshalText/UnmarshalJSON.
+var ErrInvalidEventType = errors.New("episodic: invalid event type")
+
 // Episode is the rich P2 episodic memory unit. Distinct from
 // core.Episode (the thin Entity-projection wrapper in
 // src/internal/core/episode.go) — this type carries identity,

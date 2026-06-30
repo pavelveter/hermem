@@ -34,6 +34,26 @@ var validEventTypes = map[EventType]bool{
 	EventSystem:      true,
 }
 
+// UnmarshalText implements encoding.TextUnmarshaler.
+// Rejects unknown values with ErrInvalidEventType.
+func (t *EventType) UnmarshalText(data []byte) error {
+	v := EventType(data)
+	if !validEventTypes[v] {
+		return fmt.Errorf("%w: %q", ErrInvalidEventType, string(data))
+	}
+	*t = v
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (t *EventType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	return t.UnmarshalText([]byte(s))
+}
+
 // Event is a single fine-grained episodic signal — one occurrence
 // during an Episode. A user message, an assistant action, an
 // observation noted by the system, or a system-generated event all
