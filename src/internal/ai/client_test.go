@@ -406,3 +406,51 @@ func TestResolvePolicy_CustomValuesPreserved(t *testing.T) {
 		t.Fatalf("MaxWallClock: want 5s, got %v", p.MaxWallClock)
 	}
 }
+
+// TestResilientClient_AttemptCapInvariant verifies the core property:
+// Do never makes more HTTP calls than MaxAttempts, regardless of how
+// the backoff ladder is configured. This is the critical safety
+// guarantee — runaway retries would waste resources and risk
+// overwhelming the provider.
+func TestResilientClient_AttemptCapInvariant(t *testing.T) {
+	tests := []struct {
+		name       string
+		maxAttempts int
+		backoff    []time.Duration
+	}{
+		{"1 attempt, no backoff", 1, nil},
+		{"1 attempt, long backoff", 1, []time.Duration{10 * time.Second}},
+		{"3 attempts, short backoff", 3, []time.Duration{1 * time.Millisecond}},
+		{"5 attempts, mixed backoff", 5, []time.Duration{1 * time.Millisecond, 5 * time.Millisecond}},
+		{"10 attempts, default backoff", 10, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&calls, 1)
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer srv.Close()
+
+			c := NewResilientClient(nil, RetryPolicy{
+				MaxAttempts:   tt.maxAttempts,
+				Backoff:       tt.backoff,
+				MaxWallClock:  -1, // disabled — rely on attempt cap only
+			})
+			req, _ := http.NewRequest("GET", srv.URL, nil)
+			resp, err := c.Do(t.Context(), req)
+			if resp != nil {
+				resp.Body.Close()
+			}
+			if err == nil {
+				t.Fatal("expected error from exhausted retries")
+			}
+			got := atomic.LoadInt32(&calls)
+			if got != int32(tt.maxAttempts) {
+				t.Fatalf("calls: want %d (exactly MaxAttempts), got %d", tt.maxAttempts, got)
+			}
+		})
+	}
+}
