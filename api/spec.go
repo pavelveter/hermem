@@ -19,6 +19,11 @@ type Spec struct {
 	Paths      map[string]*PathItem `json:"paths" yaml:"paths"`
 	Components Components           `json:"components" yaml:"components"`
 	Tags       []Tag                `json:"tags,omitempty" yaml:"tags,omitempty"`
+
+	// GlobalResponseHeaders are injected into every operation's every
+	// response during Build(). Not serialized directly — they exist
+	// only for the builder to propagate common headers.
+	GlobalResponseHeaders map[string]ResponseHeader `json:"-" yaml:"-"`
 }
 
 // Info describes the API.
@@ -83,8 +88,15 @@ type RequestBody struct {
 
 // Response is a single response.
 type Response struct {
-	Description string               `json:"description" yaml:"description"`
-	Content     map[string]MediaType `json:"content,omitempty" yaml:"content,omitempty"`
+	Description string                `json:"description" yaml:"description"`
+	Content     map[string]MediaType  `json:"content,omitempty" yaml:"content,omitempty"`
+	Headers     map[string]ResponseHeader `json:"headers,omitempty" yaml:"headers,omitempty"`
+}
+
+// ResponseHeader describes a single response header.
+type ResponseHeader struct {
+	Description string  `json:"description" yaml:"description"`
+	Schema      *Schema `json:"schema,omitempty" yaml:"schema,omitempty"`
 }
 
 // MediaType describes a single media type.
@@ -167,6 +179,7 @@ func GenerateSpec() *Spec {
 			}).
 			Schemas(AllSchemas()).
 			Paths(AllPaths()).
+			GlobalResponseHeader("X-Hermem-API-Version", "Server API version (semver).", "string").
 			Build()
 	})
 	return cachedSpec
