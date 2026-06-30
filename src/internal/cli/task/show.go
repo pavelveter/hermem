@@ -24,14 +24,14 @@ func newShowCmd(env *cli.Env) *cobra.Command {
 				return fmt.Errorf("id required")
 			}
 			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
-			entity, blocked, recovers, err := svc.Show(env.Ctx, req.ID, env.Cfg.Schema)
+			showResult, err := svc.Show(env.Ctx, req.ID, env.Cfg.Schema)
 			if err != nil {
 				return fmt.Errorf("show: %w", err)
 			}
 			return cli.WriteJSON(cmd.OutOrStdout(), core.TaskShowResponse{
-				Entity:      entity,
-				BlockedBy:   blocked,
-				RecoversVia: recovers,
+				Entity:      showResult.Task,
+				BlockedBy:   showResult.BlockedBy,
+				RecoversVia: showResult.RecoversVia,
 			})
 		},
 	}

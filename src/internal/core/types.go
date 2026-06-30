@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
@@ -89,12 +90,13 @@ func DefaultSchemaConfig(stateful bool) SchemaConfig {
 	}
 }
 
-// NewTaskID returns a unique task ID using a nanosecond timestamp.
-// Process-local uniqueness; suitable for in-memory dedup of concurrent task creates.
-// Two callers in the same nanosecond would collide — acceptable for human-rate
-// task creation, not for high-throughput batch workloads.
+// taskSeq is a monotonic counter for unique task IDs within a process.
+var taskSeq atomic.Uint64
+
+// NewTaskID returns a unique task ID using an atomic counter.
+// Guaranteed unique within a process — no collision under concurrency.
 func NewTaskID() string {
-	return fmt.Sprintf("task-%d", time.Now().UnixNano())
+	return fmt.Sprintf("task-%d", taskSeq.Add(1))
 }
 
 // TimePtr returns a pointer to t. Convenience helper for constructing

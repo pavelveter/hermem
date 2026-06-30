@@ -185,13 +185,11 @@ func (s *Spec) MarshalYAML() ([]byte, error) {
 }
 
 // JSON returns the spec as indented JSON.
-func (s *Spec) JSON() []byte {
-	b, _ := s.MarshalJSON()
-	return b
+func (s *Spec) JSON() ([]byte, error) {
+	return s.MarshalJSON()
 }
 
 // YAMLBytes returns the spec as YAML.
-func (s *Spec) YAMLBytes() []byte {
-	b, _ := s.MarshalYAML()
-	return b
+func (s *Spec) YAMLBytes() ([]byte, error) {
+	return s.MarshalYAML()
 }

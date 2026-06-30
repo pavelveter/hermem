@@ -31,7 +31,10 @@ func TestGenerateSpec(t *testing.T) {
 
 func TestSpecJSON(t *testing.T) {
 	spec := GenerateSpec()
-	b := spec.JSON()
+	b, err := spec.JSON()
+	if err != nil {
+		t.Fatalf("JSON marshal: %v", err)
+	}
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(b, &parsed); err != nil {
@@ -46,7 +49,10 @@ func TestSpecJSON(t *testing.T) {
 
 func TestSpecYAML(t *testing.T) {
 	spec := GenerateSpec()
-	b := spec.YAMLBytes()
+	b, err := spec.YAMLBytes()
+	if err != nil {
+		t.Fatalf("YAML marshal: %v", err)
+	}
 	if len(b) == 0 {
 		t.Fatal("YAML output is empty")
 	}
@@ -231,7 +237,10 @@ func TestSnapshotJSON(t *testing.T) {
 		cachedSpec = nil
 	}()
 	spec := GenerateSpec()
-	b := spec.JSON()
+	b, err := spec.JSON()
+	if err != nil {
+		t.Fatalf("JSON marshal: %v", err)
+	}
 
 	snapshotDir := filepath.Join("testdata")
 	snapshotPath := filepath.Join(snapshotDir, "openapi.json")

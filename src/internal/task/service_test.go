@@ -94,7 +94,7 @@ func TestService_List_EmptyDBReturnsEmpty(t *testing.T) {
 
 func TestService_Show_RejectsEmptyID(t *testing.T) {
 	f := newSvcFixture(t)
-	_, _, _, err := f.svc.Show(t.Context(), "", statefulSchema())
+	_, err := f.svc.Show(t.Context(), "", statefulSchema())
 	if err == nil {
 		t.Fatal("expected empty-id error from domain, got nil")
 	}
@@ -102,7 +102,7 @@ func TestService_Show_RejectsEmptyID(t *testing.T) {
 
 func TestService_Show_NotFound(t *testing.T) {
 	f := newSvcFixture(t)
-	_, _, _, err := f.svc.Show(t.Context(), "no-such-task", statefulSchema())
+	_, err := f.svc.Show(t.Context(), "no-such-task", statefulSchema())
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("expected not-found error, got: %v", err)
 	}

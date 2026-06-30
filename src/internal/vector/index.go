@@ -41,14 +41,14 @@ func NewIndex(backend string, db *sql.DB, dim int) core.VectorIndex {
 }
 
 // SearchByVector finds the topK entities most similar to queryEmbedding and hydrates from DB.
-func SearchByVector(db *sql.DB, vi core.VectorIndex, queryEmbedding []float32, topK int) ([]core.SearchResult, error) {
+func SearchByVector(ctx context.Context, db *sql.DB, vi core.VectorIndex, queryEmbedding []float32, topK int) ([]core.SearchResult, error) {
 	if len(queryEmbedding) == 0 {
 		return nil, fmt.Errorf("empty query embedding")
 	}
 	if topK > 500 {
 		topK = 500
 	}
-	ids, err := vi.Search(context.Background(), queryEmbedding, topK)
+	ids, err := vi.Search(ctx, queryEmbedding, topK)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi core.VectorIndex,
 			}
 		}
 	}
-	return store.AddEdge(db, src, dst, rel, 1.0)
+	return store.AddEdge(ctx, db, src, dst, rel, 1.0)
 }
 
 // AutoLinkEdges links a new entity to its top-3 closest neighbors with similarity > 0.85.
@@ -113,7 +113,7 @@ func AutoLinkEdges(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedde
 	if len(newEmbedding) == 0 {
 		return fmt.Errorf("empty embedding for %s", newID)
 	}
-	results, err := SearchByVector(db, vi, newEmbedding, 3)
+	results, err := SearchByVector(ctx, db, vi, newEmbedding, 3)
 	if err != nil {
 		return fmt.Errorf("auto-link search: %w", err)
 	}

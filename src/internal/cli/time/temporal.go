@@ -33,8 +33,8 @@ func newTemporalCmd(env *cli.Env) *cobra.Command {
 			if req.TopK <= 0 {
 				req.TopK = 3
 			}
-			emb, _ := env.Embedder.Embed(env.Ctx, req.Query)                   //nolint:errcheck // CLI: zero-vector fallback reduces to empty EmbedResult
-			results, _ := vector.SearchByVector(env.DB, env.VI, emb, req.TopK) //nolint:errcheck // CLI: empty results vector is rendered as `[]` upstream
+			emb, _ := env.Embedder.Embed(env.Ctx, req.Query)                            //nolint:errcheck // CLI: zero-vector fallback reduces to empty EmbedResult
+			results, _ := vector.SearchByVector(env.Ctx, env.DB, env.VI, emb, req.TopK) //nolint:errcheck // CLI: empty results vector is rendered as `[]` upstream
 			seedIDs := make([]string, 0, len(results))
 			for _, r := range results {
 				seedIDs = append(seedIDs, r.Entity.ID)

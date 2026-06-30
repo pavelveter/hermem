@@ -68,7 +68,7 @@ func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema core
 		}
 		return nil
 	}
-	if err := store.AddEdge(s.db, req.SourceID, req.TargetID, req.RelationType, req.Weight); err != nil {
+	if err := store.AddEdge(ctx, s.db, req.SourceID, req.TargetID, req.RelationType, req.Weight); err != nil {
 		return fmt.Errorf("edge: %w", err)
 	}
 	return nil

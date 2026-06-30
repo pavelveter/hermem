@@ -178,15 +178,15 @@ func (s *Server) handleTaskShow(ctx context.Context, _ *gomcp.CallToolRequest, i
 	}
 
 	state := s.deps.Refs.Load()
-	entity, blocked, recovers, err := s.deps.Task.Show(ctx, in.ID, state.Schema)
+	showResult, err := s.deps.Task.Show(ctx, in.ID, state.Schema)
 	if err != nil {
 		return toolError(fmt.Sprintf("show task failed: %v", err))
 	}
 
 	return outputJSON(map[string]interface{}{
-		"entity":       entity,
-		"blocked_by":   blocked,
-		"recovers_via": recovers,
+		"entity":       showResult.Task,
+		"blocked_by":   showResult.BlockedBy,
+		"recovers_via": showResult.RecoversVia,
 	})
 }
 

@@ -133,6 +133,20 @@ func DecodeStdin(v interface{}) error {
 	return DecodeString(data, v)
 }
 
+// DecodeStdinTyped is the generic version of DecodeStdin.
+// Returns a typed value instead of requiring a pointer argument.
+func DecodeStdinTyped[T any]() (T, error) {
+	var v T
+	data, err := ReadStdin()
+	if err != nil {
+		return v, err
+	}
+	if err := DecodeString(data, &v); err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
 // DecodeString parses already-read data (e.g. an empty-stdin fallback
 // "{}") through the same strict pipeline as DecodeStdin.
 func DecodeString(data string, v interface{}) error {
