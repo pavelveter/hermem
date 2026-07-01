@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"time"
@@ -173,6 +174,11 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 			if err := prepareRequest(ctx, req); err != nil {
 				return nil, err
 			}
+			slog.Warn("ai_call_retry",
+				"attempt", i+1,
+				"max_attempts", p.MaxAttempts,
+				"url", req.URL.String(),
+			)
 		}
 		resp, err := executeOnce(ctx, req, inner)
 		if err != nil {
@@ -190,6 +196,13 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		}
 		if retry, rerr := classifyResponse(resp, p.RetryableStatus); retry {
 			lastErr = rerr
+			slog.Warn("ai_call_retry",
+				"attempt", i+1,
+				"max_attempts", p.MaxAttempts,
+				"url", req.URL.String(),
+				"status", resp.StatusCode,
+			)
+			resp.Body.Close()
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
@@ -203,6 +216,11 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		}
 		return resp, nil
 	}
+	slog.Error("ai_call_failed",
+		"attempts", p.MaxAttempts,
+		"url", req.URL.String(),
+		"err", lastErr,
+	)
 	return nil, lastErr
 }
 
