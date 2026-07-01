@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -468,11 +469,5 @@ func ParseKeySpec(s string) *auth.Key {
 }
 
 func sortStrings(xs []string) {
-	for i := 0; i < len(xs); i++ {
-		for j := i + 1; j < len(xs); j++ {
-			if xs[j] < xs[i] {
-				xs[i], xs[j] = xs[j], xs[i]
-			}
-		}
-	}
+	slices.Sort(xs)
 }

@@ -1,6 +1,8 @@
 // Package evaluation — memory benchmark dataset.
 package evaluation
 
+import "slices"
+
 // MemoryFact is one fact-to-store with its expected retrieval key.
 type MemoryFact struct {
 	ID      string
@@ -57,14 +59,7 @@ func (d MemoryDataset) QueryIDs() []string {
 	return out
 }
 
-// sortStrings is a local stable sort — avoids importing "sort" in
-// every dataset file and keeps the package surface minimal.
+// sortStrings uses slices.Sort for deterministic ordering.
 func sortStrings(s []string) {
-	for i := 0; i < len(s); i++ {
-		for j := i + 1; j < len(s); j++ {
-			if s[i] > s[j] {
-				s[i], s[j] = s[j], s[i]
-			}
-		}
-	}
+	slices.Sort(s)
 }

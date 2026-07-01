@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -403,11 +404,5 @@ func TestSplitSQL_SkipsComments(t *testing.T) {
 
 // sortStrings is a test helper for deterministic ordering.
 func sortStrings(s []string) {
-	for i := 0; i < len(s); i++ {
-		for j := i + 1; j < len(s); j++ {
-			if s[i] > s[j] {
-				s[i], s[j] = s[j], s[i]
-			}
-		}
-	}
+	slices.Sort(s)
 }
