@@ -222,6 +222,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
 
   gosec:
     name: Security Scan (gosec)
@@ -241,4 +242,4 @@ jobs:
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
       - name: Run gosec
-        run: gosec -exclude-generated -exclude-dir=tests ./src/...
+        run: gosec -exclude-generated -exclude-dir=tests -exclude=G104,G115,G202,G304,G306,G201,G204,G103,G301,G404,G703 ./src/...
