@@ -17,8 +17,8 @@ services:
     build:
       context: .
       args:
-        VERSION: "0.2.0"
-    image: hermem:0.2.0
+        VERSION: "${HERMEM_VERSION:-latest}"
+    image: hermem:${HERMEM_VERSION:-latest}
     container_name: hermem
     restart: unless-stopped
     ports:
