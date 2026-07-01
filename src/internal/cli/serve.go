@@ -27,7 +27,16 @@ func newServeCmd(env *clienv.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the HTTP server (default :8420)",
-		Args:  cobra.NoArgs,
+		Long: `Start the hermem HTTP server.
+
+Serves the REST API on the specified port (default 8420). The server
+loads the knowledge graph into memory, starts the metrics worker, and
+begins accepting requests. Supports SIGHUP for live config reload.
+
+Flags:
+  --port, -p              HTTP port (default 8420)
+  --skip-embedder-check   Skip embedder ping on startup (for testing)`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runServe(env, port, skipEmbedderCheck)
 		},

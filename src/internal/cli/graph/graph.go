@@ -20,6 +20,11 @@ func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "graph",
 		Short: "Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)",
+		Long: `Graph analytics and integrity operations: find connected components,
+detect communities (Louvain), verify graph integrity, list contradictions
+between facts, trace provenance chains, and plan task recovery.
+
+Use "hermem graph <sub> --help" for request schemas and examples.`,
 	}
 	cmd.AddCommand(
 		newPlanCmd(env),

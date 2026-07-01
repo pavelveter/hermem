@@ -10,19 +10,23 @@ hermem houses a knowledge graph + vector store with an LLM-driven
 extraction engine.
 
 Group layout:
-  serve|health|metrics|version    top-level server ops
-  mcp        MCP server for AI assistant integration (stdio)
-  memory     store / search / retrieve / query / response / edge / ingest /
-             explain / re-embed / quantize
-  task       status / list / show / dep / tree / create / rollback / next
-  graph      plan / recovery-plan / components / communities /
-             verify / contradictions / provenance
-  time       temporal / timeline
-  agent      loop
-  db         migrate / rollback / verify / schema
-  profile    cpu / heap / goroutine / trace
-  diagnose   self-check of database and memory subsystem
-  (group --help shows only its own subcommands.)
+  serve       Start the HTTP server (default :8420)
+  health      Health probe (pings the DB)
+  metrics     Prometheus exposition
+  version     Print build version
+  completion  Generate shell completions (bash / zsh / fish)
+  mcp         MCP server for AI assistant integration (stdio)
+  memory      Knowledge CRUD and retrieval
+  task        Task lifecycle management
+  graph       Graph algorithms and analytics
+  time        Temporal queries and timeline
+  agent       Agentic flows (autonomous task execution)
+  db          Database housekeeping (migrate / rollback / verify)
+  ops         Offline DB operations (stats / integrity / vacuum / rebuild-index)
+  profile     Ad-hoc profiling (cpu / heap / goroutine / trace)
+  diagnose    Self-diagnostics on database and memory
+  admin       Admin operations (API keys, config)
+  bench       Benchmark latency percentiles
 
 All commands that take a JSON payload read it from stdin. Optional flags
 use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
@@ -32,7 +36,7 @@ Available Commands:
   admin       Admin operations (keys, config)
   agent       Agentic flows (loop)
   bench       Synthesize N observations into each duration histogram and report latency percentiles
-  completion  Generate shell completion scripts
+  completion  Generate shell completion scripts (bash, zsh, fish)
   db          Database housekeeping (migrate / rollback / verify / schema)
   diagnose    Run self-diagnostics on the database and memory subsystem
   graph       Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)

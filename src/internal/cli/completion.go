@@ -11,32 +11,33 @@ import (
 func newCompletionCmd(_ *clienv.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "completion [bash|zsh|fish]",
-		Short: "Generate shell completion scripts",
+		Short: "Generate shell completion scripts (bash, zsh, fish)",
 		Long: `Generate shell completion scripts for hermem.
+
+The argument must be one of: bash, zsh, or fish.
+
+Examples:
+  hermem completion bash        # Bash completions to stdout
+  hermem completion zsh         # Zsh completions to stdout
+  hermem completion fish        # Fish completions to stdout
 
 To load completions:
 
-Bash:
-  $ source <(hermem completion bash)
-  # To load completions for each session, execute once:
-  # Linux:
-  $ hermem completion bash > /etc/bash_completion.d/hermem
-  # macOS:
-  $ hermem completion bash > $(brew --prefix)/etc/bash_completion.d/hermem
+Bash (one-time):
+  source <(hermem completion bash)
+  # Or install system-wide:
+  hermem completion bash > /etc/bash_completion.d/hermem       # Linux
+  hermem completion bash > $(brew --prefix)/etc/bash_completion.d/hermem  # macOS
 
-Zsh:
-  # If shell completion is not already enabled in your environment,
-  # you will need to enable it. You can execute the following once:
-  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
-  # To load completions for each session, execute once:
-  $ hermem completion zsh > "${fpath[1]}/_hermem"
-  # You will need to start a new shell for this setup to take effect.
+Zsh (one-time):
+  # Enable compinit in ~/.zshrc if not already:
+  echo "autoload -U compinit; compinit" >> ~/.zshrc
+  # Then install completions:
+  hermem completion zsh > "${fpath[1]}/_hermem"
+  # Start a new shell to activate.
 
-Fish:
-  $ hermem completion fish | source
-  # To load completions for each session, execute once:
-  $ hermem completion fish > ~/.config/fish/completions/hermem.fish
-`,
+Fish (one-time):
+  hermem completion fish > ~/.config/fish/completions/hermem.fish`,
 		DisableFlagsInUseLine: true,
 		ValidArgs:             []string{"bash", "zsh", "fish"},
 		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),

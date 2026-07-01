@@ -14,6 +14,11 @@ func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db",
 		Short: "Database housekeeping (migrate / rollback / verify / schema)",
+		Long: `Database management operations: apply pending migrations, rollback to a
+specific version, verify migration integrity (checksums), and inspect the
+current schema fingerprint.
+
+Use "hermem db <sub> --help" for details on each operation.`,
 	}
 	cmd.AddCommand(
 		newMigrateCmd(env),

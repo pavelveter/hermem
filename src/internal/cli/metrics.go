@@ -21,6 +21,7 @@ func newMetricsCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:               "metrics",
 		Short:             "Prometheus exposition (mirrors GET /metrics)",
+		Long:              "Print Prometheus-format metrics to stdout.\nMirrors the GET /metrics HTTP endpoint. Useful for local debugging\nor piping to prometheus-file-sd without running the HTTP server.",
 		Args:              cobra.NoArgs,
 		PersistentPreRunE: noopPreRun,
 		RunE: func(cmd *cobra.Command, _ []string) error {

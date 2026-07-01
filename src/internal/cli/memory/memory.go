@@ -19,6 +19,13 @@ func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "memory",
 		Short: "Knowledge CRUD and retrieval (store / search / retrieve / query / response / edge / ingest / explain / re-embed / quantize)",
+		Long: `Manage the knowledge graph: store entities, search by semantic similarity,
+retrieve related facts, query with LLM context, manage edges between entities,
+ingest dialog transcripts, explain retrieval decisions, re-embed after model
+changes, and quantize embeddings.
+
+All subcommands read JSON from stdin. Use "hermem memory <sub> --help" for
+request schema and examples.`,
 	}
 	cmd.AddCommand(
 		newStoreCmd(env),

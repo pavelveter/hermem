@@ -20,6 +20,7 @@ func newVersionCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:               "version",
 		Short:             "Print build version (Version / BuildDate / GitCommit)",
+		Long:              "Print the build version, build date, and git commit hash.\nUseful for verifying which binary is installed and for debugging support issues.",
 		Args:              cobra.NoArgs,
 		PersistentPreRunE: noopPreRun,
 		RunE: func(cmd *cobra.Command, _ []string) error {

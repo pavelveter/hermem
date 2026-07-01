@@ -17,6 +17,11 @@ func NewCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "time",
 		Short: "Temporal queries (temporal / timeline)",
+		Long: `Time-based queries and event timeline: search entities by temporal
+context, browse the chronological event timeline, and explore
+when facts were created or modified.
+
+Use "hermem time <sub> --help" for request schemas.`,
 	}
 	cmd.AddCommand(
 		newTemporalCmd(env),
