@@ -1,25 +1,57 @@
 name: SDK Tests
 
+# Triggers:
+#  - push to main: full matrix runs.
+#  - tags v*: full matrix runs; tag-pipeline UX depends on this.
+#  - PRs touching sdk/**, src/internal/api/** (server contracts
+#    the SDKs depend on), or this workflow file: full matrix runs.
+#    The src/internal/api/** path broadens the previous filter to
+#    catch server-side serialization changes that break SDKs
+#    without touching sdk/ itself.
+# Release-gating (TODO H3 sub-task 4) is OUT OF SCOPE here: this
+# workflow does not gate releases; release.yml is responsible for
+# that. A future commit should add `needs: [go-sdk, python-sdk,
+# typescript-sdk]` to release.yml::build-release once those
+# matrix job IDs stabilize.
 on:
   push:
-    branches: [main, master]
+    branches: [main]
     tags: ["v*"]
     paths:
       - "sdk/**"
+      - "src/internal/api/**"
       - ".github/workflows/sdk.yml"
   pull_request:
-    branches: [main, master]
+    branches: [main]
     paths:
       - "sdk/**"
+      - "src/internal/api/**"
       - ".github/workflows/sdk.yml"
 
 permissions:
   contents: read
 
+# Cancel previous in-progress runs of this workflow for the same
+# branch/ref when a new push lands. CI minutes are cheaper than
+# stale-output confusion, and a fresh run after a force-push is
+# always more useful than the half-done previous one. Per-branch
+# (sdk-${{ github.ref }}) so an unrelated branch's run isn't killed.
+concurrency:
+  group: sdk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go-sdk:
-    name: Go SDK
+    name: Go SDK (${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # sdk/go/go.mod declares `go 1.21`; matrix covers the
+      # floor (1.21) plus the next-minor (1.22). Future bump
+      # to support newer Go: append the version here AND in
+      # the main module's go.mod directive.
+      matrix:
+        go-version: ["1.21", "1.22"]
     defaults:
       run:
         working-directory: sdk/go
@@ -28,41 +60,107 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: ${{ matrix.go-version }}
           cache: true
           cache-dependency-path: sdk/go/go.sum
 
       - name: Run tests
-        run: go test -race -count=1 -timeout 5m ./...
+        # Atomic mode lets go tool cover sum partial coverage across
+        # multiple runs (collected by codecov etc); count=1 prevents
+        # flake from cached previous results. atomic is required by
+        # GitHub CodeCov upload steps; harmless if only artifact-
+        # uploading. -race catches concurrency bugs the SDK's
+        # httptest.NewServer helpers are designed to surface.
+        run: >
+          go test
+          -race
+          -count=1
+          -timeout 5m
+          -coverprofile=coverage.out
+          -covermode=atomic
+          ./...
+
+      - name: Upload coverage
+        # Upload even on failure so a coverage regression can be
+        # investigated alongside the test names in the CI summary.
+        # Artifact name embeds the go-version so per-flavor reports
+        # don't collide in the workflow-artifacts panel.
+        # `if-no-files-found: warn` so a missing coverage.out (the
+        # Go test step failed before writing it) produces a soft
+        # warning rather than an opaque "file not found" failure
+        # that masks the underlying test failure. The Go test
+        # step's exit code is the real signal.
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: coverage-go-${{ matrix.go-version }}
+          path: sdk/go/coverage.out
+          if-no-files-found: warn
+          retention-days: 30
 
   python-sdk:
-    name: Python SDK
+    name: Python SDK (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # pyproject.toml declares requires-python = ">=3.9"; matrix
+      # covers 3.11 (first 3.x with full typing) and 3.12 (latest
+      # stable). Future bump: append newer versions here.
+      matrix:
+        python-version: ["3.11", "3.12"]
     defaults:
       run:
         working-directory: sdk/python
     steps:
       - uses: actions/checkout@v5
 
-      # setup-uv installs Python (since python-version is set) and uv in a
-      # single action. Replacing actions/setup-python@v5 — the latter's
-      # wheel cache would be wasted because uv manages its own cache.
+      # setup-uv installs Python (since python-version is set) and
+      # uv in a single action. Replacing actions/setup-python@v5 —
+      # the latter's wheel cache would be wasted because uv manages
+      # its own cache.
       - uses: astral-sh/setup-uv@v1
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       # `uv sync --extra=dev` honors uv.lock deterministically. The
-      # earlier `pip install -e ".[dev]"` re-resolved from pyproject.toml
-      # and could pick a newer version than what uv.lock pins.
+      # earlier `pip install -e ".[dev]"` re-resolved from
+      # pyproject.toml and could pick a newer version than what
+      # uv.lock pins.
       - name: Install dependencies
         run: uv sync --extra=dev
 
       - name: Run tests
-        run: uv run pytest tests/ -v
+        # pytest-cov (added in pyproject.toml dev extras) emits:
+        #  - term : terminal summary (always on)
+        #  - xml  : Cobertura XML for codecov / SonarQube / etc.
+        # --cov=hermem scopes coverage to the package source (excludes
+        # tests/ itself). --cov-report=term-missing prints uncovered
+        # line ranges to the CI log for fast triage.
+        run: >
+          uv run pytest tests/
+          --cov=hermem
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: coverage-python-${{ matrix.python-version }}
+          path: sdk/python/coverage.xml
+          if-no-files-found: warn
+          retention-days: 30
 
   typescript-sdk:
-    name: TypeScript SDK
+    name: TypeScript SDK (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Matrix covers Node 20 (current LTS) and Node 22 (newest LTS
+      # at this writing). No "engines" lower-bound in package.json;
+      # adding 18 would catch the next-LTS-drop cleanly.
+      matrix:
+        node-version: ["20", "22"]
     defaults:
       run:
         working-directory: sdk/typescript
@@ -71,13 +169,31 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        # `npm ci` strictly honors package-lock.json (vs `npm install`
-        # which may silently re-resolve optional/peer deps). This is the
-        # whole point of committing the lockfile — H7.
+        # `npm ci` strictly honors package-lock.json (vs `npm
+        # install` which may silently re-resolve optional/peer
+        # deps). This is the whole point of committing the
+        # lockfile — H7.
         run: npm ci --no-audit --no-fund
 
       - name: Run tests
-        run: npx vitest run
+        # --coverage flag enables the coverage block in
+        # vitest.config.ts. Without --coverage, vitest skips
+        # coverage entirely — no `./coverage/` directory is
+        # produced. Reporters emit text/lcov/json/html to
+        # ./coverage/.
+        run: npx vitest run --coverage
+
+      - name: Upload coverage
+        # Upload the entire ./coverage/ directory; the html/ folder
+        # gives developers a browsable report from the artifact
+        # download step.
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: coverage-typescript-node-${{ matrix.node-version }}
+          path: sdk/typescript/coverage
+          if-no-files-found: warn
+          retention-days: 30

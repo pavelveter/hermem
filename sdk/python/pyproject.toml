@@ -30,4 +30,8 @@ Repository = "https://github.com/pavelveter/hermem"
 include = ["hermem*"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+# Coverage tooling: pytest-cov emits Cobertura + XML reports that
+# `.github/workflows/sdk.yml::python-sdk` uploads as a workflow
+# artifact. Without pytest-cov, the matrix job would still run
+# but coverage upload would be a no-op.
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
