@@ -30,6 +30,7 @@ import (
 	ingsrv "github.com/pavelveter/hermem/src/internal/server/ingest"
 	mem "github.com/pavelveter/hermem/src/internal/server/memory"
 	migrsrv "github.com/pavelveter/hermem/src/internal/server/migration"
+	"github.com/pavelveter/hermem/src/internal/server/ratelimit"
 	"github.com/pavelveter/hermem/src/internal/server/reembed"
 	"github.com/pavelveter/hermem/src/internal/server/retention"
 	ret "github.com/pavelveter/hermem/src/internal/server/retrieval"
@@ -179,10 +180,36 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	// outside Recovery means a panic can tear down the listener; inside
 	// SafeBodyClose means a handler's drain runs after the deferred
 	// close and returns 0 bytes (silent loss under MaxBytes).
+	//
+	// RateLimit is wrapped OUTSIDE Slog so a 429 short-circuits
+	// before Slog logs — under a volumetric DoS the 429s would
+	// otherwise flood slog at the same rate as the attack. The
+	// trade-off is that the operator loses 429 visibility in the
+	// log stream; counters can be added later via the Metrics
+	// package if operational visibility becomes a concern.
 	var handler http.Handler = s.Mux()
 	handler = SafeBodyCloseMiddleware(handler)
 	handler = MaxBytesMiddleware(httputil.MaxBodyBytes)(handler)
 	handler = SlogMiddleware(handler)
+	if cfg.Env != nil && cfg.Env.Cfg != nil && cfg.Env.Cfg.RateLimitEnabled {
+		rl := ratelimit.New(ratelimit.Config{
+			RPS:           float64(cfg.Env.Cfg.RateLimitRPS),
+			Burst:         cfg.Env.Cfg.RateLimitBurst,
+			EvictInterval: 5 * time.Minute,
+		})
+		stop := rl.Start(5 * time.Minute)
+		defer stop()
+		handler = ratelimit.Middleware(ratelimit.Options{
+			Limiter:      rl,
+			KeyFunc:      ratelimit.ResolveKeyFunc(cfg.Env.Cfg.RateLimitKeyBy),
+			ShouldBypass: ratelimit.BypassHealthAndMetrics(),
+		})(handler)
+		slog.Info("rate limit enabled",
+			"rps", cfg.Env.Cfg.RateLimitRPS,
+			"burst", cfg.Env.Cfg.RateLimitBurst,
+			"key_by", cfg.Env.Cfg.RateLimitKeyBy,
+		)
+	}
 	version := ""
 	if cfg.Env != nil {
 		version = cfg.Env.Build.Version

@@ -54,6 +54,24 @@ type Config struct {
 	// via set `auto_migrate = true` in hermem.ini for dev / docker).
 	// §4 audit closure — see docs/CHANGELOG.md.
 	AutoMigrate bool
+	// RateLimitEnabled gates the HTTP rate-limit middleware. When
+	// false (the default) no limiter is constructed and no per-
+	// request overhead is incurred. Opt-in for production; hermem
+	// developers running locally can leave it off.
+	RateLimitEnabled bool
+	// RateLimitRPS is the token-bucket refill rate (tokens/sec).
+	// Default 10. Must be > 0. Typed as float32 to match the
+	// existing rank-weight / dedup-precision convention in this
+	// struct; 7 significant digits is plenty for "10.0 rps".
+	RateLimitRPS float32
+	// RateLimitBurst is the per-key bucket capacity. Default
+	// ceil(RPS) when unset. Must be >= 1.
+	RateLimitBurst int
+	// RateLimitKeyBy selects the keying strategy: "ip" (per
+	// RemoteAddr), "api_key" (per X-API-Key, falls back to IP),
+	// or "global" (one bucket for the whole server). Default
+	// "ip". Case-insensitive.
+	RateLimitKeyBy string
 }
 
 // NewEmbedder creates an embedder from config.

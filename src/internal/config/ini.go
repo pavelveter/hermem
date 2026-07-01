@@ -129,6 +129,13 @@ func defaultConfig() *Config {
 		// `./hermem db migrate apply` (recommended in a K8s InitContainer
 		// or pre-deploy step) OR set `auto_migrate = true` in [database].
 		AutoMigrate: false,
+		// §5 rate limit: disabled by default. Opt-in via
+		// `rate_limit_enabled = true` in [server]. Defaults match
+		// the §5 ADR: 10 rps, burst = ceil(rps) = 10, key by IP.
+		RateLimitEnabled: false,
+		RateLimitRPS:     10,
+		RateLimitBurst:   10,
+		RateLimitKeyBy:   "ip",
 	}
 }
 
@@ -176,6 +183,18 @@ func applyINIFields(cfg *Config, getStr getStrFunc, getInt getIntFunc, getFloat3
 	// Server section
 	if v, ok := getStr("server", "api_key"); ok {
 		cfg.APIKey = v
+	}
+	// Rate limit (HTTP middleware; opt-in). All four keys are
+	// optional — missing keys keep the production default
+	// (disabled, 10 rps, burst=ceil(rps), key_by=ip).
+	cfg.RateLimitEnabled = getBool("server", "rate_limit_enabled", cfg.RateLimitEnabled)
+	cfg.RateLimitRPS = getFloat32("server", "rate_limit_rps", cfg.RateLimitRPS)
+	// rate_limit_burst uses minVal=1 (not 0) so the operator
+	// value `rate_limit_burst = 1` is honored — defaultVal=10
+	// is only used when the key is missing or the parse fails.
+	cfg.RateLimitBurst = getInt("server", "rate_limit_burst", cfg.RateLimitBurst, 1)
+	if v, ok := getStr("server", "rate_limit_key_by"); ok {
+		cfg.RateLimitKeyBy = strings.ToLower(strings.TrimSpace(v))
 	}
 	if rawList := getList("server", "api_keys"); len(rawList) > 0 {
 		keys := make([]auth.Key, 0, len(rawList))
@@ -290,6 +309,31 @@ func (c *Config) Validate() error {
 	}
 	if err := ValidateSchema(c.Schema); err != nil {
 		return fmt.Errorf("schema: %w", err)
+	}
+	// Rate limit validation. Only enforced when the limiter is
+	// enabled — a disabled limiter accepts any config (including
+	// missing fields), so existing hermem.ini files don't fail
+	// validation after upgrading.
+	if c.RateLimitEnabled {
+		if c.RateLimitRPS <= 0 {
+			return fmt.Errorf("rate_limit_rps must be > 0 when rate limiting is enabled, got %v", c.RateLimitRPS)
+		}
+		if c.RateLimitBurst < 1 {
+			return fmt.Errorf("rate_limit_burst must be >= 1 when rate limiting is enabled, got %d", c.RateLimitBurst)
+		}
+		switch c.RateLimitKeyBy {
+		case "ip", "api_key", "global":
+			// ok
+		case "":
+			// Empty is treated as "ip" (the default) so a
+			// partial config block that omits the key still
+			// boots. Coerced here rather than rejected so a
+			// copy-pasted config template with an empty value
+			// doesn't surprise the operator.
+			c.RateLimitKeyBy = "ip"
+		default:
+			return fmt.Errorf("rate_limit_key_by must be one of {ip, api_key, global}, got %q", c.RateLimitKeyBy)
+		}
 	}
 	return nil
 }

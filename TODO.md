@@ -98,12 +98,23 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   error formatting, client construction). No integration tests that exercise
   actual HTTP round-trips against a real server. Python and TypeScript SDKs
   have minimal tests.
-  - [ ] Add Go SDK integration tests: store → search → retrieve against a
-    running server.
-  - [ ] Add Go SDK tests for `memory`, `task`, `graph`, `admin` sub-clients.
-  - [ ] Evaluate Python SDK test coverage; add missing tests.
-  - [ ] Evaluate TypeScript SDK test coverage; add missing tests.
-  - [ ] Commit separately.
+- [ ] Add Go SDK integration tests: store → search → retrieve against a
+  running server. (deferred — design decision in the H2 review was to
+  use `httptest.NewServer` mocks rather than spin up a real server in
+  CI. Rationale: avoids port collisions, CGO embedding requirements,
+  and the 2-5s hermem-server startup cost. A follow-up could mount
+  the server HTTP handler in-process via a `replace` directive in
+  sdk/go/go.mod pointing to ../..; see commit 21d2180 follow-up list.)
+- [x] Add Go SDK tests for `memory`, `task`, `graph`, `admin` sub-clients.
+  (commit 21d2180. helpers_test.go + 4 sub-client test files; 37 new
+  tests, 72.1% line coverage.)
+- [x] Evaluate Python SDK test coverage; add missing tests. (commit
+  21d2180. conftest.py + 4 sub-client test files; 33 new tests
+  including new `test_memory_retrieve`/`test_memory_explain` that
+  exposed and fixed a latent NameError in `_parse_retrieval_result`.)
+- [x] Evaluate TypeScript SDK test coverage; add missing tests. (commit
+  21d2180. helpers.ts + 4 sub-client test files; 35 new tests.)
+- [x] Commit separately. (commit 21d2180.)
 
 - [ ] **H3 — Add SDK E2E tests to CI**
   SDKs are released as part of the same tag but are not E2E-tested in CI.
