@@ -148,7 +148,7 @@ fi
 # 13. gitleaks — secrets scan. Only if installed locally.
 if command -v gitleaks >/dev/null 2>&1; then
     section "gitleaks detect (secrets scan)"
-    gitleaks detect --source . --verbose 2>&1
+    gitleaks detect --config .gitleaks.toml --source . --verbose 2>&1
     ok "gitleaks"
 else
     warn "gitleaks not installed — skipping (install: brew install gitleaks)"
