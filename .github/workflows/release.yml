@@ -204,7 +204,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ steps.names.outputs.archive }}
@@ -227,7 +227,7 @@ jobs:
           cat ../checksums-sha256.txt
 
       - name: Upload checksums
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: checksums
           path: checksums-sha256.txt
