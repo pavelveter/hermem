@@ -33,7 +33,7 @@ func main() {
 	// --- Memory ---
 	fmt.Println("=== Memory ===")
 
-	storeResult, err := client.Memory.Store(ctx, &hermem.StoreRequest{
+	err := client.Memory.Store(ctx, &hermem.StoreRequest{
 		ID:       "example-1",
 		Category: "fact",
 		Content:  "The Hermem knowledge graph supports semantic search and multi-hop retrieval.",
@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Printf("store: %v", err)
 	} else {
-		fmt.Printf("Store: %s\n", storeResult.Status)
+		fmt.Println("Store: ok")
 	}
 
 	searchResult, err := client.Memory.Search(ctx, &hermem.SearchRequest{
@@ -51,7 +51,7 @@ func main() {
 	if err != nil {
 		log.Printf("search: %v", err)
 	} else {
-		fmt.Printf("Search: %d results\n", len(searchResult.Results))
+		fmt.Printf("Search: %d results\n", len(searchResult))
 	}
 
 	// --- Tasks ---
