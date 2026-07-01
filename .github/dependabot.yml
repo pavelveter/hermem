@@ -1,13 +1,14 @@
 version: 2
 updates:
-  # Go modules
+  # Go modules (root)
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     commit-message:
       prefix: "deps"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
 
@@ -16,8 +17,10 @@ updates:
     directory: "/sdk/go"
     schedule:
       interval: "weekly"
+      day: "monday"
     commit-message:
       prefix: "deps(sdk/go)"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
 
@@ -26,8 +29,10 @@ updates:
     directory: "/sdk/python"
     schedule:
       interval: "weekly"
+      day: "monday"
     commit-message:
       prefix: "deps(sdk/python)"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
 
@@ -36,8 +41,10 @@ updates:
     directory: "/sdk/typescript"
     schedule:
       interval: "weekly"
+      day: "monday"
     commit-message:
       prefix: "deps(sdk/typescript)"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
 
@@ -46,7 +53,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     commit-message:
       prefix: "ci"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
