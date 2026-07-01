@@ -91,27 +91,6 @@ func NewServerFromDeps(deps ServerDeps) *Server {
 	return s
 }
 
-// NewServer wires the 12 domain services + Metrics into a single mux.
-// Deprecated: Use NewServerFromDeps instead.
-func NewServer(refs *serverstate.Ref, retrieval *ret.HTTPService, task *tasksvc.HTTPService, memory *mem.HTTPService, edgeSvc *edge.HTTPService, timelineSvc *timeline.HTTPService, ingest *ingsrv.HTTPService, contradiction *cnd.HTTPService, graph *graphsrv.HTTPService, migration *migrsrv.HTTPService, retentionSvc *retention.HTTPService, reembedSvc *reembed.HTTPService, health *healthsrv.HTTPService, m *metrics.Metrics) *Server {
-	return NewServerFromDeps(ServerDeps{
-		Refs:          refs,
-		Retrieval:     retrieval,
-		Task:          task,
-		Memory:        memory,
-		Edge:          edgeSvc,
-		Timeline:      timelineSvc,
-		Ingest:        ingest,
-		Contradiction: contradiction,
-		Graph:         graph,
-		Migration:     migration,
-		Retention:     retentionSvc,
-		Reembed:       reembedSvc,
-		Health:        health,
-		Metrics:       m,
-	})
-}
-
 // mount wires every URL on the standard mux. Each typed shell is a
 // RouteProvider; iterating the typed Server fields into a local
 // []providerSlot lets a single registrations loop handle every shell

@@ -56,20 +56,20 @@ func wireAll(env *clienv.Env, refs *serverstate.Ref) *server.Server {
 	retentionSvc := retentiondomain.New(env.DB, env.VI)
 
 	// HTTP shells + server
-	return server.NewServer(
-		refs,
-		ret.New(retSvc, env.Metrics, refs),
-		tasksvc.New(taskSvc, env.Metrics, refs),
-		mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
-		edge.New(edgeSvc, env.Metrics, refs),
-		timeline.New(timelineSvc, env.Metrics),
-		ingsrv.New(ingestSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
-		cnd.New(cndSvc, env.Metrics),
-		graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
-		migrsrv.New(migrSvc, env.Metrics, refs),
-		retention.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
-		reembed.New(reembedSvc, env.Metrics),
-		healthsrv.New(healthSvc),
-		env.Metrics,
-	)
+	return server.NewServerFromDeps(server.ServerDeps{
+		Refs:          refs,
+		Retrieval:     ret.New(retSvc, env.Metrics, refs),
+		Task:          tasksvc.New(taskSvc, env.Metrics, refs),
+		Memory:        mem.New(memSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
+		Edge:          edge.New(edgeSvc, env.Metrics, refs),
+		Timeline:      timeline.New(timelineSvc, env.Metrics),
+		Ingest:        ingsrv.New(ingestSvc, env.Metrics, refs, env.Cfg.DedupThreshold),
+		Contradiction: cnd.New(cndSvc, env.Metrics),
+		Graph:         graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
+		Migration:     migrsrv.New(migrSvc, env.Metrics, refs),
+		Retention:     retention.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
+		Reembed:       reembed.New(reembedSvc, env.Metrics),
+		Health:        healthsrv.New(healthSvc),
+		Metrics:       env.Metrics,
+	})
 }
