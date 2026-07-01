@@ -305,11 +305,11 @@ func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extracto
 
 // resilientConfig holds the shared parameters for the resilient event loop.
 type resilientConfig struct {
-	worker       *IngestionWorker
-	ckptPath     string
-	pendingPath  string
-	workerID     string
-	maxParallel  int
+	worker      *IngestionWorker
+	ckptPath    string
+	pendingPath string
+	workerID    string
+	maxParallel int
 }
 
 // resilientLoop is the shared dispatch→drain→checkpoint loop used by both

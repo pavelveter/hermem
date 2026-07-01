@@ -145,11 +145,11 @@ type ScoreBreakdown struct {
 }
 
 type RetrievedFact struct {
-	Content        string         `json:"content"`
-	ParentID       string         `json:"parent_id,omitempty"`
-	RelationType   string         `json:"relation_type,omitempty"`
-	Depth          int            `json:"depth"`
-	RankingScore   float32        `json:"ranking_score,omitempty"`
+	Content        string          `json:"content"`
+	ParentID       string          `json:"parent_id,omitempty"`
+	RelationType   string          `json:"relation_type,omitempty"`
+	Depth          int             `json:"depth"`
+	RankingScore   float32         `json:"ranking_score,omitempty"`
 	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
 }
 
@@ -203,8 +203,8 @@ type ContradictionPair struct {
 }
 
 type ConnectedComponent struct {
-	IDs      []string `json:"ids"`
-	Size     int      `json:"size"`
+	IDs       []string `json:"ids"`
+	Size      int      `json:"size"`
 	AvgDegree float64  `json:"avg_degree"`
 }
 
@@ -231,14 +231,14 @@ type ReEmbedResult struct {
 }
 
 type TimelineEntry struct {
-	ID             string  `json:"id"`
-	Category       string  `json:"category"`
-	Content        string  `json:"content"`
-	CreatedAt      string  `json:"created_at"`
-	Source         string  `json:"source,omitempty"`
-	SourceType     string  `json:"source_type,omitempty"`
-	ConversationID string  `json:"conversation_id,omitempty"`
-	MessageID      string  `json:"message_id,omitempty"`
+	ID             string `json:"id"`
+	Category       string `json:"category"`
+	Content        string `json:"content"`
+	CreatedAt      string `json:"created_at"`
+	Source         string `json:"source,omitempty"`
+	SourceType     string `json:"source_type,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	MessageID      string `json:"message_id,omitempty"`
 }
 
 type QueryResponse struct {
@@ -254,8 +254,8 @@ type HealthResponse struct {
 }
 
 type ReadyResponse struct {
-	Status    string                `json:"status"`
-	LatencyMs int                   `json:"latency_ms"`
+	Status    string                 `json:"status"`
+	LatencyMs int                    `json:"latency_ms"`
 	Checks    map[string]CheckResult `json:"checks,omitempty"`
 }
 
@@ -267,11 +267,11 @@ type CheckResult struct {
 }
 
 type MigStatus struct {
-	Name            string  `json:"name"`
-	Applied         bool    `json:"applied"`
-	AppliedAt       *string `json:"applied_at,omitempty"`
-	ChecksumSHA256  string  `json:"checksum_sha256,omitempty"`
-	ChecksumMatch   bool    `json:"checksum_match,omitempty"`
+	Name           string  `json:"name"`
+	Applied        bool    `json:"applied"`
+	AppliedAt      *string `json:"applied_at,omitempty"`
+	ChecksumSHA256 string  `json:"checksum_sha256,omitempty"`
+	ChecksumMatch  bool    `json:"checksum_match,omitempty"`
 }
 
 type SchemaReport struct {

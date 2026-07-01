@@ -3,8 +3,8 @@ package api
 // AllSchemas returns all reusable component schemas.
 func AllSchemas() map[string]*Schema {
 	return map[string]*Schema{
-		"Entity":  entitySchema(),
-		"Edge":    edgeSchema(),
+		"Entity": entitySchema(),
+		"Edge":   edgeSchema(),
 		"ErrorResponse": {
 			Type: "object",
 			Properties: map[string]*Schema{
