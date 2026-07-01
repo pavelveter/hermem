@@ -230,7 +230,8 @@ func TestRef_StoreConcurrentDistinct(t *testing.T) {
 	seen := make(map[uint64]int, N)
 	for i, s := range states {
 		if s == nil {
-			t.Fatalf("goroutine %d: nil state after Store", i)
+			t.Errorf("goroutine %d: nil state after Store", i)
+			continue
 		}
 		gen := s.Generation
 		if prev, dup := seen[gen]; dup {
