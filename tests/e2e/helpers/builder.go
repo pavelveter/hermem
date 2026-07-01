@@ -15,11 +15,10 @@ import (
 //	    ExpectResults(1).
 //	    Run()
 type Builder struct {
-	t      *testing.T
-	dir    string
-	cli    *CLI
-	client *HTTPClient
-	steps  []step
+	t     *testing.T
+	dir   string
+	cli   *CLI
+	steps []step
 }
 
 type step struct {
@@ -101,7 +100,7 @@ func (b *Builder) ExpectResults(minCount int) *Builder {
 		name: fmt.Sprintf("expect_results(>=%d)", minCount),
 		fn: func(t *testing.T) {
 			t.Helper()
-			body := fmt.Sprintf(`{"query":"test","top_k":5}`)
+			body := `{"query":"test","top_k":5}`
 			result := b.cli.RunWithStdin(t, body, "memory", "search")
 			result.MustSucceed(t)
 			var parsed struct {
