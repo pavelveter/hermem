@@ -404,6 +404,14 @@ type SearchRequest struct {
 	TopK  int    `json:"top_k"`
 }
 
+// TemporalQueryRequest is the request body for POST /query/temporal.
+type TemporalQueryRequest struct {
+	Query    string `json:"query"`
+	TopK     int    `json:"top_k"`
+	TimeFrom string `json:"time_from,omitempty"` // RFC3339
+	TimeTo   string `json:"time_to,omitempty"`   // RFC3339
+}
+
 type RetrieveRequest struct {
 	SeedIDs  []string `json:"seed_ids"`
 	MaxDepth int      `json:"max_depth"`

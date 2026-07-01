@@ -15,6 +15,7 @@ package retrieval
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
@@ -58,6 +59,7 @@ func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 		"/search":        s.Wrap(s.HandleSearch),
 		"/retrieve":      s.Wrap(s.HandleRetrieve),
 		"/query":         s.Wrap(s.HandleQuery),
+		"/query/temporal": s.Wrap(s.HandleQueryTemporal),
 		"/response":      s.Wrap(s.HandleResponse),
 		"/query/explain": s.Wrap(s.HandleQueryExplain),
 		"/provenance":    s.HandleProvenance, // NOT wrapped — bespoke 400 contract
@@ -151,6 +153,50 @@ func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) error 
 	}
 	opts := s.optsFromState()
 	opts.QueryText = req.Query
+	markdown, err := s.Svc.Query(r.Context(), req.Query, req.TopK, opts)
+	if err != nil {
+		return err
+	}
+	s.Metrics.IncQuery()
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"context": markdown})
+	return nil
+}
+
+// HandleQueryTemporal — POST /query/temporal.
+//
+// Full retrieval pipeline filtered by time range (RFC3339).
+// §3.2 — error-returning handler.
+func (s *HTTPService) HandleQueryTemporal(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodPost {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return nil
+	}
+	req, err := httputil.DecodeJSON[core.TemporalQueryRequest](w, r)
+	if err != nil {
+		return err
+	}
+	if req.Query == "" {
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "query required", Field: "query"})
+		return nil
+	}
+	opts := s.optsFromState()
+	opts.QueryText = req.Query
+	if req.TimeFrom != "" {
+		t, err := time.Parse(time.RFC3339, req.TimeFrom)
+		if err != nil {
+			httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "invalid time_from: must be RFC3339", Field: "time_from"})
+			return nil
+		}
+		opts.TimeFrom = t
+	}
+	if req.TimeTo != "" {
+		t, err := time.Parse(time.RFC3339, req.TimeTo)
+		if err != nil {
+			httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "invalid time_to: must be RFC3339", Field: "time_to"})
+			return nil
+		}
+		opts.TimeTo = t
+	}
 	markdown, err := s.Svc.Query(r.Context(), req.Query, req.TopK, opts)
 	if err != nil {
 		return err
