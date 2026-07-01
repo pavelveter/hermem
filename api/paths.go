@@ -146,39 +146,6 @@ func AllPaths() map[string]*PathItem {
 				Security: auth(),
 			},
 		},
-		"/query/temporal": {
-			Post: &Operation{
-				Summary:     "Time-windowed query",
-				Description: "Full pipeline filtered by time range (RFC3339).",
-				OperationID: "queryTemporal",
-				Tags:        []string{"memory", "temporal"},
-				RequestBody: &RequestBody{
-					Required: true,
-					Content: map[string]MediaType{
-						"application/json": {
-							Schema: &Schema{
-								Type: "object",
-								Properties: map[string]*Schema{
-									"query":     {Type: "string"},
-									"top_k":     {Type: "integer", Default: 5},
-									"time_from": {Type: "string", Format: "date-time"},
-									"time_to":   {Type: "string", Format: "date-time"},
-								},
-								Required: []string{"query"},
-							},
-						},
-					},
-				},
-				Responses: map[string]Response{
-					"200": {Description: "Retrieval result", Content: map[string]MediaType{
-						"application/json": {Schema: ref("RetrievalResult")},
-					}},
-					"400": errorResponse("Bad request"),
-					"401": errorResponse("Unauthorized"),
-				},
-				Security: auth(),
-			},
-		},
 		"/response": {
 			Post: &Operation{
 				Summary:     "Full pipeline with LLM response",
@@ -549,6 +516,44 @@ func AllPaths() map[string]*PathItem {
 						"application/json": {Schema: ref("SchemaReport")},
 					}},
 				},
+			},
+		},
+		"/task/claim-next": {
+			Post: &Operation{
+				Summary:     "Claim next executable task",
+				Description: "Atomically claims and returns the next executable task for processing.",
+				OperationID: "taskClaimNext",
+				Tags:        []string{"task"},
+				Responses: map[string]Response{
+					"200": {Description: "Claimed task", Content: map[string]MediaType{
+						"application/json": {Schema: ref("TaskExecutableResponse")},
+					}},
+					"404": errorResponse("No executable tasks"),
+				},
+				Security: auth(),
+			},
+		},
+		"/ingest/jobs": {
+			Get: &Operation{
+				Summary:     "List ingest jobs",
+				Description: "Returns the status of recent ingestion jobs.",
+				OperationID: "ingestJobs",
+				Tags:        []string{"ingest"},
+				Responses: map[string]Response{
+					"200": {Description: "Job list"},
+				},
+			},
+		},
+		"/admin/retention/run": {
+			Post: &Operation{
+				Summary:     "Run retention sweep",
+				Description: "Trigger a retention sweep to archive stale entities.",
+				OperationID: "retentionRun",
+				Tags:        []string{"admin"},
+				Responses: map[string]Response{
+					"200": {Description: "Retention sweep completed"},
+				},
+				Security: auth(),
 			},
 		},
 	}

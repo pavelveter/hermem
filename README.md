@@ -103,23 +103,27 @@ The goal is not to build the biggest memory system. The goal is to build one tha
 ## Features
 
 - **CLI + HTTP server** — single binary, two modes
+- **Shell completion** — `hermem completion bash|zsh|fish` for tab-completion in all major shells
 - **OpenAI-compatible** — works with Ollama or any OpenAI-compatible API
 - **Separate embedder/extractor providers** — Ollama for embeddings, OpenAI for extraction (or vice versa)
+- **Typed DI container** — `app.Application` constructs all dependencies eagerly; no nil fields, no lazy init, explicit lifecycle ordering
 - **Pluggable vector search** — `InMemoryVectorIndex` (default, pure-Go brute-force) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
 - **Accelerate SIMD** — `cblas_sgemv` via CGo for AMX-optimised batch dot products on Apple Silicon
 - **Automatic retention** — configurable GC loop archives stale observation nodes
-- **API key auth** — optional `X-API-Key` middleware
+- **API key auth** — optional `X-API-Key` middleware; per-key scopes supported
 - **Structured logging** — `log/slog` with event fields + `request_id` tracing
 - **Request tracing** — every HTTP response gets `X-Request-ID`
 - **Metrics** — `/metrics` endpoint via `expvar`
 - **Graceful shutdown** — drains in-flight requests on SIGINT/SIGTERM
 - **Strict JSON validation** — unknown fields rejected with structured errors
-- **State-on-Graph (Batch 9)** — stateful entities with `status`, configurable dependency relations, CTE-based executable-node walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
+- **Typed enums** — `Polarity`, `EventType`, `TimelineEntryKind` with `UnmarshalText`/`UnmarshalJSON` validation; unknown values rejected at parse boundary
+- **SDK version negotiation** — Go/Python/TypeScript SDKs detect MAJOR mismatch via `X-Hermem-API-Version` header on first response
+- **State-on-Graph** — stateful entities with `status`, configurable dependency relations, CTE-based executable-node walk, rollback lookup, `/task/status` + `/task/executable` HTTP endpoints
 - **Declarative schema** — categories, relation types, FSM rules defined in `hermem.ini` `[schema]`; no recompilation needed
 - **Foreign-key enforcement** — FK constraints on edges prevent orphan references at the SQL engine layer; ingestion wraps entity+edges in atomic per-item transactions
 - **Graph integrity verify** — `hermem graph verify` checks entities, edges, embeddings, corrupt blobs, orphan edges, invalid status/relation types (exit 1 on problems)
-- **Retrieval explainability** — `/query/explain` endpoint returns a `score_breakdown` object per retrieved fact and seed node carrying the seven canonical ranking components (`vector_score`, `recency_score`, `temporal_score`, `centrality_score`, `path_score`, `depth_penalty`, `final_score`); non-explain paths omit the breakdown and stay byte-compatible
-- **Per-domain Entity decomposition** — 5 typed models (Fact, Evidence, Episode, Task, Belief) projected from the 19‑field umbrella `Entity`; `core.Compose(…)` reassembles; 64 contract tests lock orthogonal‑band semantics. Goal re‑views Task’s shape with no new field.
+- **Retrieval explainability** — `/query/explain` endpoint returns a `score_breakdown` object per retrieved fact with seven canonical ranking components
+- **Per-domain Entity decomposition** — 5 typed models (Fact, Evidence, Episode, Task, Belief) projected from the 19-field umbrella `Entity`; `core.Compose(…)` reassembles
 - **Contradiction detection** — heuristic `isContradiction` detects conflicting statements at ingest; prevents merging, creates `contradicts` edges instead
 - **Temporal retrieval** — `/query/temporal` endpoint filters graph walk by time range (`time_from`/`time_to` RFC3339)
 - **Episodic memory** — `/timeline` endpoint returns entities ordered by `created_at` DESC with provenance
@@ -134,9 +138,13 @@ The goal is not to build the biggest memory system. The goal is to build one tha
 - **Community detection** — Louvain one-pass modularity optimisation; `hermem graph communities` CLI + `GET /communities` HTTP
 - **Background re-embedding** — `ReEmbedAll` batch re-embeds all entities after model/dim change; `hermem memory re-embed [--batch-size N] [--model M]` CLI + `POST /admin/re-embed` HTTP
 - **Vector quantization** — `QuantizeVector` / `DequantizeVector` scalar int8 compression (4× storage reduction); `hermem memory quantize` (stdin) CLI
+- **AI factory** — `ai.Factory` decouples AI client construction from config; non-AI tests skip AI wiring via `ai/aitest` fakes
+- **Fuzz harnesses** — `go test -fuzz` targets for `splitSQL`, codec round-trip, cosine similarity, normalize vector
+- **Property-based tests** — invariants verified for cosine (range, symmetry, identity, normalization), codec (round-trip), cluster (no duplicates, size bounds), vacuum (entity count preserved)
+- **Benchmark regression gates** — CI runs `benchstat` comparison against baseline; >5% regression fails the build
 - **Docker** — multi-stage build, non-root user
 - **Zero global mutable state** — all services use constructor injection; `ActiveSchema()` singleton removed; package-level variables audited and documented
-- **Local embedding** — `llama-embedding` binary + dylibs embedded via `go:embed`; no external dependencies for embedding (extracts to temp dir at runtime)
+- **Local embedding** — `llama-embedding` binary + dylibs embedded via `go:embed`; no external dependencies for embedding
 
 ## CLI Commands
 
@@ -218,12 +226,15 @@ See [docs/USAGE.md](docs/USAGE.md) for the complete operator manual including CL
 | [USAGE.md](docs/USAGE.md) | Build, configuration, embedding models, domain models, memory evolution subsystem |
 | [OPENAPI.md](docs/OPENAPI.md) | OpenAPI 3.1 spec — served at `/openapi.json` and `/openapi.yaml` |
 | [MCP.md](docs/MCP.md) | MCP server — AI assistant integration (Claude Desktop / Claude Code) |
-| [SDK.md](docs/SDK.md) | Official SDKs — Go, Python, TypeScript |
+| [SDK.md](docs/SDK.md) | Official SDKs — Go, Python, TypeScript (with version negotiation) |
 | [CHANGELOG.md](docs/CHANGELOG.md) | Release history |
 | [ROADMAP.md](docs/ROADMAP.md) | Planned features |
 | [VISION.md](docs/VISION.md) | Long-term goals |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module Dependency Diagram |
-| [docs/adr/](docs/adr/) | Architecture Decision Records |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module dependency diagram, app.Application DI container |
+| [perf-budgets.md](docs/perf-budgets.md) | Accepted performance characteristics for hot paths |
+| [profiling.md](docs/profiling.md) | Benchmark protocol, hot paths, regression gates |
+| [generated/ROUTES.md](docs/generated/ROUTES.md) | Route inventory (auto-generated from OpenAPI spec) |
+| [docs/adr/](docs/adr/) | Architecture Decision Records (23 ADRs) |
 
 ## How it works
 
@@ -364,45 +375,46 @@ The more detaled diagram in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Dependency injection
 
-Every service receives dependencies through constructors. No globals. No service locators. No mutable package state. Configuration is swapped atomically after SIGHUP without rebuilding the dependency graph. This keeps long-running servers surprisingly boring. Boring infrastructure is good infrastructure.
+Every service receives dependencies through constructors. The `app.Application` container constructs all dependencies eagerly in `main.go` — no nil fields, no lazy init. Shutdown order is explicit in `Application.Stop()`. Configuration is swapped atomically after SIGHUP without rebuilding the dependency graph. This keeps long-running servers surprisingly boring. Boring infrastructure is good infrastructure.
 
 
 ---
 
 # Testing
 
-Hermem has unit tests, integration tests and performance benchmarks.
-
-Typical workflow:
+Hermem has unit tests, integration tests, property-based tests, fuzz harnesses, and performance benchmarks.
 
 ```bash
-go test ./...
+make test          # unit + integration tests with race detector
+make test-e2e      # end-to-end tests (builds binary first)
+make lint          # golangci-lint
+make benchmarks    # all benchmarks with -benchmem
 ```
 
-Benchmarks:
+Fuzz targets:
 
 ```bash
-go test -bench=. -benchmem
+go test -fuzz=FuzzSplitSQL -fuzztime=10s ./src/internal/store/...
+go test -fuzz=FuzzCosineSimilarity -fuzztime=10s ./src/internal/vector/...
 ```
 
-Race detector:
-
-```bash
-go test -race ./...
-```
+Benchmark regression is checked in CI via `benchstat` against a baseline (see [profiling.md](docs/profiling.md)).
 
 ---
 
 ## Pre-push hook
 
-The repository includes a pre-push hook that runs the same checks as CI.
+The repository includes a pre-push hook (`.githooks/pre-push`) that runs the same checks as CI:
 
 ```
+Architecture guardrails (forbidden patterns)
 gofmt
 go vet
 go build
-go test
-optional golangci-lint
+go test -race
+go test e2e
+golangci-lint (if installed)
+AMX guard (Darwin only)
 ```
 
 Enable it:
@@ -439,8 +451,10 @@ Hermem provides OpenAPI 3.1 specs, official SDKs, and a native MCP server for AI
 | **OpenAPI 3.1** | Spec served at `/openapi.json` and `/openapi.yaml` | [docs/OPENAPI.md](docs/OPENAPI.md) |
 | **Go SDK** | `github.com/pavelveter/hermem/sdk/go` | [docs/SDK.md](docs/SDK.md) |
 | **Python SDK** | `pip install hermem` (zero dependencies) | [docs/SDK.md](docs/SDK.md) |
-| **TypeScript SDK** | `npm install hermem` (fetch-based) | [docs/SDK.md](docs/SDK.md) |
+| **TypeScript SDK** | `npm install @hermem/sdk` (fetch-based) | [docs/SDK.md](docs/SDK.md) |
 | **MCP Server** | `hermem mcp` — stdio transport for Claude Desktop / Claude Code | [docs/MCP.md](docs/MCP.md) |
+
+All SDKs automatically detect MAJOR version mismatch with the server via the `X-Hermem-API-Version` response header. On mismatch: Go calls `OnVersionMismatch` callback, Python emits `warnings.warn` (or raises with `strict=True`), TypeScript calls `onVersionMismatch` option.
 
 ### Quick example
 

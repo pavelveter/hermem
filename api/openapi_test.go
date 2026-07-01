@@ -64,14 +64,15 @@ func TestPathsCoverAllEndpoints(t *testing.T) {
 	expectedPaths := []string{
 		"/health", "/health/live", "/health/ready", "/health/startup",
 		"/metrics",
-		"/store", "/search", "/retrieve", "/query", "/query/explain", "/query/temporal",
+		"/store", "/search", "/retrieve", "/query", "/query/explain",
 		"/response", "/edge", "/ingest",
-		"/task/status", "/task/executable", "/task/next", "/task/list", "/task/show",
+		"/task/status", "/task/executable", "/task/next", "/task/claim-next", "/task/list", "/task/show",
 		"/task/dep", "/task/tree", "/task/create", "/task/rollback",
 		"/timeline", "/contradictions", "/connected-components", "/communities",
 		"/graph/verify", "/provenance", "/recovery-plan",
-		"/admin/re-embed",
+		"/admin/re-embed", "/admin/retention/run",
 		"/db/migrate", "/db/rollback", "/db/verify", "/db/schema",
+		"/ingest/jobs",
 	}
 
 	for _, p := range expectedPaths {
@@ -156,13 +157,15 @@ func TestUniqueOperationIDs(t *testing.T) {
 
 	expectedIDs := []string{
 		"health", "healthLive", "healthReady", "healthStartup", "metrics",
-		"store", "search", "retrieve", "query", "queryExplain", "queryTemporal",
+		"store", "search", "retrieve", "query", "queryExplain",
 		"response", "createEdge", "ingest",
-		"taskStatus", "taskExecutable", "taskNext", "taskList", "taskShow",
+		"taskStatus", "taskExecutable", "taskNext", "taskClaimNext", "taskList", "taskShow",
 		"taskDep", "taskTree", "taskCreate", "taskRollback",
 		"timeline", "contradictions", "connectedComponents", "communities",
 		"graphVerify", "provenance", "recoveryPlan",
-		"reEmbed", "dbMigrate", "dbRollback", "dbVerify", "dbSchema",
+		"reEmbed", "retentionRun",
+		"dbMigrate", "dbRollback", "dbVerify", "dbSchema",
+		"ingestJobs",
 	}
 	for _, id := range expectedIDs {
 		if _, ok := seen[id]; !ok {
@@ -404,14 +407,15 @@ func TestAllPathsListed(t *testing.T) {
 		"/health", "/health/live", "/health/ready", "/health/startup",
 		"/metrics",
 		"/store", "/search", "/retrieve", "/query", "/query/explain",
-		"/query/temporal", "/response", "/edge", "/ingest",
-		"/task/status", "/task/executable", "/task/next", "/task/list",
-		"/task/show", "/task/dep", "/task/tree", "/task/create",
-		"/task/rollback",
+		"/response", "/edge", "/ingest",
+		"/task/status", "/task/executable", "/task/next", "/task/claim-next",
+		"/task/list", "/task/show", "/task/dep", "/task/tree",
+		"/task/create", "/task/rollback",
 		"/timeline", "/contradictions", "/connected-components", "/communities",
 		"/graph/verify", "/provenance", "/recovery-plan",
-		"/admin/re-embed",
+		"/admin/re-embed", "/admin/retention/run",
 		"/db/migrate", "/db/rollback", "/db/verify", "/db/schema",
+		"/ingest/jobs",
 	}
 
 	for _, p := range expected {
@@ -485,11 +489,8 @@ func TestEveryServedRouteHasSpec(t *testing.T) {
 	// Known spec gaps — routes served but not yet in the spec.
 	// Remove from this map as each is added to AllPaths().
 	specGaps := map[string]bool{
-		"/openapi.json":        true, // meta-endpoint, intentionally excluded
-		"/openapi.yaml":        true, // meta-endpoint, intentionally excluded
-		"/task/claim-next":     true, // TODO: add to spec
-		"/ingest/jobs":         true, // TODO: add to spec
-		"/admin/retention/run": true, // TODO: add to spec
+		"/openapi.json": true, // meta-endpoint, intentionally excluded
+		"/openapi.yaml": true, // meta-endpoint, intentionally excluded
 	}
 
 	for route := range servedRoutes {
@@ -513,9 +514,7 @@ func TestEverySpecPathIsServed(t *testing.T) {
 	paths := AllPaths()
 
 	// Routes in the spec but deliberately not served (dead/planned).
-	deadRoutes := map[string]bool{
-		"/query/temporal": true, // planned but no handler yet
-	}
+	deadRoutes := map[string]bool{}
 
 	for path := range paths {
 		if deadRoutes[path] {

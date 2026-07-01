@@ -70,19 +70,8 @@ registration. Cross-reference with `api/paths.go`.
 | 43 | * | `/debug/pprof/symbol` | pprof.Symbol | server/pprof |
 | 44 | * | `/debug/pprof/trace` | pprof.Trace | server/pprof |
 
-## Spec-Only Routes (in OpenAPI spec but NOT served)
-
-| Path | Method | OperationID | Note |
-|------|--------|-------------|------|
-| `/query/temporal` | POST | queryTemporal | Spec defines it; no handler registered |
-
 ## Discrepancies Found
 
-| Route | In Server | In Spec | Action |
-|-------|-----------|---------|--------|
-| `/task/claim-next` | ✅ | ❌ | Add to spec |
-| `/ingest/jobs` | ✅ | ❌ | Add to spec |
-| `/admin/retention/run` | ✅ | ❌ | Add to spec |
-| `/query/temporal` | ❌ | ✅ | Remove from spec (dead route) |
+All discrepancies resolved. No remaining mismatches between server and spec.
 
-Generated: 2026-06-30
+Generated: 2026-07-01

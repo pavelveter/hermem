@@ -78,6 +78,34 @@
         ]
       }
     },
+    "/admin/retention/run": {
+      "post": {
+        "summary": "Run retention sweep",
+        "description": "Trigger a retention sweep to archive stale entities.",
+        "operationId": "retentionRun",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Retention sweep completed",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/communities": {
       "get": {
         "summary": "Community detection",
@@ -644,6 +672,29 @@
         ]
       }
     },
+    "/ingest/jobs": {
+      "get": {
+        "summary": "List ingest jobs",
+        "description": "Returns the status of recent ingestion jobs.",
+        "operationId": "ingestJobs",
+        "tags": [
+          "ingest"
+        ],
+        "responses": {
+          "200": {
+            "description": "Job list",
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metrics": {
       "get": {
         "summary": "Prometheus metrics",
@@ -831,108 +882,6 @@
         "responses": {
           "200": {
             "description": "Retrieval result with score breakdown",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RetrievalResult"
-                }
-              }
-            },
-            "headers": {
-              "X-Hermem-API-Version": {
-                "description": "Server API version (semver).",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Hermem-API-Version": {
-                "description": "Server API version (semver).",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Hermem-API-Version": {
-                "description": "Server API version (semver).",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ]
-      }
-    },
-    "/query/temporal": {
-      "post": {
-        "summary": "Time-windowed query",
-        "description": "Full pipeline filtered by time range (RFC3339).",
-        "operationId": "queryTemporal",
-        "tags": [
-          "memory",
-          "temporal"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": {
-                    "type": "string"
-                  },
-                  "time_from": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "time_to": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "top_k": {
-                    "type": "integer",
-                    "default": 5
-                  }
-                },
-                "required": [
-                  "query"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Retrieval result",
             "content": {
               "application/json": {
                 "schema": {
@@ -1357,6 +1306,59 @@
           },
           "422": {
             "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/task/claim-next": {
+      "post": {
+        "summary": "Claim next executable task",
+        "description": "Atomically claims and returns the next executable task for processing.",
+        "operationId": "taskClaimNext",
+        "tags": [
+          "task"
+        ],
+        "responses": {
+          "200": {
+            "description": "Claimed task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExecutableResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No executable tasks",
             "content": {
               "application/json": {
                 "schema": {
