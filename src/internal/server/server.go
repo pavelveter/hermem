@@ -96,8 +96,9 @@ func NewServerFromDeps(deps ServerDeps) *Server {
 // RouteProvider; iterating the typed Server fields into a local
 // []providerSlot lets a single registrations loop handle every shell
 // while still naming each shell in the slog.Warn below. Adding a 13th
-// shell requires: (a) add field to Server, (b) add arg to NewServer,
-// (c) add entry below. Pre-§3.1 step (c) was a copy-pasted 3-line
+// shell requires: (a) add field to Server, (b) add field to
+// ServerDeps (the NewServerFromDeps parameter struct), (c) add entry
+// below. Pre-§3.1 step (c) was a copy-pasted 3-line
 // for-range; now it's one line.
 //
 // Nil providers warn + skip — never silently. A misconfigured
