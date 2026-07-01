@@ -19,6 +19,9 @@ vendor/
 go.work
 go.work.sum
 
+# Go build cache
+.cache/
+
 # SQLite database files
 *.db
 *.db-wal
@@ -58,5 +61,7 @@ hermem.ini
 models/
 src/internal/ai/bin/
 
-# Node.js dependencies
+# SDK dependencies
 node_modules/
+*.egg-info/
+.pytest_cache/
