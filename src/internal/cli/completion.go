@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
@@ -43,13 +41,18 @@ Fish (one-time):
 		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		PersistentPreRunE:     noopPreRun,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Write to cmd.OutOrStdout() rather than os.Stdout so the
+			// generator honours the cobra output redirection set via
+			// cmd.SetOut — required for unit tests to capture output
+			// without spawning a subprocess.
+			out := cmd.OutOrStdout()
 			switch args[0] {
 			case "bash":
-				return cmd.Root().GenBashCompletionV2(os.Stdout, true)
+				return cmd.Root().GenBashCompletionV2(out, true)
 			case "zsh":
-				return cmd.Root().GenZshCompletion(os.Stdout)
+				return cmd.Root().GenZshCompletion(out)
 			case "fish":
-				return cmd.Root().GenFishCompletion(os.Stdout, true)
+				return cmd.Root().GenFishCompletion(out, true)
 			}
 			return nil
 		},

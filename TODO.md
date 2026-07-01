@@ -286,7 +286,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Bump or document.
   - [ ] Commit separately.
 
-- [ ] **L8 — Add graceful degradation for AI provider timeouts**
+^- [x] **L8 — Add graceful degradation for AI provider timeouts**
   When the embedder or extractor times out, the entire request fails.
   For search/retrieval, consider falling back to pure keyword matching
   or returning cached results instead of 5xx.

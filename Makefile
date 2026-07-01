@@ -1,4 +1,4 @@
-.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes completions fmt vet test-coverage
+.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes completions install-completions fmt vet test-coverage
 
 BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
@@ -9,6 +9,12 @@ INSTALL_DIR ?= $(HOME)/.local/bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+# User-local XDG-style completion install paths. Override per-shell with:
+#   make install-completions COMPLETIONS_BASH_DIR=/etc/bash_completion.d
+COMPLETIONS_BASH_DIR ?= $(HOME)/.local/share/bash-completion/completions
+COMPLETIONS_ZSH_DIR  ?= $(HOME)/.local/share/zsh/site-functions
+COMPLETIONS_FISH_DIR ?= $(HOME)/.config/fish/completions
 
 LDFLAGS := -X 'github.com/pavelveter/hermem/api.BuildVersion=$(VERSION)' \
            -X 'main.version=$(VERSION)' \
@@ -88,6 +94,26 @@ completions: build
 	./hermem completion zsh > completions/hermem.zsh
 	./hermem completion fish > completions/hermem.fish
 	@echo "Generated: completions/hermem.{bash,zsh,fish}"
+
+# Install shell completions to user-local XDG paths.
+# Overridable: COMPLETIONS_BASH_DIR, COMPLETIONS_ZSH_DIR, COMPLETIONS_FISH_DIR.
+# Depends on `completions` so binaries without a Go toolchain can still
+# install pre-generated files when the directory already exists.
+install-completions:
+	@if [ ! -d completions ]; then \
+		echo "completions/ directory missing — run 'make completions' first" >&2; \
+		exit 1; \
+	fi
+	@mkdir -p $(COMPLETIONS_BASH_DIR)
+	@cp completions/hermem.bash $(COMPLETIONS_BASH_DIR)/hermem
+	@mkdir -p $(COMPLETIONS_ZSH_DIR)
+	@cp completions/hermem.zsh $(COMPLETIONS_ZSH_DIR)/_hermem
+	@mkdir -p $(COMPLETIONS_FISH_DIR)
+	@cp completions/hermem.fish $(COMPLETIONS_FISH_DIR)/hermem.fish
+	@echo "Installed shell completions:"
+	@echo "  bash: $(COMPLETIONS_BASH_DIR)/hermem"
+	@echo "  zsh : $(COMPLETIONS_ZSH_DIR)/_hermem"
+	@echo "  fish: $(COMPLETIONS_FISH_DIR)/hermem.fish"
 
 # Format code
 fmt:
