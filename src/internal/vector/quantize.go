@@ -19,7 +19,7 @@ type QuantizedVector struct {
 // escape analysis to push the slice header to heap on every New call,
 // defeating the pool's purpose.
 type quantCodes struct {
-	buf [256]int8
+	buf [1024]int8
 }
 
 var quantCodePool = sync.Pool{
