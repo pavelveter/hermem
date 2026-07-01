@@ -428,11 +428,11 @@ func TestAllPathsListed(t *testing.T) {
 // added to the server, it MUST be added here AND to AllPaths().
 var servedRoutes = map[string]string{
 	// memory
-	"/store":  "POST",
-	"/edge":   "POST",
-	"/search": "POST",
-	"/retrieve": "POST",
-	"/query":    "POST",
+	"/store":         "POST",
+	"/edge":          "POST",
+	"/search":        "POST",
+	"/retrieve":      "POST",
+	"/query":         "POST",
 	"/query/explain": "POST",
 	"/response":      "POST",
 	"/provenance":    "GET",
@@ -459,17 +459,17 @@ var servedRoutes = map[string]string{
 	"/task/rollback":   "POST",
 	"/recovery-plan":   "GET",
 	// admin
-	"/admin/re-embed":       "POST",
-	"/admin/retention/run":  "POST",
+	"/admin/re-embed":      "POST",
+	"/admin/retention/run": "POST",
 	// migration
 	"/db/migrate":  "GET",
 	"/db/rollback": "POST",
 	"/db/verify":   "GET",
 	"/db/schema":   "GET",
 	// infrastructure
-	"/health":        "GET",
-	"/health/live":   "GET",
-	"/health/ready":  "GET",
+	"/health":         "GET",
+	"/health/live":    "GET",
+	"/health/ready":   "GET",
 	"/health/startup": "GET",
 	"/metrics":        "GET",
 	// OpenAPI self

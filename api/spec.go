@@ -88,8 +88,8 @@ type RequestBody struct {
 
 // Response is a single response.
 type Response struct {
-	Description string                `json:"description" yaml:"description"`
-	Content     map[string]MediaType  `json:"content,omitempty" yaml:"content,omitempty"`
+	Description string                    `json:"description" yaml:"description"`
+	Content     map[string]MediaType      `json:"content,omitempty" yaml:"content,omitempty"`
 	Headers     map[string]ResponseHeader `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
