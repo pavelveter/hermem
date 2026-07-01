@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -702,5 +703,145 @@ func TestResilientClient_LogsAIRetryOnNetworkError(t *testing.T) {
 	}
 	if got, _ := failEv["err"].(string); got == "" {
 		t.Errorf("ai_call_failed should carry non-empty err from network failure")
+	}
+}
+
+// TestResilientClient_PrepareRequestFailureEmitsAIFailed verifies that
+// when GetBody returns an error mid-retry, the loop emits a closing
+// `ai_call_failed` (ERROR) before returning — pre-fix the loop returned
+// the error silently with no closing event, so operators had no
+// observability into the silent retry break.
+//
+// Scenario:
+//   - Server returns 500 on the first (and only) request that the
+//     loop completes against.
+//   - MaxAttempts=2 so the loop runs prepareRequest at the start of
+//     iteration i=1; req.GetBody returns io.ErrUnexpectedEOF so
+//     prepareRequest fails with "retry: get body: ...".
+//
+// Expected event sequence: exactly one ai_call_retry (from i=0's 5xx)
+// followed by exactly one ai_call_failed (from prepareRequest failure
+// at i=1). The prepareRequest failure event carries the prior
+// response's status_code (500) in lastStatus so operators can see
+// what the last real HTTP attempt observed before the retry break.
+func TestResilientClient_PrepareRequestFailureEmitsAIFailed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	rc := NewResilientClient(nil, RetryPolicy{MaxAttempts: 2, Backoff: []time.Duration{1 * time.Millisecond}})
+	rc.Provider = "openai"
+	rc.Model = "gpt-4o"
+	buf := captureSlog(t)
+
+	req, _ := http.NewRequest("POST", srv.URL, nil)
+	req.GetBody = func() (io.ReadCloser, error) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	resp, err := rc.Do(t.Context(), req)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expected error from failed GetBody")
+	}
+	if !strings.Contains(err.Error(), "get body") {
+		t.Fatalf("returned error should mention 'get body', got: %v", err)
+	}
+
+	events := parseSlogLines(t, buf)
+	var retries, fails int
+	var failEv map[string]any
+	for _, e := range events {
+		msg, _ := e["msg"].(string)
+		switch msg {
+		case "ai_call_retry":
+			retries++
+		case "ai_call_failed":
+			fails++
+			failEv = e
+		}
+	}
+	if retries != 1 {
+		t.Errorf("want 1 ai_call_retry (from i=0 5xx), got %d", retries)
+	}
+	if fails != 1 {
+		t.Fatalf("want exactly 1 ai_call_failed from prepareRequest failure, got %d", fails)
+	}
+	if failEv == nil {
+		t.Fatal("ai_call_failed event missing")
+	}
+	if got, _ := failEv["provider"].(string); got != "openai" {
+		t.Errorf("provider: want openai, got %q", got)
+	}
+	if got, _ := failEv["model"].(string); got != "gpt-4o" {
+		t.Errorf("model: want gpt-4o, got %q", got)
+	}
+	if got, _ := failEv["attempts_used"].(float64); int(got) != 1 {
+		t.Errorf("attempts_used: want 1 (1 actual HTTP attempt completed; i=1 prep failed), got %v", got)
+	}
+	if got, _ := failEv["max_attempts"].(float64); int(got) != 2 {
+		t.Errorf("max_attempts: want 2, got %v", got)
+	}
+	if got, _ := failEv["status_code"].(float64); int(got) != http.StatusInternalServerError {
+		t.Errorf("status_code: want %d (from prior 500), got %v", http.StatusInternalServerError, failEv["status_code"])
+	}
+	if got, ok := failEv["err"].(string); !ok || !strings.Contains(got, "get body") {
+		t.Errorf("ai_call_failed err should mention 'get body', got: %v", failEv["err"])
+	}
+}
+
+// TestResilientClient_CtxCancelMidExhaustionSuppressesAIRetry verifies
+// the early-exit reordering: when ctx is cancelled during the
+// network-error path's executeOnce, the loop returns ctx.Err() directly
+// without emitting an ai_call_retry event for a retry that will not
+// happen. Pre-fix, the loop emitted ai_call_retry and then returned
+// ctx.Err() — operators saw a "retry" event that was never followed
+// by either another attempt or an ai_call_failed.
+//
+// Scenario:
+//   - Pre-cancel ctx before Do() runs.
+//   - MaxAttempts=2, server returns 500 (the response code is
+//     irrelevant; pre-cancelled ctx short-circuits executeOnce
+//     immediately with err=ctx.Err()).
+//
+// Expected: NO ai_call_retry events (early-exit fires before the
+// emit), NO ai_call_failed event (early-exit short-circuited on the
+// first iteration), and the returned error wraps context.Canceled.
+func TestResilientClient_CtxCancelMidExhaustionSuppressesAIRetry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	rc := NewResilientClient(nil, RetryPolicy{MaxAttempts: 2, Backoff: []time.Duration{1 * time.Millisecond}})
+	rc.Provider = "openai"
+	rc.Model = "gpt-4o"
+	buf := captureSlog(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // pre-cancel
+	req, _ := http.NewRequest("GET", srv.URL, nil)
+	resp, err := rc.Do(ctx, req)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expected ctx.Err() from cancelled ctx, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error should wrap context.Canceled, got: %v", err)
+	}
+
+	events := parseSlogLines(t, buf)
+	for _, e := range events {
+		msg, _ := e["msg"].(string)
+		if msg == "ai_call_retry" {
+			t.Errorf("ai_call_retry must NOT fire on ctx-cancel early-exit; got event: %v", e)
+		}
+		if msg == "ai_call_failed" {
+			t.Errorf("ai_call_failed must NOT fire on ctx-cancel early-exit; got event: %v", e)
+		}
 	}
 }

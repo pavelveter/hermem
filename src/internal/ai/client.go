@@ -183,6 +183,29 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 	for i := 0; i < p.MaxAttempts; i++ {
 		if i > 0 {
 			if err := prepareRequest(ctx, req); err != nil {
+				// Emit ai_call_failed on prepareRequest failure (e.g.
+				// GetBody returns io.ErrUnexpectedEOF, or ctx was
+				// cancelled between attempts). Pre-fix the loop just
+				// returned the error silently, leaving operators without
+				// a closing event on a wholly silent retry break.
+				// attempts_used = i reports how many HTTP attempts we
+				// actually completed before the (i+1)-th was blocked at
+				// the prep step (we never reached executeOnce).
+				failAttrs := []any{
+					"provider", c.Provider,
+					"model", c.Model,
+					"attempts_used", i,
+					"max_attempts", p.MaxAttempts,
+				}
+				if lastStatus != 0 {
+					failAttrs = append(failAttrs, "status_code", lastStatus)
+				}
+				failAttrs = append(failAttrs,
+					"latency_ms", time.Since(start).Milliseconds(),
+					"url", req.URL.String(),
+					"err", err,
+				)
+				slog.Error("ai_call_failed", failAttrs...)
 				return nil, err
 			}
 		}
@@ -190,13 +213,17 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		if err != nil {
 			lastErr = err
 			lastStatus = 0
-			// Emit ai_call_retry on the network-error path here (not in
-			// the i > 0 block at the top of the loop) so exactly one
-			// retry event fires per failed attempt. The retryable-status
-			// branch below mirrors this — together they guarantee a 1:1
-			// mapping between failed attempts and ai_call_retry events.
-			// status_code is intentionally absent on this path because
-			// no HTTP response was received.
+			// Early-exit checks BEFORE the ai_call_retry emit: if ctx
+			// is canceled or the wall-clock guard has fired, there is
+			// no actual retry to advertise, so the loop returns
+			// directly. status_code is intentionally absent on this
+			// path (no HTTP response was received).
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if p.MaxWallClock >= 0 && time.Now().After(deadline) {
+				return nil, lastErr
+			}
 			slog.Warn("ai_call_retry",
 				"provider", c.Provider,
 				"model", c.Model,
@@ -206,12 +233,6 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 				"url", req.URL.String(),
 				"err", lastErr,
 			)
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			if p.MaxWallClock >= 0 && time.Now().After(deadline) {
-				return nil, lastErr
-			}
 			if !waitOrAbort(ctx, p.Backoff, i) {
 				return nil, ctx.Err()
 			}
@@ -220,6 +241,18 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		lastStatus = resp.StatusCode
 		if retry, rerr := classifyResponse(resp, p.RetryableStatus); retry {
 			lastErr = rerr
+			resp.Body.Close()
+			// Early-exit checks BEFORE the ai_call_retry emit
+			// (mirrors the network-error path above). The captured
+			// status_code is preserved in lastStatus so any subsequent
+			// ai_call_failed event in the same Do() run — e.g. the
+			// prepareRequest failure — can carry it.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if p.MaxWallClock >= 0 && time.Now().After(deadline) {
+				return nil, lastErr
+			}
 			slog.Warn("ai_call_retry",
 				"provider", c.Provider,
 				"model", c.Model,
@@ -229,13 +262,6 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 				"latency_ms", time.Since(start).Milliseconds(),
 				"url", req.URL.String(),
 			)
-			resp.Body.Close()
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			if p.MaxWallClock >= 0 && time.Now().After(deadline) {
-				return nil, lastErr
-			}
 			if !waitOrAbort(ctx, p.Backoff, i) {
 				return nil, ctx.Err()
 			}
