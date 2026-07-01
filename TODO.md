@@ -149,10 +149,15 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   `sdk/typescript/package.json` specifies `vitest` but there's no lockfile
   in the repo. SDK CI may have non-deterministic builds. Evaluate if
   lockfiles (`package-lock.json`, `poetry.lock`) should be committed.
-  - [ ] Check if TypeScript tests pass in CI (currently they do not run).
-  - [ ] Commit lockfile for TypeScript SDK.
-  - [ ] Commit lockfile for Python SDK if applicable.
-  - [ ] Commit separately.
+  - [x] Check if TypeScript tests pass in CI (currently they do not run).
+        (now wired via `npm ci --no-audit --no-fund` + `npx vitest run` in
+        `.github/workflows/sdk.yml::typescript-sdk`; locally 10/10 pass.)
+  - [x] Commit lockfile for TypeScript SDK. (`sdk/typescript/package-lock.json`,
+        lockfileVersion 3, generated via `npm install --package-lock-only`.)
+  - [x] Commit lockfile for Python SDK if applicable. (chose `uv.lock` over
+        `requirements*.txt` — `uv 0.9` honors `setuptools` build backend
+        directly. `uv sync --extra=dev` reads the lockfile deterministically.)
+  - [x] Commit separately.
 
 ---
 

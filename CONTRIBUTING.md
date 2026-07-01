@@ -56,6 +56,30 @@ If `air` is not on `$PATH`, the target prints the install command
 above and exits 1 (it does NOT auto-install, to avoid silently mutating
 the developer's `$GOBIN`).
 
+### Mage (cross-platform build runner)
+
+On Windows, BSD, or any environment without GNU make, you can drive the
+same targets through [mage](https://magefile.org/). `magefile.go` is a
+drop-in alternative that mirrors `Makefile` targets one-for-one and is
+kept in lock-step with it.
+
+```bash
+go install github.com/magefile/mage@latest
+mage                      # default: Build + Completions
+mage Build && mage Test
+mage Install INSTALL_DIR=/usr/local/bin
+mage Completions
+mage InstallCompletions
+mage Lint Vet Fmt
+mage Dev                  # requires air (see above)
+```
+
+The file is gated by `//go:build mage` so it is excluded from normal
+`go build ./...` and cannot accidentally end up in the production
+binary. Targets that are inherently platform-specific (e.g. `sign` /
+`routes`) are intentionally not mirrored; everything else has a
+matching mage function.
+
 ### Code Style
 
 - Follow standard Go conventions (`gofmt`, `go vet`)
