@@ -22,7 +22,28 @@ func newProvenanceCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "provenance",
 		Short: "Query entities by provenance (conversation / message / source)",
-		Args:  cobra.NoArgs,
+		Long: `Query entities by their provenance metadata (origin information).
+
+Every entity can optionally record where it came from: which conversation,
+which message, or which source. This command finds entities matching
+the given provenance filters.
+
+Flags:
+  --conversation    Filter by conversation ID
+  --message         Filter by message ID
+  --source          Filter by source string
+  --limit           Max entities returned (default 50)
+
+At least one filter should be provided for meaningful results.
+
+Output (text, one entity per line):
+  [entity-id] category  content  conv=conv-id msg=msg-id
+
+Examples:
+  hermem graph provenance --conversation conv-1
+  hermem graph provenance --source "manual-import" --limit 10
+  hermem graph provenance --message msg-42`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			svc := retdomain.New(env.DB, env.VI, env.Embedder)
 			entities, err := svc.Provenance(env.Ctx, convID, msgID, source, limit)

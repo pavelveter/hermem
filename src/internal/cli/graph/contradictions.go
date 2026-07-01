@@ -21,7 +21,27 @@ func newContradictionsCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "contradictions [entity-id]",
 		Short: "List contradictions (optional entity-id narrows the query)",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `List detected contradictions in the knowledge graph.
+
+A contradiction occurs when two entities have conflicting content
+for the same topic (detected by the contradiction detector during
+ingestion).
+
+Arguments:
+  [entity-id]   Optional. If provided, only show contradictions
+                involving this entity.
+
+Output (text, one pair per block):
+  [source-id] source content
+    contradicts [target-id] target content
+
+Without an entity-id, lists all contradictions in the graph.
+
+Examples:
+  hermem graph contradictions
+  hermem graph contradictions e1
+  hermem graph contradictions e1 | wc -l`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := ""
 			if len(args) > 0 {

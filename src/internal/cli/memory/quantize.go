@@ -13,7 +13,34 @@ func newQuantizeCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "quantize",
 		Short: "Quantize a single embedding locally (no DB / no embedder call)",
-		Args:  cobra.NoArgs,
+		Long: `Quantize a float32 embedding vector into a compact binary representation.
+
+Input (JSON on stdin):
+  {
+    "embedding": [0.1, -0.3, 0.5, ...]
+  }
+
+This is a local, stateless operation — no database access, no embedder
+call. It uses product quantization to compress the embedding vector,
+reporting:
+  - Original size (elements × 4 bytes)
+  - Quantized size (8-byte header + codes)
+  - Compression ratio
+  - Maximum reconstruction error
+
+Useful for estimating storage savings before enabling quantization
+on the vector index, or for testing quantization quality on sample
+vectors.
+
+Output (text):
+  Original: 768 elements (3072 bytes)
+  Quantized: 96 bytes (32.0x)
+  Max error: 0.012345
+
+Examples:
+  echo '{"embedding":[0.1,0.2,0.3]}' | hermem memory quantize
+  echo '{"embedding":[0.1,0.2,0.3]}' | hermem memory quantize | grep "Max error"`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req struct {
 				Embedding []float32 `json:"embedding"`

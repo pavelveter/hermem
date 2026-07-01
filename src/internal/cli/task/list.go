@@ -14,7 +14,24 @@ func newListCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List tasks filtered by status and/or goal_id",
-		Args:  cobra.NoArgs,
+		Long: `List tasks with optional filters.
+
+Input (JSON on stdin):
+  {
+    "status": "pending",                 // optional, filter by status
+    "goal_id": "goal-entity-id"          // optional, filter by goal
+  }
+
+Both filters are optional. Omitting both lists all tasks.
+
+Output (JSON):
+  {"tasks": [{"id":"t1", "content":"...", "status":"pending", ...}, ...]}
+
+Examples:
+  echo '{}' | hermem task list
+  echo '{"status":"pending"}' | hermem task list
+  echo '{"goal_id":"g1","status":"done"}' | hermem task list | jq '.tasks | length'`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req core.TaskListRequest
 			if err := cli.DecodeStdin(&req); err != nil {

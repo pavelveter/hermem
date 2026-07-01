@@ -14,7 +14,23 @@ func newTimelineCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "timeline",
 		Short: "Most-recent 50 entities (created_at DESC, archived=0)",
-		Args:  cobra.NoArgs,
+		Long: `Show the 50 most recently created entities in the knowledge graph.
+
+No input required — this is a direct database query.
+
+Output (text, one entity per line):
+  [RFC3339-timestamp] entity-id  content  [category]
+
+Entities are sorted by created_at descending (newest first). Only
+non-archived entities are included.
+
+Use this for a quick overview of what's in the graph, or to verify
+that recent ingestion worked correctly.
+
+Examples:
+  hermem time timeline
+  hermem time timeline | head -5`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			rows, err := env.DB.QueryContext(env.Ctx,
 				`SELECT id, category, content, created_at FROM entities

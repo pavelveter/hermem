@@ -30,7 +30,20 @@ func newKeysListCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List all API keys (values masked)",
-		Args:  cobra.NoArgs,
+		Long: `List all configured API keys with their values masked.
+
+No input required. Reads keys directly from the hermem.ini config file.
+
+Output (text, one key per line):
+  LEGACY       admin     xxxx...xxxx
+  my-key       read      yyyy...yyyy  my-key
+
+Key values are masked (first 4 + last 4 characters shown).
+
+Examples:
+  hermem admin keys list
+  hermem admin keys list | wc -l`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := env.Cfg
 			if cfg.APIKey != "" {
@@ -51,7 +64,23 @@ func newKeysAddCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "add",
 		Short: "Generate a new API key and write to config",
-		Args:  cobra.NoArgs,
+		Long: `Generate a new random API key and append it to the hermem.ini config.
+
+The command prompts interactively for:
+  - Scope: read, write, or admin (default: admin)
+  - Label: a human-readable name for the key
+
+The generated key is a 64-character hex string (32 random bytes).
+
+Output:
+  Added key: <key> (scope=<scope>, label=<label>)
+
+The key is written to [api_keys] section in hermem.ini.
+
+Examples:
+  hermem admin keys add
+  hermem admin keys add   # then type: read, my-read-key`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			key, err := GenerateKey()
 			if err != nil {
@@ -82,7 +111,24 @@ func newKeysRotateCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "rotate <label>",
 		Short: "Generate a new key for the given label",
-		Args:  cobra.ExactArgs(1),
+		Long: `Rotate an API key by generating a new value for the given label.
+
+Arguments:
+  <label>   The label of the key to rotate (required)
+
+The old key value is replaced in hermem.ini. The label and scope
+are preserved. A new 64-character hex key is generated.
+
+Output:
+  Rotated key for <label>: <new-key>
+
+⚠ Rotate keys during security incidents or on a regular schedule.
+All clients using the old key will need to be updated.
+
+Examples:
+  hermem admin keys rotate my-read-key
+  hermem admin keys rotate production-key`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			label := args[0]
 			newKey, err := GenerateKey()
@@ -103,7 +149,23 @@ func newKeysRevokeCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "revoke <label>",
 		Short: "Remove a key by label or value prefix",
-		Args:  cobra.ExactArgs(1),
+		Long: `Remove an API key from the hermem.ini config.
+
+Arguments:
+  <label>   The label or value prefix of the key to revoke (required)
+
+The key entry is removed from the [api_keys] section in hermem.ini.
+Clients using this key will immediately lose access.
+
+Output:
+  Revoked key: <label>
+
+⚠ Revoking a key is irreversible. Generate a new key if needed.
+
+Examples:
+  hermem admin keys revoke my-read-key
+  hermem admin keys revoke production-key`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			label := args[0]
 			path := resolveConfigPath()

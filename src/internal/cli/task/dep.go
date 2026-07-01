@@ -14,7 +14,30 @@ func newDepCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "dep",
 		Short: "Add or remove a blocking dependency between two tasks (body {add:true|false})",
-		Args:  cobra.NoArgs,
+		Long: `Manage blocking dependencies between tasks.
+
+Input (JSON on stdin):
+  {
+    "source_id":      "task-a",          // blocker
+    "target_id":      "task-b",          // blocked task
+    "relation_type":  "blocks",          // optional, default from schema
+    "add":            true               // true=add dependency, false=remove
+  }
+
+When "add" is true, task-a becomes a blocker for task-b. Task-b cannot
+be executed until task-a is done. When "add" is false, the dependency
+is removed (task-b becomes unblocked if this was its only blocker).
+
+The relation_type defaults to the schema's configured blocking relation.
+Duplicate adds are silently ignored (no-op).
+
+Output:
+  {"status":"ok"}
+
+Examples:
+  echo '{"source_id":"t1","target_id":"t2","add":true}' | hermem task dep
+  echo '{"source_id":"t1","target_id":"t2","add":false}' | hermem task dep`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req core.TaskDepRequest
 			if err := cli.DecodeStdin(&req); err != nil {

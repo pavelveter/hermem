@@ -16,6 +16,28 @@ func newStatsCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stats",
 		Short: "Print DB statistics: entity/edge/contradiction counts + embedding coverage",
+		Long: `Print database statistics including entity counts, embedding coverage,
+and disk usage.
+
+No input required — reads directly from the database.
+
+Output (text):
+  Node count           1523
+  Edge count           4891
+  Archived count       12
+  Contradiction count  3
+  Embedding coverage   98.5%
+  DB size              45.2 MB
+  Last GC run          2024-06-15 10:30:00
+  Last GC archived     5
+  Captured at          2024-06-20 14:00:00
+
+Flags:
+  --json    Output as JSON instead of text table
+
+Examples:
+  hermem ops stats
+  hermem ops stats --json | jq '.node_count'`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := admin.NewStatsCollector(env.DB)
 			stats, err := c.Collect(cmd.Context())

@@ -19,7 +19,31 @@ func newVerifyCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify",
 		Short: "Verify migration checksums (exit 1 on mismatch)",
-		Args:  cobra.NoArgs,
+		Long: `Verify that on-disk migration files match their applied checksums.
+
+Each migration file has a SHA-256 checksum computed at apply time. This
+command recomputes the checksum from the current on-disk file and
+compares it to the stored value.
+
+Output (text):
+  All migration checksums intact.    (exit 0)
+  OR
+  N checksum mismatch(es):           (exit 1)
+    0002_add_edges.sql
+      stored:   abc123...
+      current:  def456...
+
+Exit codes:
+  0  all checksums match
+  1  mismatch detected (possible file tampering or accidental edit)
+
+Run this in CI or as a pre-deploy check to catch unauthorized schema
+changes.
+
+Examples:
+  hermem db verify
+  hermem db verify || echo "migration files tampered"`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			svc := migration.New(env.DB)
 			mismatches, err := svc.Verify(env.Ctx)

@@ -53,7 +53,24 @@ func newMigrateStatusCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show applied / pending state of every migration",
-		Args:  cobra.NoArgs,
+		Long: `Show the applied/pending state of every embedded migration file.
+
+Output (text, one migration per line):
+  [OK]  0001_init.sql  (2024-01-15 10:30:00)  sha256:abc123... [ok]
+  [--]  0002_add_edges.sql  sha256:def456...
+
+Legend:
+  OK  — migration applied
+  --  — migration pending (not yet applied)
+
+Checksums are shown for applied migrations. A "MISMATCH" label indicates
+the on-disk migration file has changed since it was applied — this is a
+data-integrity warning.
+
+Examples:
+  hermem db migrate status
+  hermem db migrate | head -5    # bare 'migrate' defaults to status`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runMigrateStatus(cmd, env)
 		},

@@ -14,7 +14,30 @@ func newEdgeCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "edge",
 		Short: "Add or auto-create a relation edge between two entities (--auto-create creates missing endpoints)",
-		Args:  cobra.NoArgs,
+		Long: `Create a directed relation edge between two entities in the knowledge graph.
+
+Input (JSON on stdin):
+  {
+    "source_id":      "entity-a",
+    "target_id":      "entity-b",
+    "relation_type":  "supports|contradicts|extends|...",
+    "auto_create":    false              // optional, create missing endpoints
+  }
+
+Relation types must match the configured schema (hermem.ini [schema]).
+Use "hermem admin config" to see valid relation types.
+
+If "auto_create" is true, missing entities are created as empty shells
+(category="world", content=entity-id). This is useful for building
+graph structure before filling in content.
+
+Output:
+  {"status":"ok"}
+
+Examples:
+  echo '{"source_id":"a","target_id":"b","relation_type":"supports"}' | hermem memory edge
+  echo '{"source_id":"a","target_id":"c","relation_type":"extends","auto_create":true}' | hermem memory edge`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req core.EdgeRequest
 			if err := cli.DecodeStdin(&req); err != nil {

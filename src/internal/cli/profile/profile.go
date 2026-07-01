@@ -59,7 +59,28 @@ func newCPUCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cpu [duration]",
 		Short: "CPU profile (seconds, default 10) — protobuf to stdout",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Capture a CPU profile of the current process.
+
+Arguments:
+  [duration]   Profile duration in seconds (default 10, or use --seconds)
+
+The profile is written to stdout in protobuf format. Pipe to a file
+and analyze with "go tool pprof":
+
+  hermem profile cpu 30 > cpu.pprof
+  go tool pprof cpu.pprof
+
+Flags:
+  --seconds, -s    Override duration in seconds (takes precedence over arg)
+
+The profiler captures CPU usage across all goroutines. Useful for
+finding hot paths and understanding where CPU time is spent.
+
+Examples:
+  hermem profile cpu
+  hermem profile cpu 30
+  hermem profile cpu --seconds 5 > /tmp/profile.pprof`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d := defaultDuration
 			if len(args) == 1 {
@@ -99,7 +120,25 @@ func newHeapCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "heap",
 		Short: "Heap snapshot -> /tmp/hermem-heap.pprof",
-		Args:  cobra.NoArgs,
+		Long: `Write a heap memory profile to /tmp/hermem-heap.pprof.
+
+No input required. Runs a garbage collection pass before capturing
+so the profile reflects live reachable objects rather than transient
+allocations.
+
+Analyze with:
+  go tool pprof /tmp/hermem-heap.pprof
+
+The output path is fixed (/tmp/hermem-heap.pprof) so downstream
+tools can load it directly without pipe management.
+
+Use this to diagnose memory leaks or high heap usage.
+
+Examples:
+  hermem profile heap
+  go tool pprof /tmp/hermem-heap.pprof
+  (pprof) top 20`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			f, err := os.Create(heapOutputPath)
 			if err != nil {
@@ -126,7 +165,23 @@ func newGoroutineCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "goroutine",
 		Short: "Goroutine dump -> stdout",
-		Args:  cobra.NoArgs,
+		Long: `Dump all live goroutine stacks to stdout.
+
+No input required. Outputs the full stack trace of every goroutine
+in the current process, in text format.
+
+Use this to diagnose:
+  - Stuck or deadlocked goroutines
+  - Unexpected goroutine counts
+  - Blocking operations in HTTP handlers
+
+The output is consumable by "go tool pprof" or simply read by eye.
+
+Examples:
+  hermem profile goroutine
+  hermem profile goroutine | grep -c "goroutine" | head -1
+  hermem profile goroutine | grep "main\." | head -10`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return pprof.Lookup("goroutine").WriteTo(cmd.OutOrStdout(), 1)
 		},
@@ -140,7 +195,32 @@ func newTraceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "trace [duration]",
 		Short: "Execution trace (seconds, default 10) -> /tmp/hermem-trace.out",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Capture an execution trace of the current process.
+
+Arguments:
+  [duration]   Trace duration in seconds (default 10, or use --seconds)
+
+The trace is written to /tmp/hermem-trace.out in binary format.
+Analyze with:
+  go tool trace /tmp/hermem-trace.out
+
+Flags:
+  --seconds, -s    Override duration in seconds (takes precedence over arg)
+
+Execution traces provide detailed timing information about:
+  - Goroutine scheduling
+  - Network and syscall latency
+  - GC pauses and timing
+  - Channel and mutex contention
+
+⚠ Traces can be large (100MB+ for 10 seconds). Ensure sufficient
+disk space in /tmp.
+
+Examples:
+  hermem profile trace
+  hermem profile trace 30
+  go tool trace /tmp/hermem-trace.out`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			d := defaultDuration
 			if len(args) == 1 {

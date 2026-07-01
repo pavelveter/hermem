@@ -13,7 +13,22 @@ func newDryRunCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "dry-run",
 		Short: "Show pending migrations without applying them",
-		Args:  cobra.NoArgs,
+		Long: `Preview which migrations would be applied without actually running them.
+
+Output (text):
+  2 pending migration(s):
+    0002_add_edges.sql  sha256:def456...
+    0003_add_community.sql  sha256:ghi789...
+
+Or if all migrations are applied:
+  All migrations applied. Nothing to dry-run.
+
+Use this before "hermem db migrate apply" to verify what will change.
+
+Examples:
+  hermem db dry-run
+  hermem db dry-run | head -1`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			svc := migration.New(env.DB)
 			pending, err := svc.DryRun(env.Ctx)

@@ -13,7 +13,28 @@ func newRecoveryPlanCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "recovery-plan",
 		Short: "Render recovery plan for a failed task (RHS-of-relations walk)",
-		Args:  cobra.NoArgs,
+		Long: `Generate a recovery plan for a failed or rolled-back task.
+
+Input (JSON on stdin):
+  {
+    "id": "task-entity-id"
+  }
+
+Walks the right-hand side of rollback/recovery relations to find all
+tasks that need to be undone when a task fails. The plan is numbered
+in reverse-dependency order (last to undo first).
+
+Output (text, numbered):
+  1. [task-id] content  [status]
+  2. [task-id] content  [status]
+
+This is used by "hermem task rollback" and the agent loop to determine
+which tasks to cascade-rollback.
+
+Examples:
+  echo '{"id":"t1"}' | hermem graph recovery-plan
+  echo '{"id":"t1"}' | hermem graph recovery-plan | wc -l`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req struct {
 				ID string `json:"id"`

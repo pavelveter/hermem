@@ -16,7 +16,33 @@ func newLoopCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "loop",
 		Short: "Run agent execution loop on a goal_id (yields each task to stdout)",
-		Args:  cobra.NoArgs,
+		Long: `Run the autonomous agent execution loop for a given goal.
+
+Input (JSON on stdin):
+  {
+    "goal_id": "goal-entity-id"
+  }
+
+The agent loop:
+  1. Finds all executable tasks (blockers all done) for the goal.
+  2. Yields each task to stdout as it is picked up.
+  3. Continues until no more executable tasks remain.
+
+Each yielded task is printed as:
+  [task-id] content  [category]
+
+This command is designed to be used as a subprocess by an external
+orchestrator (e.g., a shell script or AI agent) that reads tasks from
+stdout, executes them, and updates their status via "hermem task status".
+
+Requires a running database (or DB path via config).
+
+Examples:
+  echo '{"goal_id":"g1"}' | hermem agent loop
+  echo '{"goal_id":"g1"}' | hermem agent loop | while read -r line; do
+    echo "Processing: $line"
+  done`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req struct {
 				GoalID string `json:"goal_id"`
