@@ -206,6 +206,17 @@ jobs:
           fi
           go-apidiff "$LATEST_TAG" --print-compatible
 
+  dockerfile-lint:
+    name: Dockerfile Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: warning
+
   openapi:
     name: OpenAPI Validation
     runs-on: ubuntu-latest

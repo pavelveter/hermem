@@ -222,7 +222,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Re-run `go mod tidy`.
   - [ ] Commit separately.
 
-- [ ] **M9 — Audit `AGENTS.md` language**
+^- [x] **M9 — Audit `AGENTS.md` language**
   `AGENTS.md` is written entirely in Russian. For a public open-source
   project, this creates a barrier for international contributors. Either
   translate to English or provide a bilingual version.
@@ -234,7 +234,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
 
 ## L — Low
 
-- [ ] **L1 — Add CodeQL static analysis to CI**
+^- [x] **L1 — Add CodeQL static analysis to CI**
   GitHub's CodeQL is free for public repos. It catches security
   vulnerabilities (SQL injection, path traversal, etc.) that `gosec`
   and `golangci-lint` may miss.
@@ -242,7 +242,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Verify it passes on `main`.
   - [ ] Commit separately.
 
-- [ ] **L2 — Add OpenSSF Scorecard to CI**
+^- [x] **L2 — Add OpenSSF Scorecard to CI**
   Scorecard evaluates supply-chain security posture (signed releases,
   branch protection, dependency updates, fuzzing, etc.) and produces
   a public score. Good for open-source credibility.
@@ -272,7 +272,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Remove or fix the dangling reference.
   - [ ] Commit separately.
 
-- [ ] **L6 — Add CHANGELOG generation automation**
+^- [x] **L6 — Add CHANGELOG generation automation**
   Release workflow does not auto-generate `CHANGELOG.md`. Manual
   maintenance is error-prone.
   - [ ] Add `git-cliff` or similar changelog generator config.
@@ -391,7 +391,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Add `make test-coverage` (`go test -coverprofile=coverage.out ./src/... && go tool cover -html=coverage.out`).
   - [ ] Commit separately.
 
-- [ ] **T5 — Add Dependabot/Renovate for Go modules**
+^- [x] **T5 — Add Dependabot/Renovate for Go modules**
   `.github/dependabot.yml` exists but only covers GitHub Actions. Go
   module dependencies are not auto-updated. Add Dependabot config for
   `go.mod` in root and `sdk/go/go.mod`.
@@ -399,7 +399,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Set schedule (weekly) and open-pull-requests-limit.
   - [ ] Commit separately.
 
-- [ ] **T6 — Add `Dockerfile` linting to CI**
+^- [x] **T6 — Add `Dockerfile` linting to CI**
   `Dockerfile` uses `golang:1.24-alpine` (Go version mismatch with
   `go.mod`'s `1.26.4`). Add hadolint or dockerlint to CI to catch
   version mismatches and best-practice violations.
@@ -415,7 +415,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Verify provenance is attached to release assets.
   - [ ] Commit separately.
 
-- [ ] **T8 — Add `hermem.ini` validation command**
+^- [x] **T8 — Add `hermem.ini` validation command**
   Operators currently discover config errors only at server startup.
   Add `hermem config validate` / `hermem config test` command that
   parses and validates `hermem.ini` without starting the server.
@@ -423,7 +423,7 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Exit 0 on valid, exit 1 with structured error on invalid.
   - [ ] Commit separately.
 
-- [ ] **T9 — Add `hermem config show` with defaults**
+^- [x] **T9 — Add `hermem config show` with defaults**
   Operators cannot see the effective config (defaults + overrides)
   without starting the server and reading logs. Add a command that
   prints the resolved config.

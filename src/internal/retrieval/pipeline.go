@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"github.com/pavelveter/hermem/src/internal/core"
 )
@@ -108,7 +109,10 @@ func (p *Pipeline) Run(db *sql.DB, seedIDs []string, opts core.RetrieveContextOp
 
 	if opts.Reranker != nil {
 		if err := applyReranker(result, opts.Reranker, opts.Ctx, opts.QueryText); err != nil {
-			return nil, "", fmt.Errorf("pipeline rerank: %w", err)
+			slog.Warn("pipeline: reranker failed, continuing with original order",
+				"err", err,
+				"query", opts.QueryText,
+			)
 		}
 	}
 

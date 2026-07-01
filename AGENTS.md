@@ -1,5 +1,9 @@
 # AGENTS.md — Bastion Bot Workflow
 
+> **Language**: This document is in Russian. An English version may be
+> added as `AGENTS.ru.md` in the future. For now, Russian is the
+> primary language for this project's team.
+
 Этот документ определяет правила работы с кодом. Все участники (люди и AI-агенты) обязаны им следовать.
 
 ---
