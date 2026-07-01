@@ -21,7 +21,7 @@
   "keywords": ["hermem", "memory", "graph", "llm", "agent"],
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^5.4.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }
 }
