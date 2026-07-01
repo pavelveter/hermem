@@ -186,6 +186,11 @@ class TaskRollbackResponse:
 
 
 @dataclass
+class TaskTreeRequest:
+    goal_id: Optional[str] = None
+
+
+@dataclass
 class TaskTreeResponse:
     tree: str
 

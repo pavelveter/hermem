@@ -231,9 +231,19 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   `AGENTS.md` is written entirely in Russian. For a public open-source
   project, this creates a barrier for international contributors. Either
   translate to English or provide a bilingual version.
-  - [ ] Translate `AGENTS.md` to English.
-  - [ ] Keep Russian version as `AGENTS.ru.md` if desired.
-  - [ ] Commit separately.
+  - [x] Translate `AGENTS.md` to English. (commit 82c806a. Title swapped
+        from "Bastion Bot Workflow" to "Hermem Contributor Workflow";
+        direct/imperative voice preserved; commit-message examples
+        translated; code blocks preserved verbatim.)
+  - [x] Keep Russian version as `AGENTS.ru.md` if desired. (body
+        preserved byte-for-byte from the source; bilingual "Язык /
+        Language" preamble points to AGENTS.md as the English
+        canonical.)
+  - [x] Commit separately. (commit 82c806a.)
+
+  Follow-up (not in this task): add markdown link validation to
+  pre-push hook / CI so the hand-rolled `[docs/andrey-karpathy-skills.md]`
+  link in AGENTS.md is caught on move/rename.
 
 ---
 
@@ -395,14 +405,30 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   `Makefile` has `make lint` (golangci-lint) but no isolated `make fmt`
   or `make vet` targets. Useful for quick pre-commit checks without the
   full linter.
-  - [ ] Add `make fmt` (`gofmt -s -w .`).
-  - [ ] Add `make vet` (`go vet ./...`).
-  - [ ] Commit separately.
+  - [x] Add `make fmt` (`gofmt -s -w .`). (already in `Makefile`;
+        verified idempotent and clean on current `main`.)
+  - [x] Add `make vet` (`go vet ./...`). (already in `Makefile` as
+        `go vet ./src/...` — narrower than the spec's `./...`; kept
+        this scope deliberately so it matches the pre-push hook
+        (`go vet ./src/...`), `magefile.go::Vet` (`sh.RunV("go",
+        "vet", "./src/...")`), and the T1 pre-commit hook design.
+        Switching to `./...` here would create a one-off divergence
+        from every other vet invocation in the project.)
+  - [x] Commit separately. (T3 was implemented on `main` before the
+        M9/T10 work — the implementation commit is not in this
+        conversation; this commit just flips the TODO sub-tasks.)
 
 ^- [x] **T4 — Add `make test-coverage` target**
   No single target to view test coverage locally.
-  - [ ] Add `make test-coverage` (`go test -coverprofile=coverage.out ./src/... && go tool cover -html=coverage.out`).
-  - [ ] Commit separately.
+  - [x] Add `make test-coverage` (`go test -coverprofile=coverage.out
+        ./src/... && go tool cover -html=coverage.out`). (already in
+        `Makefile`; same `./src/...` scope rationale as T3 above; the
+        final `echo "Coverage report: coverage.html"` line points the
+        developer at the HTML report, matching the equivalent
+        `magefile.go::TestCoverage` target body for cross-runner
+        parity.)
+  - [x] Commit separately. (T4 implementation predates this
+        conversation; this commit just flips the TODO sub-tasks.)
 
 ^- [x] **T5 — Add Dependabot/Renovate for Go modules**
   `.github/dependabot.yml` exists but only covers GitHub Actions. Go
@@ -449,10 +475,20 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   `Makefile` works on macOS/Linux but not on Windows natively.
   Consider adding a `magefile.go` (Go-based task runner) for
   cross-platform development.
-  - [ ] Add `magefile.go` with equivalents of `make build`, `make test`,
-    `make lint`.
-  - [ ] Document in `CONTRIBUTING.md`.
-  - [ ] Commit separately.
+  - [x] Add `magefile.go` with equivalents of `make build`, `make test`,
+    `make lint`. (15 targets: Build, BuildLocal, BuildNoLocal, Test,
+    TestE2E, Benchmarks, Lint, Fmt, Vet, TestCoverage, Clean, Install,
+    Completions, InstallCompletions, Dev. Gated by `//go:build mage`
+    so it never reaches the production binary; `path/filepath.Join`
+    used everywhere instead of `string(os.PathSeparator)`; Default
+    intentionally unset so bare `mage` errors instead of compiling.)
+  - [x] Document in `CONTRIBUTING.md`. (new "Mage (cross-platform
+    build runner)" subsection after Hot reload.)
+  - [x] Commit separately. (commit 79479c6.)
+
+  Note: `magefile/mage` added to `go.mod` so the `mage` build tag
+  compiles the file.
+
 
 ---
 
