@@ -164,6 +164,35 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./src/...
 
+  apidiff:
+    name: API Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Create embedding placeholders
+        run: scripts/ensure-embed-placeholders.sh
+
+      - name: Install go-apidiff
+        run: go install github.com/jimmidyson/go-apidiff@latest
+
+      - name: Check API compatibility
+        run: |
+          # Compare against the last tagged release
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No tags found — skipping API compatibility check"
+            exit 0
+          fi
+          go-apidiff "$LATEST_TAG" --print-compatible
+
   openapi:
     name: OpenAPI Validation
     runs-on: ubuntu-latest

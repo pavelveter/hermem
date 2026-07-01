@@ -34,8 +34,8 @@ use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
 group usage; "hermem --help" prints the full tree.
 
 Flags:
-  -h, --help   help for mcp
+  -h, --help   help for docs
 
-Use "hermem mcp [command] --help" for more information about a command.
+Use "hermem docs [command] --help" for more information about a command.
 
 Documentation: https://github.com/pavelveter/hermem

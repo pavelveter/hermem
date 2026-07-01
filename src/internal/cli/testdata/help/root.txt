@@ -15,6 +15,7 @@ Group layout:
   metrics     Prometheus exposition
   version     Print build version
   completion  Generate shell completions (bash / zsh / fish)
+  docs        Generate CLI documentation and man pages
   mcp         MCP server for AI assistant integration (stdio)
   memory      Knowledge CRUD and retrieval
   task        Task lifecycle management
@@ -39,6 +40,7 @@ Available Commands:
   completion  Generate shell completion scripts (bash, zsh, fish)
   db          Database housekeeping (migrate / rollback / verify / schema)
   diagnose    Run self-diagnostics on the database and memory subsystem
+  docs        Generate CLI documentation in Markdown format
   graph       Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)
   health      Health probe (pings the DB; mirrors /health/ready)
   help        Help about any command
