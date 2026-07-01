@@ -46,6 +46,26 @@ func SlogOrFallback(l core.Logger) core.Logger {
 	return NewDefaultLogger()
 }
 
+// PrefixedLogger wraps a core.Logger and prepends "[component]" to every
+// message. Use it to give each service its own logger identity without
+// duplicating the underlying handler:
+//
+//	logger := logging.PrefixedLogger{Logger: l, Component: "task"}
+//	logger.Info("created", "id", id) // [task] created id=t-1
+type PrefixedLogger struct {
+	Logger    core.Logger
+	Component string
+}
+
+func (l PrefixedLogger) prefixed(msg string) string {
+	return "[" + l.Component + "] " + msg
+}
+
+func (l PrefixedLogger) Debug(msg string, args ...any) { l.Logger.Debug(l.prefixed(msg), args...) }
+func (l PrefixedLogger) Info(msg string, args ...any)  { l.Logger.Info(l.prefixed(msg), args...) }
+func (l PrefixedLogger) Warn(msg string, args ...any)  { l.Logger.Warn(l.prefixed(msg), args...) }
+func (l PrefixedLogger) Error(msg string, args ...any) { l.Logger.Error(l.prefixed(msg), args...) }
+
 // Debug logs at Debug level.
 func (l *SlogLogger) Debug(msg string, args ...any) {
 	l.logger.Debug(msg, args...)
