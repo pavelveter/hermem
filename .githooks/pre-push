@@ -7,14 +7,18 @@
 # Or check it in via a `Makefile` / `install.sh` setup step.
 #
 # What it runs (in order):
-#   1. Architecture guardrails (grep)        — ci.yml `guardrails` job
-#   2. gofmt -l (no diffs required)          — fast format check
-#   3. go vet ./src/...                      — fast
-#   4. go build ./src/...                   — fast
-#   5. go test -race -count=1 -timeout 10m   — slow (matches ci.yml `test` job)
-#   6. E2E tests (CLI + HTTP + scenarios)    — builds binary, runs all e2e
-#   7. golangci-lint (optional, if installed)
-#   8. AMX guard test (optional, darwin + CGO only)
+#   1.  Architecture guardrails (grep)        — ci.yml `guardrails` job
+#   2.  gofmt -l (no diffs required)          — fast format check
+#   3.  go vet ./src/...                      — fast
+#   4.  go build ./src/...                    — fast
+#   5.  go test -race -count=1 -timeout 10m   — slow (mirrors ci.yml `test` job)
+#   6.  E2E tests (CLI + HTTP + scenarios)     — builds binary, runs all e2e
+#   7.  Fuzz tests (10s each)                  — mirrors ci.yml `fuzz` job
+#   8.  govulncheck (optional, if installed)   — mirrors ci.yml `govulncheck` job
+#   9.  OpenAPI validation tests               — mirrors ci.yml `openapi` job
+#   10. golangci-lint (optional, if installed)  — mirrors ci.yml `lint` job
+#   11. AMX guard (optional, darwin + CGO)      — mirrors ci-amx.yml
+#   12. API compatibility (optional, if tags)   — mirrors ci.yml `apidiff` job
 #
 # NOT mirrored: ci.yml `build` matrix cross-platform zig builds
 # (linux/amd64, linux/arm64, windows/amd64, windows/arm64). 4 cross-
@@ -22,7 +26,7 @@
 # when actually targeting a foreign matrix.
 #
 # Bypass: `git push --no-verify` skips the hook entirely.
-# Failure: any non-zero exit blocks the push.
+# Failure: any non-zero exit blocks the hook.
 set -euo pipefail
 
 # Color output (TTY-aware so CI logs stay readable).
@@ -85,7 +89,27 @@ section "go test -p 1 -timeout 5m ./tests/e2e/... (E2E tests)"
 go test -p 1 -timeout 5m ./tests/e2e/...
 ok "go test -p 1 ./tests/e2e/... (E2E)"
 
-# 7. golangci-lint — only if installed locally. CI uses v2.12.2.
+# 7. Fuzz tests — short 10s runs per target. Mirrors ci.yml `fuzz` job.
+section "Fuzz tests (10s each)"
+go test -fuzz=FuzzSplitSQL -fuzztime=10s ./src/internal/store/... 2>&1 && ok "Fuzz FuzzSplitSQL" || warn "Fuzz FuzzSplitSQL skipped or failed"
+go test -fuzz=FuzzCosineSimilarity -fuzztime=10s ./src/internal/vector/... 2>&1 && ok "Fuzz FuzzCosineSimilarity" || warn "Fuzz FuzzCosineSimilarity skipped or failed"
+go test -fuzz=FuzzEntityJSONRoundTrip -fuzztime=10s ./src/internal/core/... 2>&1 && ok "Fuzz FuzzEntityJSONRoundTrip" || warn "Fuzz FuzzEntityJSONRoundTrip skipped or failed"
+go test -fuzz=FuzzStoreRequestJSONRoundTrip -fuzztime=10s ./src/internal/core/... 2>&1 && ok "Fuzz FuzzStoreRequestJSONRoundTrip" || warn "Fuzz FuzzStoreRequestJSONRoundTrip skipped or failed"
+
+# 8. govulncheck — only if installed locally. CI installs it.
+if command -v govulncheck >/dev/null 2>&1; then
+    section "govulncheck ./src/..."
+    govulncheck ./src/...
+    ok "govulncheck"
+else
+    warn "govulncheck not installed — skipping (CI installs it; install: go install golang.org/x/vuln/cmd/govulncheck@latest)"
+fi
+
+# 9. OpenAPI validation — mirrors ci.yml `openapi` job.
+section "OpenAPI validation tests"
+go test -run 'Test(Spec|Paths|Schemas|Operation|Snapshot|Every)' ./api/... 2>&1 && ok "OpenAPI validation" || warn "OpenAPI validation skipped or failed"
+
+# 10. golangci-lint — only if installed locally. CI uses v2.12.2.
 if command -v golangci-lint >/dev/null 2>&1; then
     section "golangci-lint run ./src/..."
     golangci-lint run --timeout=5m ./src/...
@@ -94,7 +118,7 @@ else
     warn "golangci-lint not installed — skipping (CI uses v2.12.2; install: brew install golangci-lint)"
 fi
 
-# 8. AMX guard — only on Darwin with CGO_ENABLED=1 (mirrors ci-amx.yml).
+# 11. AMX guard — only on Darwin with CGO_ENABLED=1 (mirrors ci-amx.yml).
 if [ "$(uname -s 2>/dev/null)" = "Darwin" ] \
     && command -v go >/dev/null 2>&1 \
     && [ "$(go env CGO_ENABLED 2>/dev/null)" = "1" ]; then
@@ -103,6 +127,20 @@ if [ "$(uname -s 2>/dev/null)" = "Darwin" ] \
     ok "AMX guard"
 else
     warn "AMX guard skipped (requires darwin + go on PATH + go env CGO_ENABLED=1)"
+fi
+
+# 12. API compatibility — only if go-apidiff installed and tags exist.
+if command -v go-apidiff >/dev/null 2>&1; then
+    LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+    if [ -n "$LATEST_TAG" ]; then
+        section "API compatibility (vs $LATEST_TAG)"
+        go-apidiff "$LATEST_TAG" --print-compatible
+        ok "API compatibility"
+    else
+        warn "No git tags found — skipping API compatibility check"
+    fi
+else
+    warn "go-apidiff not installed — skipping (install: go install github.com/jimmidyson/go-apidiff@latest)"
 fi
 
 printf "\n${GREEN}==> All pre-push checks passed. Pushing.${RESET}\n"
