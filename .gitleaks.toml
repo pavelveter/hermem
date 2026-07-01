@@ -1,0 +1,17 @@
+# .gitleaks.toml — allowlist known false positives in docs/tests.
+
+title = "Hermem gitleaks config"
+
+[allowlist]
+  description = "Global allowlist for example/test keys in documentation and test fixtures"
+  paths = [
+    '''docs/.*\.md$''',
+    '''USAGE\.md$''',
+    '''_test\.go$''',
+    '''testdata/.*''',
+  ]
+  regexes = [
+    '''hermes-key-abc123''',
+    '''mhermes-key-abc123''',
+    '''abcdef1234567890abcdef1234567890''',
+  ]
