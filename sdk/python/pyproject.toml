@@ -28,3 +28,6 @@ Repository = "https://github.com/pavelveter/hermem"
 
 [tool.setuptools.packages.find]
 include = ["hermem*"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
