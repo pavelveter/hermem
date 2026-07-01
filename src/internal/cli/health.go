@@ -17,7 +17,14 @@ func newHealthCmd(env *clienv.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "health",
 		Short: "Health probe (pings the DB; mirrors /health/ready)",
-		Args:  cobra.NoArgs,
+		Long: `Run a health check against the local database.
+
+Pings the SQLite connection and returns a JSON status object.
+Mirrors the GET /health/ready HTTP endpoint. Useful for monitoring
+scripts and container liveness probes that don't want an HTTP roundtrip.
+
+Exit code 0 = healthy, 1 = unhealthy.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := env.DB.PingContext(env.Ctx); err != nil {
 				fmt.Fprintf(os.Stderr, "unhealthy: %v\n", err)
