@@ -62,10 +62,14 @@ sign: hermem
 	fi
 
 # Build, sign, and install to ~/.local/bin (override with INSTALL_DIR=...)
-install: build sign
+install: build
 	@mkdir -p "$(INSTALL_DIR)"
 	@cp hermem "$(INSTALL_DIR)/hermem"
 	@if [ -f hermem.ini ]; then cp hermem.ini "$(INSTALL_DIR)/hermem.ini"; fi
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		codesign --force --sign - "$(INSTALL_DIR)/hermem" && \
+		echo "Signed: $(INSTALL_DIR)/hermem"; \
+	fi
 	@echo "Installed: $(INSTALL_DIR)/hermem"
 
 clean:
