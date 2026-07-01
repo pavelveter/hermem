@@ -13,7 +13,25 @@ func newSchemaCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "schema",
 		Short: "Show schema fingerprint (current vs stored in DB)",
-		Args:  cobra.NoArgs,
+		Long: `Compare the current schema fingerprint against the stored DB fingerprint.
+
+The schema fingerprint is a hash of the expected database structure
+(derived from the migration files). The stored fingerprint is what
+the DB reports about its current state.
+
+Output (text):
+  Current: abc123...
+  Stored:  def456...
+  WARNING: schema changed!
+
+If "WARNING: schema changed!" appears, the on-disk migrations have
+produced a different schema than what the DB currently has. Run
+"hermem db migrate apply" to bring the DB up to date.
+
+Examples:
+  hermem db schema
+  hermem db schema | grep -q WARNING && echo "needs migration"`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// PHASE 3.2: routes through migration.Service.Schema
 			// (transport-agnostic). Schema is fetched per call from

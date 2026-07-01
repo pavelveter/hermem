@@ -14,7 +14,28 @@ func newCreateCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "create",
 		Short: "Create a task (auto-embeds content and assigns the first stateful category)",
-		Args:  cobra.NoArgs,
+		Long: `Create a new task entity in the knowledge graph.
+
+Input (JSON on stdin):
+  {
+    "id":          "optional-id",        // auto-generated if omitted
+    "content":     "task description",
+    "context_ids": ["related-entity"]    // optional, links to existing entities
+  }
+
+The task is automatically:
+  - Assigned a unique ID if none provided
+  - Embedded using the configured embedder
+  - Stored with the "task" category
+  - Linked to any provided context_ids via "context_of" edges
+
+Output:
+  {"status":"ok"}
+
+Examples:
+  echo '{"content":"Implement user authentication"}' | hermem task create
+  echo '{"content":"Write tests","context_ids":["g1"]}' | hermem task create`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req core.TaskCreateRequest
 			if err := cli.DecodeStdin(&req); err != nil {

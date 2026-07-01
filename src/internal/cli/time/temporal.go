@@ -16,7 +16,32 @@ func newTemporalCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "temporal",
 		Short: "Time-bounded retrieval (time_from / time_to in RFC3339)",
-		Args:  cobra.NoArgs,
+		Long: `Retrieve entities within a specific time window.
+
+Input (JSON on stdin):
+  {
+    "query":     "natural language query",
+    "time_from": "2024-01-01T00:00:00Z",  // RFC3339, optional
+    "time_to":   "2024-12-31T23:59:59Z",  // RFC3339, optional
+    "top_k":     3                         // optional, default 3
+  }
+
+Pipeline:
+  1. Embed the query text.
+  2. Vector search to find seed entities.
+  3. Graph walk with time bounds applied — only entities created
+     within the [time_from, time_to] window are included.
+
+Time bounds filter by entity created_at timestamp. Omitting both
+time_from and time_to returns all time periods (no temporal filter).
+
+Output (JSON):
+  {"world_facts":[...], "opinions":[...], ...}
+
+Examples:
+  echo '{"query":"deployment","time_from":"2024-01-01T00:00:00Z"}' | hermem time temporal
+  echo '{"query":"meeting notes","time_to":"2024-06-30T23:59:59Z"}' | hermem time temporal`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req struct {
 				Query    string `json:"query"`

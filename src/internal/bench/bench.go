@@ -37,8 +37,32 @@ func NewCmd(env *clienv.Env) *cobra.Command {
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
-		Use:               "bench",
-		Short:             "Synthesize N observations into each duration histogram and report latency percentiles",
+		Use:   "bench",
+		Short: "Synthesize N observations into each duration histogram and report latency percentiles",
+		Long: `Synthesize synthetic observations and report latency percentiles.
+
+Generates synthetic timing data for each configured histogram metric
+(ingestion, retrieval, contradiction detection, reranking) and reports
+p50, p95, p99 latency percentiles. This is useful for capacity planning
+and understanding expected latency distributions.
+
+Does NOT require a running server — operates on the metrics layer only.
+
+Flags:
+  --iterations    Number of observations per histogram (default 5000)
+  --json          Output machine-readable JSON instead of human text
+
+Output (text):
+  bench complete  iterations=5000
+  series  label=category  histogram=hermem_ingest_duration_seconds  count=5000  p50=0.045  p95=0.120  p99=0.250
+
+Output (JSON with --json):
+  {"iterations":5000, "series":[{"label":"category", ...}]}
+
+Examples:
+  hermem bench
+  hermem bench --iterations 10000
+  hermem bench --json | jq '.series[].p95'`,
 		Args:              cobra.NoArgs,
 		PersistentPreRunE: noopPreRun,
 		SilenceErrors:     true,

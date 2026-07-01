@@ -14,7 +14,26 @@ func newShowCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
 		Short: "Show one task with its blocked-by and recovers-via relations",
-		Args:  cobra.NoArgs,
+		Long: `Display detailed information about a single task, including its relations.
+
+Input (JSON on stdin):
+  {
+    "id": "task-entity-id"
+  }
+
+Output (JSON):
+  {
+    "entity":      { ... },              // full task entity
+    "blocked_by":  ["task-id", ...],     // tasks that block this one
+    "recovers_via": ["task-id", ...]     // rollback companion tasks
+  }
+
+Use "hermem task tree" to see the full dependency tree under a goal.
+
+Examples:
+  echo '{"id":"t1"}' | hermem task show
+  echo '{"id":"t1"}' | hermem task show | jq '.blocked_by'`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req core.TaskShowRequest
 			if err := cli.DecodeStdin(&req); err != nil {

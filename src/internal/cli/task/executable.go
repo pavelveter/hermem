@@ -19,7 +19,29 @@ func newExecutableCmd(env *cli.Env) *cobra.Command {
 		Use:     "executable",
 		Aliases: []string{"next"},
 		Short:   "List currently-executable tasks (blockers all done). Aliases: next",
-		Args:    cobra.NoArgs,
+		Long: `List tasks whose blocking dependencies are all completed.
+
+Input (JSON on stdin):
+  {
+    "goal_id": "goal-entity-id"          // optional, filter by goal
+  }
+
+Empty stdin is accepted (runs as if "{}" was piped).
+
+A task is "executable" when all tasks that block it have status "done".
+This is the command an agent loop uses to pick up the next task to work
+on.
+
+Output (JSON):
+  {"tasks": [{"id":"t1", "content":"...", "status":"pending", ...}, ...]}
+
+Aliases: hermem task next
+
+Examples:
+  echo '{}' | hermem task executable
+  hermem task next
+  echo '{"goal_id":"g1"}' | hermem task next | jq '.tasks[0].id'`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			data, err := cli.ReadStdin()
 			if err != nil && err != cli.ErrStdinRequired {

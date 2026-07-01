@@ -17,7 +17,31 @@ func newExplainCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "explain",
 		Short: "Explain the reasoning path from query to retrieved entities",
-		Args:  cobra.NoArgs,
+		Long: `Show the reasoning path from a query to the retrieved entities.
+
+Input (JSON on stdin):
+  {
+    "query": "natural language query",
+    "top_k": 5                           // optional
+  }
+
+Runs the full retrieval pipeline and prints an ASCII tree showing:
+  - Seeds found by vector search (with similarity scores)
+  - Graph walk edges traversed (with depth and composite scores)
+  - Score breakdown: vector, recency, centrality, depth penalty
+  - Summary counts by entity type
+
+Flags:
+  --json    Output raw JSON instead of ASCII tree
+
+This command is useful for debugging retrieval quality — you can see
+exactly which entities were found, why they were ranked highly, and
+how the graph walk connected them.
+
+Examples:
+  echo '{"query":"error handling patterns"}' | hermem memory explain
+  echo '{"query":"database migrations"}' | hermem memory explain --json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req struct {
 				Query string `json:"query"`

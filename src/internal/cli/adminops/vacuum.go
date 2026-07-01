@@ -17,6 +17,29 @@ func newVacuumCmd(env *cli.Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "vacuum",
 		Short: "Run SQLite VACUUM to reclaim disk space",
+		Long: `Rebuild the database file to reclaim unused disk space.
+
+SQLite databases accumulate free pages over time from deletes and
+updates. VACUUM rebuilds the entire database file, removing gaps
+and reducing file size.
+
+⚠ VACUUM requires temporary disk space roughly equal to the current
+database size. It also acquires an exclusive lock — no other writers
+can access the DB during the operation.
+
+Flags:
+  --no-progress    Suppress progress output
+
+Output:
+  VACUUM progress: 45%
+  VACUUM complete — 12.3 MB reclaimed
+
+Progress updates are printed to stdout (unless --no-progress).
+The final line reports the total space reclaimed.
+
+Examples:
+  hermem ops vacuum
+  hermem ops vacuum --no-progress`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			vr := admin.NewVacuumRunner(env.DB)
 

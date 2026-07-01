@@ -14,7 +14,30 @@ func newStoreCmd(env *cli.Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "store",
 		Short: "Store an entity (JSON stdin: id/category/content + optional embedding)",
-		Args:  cobra.NoArgs,
+		Long: `Store a single entity in the knowledge graph.
+
+Input (JSON on stdin):
+  {
+    "id":       "unique-entity-id",
+    "category": "world|opinion|experience|observation|task",
+    "content":  "free-text content",
+    "embedding": [0.1, 0.2, ...]          // optional
+  }
+
+If "embedding" is omitted and an embedder is configured, the content is
+automatically embedded before storage. If embedding fails, the entity is
+stored without a vector (a warning is printed to stderr).
+
+Categories must match the configured schema (hermem.ini [schema]).
+Use "hermem admin config" to see valid categories.
+
+Output:
+  {"status":"ok"}
+
+Examples:
+  echo '{"id":"e1","category":"world","content":"Go is statically typed"}' | hermem memory store
+  hermem memory ingest < dialog.txt   # bulk store via ingest`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req core.StoreRequest
 			if err := cli.DecodeStdin(&req); err != nil {
