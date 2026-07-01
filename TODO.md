@@ -373,10 +373,18 @@ Goal: bring this project to the level of a production-grade open-source Go proje
 ^- [x] **T2 — Add local development helper (`make dev`)**
   No `make dev` target. Add a target that starts the server with hot-reload
   (via `air` or `gow`) for local development.
-  - [ ] Add `.air.toml` or equivalent config.
-  - [ ] Add `make dev` target.
-  - [ ] Document in `CONTRIBUTING.md`.
-  - [ ] Commit separately.
+  - [x] Add `.air.toml` or equivalent config. (modern schema:
+        `build.entrypoint = ["./hermem", "serve"]`; replaces the deprecated
+        `build.bin` + `build.args_bin` pair. `pre_cmd` runs the embed
+        placeholder so `go:embed` is satisfied on cold rebuild. Excludes
+        `docs/`, `completions/`, `tests/`, `.db`, `*.ini` from rebuild
+        triggers; `delay=1000` + `send_interrupt=true` give SQLite WAL a
+        clean checkpoint window.)
+  - [x] Add `make dev` target. (exits 1 with an install hint if `air`
+        is missing on `$PATH`; does NOT auto-install to avoid silently
+        mutating the developer's `$GOBIN`.)
+  - [x] Document in `CONTRIBUTING.md`.
+  - [x] Commit separately.
 
 ^- [x] **T3 — Add `make fmt` and `make vet` targets**
   `Makefile` has `make lint` (golangci-lint) but no isolated `make fmt`
