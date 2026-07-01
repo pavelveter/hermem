@@ -232,11 +232,12 @@ func TestRef_StoreConcurrentDistinct(t *testing.T) {
 		if s == nil {
 			t.Fatalf("goroutine %d: nil state after Store", i)
 		}
-		if prev, dup := seen[s.Generation]; dup {
+		gen := s.Generation
+		if prev, dup := seen[gen]; dup {
 			t.Errorf("generation %d reused by goroutines %d and %d (atomic counter race)",
-				s.Generation, prev, i)
+				gen, prev, i)
 		}
-		seen[s.Generation] = i
+		seen[gen] = i
 	}
 	gen := refs.Load().Generation
 	if gen < 2 || gen > uint64(1+N) {
