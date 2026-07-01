@@ -3,6 +3,7 @@ package health_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,14 @@ type mockExtractor struct {
 
 func (m *mockExtractor) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
 	return m.extractFunc(ctx, dialog)
+}
+
+type mockReranker struct {
+	rerankFunc func(ctx context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error)
+}
+
+func (m *mockReranker) Rerank(ctx context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
+	return m.rerankFunc(ctx, query, facts)
 }
 
 func TestDBProbe_ClosedDB(t *testing.T) {
@@ -174,6 +183,67 @@ func TestExtractorProbe_OK(t *testing.T) {
 	r := st.Checks["extractor"]
 	if !r.OK {
 		t.Fatalf("expected extractor OK, got error: %s", r.Error)
+	}
+}
+
+// TestRerankerProbe_OK — the reranker round-trips a "ping" fact list and
+// returns its (re-ordered) slice; the probe interprets any non-error
+// result as healthy. This pins the happy path against a future refactor
+// that might, say, swap the probe to a deeper connectivity check.
+func TestRerankerProbe_OK(t *testing.T) {
+	r := &mockReranker{
+		rerankFunc: func(ctx context.Context, _ string, _ []core.RetrievedFact) ([]core.RetrievedFact, error) {
+			return []core.RetrievedFact{}, nil
+		},
+	}
+	svc := health.New(health.RerankerProbe(r))
+	st := svc.Ready(t.Context())
+	res := st.Checks["reranker"]
+	if !res.OK {
+		t.Fatalf("expected reranker OK, got error: %s", res.Error)
+	}
+	if res.Critical {
+		t.Fatal("reranker probe must be non-critical (warning severity) so an outage does not flap readiness")
+	}
+}
+
+// TestRerankerProbe_Nil — when env.Reranker is nil (operator opted out
+// of the rerank feature), the probe must report a failure AND keep its
+// non-critical severity, so the readiness probe still says Ready.
+func TestRerankerProbe_Nil(t *testing.T) {
+	svc := health.New(health.RerankerProbe(nil))
+	st := svc.Ready(t.Context())
+	res := st.Checks["reranker"]
+	if res.OK {
+		t.Fatal("expected nil reranker to fail the probe")
+	}
+	if !strings.Contains(res.Error, "nil") {
+		t.Errorf("expected nil-mention in probe error, got %q", res.Error)
+	}
+	if res.Critical {
+		t.Fatal("reranker probe must be non-critical (warning severity) — an absent reranker must not flake readiness")
+	}
+}
+
+// TestRerankerProbe_Error — a reachable but broken reranker reports the
+// upstream error verbatim and stays non-critical.
+func TestRerankerProbe_Error(t *testing.T) {
+	r := &mockReranker{
+		rerankFunc: func(ctx context.Context, _ string, _ []core.RetrievedFact) ([]core.RetrievedFact, error) {
+			return nil, errors.New("reranker backend down")
+		},
+	}
+	svc := health.New(health.RerankerProbe(r))
+	st := svc.Ready(t.Context())
+	res := st.Checks["reranker"]
+	if res.OK {
+		t.Fatal("expected error-reranker to fail the probe")
+	}
+	if !strings.Contains(res.Error, "reranker backend down") {
+		t.Errorf("expected upstream error to surface, got %q", res.Error)
+	}
+	if res.Critical {
+		t.Fatal("reranker probe must be non-critical (warning severity)")
 	}
 }
 

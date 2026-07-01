@@ -16,13 +16,15 @@ import (
 
 // httpClient is the internal unified HTTP client for every AI provider
 // (OllamaEmbedder, OpenAIEmbedder, OllamaLLMExtractor, OpenAILLMExtractor,
-// OllamaReranker, OpenAIReranker). It owns the three concerns that were
+// OllamaReranker, OpenAIReranker). It owns the four concerns that were
 // duplicated in every client before §9:
 //
-//   - baseURL  — already TrimRight'd of any trailing / so path concatenation
+//   - baseURL   — already TrimRight'd of any trailing / so path concatenation
 //     never produces `//`.
-//   - apiKey   — empty for Ollama (no Authorization header), populated for
+//   - apiKey    — empty for Ollama (no Authorization header), populated for
 //     OpenAI (Bearer header attached below).
+//   - provider  — "ollama" or "openai", stamped onto every ai_call_retry /
+//     ai_call_failed slog event via ResilientClient.Provider.
 //   - resilient — the shared *ResilientClient that retries on 5xx/429/network
 //     failures and re-attaches the request body via GetBody.
 //
@@ -51,7 +53,10 @@ type httpClient struct {
 //     timeout can be re-applied per request without sharing state.
 //   - Wiring that client into a ResilientClient with the supplied policy.
 //     Zero-value fields in policy are resolved via resolvePolicy.
-func newHTTPClient(baseURL, apiKey string, timeout time.Duration, policy RetryPolicy) *httpClient {
+//   - Stamping provider+model onto the inner ResilientClient so Do can
+//     attribute every ai_call_retry / ai_call_failed event to the right
+//     upstream (Ollama vs OpenAI, plus the specific model queried).
+func newHTTPClient(baseURL, apiKey, provider, model string, timeout time.Duration, policy RetryPolicy) *httpClient {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
@@ -71,10 +76,13 @@ func newHTTPClient(baseURL, apiKey string, timeout time.Duration, policy RetryPo
 		Timeout:   timeout,
 		Transport: transport,
 	}
+	rc := NewResilientClient(c, policy)
+	rc.Provider = provider
+	rc.Model = model
 	return &httpClient{
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		apiKey:    apiKey,
-		resilient: NewResilientClient(c, policy),
+		resilient: rc,
 	}
 }
 

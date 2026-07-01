@@ -103,6 +103,13 @@ func resolvePolicy(p RetryPolicy) RetryPolicy {
 // policy and is the single retry entrypoint for every external call
 // site (embedder/extractor/reranker).
 //
+// Provider and Model are populated by the httpClient constructor
+// (see http.go::newHTTPClient) and stamped onto every ai_call_retry /
+// ai_call_failed slog event inside Do. Leaving them as zero values is
+// fine for callers that construct ResilientClient directly (e.g. the
+// existing tests in client_test.go) — events will simply carry empty
+// provider="" / model="" fields.
+//
 // Contract (this is the source of truth — see ADR-011):
 //
 //  1. Idempotency. Do is safe ONLY for idempotent requests. The wrapper
@@ -138,8 +145,10 @@ func resolvePolicy(p RetryPolicy) RetryPolicy {
 //     a single instance can be shared across goroutines. Backoff is
 //     copied on resolvePolicy, never mutated in place.
 type ResilientClient struct {
-	Inner  *http.Client // nil → http.DefaultClient
-	Policy RetryPolicy  // zero-value → resolvePolicy defaults
+	Inner    *http.Client // nil → http.DefaultClient
+	Policy   RetryPolicy  // zero-value → resolvePolicy defaults
+	Provider string       // e.g. "ollama" / "openai"; set by httpClient
+	Model    string       // e.g. "nomic-embed-text"; set by httpClient
 }
 
 // NewResilientClient is the only constructor callers should use. The
@@ -168,21 +177,35 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		deadline = time.Now().Add(p.MaxWallClock)
 	}
 
+	start := time.Now()
 	var lastErr error
+	var lastStatus int
 	for i := 0; i < p.MaxAttempts; i++ {
 		if i > 0 {
 			if err := prepareRequest(ctx, req); err != nil {
 				return nil, err
 			}
-			slog.Warn("ai_call_retry",
-				"attempt", i+1,
-				"max_attempts", p.MaxAttempts,
-				"url", req.URL.String(),
-			)
 		}
 		resp, err := executeOnce(ctx, req, inner)
 		if err != nil {
 			lastErr = err
+			lastStatus = 0
+			// Emit ai_call_retry on the network-error path here (not in
+			// the i > 0 block at the top of the loop) so exactly one
+			// retry event fires per failed attempt. The retryable-status
+			// branch below mirrors this — together they guarantee a 1:1
+			// mapping between failed attempts and ai_call_retry events.
+			// status_code is intentionally absent on this path because
+			// no HTTP response was received.
+			slog.Warn("ai_call_retry",
+				"provider", c.Provider,
+				"model", c.Model,
+				"attempts_used", i+1,
+				"max_attempts", p.MaxAttempts,
+				"latency_ms", time.Since(start).Milliseconds(),
+				"url", req.URL.String(),
+				"err", lastErr,
+			)
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
@@ -194,13 +217,17 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 			}
 			continue
 		}
+		lastStatus = resp.StatusCode
 		if retry, rerr := classifyResponse(resp, p.RetryableStatus); retry {
 			lastErr = rerr
 			slog.Warn("ai_call_retry",
-				"attempt", i+1,
+				"provider", c.Provider,
+				"model", c.Model,
+				"attempts_used", i+1,
 				"max_attempts", p.MaxAttempts,
+				"status_code", resp.StatusCode,
+				"latency_ms", time.Since(start).Milliseconds(),
 				"url", req.URL.String(),
-				"status", resp.StatusCode,
 			)
 			resp.Body.Close()
 			if ctx.Err() != nil {
@@ -216,11 +243,26 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 		}
 		return resp, nil
 	}
-	slog.Error("ai_call_failed",
-		"attempts", p.MaxAttempts,
+	// ai_call_failed. Build attrs conditionally so status_code is
+	// omitted on pure-network-error exhaustion (lastStatus == 0 means
+	// no HTTP response was ever received). Otherwise the slog handler
+	// serializes a sentinel `status_code: 0` that pollutes Loki / PromQL
+	// queries with a magic number.
+	failAttrs := []any{
+		"provider", c.Provider,
+		"model", c.Model,
+		"attempts_used", p.MaxAttempts,
+		"max_attempts", p.MaxAttempts,
+	}
+	if lastStatus != 0 {
+		failAttrs = append(failAttrs, "status_code", lastStatus)
+	}
+	failAttrs = append(failAttrs,
+		"latency_ms", time.Since(start).Milliseconds(),
 		"url", req.URL.String(),
 		"err", lastErr,
 	)
+	slog.Error("ai_call_failed", failAttrs...)
 	return nil, lastErr
 }
 

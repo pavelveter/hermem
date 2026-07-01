@@ -86,12 +86,12 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   deployments (e.g. `/usr/local/bin/hermem` with different DBs) must copy
   the binary. Both the env-var and flag are explicitly noted as TODO items
   in existing comments.
-  - [ ] Add `--config <path>` cobra persistent flag.
-  - [ ] Add `HERMEM_INI` env-var resolution.
-  - [ ] Precedence: flag > env-var > binary-dir-relative.
-  - [ ] Update `config.LoadConfig` / `LoadConfigFromBinaryDir` to support.
-  - [ ] Add tests for precedence chain.
-  - [ ] Commit separately.
+  - [x] Add `--config <path>` cobra persistent flag.
+  - [x] Add `HERMEM_INI` env-var resolution.
+  - [x] Precedence: flag > env-var > binary-dir-relative.
+  - [x] Update `config.LoadConfig` / `LoadConfigFromBinaryDir` to support.
+  - [x] Add tests for precedence chain.
+  - [x] Commit separately.
 
 - [ ] **H2 — Increase SDK test coverage**
   Go SDK has only `client_test.go` (unit tests for version mismatch, API
@@ -130,10 +130,10 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   extractor, and disk space — but not the reranker. If the reranker is
   configured but unreachable, the server reports healthy while silently
   skipping reranking on every retrieval.
-  - [ ] Add `reranker` check to `health/probes.go`.
-  - [ ] Wire into the readiness probe with `critical: false` (opt-in dep).
-  - [ ] Add test in `health/service_test.go`.
-  - [ ] Commit separately.
+  - [x] Add `reranker` check to `health/probes.go`.
+  - [x] Wire into the readiness probe with `critical: false` (opt-in dep).
+  - [x] Add test in `health/service_test.go`.
+  - [x] Commit separately.
 
 ^- [x] **H5 — Add structured error events to slog for AI provider calls**
   Currently AI provider failures (`ollama_call`, OpenAI API errors) log at

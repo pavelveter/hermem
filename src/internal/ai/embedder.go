@@ -32,7 +32,7 @@ func NewOllamaEmbedder(baseURL, model string, timeout time.Duration) *OllamaEmbe
 	return &OllamaEmbedder{
 		BaseURL: baseURL,
 		Model:   model,
-		http:    newHTTPClient(baseURL, "", timeout, RetryPolicy{MaxAttempts: 4}),
+		http:    newHTTPClient(baseURL, "", "ollama", model, timeout, RetryPolicy{MaxAttempts: 4}),
 	}
 }
 
@@ -85,7 +85,7 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string, timeout time.Duration) *Op
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		Model:   model,
-		http:    newHTTPClient(baseURL, apiKey, timeout, RetryPolicy{MaxAttempts: 4}),
+		http:    newHTTPClient(baseURL, apiKey, "openai", model, timeout, RetryPolicy{MaxAttempts: 4}),
 	}
 }
 

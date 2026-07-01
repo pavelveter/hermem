@@ -2,9 +2,11 @@ package health_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/health"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -220,4 +222,46 @@ func TestReady_TimeoutRespected(t *testing.T) {
 	if r.OK {
 		t.Fatal("want check result OK=false after timeout")
 	}
+}
+
+// TestReady_RerankerFailure_NonBlocking is the H4-specific test: a
+// failing reranker check (opt-in component; Severity: warning) must
+// NOT degrade the overall Ready status. Pinned because the operator
+// contract is "absence of a reranker is not a fault" — the
+// production wiring (cli/wiring.go) registers RerankerProbe with
+// env.Reranker, which is nil when the rerank feature is disabled
+// in hermem.ini. If a future refactor accidentally flips the reranker
+// probe to Severity: critical, this test fails immediately.
+func TestReady_RerankerFailure_NonBlocking(t *testing.T) {
+	db, err := store.MemDB()
+	if err != nil {
+		t.Fatalf("memdb: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	svc := health.New(
+		health.DBProbe(db),
+		health.RerankerProbe(&failingReranker{}),
+	)
+	status := svc.Ready(t.Context())
+	if !status.Ready {
+		t.Fatalf("ready must stay true when only the warning-severity reranker fails; got %+v", status)
+	}
+	res, ok := status.Checks["reranker"]
+	if !ok {
+		t.Fatal("missing reranker check result in Ready response")
+	}
+	if res.OK {
+		t.Fatal("reranker check should fail; readiness must NOT propagate to Ready=false")
+	}
+	if res.Critical {
+		t.Fatal("reranker probe Severity must be warning — otherwise the opt-in dep becomes a critical dep")
+	}
+}
+
+// failingReranker is a probe-only fake that always returns an error,
+// used to pin the non-blocking-reranker invariant.
+type failingReranker struct{}
+
+func (failingReranker) Rerank(_ context.Context, _ string, _ []core.RetrievedFact) ([]core.RetrievedFact, error) {
+	return nil, errors.New("reranker unreachable")
 }

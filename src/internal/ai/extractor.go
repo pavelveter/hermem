@@ -36,7 +36,7 @@ func NewOllamaLLMExtractor(baseURL, model string, temperature float32, timeout t
 		BaseURL:     baseURL,
 		Model:       model,
 		Temperature: temperature,
-		http:        newHTTPClient(baseURL, "", timeout, RetryPolicy{MaxAttempts: 4}),
+		http:        newHTTPClient(baseURL, "", "ollama", model, timeout, RetryPolicy{MaxAttempts: 4}),
 	}
 }
 
@@ -104,7 +104,7 @@ func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, t
 		APIKey:      apiKey,
 		Model:       model,
 		Temperature: temperature,
-		http:        newHTTPClient(baseURL, apiKey, timeout, RetryPolicy{MaxAttempts: 4}),
+		http:        newHTTPClient(baseURL, apiKey, "openai", model, timeout, RetryPolicy{MaxAttempts: 4}),
 	}
 }
 
