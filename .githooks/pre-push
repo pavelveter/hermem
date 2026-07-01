@@ -19,6 +19,8 @@
 #   10. golangci-lint (optional, if installed)  — mirrors ci.yml `lint` job
 #   11. AMX guard (optional, darwin + CGO)      — mirrors ci-amx.yml
 #   12. API compatibility (optional, if tags)   — mirrors ci.yml `apidiff` job
+#   13. gitleaks secrets scan (optional)         — mirrors ci.yml `gitleaks` job
+#   14. gosec security scan (optional)           — mirrors ci.yml `gosec` job
 #
 # NOT mirrored: ci.yml `build` matrix cross-platform zig builds
 # (linux/amd64, linux/arm64, windows/amd64, windows/arm64). 4 cross-
@@ -141,6 +143,24 @@ if command -v go-apidiff >/dev/null 2>&1; then
     fi
 else
     warn "go-apidiff not installed — skipping (install: go install github.com/jimmidyson/go-apidiff@latest)"
+fi
+
+# 13. gitleaks — secrets scan. Only if installed locally.
+if command -v gitleaks >/dev/null 2>&1; then
+    section "gitleaks detect (secrets scan)"
+    gitleaks detect --source . --verbose 2>&1
+    ok "gitleaks"
+else
+    warn "gitleaks not installed — skipping (install: brew install gitleaks)"
+fi
+
+# 14. gosec — static security analysis. Only if installed locally.
+if command -v gosec >/dev/null 2>&1; then
+    section "gosec ./src/... (security scan)"
+    gosec -exclude-generated -exclude-dir=tests ./src/...
+    ok "gosec"
+else
+    warn "gosec not installed — skipping (install: go install github.com/securego/gosec/v2/cmd/gosec@latest)"
 fi
 
 printf "\n${GREEN}==> All pre-push checks passed. Pushing.${RESET}\n"

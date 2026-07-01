@@ -209,3 +209,36 @@ jobs:
 
       - name: Run OpenAPI spec validation tests
         run: go test -run 'Test(Spec|Paths|Schemas|Operation|Snapshot|Every)' ./api/... -v
+
+  gitleaks:
+    name: Secrets Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  gosec:
+    name: Security Scan (gosec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Create embedding placeholders
+        run: scripts/ensure-embed-placeholders.sh
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec
+        run: gosec -exclude-generated -exclude-dir=tests ./src/...
