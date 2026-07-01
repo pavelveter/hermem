@@ -34,6 +34,28 @@ Thank you for your interest in contributing to Hermem! This document provides gu
    make test
    ```
 
+### Hot reload (optional)
+
+For faster iteration, install [air](https://github.com/air-verse/air) and
+use `make dev`. The target runs `air -c .air.toml`, which:
+
+- Rebuilds `./hermem` whenever any `*.go` under `src/` changes (tests,
+  docs, completion scripts, `*.db`, `*.ini` are excluded to keep
+  rebuilds fast and to avoid spurious restarts).
+- Runs the embed-placeholder pre-command so `go:embed` always sees the
+  binary it expects.
+- Restarts `./hermem serve` after a 1-second delay with `SIGINT`, giving
+  SQLite WAL a chance to checkpoint cleanly.
+
+```bash
+go install github.com/air-verse/air@latest
+make dev
+```
+
+If `air` is not on `$PATH`, the target prints the install command
+above and exits 1 (it does NOT auto-install, to avoid silently mutating
+the developer's `$GOBIN`).
+
 ### Code Style
 
 - Follow standard Go conventions (`gofmt`, `go vet`)

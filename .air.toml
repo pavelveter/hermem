@@ -1,0 +1,43 @@
+# Hot-reload configuration for `make dev`.
+#
+# Installed via `go install github.com/air-verse/air@latest`.
+# Run with `air -c .air.toml` or simply `make dev`.
+#
+# Behaviour on file change under src/:
+#   1. pre_cmd runs (idempotent placeholder creation for go:embed).
+#   2. cmd runs (`go build -o ./hermem ./src`).
+#   3. After `delay` ms, the previous `./hermem serve` is sent SIGINT
+#      (graceful WAL checkpoint on sqlite) and the new binary is started.
+# Excluded paths keep rebuilds fast and avoid spurious restarts.
+
+[build]
+  # `entrypoint` is the canonical modern air field (replaces the deprecated
+  # `bin` + `args_bin = [...]` pair). First element is the binary path;
+  # subsequent elements are default arguments appended to `args_bin` and
+  # any CLI args passed after `air --`.
+  entrypoint = ["./hermem", "serve"]
+  cmd = "go build -o ./hermem ./src"
+  delay = 1000
+  exclude_dir = ["src/internal/ai/bin", "completions", "docs", "tests", ".git", "tmp", ".devcontainer"]
+  exclude_file = []
+  exclude_regex = ["_test\\.go$", "\\.(db|db-wal|db-shm|ini)$", "go\\.sum$"]
+  exclude_unchanged = true
+  follow_symlink = false
+  pre_cmd = ["scripts/ensure-embed-placeholders.sh"]
+  send_interrupt = true
+  stop_on_error = true
+
+[color]
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  color = true
+  level = "info"  # debug | info | warn | error
+  time = false
+
+[misc]
+  clean_on_exit = true

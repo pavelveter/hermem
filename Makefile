@@ -1,4 +1,4 @@
-.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes completions install-completions fmt vet test-coverage
+.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes completions install-completions dev fmt vet test-coverage
 
 BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
@@ -114,6 +114,20 @@ install-completions:
 	@echo "  bash: $(COMPLETIONS_BASH_DIR)/hermem"
 	@echo "  zsh : $(COMPLETIONS_ZSH_DIR)/_hermem"
 	@echo "  fish: $(COMPLETIONS_FISH_DIR)/hermem.fish"
+
+# Hot-reload local development (TODO.md T2).
+# Depends on `air` (https://github.com/air-verse/air). The target verifies
+# the tool is on $PATH and prints an actionable install hint if missing —
+# auto-installing would silently mutate the developer's global go bin.
+dev:
+	@if ! command -v air >/dev/null 2>&1; then \
+		echo "air (github.com/air-verse/air) not installed." >&2; \
+		echo "Install with:" >&2; \
+		echo "    go install github.com/air-verse/air@latest" >&2; \
+		echo "Then re-run: make dev" >&2; \
+		exit 1; \
+	fi
+	air -c .air.toml
 
 # Format code
 fmt:

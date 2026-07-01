@@ -162,11 +162,11 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   The CLI has a `hermem completion [bash|zsh|fish]` command but completions
   are not pre-generated or packaged. Add generated completions to release
   artifacts and optionally install them via `make install`.
-  - [ ] Generate completions for bash, zsh, fish.
-  - [ ] Add `completions/` directory with generated files.
+  - [x] Generate completions for bash, zsh, fish.
+  - [x] Add `completions/` directory with generated files.
   - [ ] Include in release archive (`make install` should install them).
-  - [ ] Add `--install-completions` flag or `make install-completions` target.
-  - [ ] Commit separately.
+  - [x] Add `--install-completions` flag or `make install-completions` target.
+  - [x] Commit separately.
 
 ^- [x] **M2 — Add test coverage reporting to CI**
   CI runs all tests but does not collect or report coverage. Add
