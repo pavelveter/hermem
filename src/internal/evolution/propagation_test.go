@@ -1,6 +1,7 @@
 package evolution
 
 import (
+	"context"
 	"database/sql"
 	"math"
 	"testing"
@@ -9,6 +10,26 @@ import (
 	"github.com/pavelveter/hermem/src/internal/memory/evidence"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
+
+// evidenceListAdapter wraps an evidence.Service so it satisfies EvidenceLister.
+// This adapter lives in the test file because only tests need to bridge
+// between the persistence layer ([]*evidence.Evidence) and the domain
+// interface ([]EvidenceItem).
+type evidenceListAdapter struct {
+	svc evidence.Service
+}
+
+func (a *evidenceListAdapter) ListForBelief(ctx context.Context, beliefID int64) ([]EvidenceItem, error) {
+	raw, err := a.svc.ListForBelief(ctx, beliefID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]EvidenceItem, len(raw))
+	for i, e := range raw {
+		out[i] = e
+	}
+	return out, nil
+}
 
 func openDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -24,16 +45,17 @@ func TestPropagateConfidence_AllSupport(t *testing.T) {
 	db := openDB(t)
 	ctx := t.Context()
 	bSvc := belief.New(db)
-	eSvc := evidence.New(db)
+	eSvc := &evidenceListAdapter{svc: evidence.New(db)}
 	b := &belief.Belief{Content: "test", Confidence: 1.0}
 	if err := bSvc.CreateBelief(ctx, b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)
 	}
+	rawSvc := evidence.New(db)
 	for _, e := range []*evidence.Evidence{
 		{BeliefID: b.ID, Polarity: evidence.PolaritySupport, Strength: 0.8, Content: "sup1"},
 		{BeliefID: b.ID, Polarity: evidence.PolaritySupport, Strength: 0.6, Content: "sup2"},
 	} {
-		if err := eSvc.CreateEvidence(ctx, e); err != nil {
+		if err := rawSvc.CreateEvidence(ctx, e); err != nil {
 			t.Fatalf("CreateEvidence: %v", err)
 		}
 	}
@@ -51,16 +73,17 @@ func TestPropagateConfidence_MixedEvidence(t *testing.T) {
 	db := openDB(t)
 	ctx := t.Context()
 	bSvc := belief.New(db)
-	eSvc := evidence.New(db)
+	eSvc := &evidenceListAdapter{svc: evidence.New(db)}
 	b := &belief.Belief{Content: "mixed", Confidence: 1.0}
 	if err := bSvc.CreateBelief(ctx, b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)
 	}
+	rawSvc := evidence.New(db)
 	for _, e := range []*evidence.Evidence{
 		{BeliefID: b.ID, Polarity: evidence.PolaritySupport, Strength: 0.8, Content: "sup"},
 		{BeliefID: b.ID, Polarity: evidence.PolarityRefute, Strength: 0.2, Content: "ref"},
 	} {
-		if err := eSvc.CreateEvidence(ctx, e); err != nil {
+		if err := rawSvc.CreateEvidence(ctx, e); err != nil {
 			t.Fatalf("CreateEvidence: %v", err)
 		}
 	}
@@ -78,7 +101,7 @@ func TestPropagateConfidence_NoEvidenceKeepsConfidence(t *testing.T) {
 	db := openDB(t)
 	ctx := t.Context()
 	bSvc := belief.New(db)
-	eSvc := evidence.New(db)
+	eSvc := &evidenceListAdapter{svc: evidence.New(db)}
 	b := &belief.Belief{Content: "no-evic", Confidence: 0.7}
 	if err := bSvc.CreateBelief(ctx, b); err != nil {
 		t.Fatalf("CreateBelief: %v", err)

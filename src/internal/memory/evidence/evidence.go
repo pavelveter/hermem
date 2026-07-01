@@ -17,11 +17,12 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// Polarity tags an Evidence as supporting or refuting its target Belief.
-// Strength is an absolute magnitude [0,1]; whether that magnitude adds to or
-// subtracts from the Belief's confidence is decided by the aggregator (C3).
+// Polarity is a named type (not an alias) so we can define Unmarshal methods.
+// Its underlying type is string, matching core.Polarity.
 type Polarity string
 
 const (
@@ -72,6 +73,12 @@ type Evidence struct {
 	CreatedAt  *time.Time
 	UpdatedAt  *time.Time
 }
+
+// GetPolarity implements the evolution.EvidenceItem interface.
+func (e *Evidence) GetPolarity() core.Polarity { return core.Polarity(e.Polarity) }
+
+// GetStrength implements the evolution.EvidenceItem interface.
+func (e *Evidence) GetStrength() float64 { return e.Strength }
 
 // Service is the persistence-side interface over the evidence table.
 type Service interface {

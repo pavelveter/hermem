@@ -7,10 +7,10 @@ import (
 )
 
 func TestAggregateEvidence_Sum(t *testing.T) {
-	all := []*evidence.Evidence{
-		{Polarity: evidence.PolaritySupport, Strength: 0.5},
-		{Polarity: evidence.PolaritySupport, Strength: 0.3},
-		{Polarity: evidence.PolarityRefute, Strength: 0.2},
+	all := []EvidenceItem{
+		&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.5},
+		&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.3},
+		&evidence.Evidence{Polarity: evidence.PolarityRefute, Strength: 0.2},
 	}
 	s, r := AggregateEvidence(all, AggregatorSum)
 	if roundTo(s, 4) != 0.8 {
@@ -22,10 +22,10 @@ func TestAggregateEvidence_Sum(t *testing.T) {
 }
 
 func TestAggregateEvidence_Avg(t *testing.T) {
-	all := []*evidence.Evidence{
-		{Polarity: evidence.PolaritySupport, Strength: 0.8},
-		{Polarity: evidence.PolaritySupport, Strength: 0.4},
-		{Polarity: evidence.PolarityRefute, Strength: 0.6},
+	all := []EvidenceItem{
+		&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.8},
+		&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.4},
+		&evidence.Evidence{Polarity: evidence.PolarityRefute, Strength: 0.6},
 	}
 	s, r := AggregateEvidence(all, AggregatorAvg)
 	if roundTo(s, 4) != 0.6 {
@@ -37,11 +37,11 @@ func TestAggregateEvidence_Avg(t *testing.T) {
 }
 
 func TestAggregateEvidence_Min(t *testing.T) {
-	all := []*evidence.Evidence{
-		{Polarity: evidence.PolaritySupport, Strength: 0.9},
-		{Polarity: evidence.PolaritySupport, Strength: 0.3},
-		{Polarity: evidence.PolarityRefute, Strength: 0.7},
-		{Polarity: evidence.PolarityRefute, Strength: 0.1},
+	all := []EvidenceItem{
+		&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.9},
+		&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.3},
+		&evidence.Evidence{Polarity: evidence.PolarityRefute, Strength: 0.7},
+		&evidence.Evidence{Polarity: evidence.PolarityRefute, Strength: 0.1},
 	}
 	s, r := AggregateEvidence(all, AggregatorMin)
 	if roundTo(s, 4) != 0.3 {
@@ -62,27 +62,33 @@ func TestAggregateEvidence_Empty(t *testing.T) {
 // TestAggregateEvidence_TableDriven covers all polarity/selector combinations.
 func TestAggregateEvidence_TableDriven(t *testing.T) {
 	tests := []struct {
-		name       string
-		evidence   []*evidence.Evidence
-		selector   Aggregator
-		wantSup    float64
-		wantRef    float64
+		name     string
+		evidence []EvidenceItem
+		selector Aggregator
+		wantSup  float64
+		wantRef  float64
 	}{
 		{
-			name:     "support_only_sum",
-			evidence: []*evidence.Evidence{{Polarity: evidence.PolaritySupport, Strength: 0.3}, {Polarity: evidence.PolaritySupport, Strength: 0.7}},
+			name: "support_only_sum",
+			evidence: []EvidenceItem{
+				&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.3},
+				&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.7},
+			},
 			selector: AggregatorSum, wantSup: 1.0, wantRef: 0,
 		},
 		{
-			name:     "refute_only_avg",
-			evidence: []*evidence.Evidence{{Polarity: evidence.PolarityRefute, Strength: 0.4}, {Polarity: evidence.PolarityRefute, Strength: 0.8}},
+			name: "refute_only_avg",
+			evidence: []EvidenceItem{
+				&evidence.Evidence{Polarity: evidence.PolarityRefute, Strength: 0.4},
+				&evidence.Evidence{Polarity: evidence.PolarityRefute, Strength: 0.8},
+			},
 			selector: AggregatorAvg, wantSup: 0, wantRef: 0.6,
 		},
 		{
 			name: "mixed_min",
-			evidence: []*evidence.Evidence{
-				{Polarity: evidence.PolaritySupport, Strength: 0.5},
-				{Polarity: evidence.PolarityRefute, Strength: 0.1},
+			evidence: []EvidenceItem{
+				&evidence.Evidence{Polarity: evidence.PolaritySupport, Strength: 0.5},
+				&evidence.Evidence{Polarity: evidence.PolarityRefute, Strength: 0.1},
 			},
 			selector: AggregatorMin, wantSup: 0.5, wantRef: 0.1,
 		},
