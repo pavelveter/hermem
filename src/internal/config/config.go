@@ -128,8 +128,13 @@ func DefaultConfigPath() string {
 	return filepath.Join(filepath.Dir(exePath), "hermem.ini")
 }
 
-// LoadConfigFromBinaryDir resolves hermem.ini relative to the running binary.
+// LoadConfigFromBinaryDir resolves hermem.ini with the following precedence:
+// 1. HERMEM_INI environment variable (if set)
+// 2. hermem.ini next to the running binary
 func LoadConfigFromBinaryDir() (*Config, error) {
+	if envPath := os.Getenv("HERMEM_INI"); envPath != "" {
+		return LoadConfig(envPath)
+	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("locate executable: %w", err)

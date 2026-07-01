@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"os"
 	"os/signal"
 	"syscall"
@@ -47,7 +48,17 @@ func signalExitCode(ctx context.Context) int {
 }
 
 func main() {
-	cfg, err := config.LoadConfigFromBinaryDir()
+	// Parse --config flag early (before cobra) so config path is available.
+	configPath := flag.String("config", "", "path to hermem.ini (overrides HERMEM_INI env and binary-dir default)")
+	_ = flag.CommandLine.Parse(os.Args[1:])
+
+	var cfg *config.Config
+	var err error
+	if *configPath != "" {
+		cfg, err = config.LoadConfig(*configPath)
+	} else {
+		cfg, err = config.LoadConfigFromBinaryDir()
+	}
 	if err != nil {
 		clienv.Fatal("config: %v", err)
 	}
