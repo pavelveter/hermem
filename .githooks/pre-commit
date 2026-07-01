@@ -1,0 +1,20 @@
+#!/bin/sh
+# Pre-commit hook: run gofmt and go vet before committing.
+
+echo "Running gofmt..."
+GOFMT_OUTPUT=$(gofmt -s -d .)
+if [ -n "$GOFMT_OUTPUT" ]; then
+    echo "$GOFMT_OUTPUT"
+    echo ""
+    echo "❌ gfmt found issues. Run 'gofmt -s -w .' and try again."
+    exit 1
+fi
+
+echo "Running go vet..."
+if ! go vet ./src/... 2>&1; then
+    echo ""
+    echo "❌ go vet found issues. Fix them and try again."
+    exit 1
+fi
+
+echo "✅ Pre-commit checks passed."

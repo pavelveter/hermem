@@ -1,0 +1,21 @@
+# Default owner for everything
+* @pavelveter
+
+# Core domain
+/src/internal/core/ @pavelveter
+/src/internal/store/ @pavelveter
+/src/internal/retrieval/ @pavelveter
+
+# AI and ingestion
+/src/internal/ai/ @pavelveter
+/src/internal/ingestion/ @pavelveter
+
+# CLI
+/src/internal/cli/ @pavelveter
+
+# SDKs
+/sdk/ @pavelveter
+
+# Infrastructure
+/.github/ @pavelveter
+/docs/ @pavelveter

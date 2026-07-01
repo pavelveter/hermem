@@ -56,13 +56,13 @@ func New(svc *retrieval.Service, m *metrics.Metrics, refs *serverstate.Ref) *HTT
 // deliberate inline exception (see HandleProvenance for rationale).
 func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/search":        s.Wrap(s.HandleSearch),
-		"/retrieve":      s.Wrap(s.HandleRetrieve),
-		"/query":         s.Wrap(s.HandleQuery),
+		"/search":         s.Wrap(s.HandleSearch),
+		"/retrieve":       s.Wrap(s.HandleRetrieve),
+		"/query":          s.Wrap(s.HandleQuery),
 		"/query/temporal": s.Wrap(s.HandleQueryTemporal),
-		"/response":      s.Wrap(s.HandleResponse),
-		"/query/explain": s.Wrap(s.HandleQueryExplain),
-		"/provenance":    s.HandleProvenance, // NOT wrapped — bespoke 400 contract
+		"/response":       s.Wrap(s.HandleResponse),
+		"/query/explain":  s.Wrap(s.HandleQueryExplain),
+		"/provenance":     s.HandleProvenance, // NOT wrapped — bespoke 400 contract
 	}
 }
 

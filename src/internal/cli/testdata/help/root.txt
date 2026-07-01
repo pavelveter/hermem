@@ -38,9 +38,9 @@ Available Commands:
   agent       Agentic flows (loop)
   bench       Synthesize N observations into each duration histogram and report latency percentiles
   completion  Generate shell completion scripts (bash, zsh, fish)
+  config      Configuration management (validate / show)
   db          Database housekeeping (migrate / rollback / verify / schema)
   diagnose    Run self-diagnostics on the database and memory subsystem
-  docs        Generate CLI documentation in Markdown format
   graph       Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)
   health      Health probe (pings the DB; mirrors /health/ready)
   help        Help about any command

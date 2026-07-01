@@ -1,5 +1,18 @@
 # Profiling & Benchmarking
 
+## Go Module Verification
+
+The project uses Go's default module checksum database (`sum.golang.org`).
+If you're behind a corporate proxy or in an air-gapped environment, set:
+
+```bash
+export GONOSUMCHECK=github.com/pavelveter/hermem
+export GONOSUMDB=github.com/pavelveter/hermem
+```
+
+This skips checksum verification for the hermem module. Not recommended
+for production builds — use only for local development in restricted networks.
+
 ## Running Benchmarks
 
 ```bash

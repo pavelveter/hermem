@@ -4,7 +4,7 @@
 
 ---
 
-СНАЧАЛА ПРОЧИТАТЬ ПРАВИЛА ИЗ andrey-karpathy-skills.md, ГЛАВНЫЙ ПРИОРИТЕТ
+СНАЧАЛА ПРОЧИТАТЬ ПРАВИЛА ИЗ [docs/andrey-karpathy-skills.md](docs/andrey-karpathy-skills.md), ГЛАВНЫЙ ПРИОРИТЕТ
 
 ## 1. Git Flow
 

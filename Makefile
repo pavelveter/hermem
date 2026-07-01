@@ -1,4 +1,4 @@
-.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes
+.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes completions fmt vet test-coverage
 
 BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
@@ -80,3 +80,25 @@ clean:
 routes:
 	@echo "Route inventory: docs/generated/ROUTES.md"
 	@echo "Update manually when routes change — the file is the canonical source."
+
+# Generate shell completion scripts
+completions: build
+	@mkdir -p completions
+	./hermem completion bash > completions/hermem.bash
+	./hermem completion zsh > completions/hermem.zsh
+	./hermem completion fish > completions/hermem.fish
+	@echo "Generated: completions/hermem.{bash,zsh,fish}"
+
+# Format code
+fmt:
+	gofmt -s -w .
+
+# Run go vet
+vet:
+	go vet ./src/...
+
+# Run tests with coverage
+test-coverage:
+	go test -coverprofile=coverage.out -covermode=atomic ./src/...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report: coverage.html"

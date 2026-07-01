@@ -149,7 +149,22 @@ func newTestFixture(t *testing.T) *testFixture {
 		healthdomain.ExtractorProbe(nil),
 	).WithMetrics(metrics)
 	healthShell := healthsrv.New(healthDom)
-	srv := NewServer(refs, retSvc, taskSvc, memSvc, edgeSvc, timelineSvc, ingestSvc, cndSvc, graphSvc, migrSvc, retentionShell, reembedShell, healthShell, metrics)
+	srv := NewServerFromDeps(ServerDeps{
+		Refs:          refs,
+		Retrieval:     retSvc,
+		Task:          taskSvc,
+		Memory:        memSvc,
+		Edge:          edgeSvc,
+		Timeline:      timelineSvc,
+		Ingest:        ingestSvc,
+		Contradiction: cndSvc,
+		Graph:         graphSvc,
+		Migration:     migrSvc,
+		Retention:     retentionShell,
+		Reembed:       reembedShell,
+		Health:        healthShell,
+		Metrics:       metrics,
+	})
 
 	var handler http.Handler = srv.Mux()
 	handler = SlogMiddleware(handler)
@@ -697,14 +712,22 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// consistent with the production serve(cmd) call site.
 	edgeDom := edgedomain.New(db, vi, embed)
 	timelineDom := timelinedomain.New(db)
-	srv := NewServer(refs, ret.New(retDom, metrics, refs), tasksvc.New(taskDom, metrics, refs),
-		mem.New(memDom, metrics, refs, 0.88),
-		edge.New(edgeDom, metrics, refs), timeline.New(timelineDom, metrics),
-		ingsrv.New(ingestDom, metrics, refs, 0.88),
-		cnd.New(cndDom, metrics), graphSvc, migrSvc,
-		retention.New(retentionDom, metrics, refs, retentionPolicy),
-		reembedShell, healthShell,
-		metrics)
+	srv := NewServerFromDeps(ServerDeps{
+		Refs:          refs,
+		Retrieval:     ret.New(retDom, metrics, refs),
+		Task:          tasksvc.New(taskDom, metrics, refs),
+		Memory:        mem.New(memDom, metrics, refs, 0.88),
+		Edge:          edge.New(edgeDom, metrics, refs),
+		Timeline:      timeline.New(timelineDom, metrics),
+		Ingest:        ingsrv.New(ingestDom, metrics, refs, 0.88),
+		Contradiction: cnd.New(cndDom, metrics),
+		Graph:         graphSvc,
+		Migration:     migrSvc,
+		Retention:     retention.New(retentionDom, metrics, refs, retentionPolicy),
+		Reembed:       reembedShell,
+		Health:        healthShell,
+		Metrics:       metrics,
+	})
 
 	var handler http.Handler = srv.Mux()
 	handler = RecoveryMiddleware(APIKeyMiddleware("secret-key-123")(handler))
