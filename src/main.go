@@ -49,16 +49,14 @@ func signalExitCode(ctx context.Context) int {
 
 func main() {
 	// Parse --config flag early (before cobra) so config path is available.
+	// Precedence (flag > env > binary-dir) is enforced inside
+	// LoadConfigFromSources — main.go only hands off the parsed flag
+	// value, so a future caller can swap the parser without re-implementing
+	// the precedence rules.
 	configPath := flag.String("config", "", "path to hermem.ini (overrides HERMEM_INI env and binary-dir default)")
 	_ = flag.CommandLine.Parse(os.Args[1:])
 
-	var cfg *config.Config
-	var err error
-	if *configPath != "" {
-		cfg, err = config.LoadConfig(*configPath)
-	} else {
-		cfg, err = config.LoadConfigFromBinaryDir()
-	}
+	cfg, err := config.LoadConfigFromSources(*configPath)
 	if err != nil {
 		clienv.Fatal("config: %v", err)
 	}

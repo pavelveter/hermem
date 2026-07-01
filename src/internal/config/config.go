@@ -146,18 +146,57 @@ func DefaultConfigPath() string {
 	return filepath.Join(filepath.Dir(exePath), "hermem.ini")
 }
 
-// LoadConfigFromBinaryDir resolves hermem.ini with the following precedence:
-// 1. HERMEM_INI environment variable (if set)
-// 2. hermem.ini next to the running binary
-func LoadConfigFromBinaryDir() (*Config, error) {
+// LoadConfigFromSources resolves hermem.ini with the following precedence:
+//  1. flagPath — string passed to --config (non-empty wins regardless of env)
+//  2. $HERMEM_INI — environment variable
+//  3. hermem.ini alongside the running binary (os.Executable())
+//
+// Precedence is enforced strictly: flag > env > binary-dir. An operator
+// that sets both --config and HERMEM_INI expects the explicit flag to
+// win; the env var is treated as a deployment-level default that
+// individual invocations can override.
+//
+// flagPath semantics: a non-empty string short-circuits to branch 1
+// regardless of whether other branches would also succeed. An empty
+// string (the stdlib flag default when --config is omitted) is treated
+// as unset and falls through to branches 2 and 3. No whitespace
+// trimming: `--config " "` passes " " through to LoadConfig, which
+// then falls back to defaults because the path is non-existent. This
+// matches stdlib flag semantics — operators wanting whitespace to mean
+// "unset" should pass an empty string.
+//
+// Each branch logs at INFO with the source kind so an operator can audit
+// which file the running binary is consuming (the slog message includes
+// the path so a config-typo becomes obvious in production logs).
+func LoadConfigFromSources(flagPath string) (*Config, error) {
+	if flagPath != "" {
+		slog.Info("config: loading from --config flag", "path", flagPath)
+		return LoadConfig(flagPath)
+	}
 	if envPath := os.Getenv("HERMEM_INI"); envPath != "" {
+		slog.Info("config: loading from HERMEM_INI env", "path", envPath)
 		return LoadConfig(envPath)
 	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("locate executable: %w", err)
 	}
-	return LoadConfigFromDir(filepath.Dir(exePath))
+	dir := filepath.Dir(exePath)
+	slog.Info("config: loading from binary directory", "dir", dir)
+	return LoadConfigFromDir(dir)
+}
+
+// LoadConfigFromBinaryDir resolves hermem.ini with the following precedence:
+// 1. HERMEM_INI environment variable (if set)
+// 2. hermem.ini next to the running binary
+//
+// Deprecated: callers should use LoadConfigFromSources instead. New code
+// should pass an explicit flag value (or "") to LoadConfigFromSources.
+// This shim is kept stable because at least one integration test asserts
+// the env-var-and-fallback contract explicitly and removing it would
+// orphan that assertion.
+func LoadConfigFromBinaryDir() (*Config, error) {
+	return LoadConfigFromSources("")
 }
 
 // LoadConfigFromDir loads hermem.ini from dir.

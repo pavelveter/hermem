@@ -140,6 +140,18 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		diagnose.NewCmd(env),
 	)
 	adminops.Register(root, env)
+	// --config persistent-flag declaration for --help visibility.
+	// The actual value extraction happens earlier in main.go via
+	// stdlib flag (before cobra sees the args). Declaring the flag
+	// here purely so `hermem --help` and `hermem <subcmd> --help`
+	// advertise the precedence chain (flag > env > binary-dir).
+	// Using a private var avoids overwriting main.go's *configPath
+	// at any point — cobra's StringVar assigns the default value at
+	// declaration time, which would clobber an already-parsed flag
+	// value if we shared the pointer.
+	var helpConfigPath string
+	root.PersistentFlags().StringVar(&helpConfigPath, "config", "", "path to hermem.ini (overrides HERMEM_INI env and binary-dir default)")
+
 	root.SetHelpTemplate(`` + banner + `
 
 ` + longHelp + `{{if .Commands}}

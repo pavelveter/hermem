@@ -30,14 +30,14 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   `/task/claim-next`, `/ingest/jobs`, `/admin/retention/run` are served but
   missing from the spec; `/query/temporal` is in the spec but has no handler
   registered. Every discrepancy is a correctness bug visible to API consumers.
-  - [ ] Add `/task/claim-next` to OpenAPI spec.
-  - [ ] Add `/ingest/jobs` to OpenAPI spec.
-  - [ ] Add `/admin/retention/run` to OpenAPI spec.
-  - [ ] Either implement `handleQueryTemporal` HTTP handler or remove
+  - [x] Add `/task/claim-next` to OpenAPI spec.
+  - [x] Add `/ingest/jobs` to OpenAPI spec.
+  - [x] Add `/admin/retention/run` to OpenAPI spec.
+  - [x] Either implement `handleQueryTemporal` HTTP handler or remove
     `/query/temporal` from the spec.
-  - [ ] Update `docs/generated/ROUTES.md` after fixing all discrepancies.
-  - [ ] Verify with `go test -run 'Test(Spec|Paths|Schemas|Snapshot)' ./api/...`
-  - [ ] Commit separately.
+  - [x] Update `docs/generated/ROUTES.md` after fixing all discrepancies.
+  - [x] Verify with `go test -run 'Test(Spec|Paths|Schemas|Snapshot)' ./api/...`
+  - [x] Commit separately.
 
 ^- [x] **C2 — Implement missing `/query/temporal` HTTP handler**
   The OpenAPI spec defines `POST /query/temporal` and the CLI `hermem time temporal`
