@@ -45,6 +45,7 @@ Group layout:
   metrics     Prometheus exposition
   version     Print build version
   completion  Generate shell completions (bash / zsh / fish)
+  docs        Generate CLI documentation and man pages
   mcp         MCP server for AI assistant integration (stdio)
   memory      Knowledge CRUD and retrieval
   task        Task lifecycle management
@@ -126,6 +127,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		newVersionCmd(env),
 		newCompletionCmd(env),
 		newMCPCmd(env),
+		newDocsCmd(env),
 		admin.NewCmd(env),
 		memory.NewCmd(env),
 		task.NewCmd(env),

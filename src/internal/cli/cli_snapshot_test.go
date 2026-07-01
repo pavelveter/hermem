@@ -31,6 +31,7 @@ func cliCommands() []string {
 		"agent",
 		"profile",
 		"mcp",
+		"docs",
 	}
 }
 
