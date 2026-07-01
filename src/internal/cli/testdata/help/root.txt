@@ -32,7 +32,7 @@ Available Commands:
   admin       Admin operations (keys, config)
   agent       Agentic flows (loop)
   bench       Synthesize N observations into each duration histogram and report latency percentiles
-  completion  Generate the autocompletion script for the specified shell
+  completion  Generate shell completion scripts
   db          Database housekeeping (migrate / rollback / verify / schema)
   diagnose    Run self-diagnostics on the database and memory subsystem
   graph       Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)
