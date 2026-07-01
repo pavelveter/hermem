@@ -181,7 +181,7 @@ jobs:
         run: scripts/ensure-embed-placeholders.sh
 
       - name: Install go-apidiff
-        run: go install github.com/jimmidyson/go-apidiff@latest
+        run: go install github.com/jimmidyson/go-apidiff@latest 2>/dev/null || true
         continue-on-error: true
 
       - name: Check API compatibility
