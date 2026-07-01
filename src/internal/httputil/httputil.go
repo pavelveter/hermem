@@ -17,6 +17,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -306,6 +307,23 @@ func SafeStreamFetch(ctx context.Context, url string, maxBytes int64) ([]byte, e
 // constructed per call. Production callers go through SafeStreamFetch
 // which uses http.DefaultClient; tests may pass `srv.Client()` or a
 // fresh client for timeout control.
+// validateURL checks that urlStr is a well-formed HTTP(S) URL with a
+// non-empty host. Returns an error for malformed, scheme-less, or
+// host-less URLs.
+func validateURL(urlStr string) error {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("invalid URL scheme %q (want http or https)", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("invalid URL: empty host")
+	}
+	return nil
+}
+
 func safeStreamFetch(ctx context.Context, inner *http.Client, url string, maxBytes int64) ([]byte, error) {
 	if inner == nil {
 		inner = &http.Client{Timeout: safeStreamFetchMaxBodyTimeout}
