@@ -76,3 +76,18 @@ func ExtractorProbe(ex core.LLMExtractor) Check {
 		Severity: "warning",
 	}
 }
+
+func RerankerProbe(r core.Reranker) Check {
+	return Check{
+		Name: "reranker",
+		Probe: func(ctx context.Context) error {
+			if r == nil {
+				return errors.New("reranker is nil or not configured")
+			}
+			_, err := r.Rerank(ctx, "ping", nil)
+			return err
+		},
+		Timeout:  10 * time.Second,
+		Severity: "warning",
+	}
+}

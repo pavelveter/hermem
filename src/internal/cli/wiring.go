@@ -42,6 +42,7 @@ func wireAll(env *clienv.Env, refs *serverstate.Ref) *server.Server {
 		healthdomain.VectorIndexProbe(env.VI, env.Cfg.VectorDim),
 		healthdomain.EmbedderProbe(env.Embedder),
 		healthdomain.ExtractorProbe(env.Extractor),
+		healthdomain.RerankerProbe(env.Reranker),
 		healthdomain.DiskSpaceProbe(env.Cfg.DBPath),
 	).WithMetrics(env.Metrics)
 	reembedSvc := reembeddomain.New(env.DB, env.VI, env.Embedder)
