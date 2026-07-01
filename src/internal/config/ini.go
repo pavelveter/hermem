@@ -322,13 +322,20 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("rate_limit_burst must be >= 1 when rate limiting is enabled, got %d", c.RateLimitBurst)
 		}
 		switch c.RateLimitKeyBy {
-		case "ip", "api_key", "global":
-			// ok
+		case "ip", "api_key", "apikey", "key", "global":
+			// Accept every alias ratelimit.ResolveKeyFunc
+			// dispatches, so an operator typo of "key" / "apikey"
+			// doesn't get a confusing Validate error when the
+			// runtime would have handled it. Documented in the
+			// error message below via the canonical name set.
 		case "":
-			// Empty is treated as "ip" (the default) so a
-			// partial config block that omits the key still
-			// boots. Coerced here rather than rejected so a
-			// copy-pasted config template with an empty value
+			// The operator wrote the line but left the value
+			// blank (`rate_limit_key_by =`). Distinct from
+			// "key missing entirely": when the line is omitted,
+			// getStr returns ("", false), the parser branch is
+			// skipped, and cfg.RateLimitKeyBy stays at
+			// defaultConfig's "ip" — never reaches this case.
+			// Coerce so a config-template-with-blank-value
 			// doesn't surprise the operator.
 			c.RateLimitKeyBy = "ip"
 		default:

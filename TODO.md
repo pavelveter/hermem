@@ -64,17 +64,17 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   - [ ] Verify baseline file is non-empty.
   - [ ] Commit separately.
 
-- [ ] **C5 — Add rate limiting middleware**
+- [x] **C5 — Add rate limiting middleware**
   The HTTP server has no rate limiting. A single client can saturate the
   SQLite write path or exhaust LLM provider quotas via `/ingest`. Production
   deployments need at least a simple token-bucket or sliding-window limiter.
-  - [ ] Design a `core.RateLimiter` interface (token bucket or sliding window).
-  - [ ] Implement an in-memory rate limiter (per-key or per-IP).
-  - [ ] Add `[server] rate_limit` config section (`requests_per_second`, `burst`).
-  - [ ] Wire rate-limit middleware into the server middleware chain.
-  - [ ] Return `429 Too Many Requests` with `Retry-After` header.
-  - [ ] Add unit tests for the limiter and middleware.
-  - [ ] Commit separately.
+  - [x] Design a `core.RateLimiter` interface (token bucket or sliding window).
+  - [x] Implement an in-memory rate limiter (per-key or per-IP).
+  - [x] Add `[server] rate_limit` config section (`requests_per_second`, `burst`).
+  - [x] Wire rate-limit middleware into the server middleware chain.
+  - [x] Return `429 Too Many Requests` with `Retry-After` header.
+  - [x] Add unit tests for the limiter and middleware.
+  - [x] Commit separately.
 
 ---
 
