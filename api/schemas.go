@@ -39,6 +39,16 @@ func AllSchemas() map[string]*Schema {
 				"max_depth": {Type: "integer", Default: 2},
 			},
 			Required: []string{"seed_ids"},
+		}, "TemporalQueryRequest": {
+			Type:        "object",
+			Description: "Time-windowed query. Constrains retrieval to seed entities whose created_at is within [time_from, time_to] (both bounds inclusive); either or both bounds may be omitted. Walked descendants are not re-filtered.",
+			Properties: map[string]*Schema{
+				"query":     {Type: "string", Description: "Search query text"},
+				"top_k":     {Type: "integer", Default: 5, Description: "Number of results"},
+				"time_from": {Type: "string", Format: "date-time", Description: "RFC3339 inclusive lower bound on entity created_at"},
+				"time_to":   {Type: "string", Format: "date-time", Description: "RFC3339 inclusive upper bound on entity created_at"},
+			},
+			Required: []string{"query"},
 		},
 		"IngestRequest": {
 			Type: "object",

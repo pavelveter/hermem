@@ -116,14 +116,14 @@ Goal: bring this project to the level of a production-grade open-source Go proje
   21d2180. helpers.ts + 4 sub-client test files; 35 new tests.)
 - [x] Commit separately. (commit 21d2180.)
 
-- [ ] **H3 — Add SDK E2E tests to CI**
+- [x] **H3 — Add SDK E2E tests to CI**
   SDKs are released as part of the same tag but are not E2E-tested in CI.
   A breaking server change can ship with a broken SDK.
-  - [ ] Add Go SDK E2E workflow to CI (start server, run SDK tests).
-  - [ ] Add Python SDK E2E workflow to CI.
-  - [ ] Add TypeScript SDK E2E workflow to CI.
-  - [ ] Wire into release workflow as a gate.
-  - [ ] Commit separately.
+  - [x] Add Go SDK E2E workflow to CI (start server, run SDK tests).
+  - [x] Add Python SDK E2E workflow to CI.
+  - [x] Add TypeScript SDK E2E workflow to CI.
+  - [x] Wire into release workflow as a gate.
+  - [x] Commit separately.
 
 ^- [x] **H4 — Add reranker to health readiness probe**
   The `/health/ready` endpoint checks database, vector index, embedder, LLM

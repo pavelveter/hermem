@@ -942,6 +942,106 @@
         ]
       }
     },
+    "/query/temporal": {
+      "post": {
+        "summary": "Time-windowed query",
+        "description": "Full pipeline query filtered by an RFC3339 time range (time_from, time_to). Returns markdown context narrowed to entities valid in the window.",
+        "operationId": "queryTemporal",
+        "tags": [
+          "memory",
+          "temporal"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemporalQueryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Markdown context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid time window (RFC3339 required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Hermem-API-Version": {
+                "description": "Server API version (semver).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/recovery-plan": {
       "get": {
         "summary": "Recovery plan",
@@ -2808,6 +2908,34 @@
             "description": "ASCII tree rendering"
           }
         }
+      },
+      "TemporalQueryRequest": {
+        "type": "object",
+        "description": "Time-windowed query. Constrains retrieval to seed entities whose created_at is within [time_from, time_to] (both bounds inclusive); either or both bounds may be omitted. Walked descendants are not re-filtered.",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query text"
+          },
+          "time_from": {
+            "type": "string",
+            "description": "RFC3339 inclusive lower bound on entity created_at",
+            "format": "date-time"
+          },
+          "time_to": {
+            "type": "string",
+            "description": "RFC3339 inclusive upper bound on entity created_at",
+            "format": "date-time"
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Number of results",
+            "default": 5
+          }
+        },
+        "required": [
+          "query"
+        ]
       },
       "TimelineEntry": {
         "type": "object",

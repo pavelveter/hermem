@@ -65,6 +65,7 @@ func TestPathsCoverAllEndpoints(t *testing.T) {
 		"/health", "/health/live", "/health/ready", "/health/startup",
 		"/metrics",
 		"/store", "/search", "/retrieve", "/query", "/query/explain",
+		"/query/temporal",
 		"/response", "/edge", "/ingest",
 		"/task/status", "/task/executable", "/task/next", "/task/claim-next", "/task/list", "/task/show",
 		"/task/dep", "/task/tree", "/task/create", "/task/rollback",
@@ -158,6 +159,7 @@ func TestUniqueOperationIDs(t *testing.T) {
 	expectedIDs := []string{
 		"health", "healthLive", "healthReady", "healthStartup", "metrics",
 		"store", "search", "retrieve", "query", "queryExplain",
+		"queryTemporal",
 		"response", "createEdge", "ingest",
 		"taskStatus", "taskExecutable", "taskNext", "taskClaimNext", "taskList", "taskShow",
 		"taskDep", "taskTree", "taskCreate", "taskRollback",
@@ -373,7 +375,7 @@ func TestAllSchemasListed(t *testing.T) {
 
 	expected := []string{
 		"Entity", "Edge", "ErrorResponse", "StoreRequest", "SearchRequest",
-		"RetrieveRequest", "IngestRequest", "EdgeRequest", "SearchResult",
+		"RetrieveRequest", "TemporalQueryRequest", "IngestRequest", "EdgeRequest", "SearchResult",
 		"RetrievalResult", "RetrievedFact", "GraphNode", "ScoreBreakdown",
 		"TaskStatusRequest", "TaskListRequest", "TaskShowRequest", "TaskShowResponse",
 		"TaskDepRequest", "TaskCreateRequest", "TaskCreateResponse",
@@ -407,6 +409,7 @@ func TestAllPathsListed(t *testing.T) {
 		"/health", "/health/live", "/health/ready", "/health/startup",
 		"/metrics",
 		"/store", "/search", "/retrieve", "/query", "/query/explain",
+		"/query/temporal",
 		"/response", "/edge", "/ingest",
 		"/task/status", "/task/executable", "/task/next", "/task/claim-next",
 		"/task/list", "/task/show", "/task/dep", "/task/tree",
@@ -432,14 +435,14 @@ func TestAllPathsListed(t *testing.T) {
 // added to the server, it MUST be added here AND to AllPaths().
 var servedRoutes = map[string]string{
 	// memory
-	"/store":         "POST",
-	"/edge":          "POST",
-	"/search":        "POST",
-	"/retrieve":      "POST",
-	"/query":         "POST",
-	"/query/explain": "POST",
-	"/response":      "POST",
-	"/provenance":    "GET",
+	"/store":    "POST",
+	"/edge":     "POST",
+	"/search":   "POST",
+	"/retrieve": "POST", "/query": "POST",
+	"/query/explain":  "POST",
+	"/query/temporal": "POST",
+	"/response":       "POST",
+	"/provenance":     "GET",
 	// ingest
 	"/ingest":      "POST",
 	"/ingest/jobs": "GET",

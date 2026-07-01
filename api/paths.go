@@ -146,6 +146,24 @@ func AllPaths() map[string]*PathItem {
 				Security: auth(),
 			},
 		},
+		"/query/temporal": {
+			Post: &Operation{
+				Summary:     "Time-windowed query",
+				Description: "Full pipeline query filtered by an RFC3339 time range (time_from, time_to). Returns markdown context narrowed to entities valid in the window.",
+				OperationID: "queryTemporal",
+				Tags:        []string{"memory", "temporal"},
+				RequestBody: jsonBody("TemporalQueryRequest"),
+				Responses: map[string]Response{
+					"200": {Description: "Markdown context", Content: map[string]MediaType{
+						"application/json": {Schema: ref("QueryResponse")},
+					}},
+					"400": errorResponse("Bad request"),
+					"401": errorResponse("Unauthorized"),
+					"422": errorResponse("Invalid time window (RFC3339 required)"),
+				},
+				Security: auth(),
+			},
+		},
 		"/response": {
 			Post: &Operation{
 				Summary:     "Full pipeline with LLM response",
