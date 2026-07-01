@@ -365,6 +365,16 @@ type ConnectedComponent struct {
 	AvgDegree float64  `json:"avg_degree"`
 }
 
+// Polarity represents whether evidence supports or refutes a belief.
+// Moved here from memory/evidence to fix the layering violation where
+// evolution/ (domain) imported memory/evidence (persistence).
+type Polarity string
+
+const (
+	PolaritySupport Polarity = "support"
+	PolarityRefute  Polarity = "refute"
+)
+
 // TreeNode represents a node in the task tree.
 type TreeNode struct {
 	ID       string

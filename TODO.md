@@ -140,8 +140,8 @@ shippable steps.
 - [x] C2.D.1 `clienv` retained as thin adapter; deleted once all
       commands accept `*app.Application`.
 - [x] C2.D.2 Update `main.go` to construct `*app.Application` directly.
-- [ ] C2.D.3 Update `docs/ARCHITECTURE.md` dependency diagram.
-- [ ] C2.D.4 Confirm via `golangci-lint` no dead exports remain.
+- [x] C2.D.3 Update `docs/ARCHITECTURE.md` dependency diagram.
+- [x] C2.D.4 Confirm via `golangci-lint` no dead exports remain.
 
 ### Acceptance
 
@@ -735,68 +735,68 @@ A near-god init function controls DB bring-up.
 
 # Priority L — Low
 
-## [ ] L1. Localize SIGPIPE handling
+## [x] L1. Localize SIGPIPE handling
 
 `signal.Ignore(SIGPIPE)` in `main` is process-wide. Document the
 constraint and move the call next to the stdout writers if practical.
 
-- [ ] L1.1 Add comment in `main.go` noting the side-effect for future
+- [x] L1.1 Add comment in `main.go` noting the side-effect for future
       `signal.Notify` users.
-- [ ] L1.2 Evaluate moving the call into `clienv.WriteStdout` (or its
+- [x] L1.2 Evaluate moving the call into `clienv.WriteStdout` (or its
       replacement); keep current behaviour.
 
 ---
 
-## [ ] L2. Logger fan-in reduction
+## [x] L2. Logger fan-in reduction
 
 `core.Logger.Error` fan_in=31. Any signature change is shotgun surgery.
 
-- [ ] L2.1 Wrap `core.Logger` behind service-level facades
+- [x] L2.1 Wrap `core.Logger` behind service-level facades
       (`memory.Logger`, `task.Logger`, etc.).
-- [ ] L2.2 Each facade exposes only the verbs that domain needs.
-- [ ] L2.3 Direct `core.Logger` usage allowed only in infrastructure.
+- [x] L2.2 Each facade exposes only the verbs that domain needs.
+- [x] L2.3 Direct `core.Logger` usage allowed only in infrastructure.
 
 ---
 
-## [ ] L3. README & USAGE consolidation
+## [x] L3. README & USAGE consolidation
 
-- [ ] L3.1 Remove duplicated install instructions across `README.md`,
+- [x] L3.1 Remove duplicated install instructions across `README.md`,
       `docs/USAGE.md`, `docs/SERVER.md`.
-- [ ] L3.2 Reference `make install` as the canonical macOS install path.
-- [ ] L3.3 Single source of truth for "first run" walkthrough.
+- [x] L3.2 Reference `make install` as the canonical macOS install path.
+- [x] L3.3 Single source of truth for "first run" walkthrough.
 
 ---
 
-## [ ] L4. `scripts/install-mcp.sh` complexity (cog=80)
+## [x] L4. `scripts/install-mcp.sh` complexity (cog=80)
 
-- [ ] L4.1 Split `main` into per-tool installer functions.
-- [ ] L4.2 Each function is one bullet in the unit tests
+- [x] L4.1 Split `main` into per-tool installer functions.
+- [x] L4.2 Each function is one bullet in the unit tests
       (`install-mcp-test.sh`).
-- [ ] L4.3 Pre-push hook runs the test suite.
+- [x] L4.3 Pre-push hook runs the test suite.
 
 ---
 
-## [ ] L5. Health/readiness probes
+## [x] L5. Health/readiness probes
 
-- [ ] L5.1 Audit `internal/health.Probes` — confirm each probe is
+- [x] L5.1 Audit `internal/health.Probes` — confirm each probe is
       bounded by a deadline.
-- [ ] L5.2 Distinguish `liveness` vs `readiness` semantics in code,
+- [x] L5.2 Distinguish `liveness` vs `readiness` semantics in code,
       not just docs.
 
 ---
 
-## [ ] L6. `httputil.safeStreamFetch` (cog=31)
+## [x] L6. `httputil.safeStreamFetch` (cog=31)
 
-- [ ] L6.1 Extract URL validation, response cap, error wrapping.
-- [ ] L6.2 Property test: bounded read for any byte stream.
+- [x] L6.1 Extract URL validation, response cap, error wrapping.
+- [x] L6.2 Property test: bounded read for any byte stream.
 
 ---
 
-## [ ] L7. Documentation hygiene
+## [x] L7. Documentation hygiene
 
-- [ ] L7.1 Cross-check every `docs/adr/*.md` is referenced from a code
+- [x] L7.1 Cross-check every `docs/adr/*.md` is referenced from a code
       comment.
-- [ ] L7.2 Remove stale plans under `.mimocode/plans/`.
+- [x] L7.2 Remove stale plans under `.mimocode/plans/`.
 
 ---
 
@@ -804,15 +804,15 @@ constraint and move the call next to the stdout writers if practical.
 
 All items below should be on `main` before C-items close.
 
-- [ ] CI-1. `go vet ./...` on every PR.
-- [ ] CI-2. `golangci-lint run ./...` blocks merge.
-- [ ] CI-3. `gofmt -s -d` blocks merge.
-- [ ] CI-4. `go test -race -shuffle=on -count=1 ./...` blocks merge.
-- [ ] CI-5. Short fuzz (10s per target) on every PR (M4 dependency).
-- [ ] CI-6. `benchstat` regression gate on hot paths (M6 dependency).
-- [ ] CI-7. OpenAPI route↔spec contract test blocks merge (H1 dependency).
-- [ ] CI-8. SDK matrix build on every release tag (H2 dependency).
-- [ ] CI-9. AMX guard test on Darwin runners (already present — confirm).
+- [x] CI-1. `go vet ./...` on every PR.
+- [x] CI-2. `golangci-lint run ./...` blocks merge.
+- [x] CI-3. `gofmt -s -d` blocks merge.
+- [x] CI-4. `go test -race -shuffle=on -count=1 ./...` blocks merge.
+- [x] CI-5. Short fuzz (10s per target) on every PR (M4 dependency).
+- [x] CI-6. `benchstat` regression gate on hot paths (M6 dependency).
+- [x] CI-7. OpenAPI route↔spec contract test blocks merge (H1 dependency).
+- [x] CI-8. SDK matrix build on every release tag (H2 dependency).
+- [x] CI-9. AMX guard test on Darwin runners (already present — confirm).
 
 ---
 
@@ -820,17 +820,17 @@ All items below should be on `main` before C-items close.
 
 This list is closed when **all** of the following hold:
 
-- [ ] No item remains unchecked.
-- [ ] Every ADR is merged in `docs/adr/`.
-- [ ] No production function has cognitive complexity > 25.
-- [ ] No production function has unguarded recursion.
-- [ ] OpenAPI spec is the single source of truth for routes;
+- [x] No item remains unchecked.
+- [x] Every ADR is merged in `docs/adr/`.
+- [x] No production function has cognitive complexity > 25.
+- [x] No production function has unguarded recursion.
+- [x] OpenAPI spec is the single source of truth for routes;
       contract tests green.
-- [ ] SDK compatibility matrix is green on the current release tag.
-- [ ] `make test`, `make test-e2e`, `make lint` all green on `main`.
-- [ ] Public API surface documented and stable (CLI snapshot tests,
+- [x] SDK compatibility matrix is green on the current release tag.
+- [x] `make test`, `make test-e2e`, `make lint` all green on `main`.
+- [x] Public API surface documented and stable (CLI snapshot tests,
       OpenAPI spec, SDK reference).
-- [ ] `docs/ARCHITECTURE.md` reflects the post-refactor dependency
+- [x] `docs/ARCHITECTURE.md` reflects the post-refactor dependency
       graph.
 
 ---
