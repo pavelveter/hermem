@@ -8,6 +8,7 @@ import (
 
 func TestVersion(t *testing.T) {
 	dir, _ := helpers.TempWorkspace(t)
+	helpers.WriteConfigForCLI(t, dir, helpers.DefaultConfig(helpers.DBPath(dir)))
 	cli := helpers.NewCLI(helpers.BinaryPath(t), dir)
 
 	result := cli.Run(t, "version")
