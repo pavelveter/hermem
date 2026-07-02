@@ -28,17 +28,25 @@ func WriteConfig(t *testing.T, dir string, content string) {
 	}
 }
 
-// WriteConfigForCLI writes hermem.ini next to the binary (where the CLI reads it)
-// and registers cleanup to remove it after the test.
+// WriteConfigForCLI writes hermem.ini into the per-test workspace.
+//
+// Historically this helper also wrote to `filepath.Dir(BinaryPath(t))/hermem.ini`
+// (the binary's install directory) so the hermem CLI subprocess could
+// find the config when launched without flags. That shared write was the
+// source of a cross-test race: every e2e package and every subtest
+// clobbered the SAME `binDir/hermem.ini` path. Concurrent `go test
+// ./tests/e2e/...` packages saw each other's config content mid-run.
+//
+// The clean fix is to keep config entirely within `dir` and tell the
+// hermem subprocess where to find it via the `HERMEM_INI` env var
+// (which src/internal/config.LoadConfigFromSources honors at the second
+// precedence tier, just below `--config` flag). NewCLI and StartServer
+// set `HERMEM_INI=<dir>/hermem.ini` on their subprocess env, so the
+// binDir write is no longer required. We deliberately do NOT write to
+// binDir here.
 func WriteConfigForCLI(t *testing.T, dir string, content string) {
 	t.Helper()
 	WriteConfig(t, dir, content)
-	binDir := filepath.Dir(BinaryPath(t))
-	binPath := filepath.Join(binDir, "hermem.ini")
-	if err := os.WriteFile(binPath, []byte(content), 0644); err != nil {
-		t.Fatalf("write config to bin dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Remove(binPath) })
 }
 
 // DefaultConfig returns a minimal hermem.ini for testing.

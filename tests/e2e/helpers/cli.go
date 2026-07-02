@@ -76,11 +76,27 @@ type CLI struct {
 }
 
 // NewCLI creates a CLI wrapper.
+//
+// HERMEM_INI env var pins the subprocess's hermem.ini lookup to this
+// test's per-subtest workspace (`workDir/hermem.ini`), so concurrent
+// e2e packages no longer race on a shared install-dir hermem.ini.
+//
+// Precedence chain (from src/internal/config.LoadConfigFromSources):
+//  1. --config <path> flag (highest)
+//  2. $HERMEM_INI env var
+//  3. hermem.ini next to os.Executable() (fallback)
+//
+// Setting HERMEM_INI here lifts the per-subtest config to tier 2
+// before the binDir fallback fires. See WriteConfigForCLI on workspace.go
+// for the rationale on dropping the previous binDir write.
 func NewCLI(binary, workDir string) *CLI {
 	return &CLI{
 		Binary:  binary,
 		WorkDir: workDir,
-		Env:     append(os.Environ(), "HOME="+workDir),
+		Env: append(os.Environ(),
+			"HOME="+workDir,
+			"HERMEM_INI="+filepath.Join(workDir, "hermem.ini"),
+		),
 	}
 }
 

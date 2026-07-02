@@ -129,13 +129,32 @@ func runHTTPStep(t *testing.T, client *HTTPClient, step Step) {
 }
 
 // RunAllScenarios runs all YAML scenarios in the given directory.
+//
+// Each scenario YAML gets its OWN per-scenario workspace (fresh
+// hermem.ini copy + fresh hermem.db). The previous implementation
+// shared `dir` across every scenario, which caused the
+// `schema_migrations` UNIQUE-constraint race + duplicate-column
+// errors observed by `TestAllScenarios`. The parent `dir` is now
+// only used as a config template — its hermem.ini content is
+// copied into each per-scenario workspace before RunScenario runs.
 func RunAllScenarios(t *testing.T, dir string, scenariosDir string) {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join(scenariosDir, "*.yaml"))
 	if err != nil {
 		t.Fatalf("glob scenarios: %v", err)
 	}
+
+	parentCfg, err := os.ReadFile(filepath.Join(dir, "hermem.ini"))
+	if err != nil {
+		t.Fatalf("read base config: %v", err)
+	}
+
 	for _, f := range files {
-		RunScenario(t, dir, f)
+		scenDir, _ := TempWorkspace(t)
+		scenIni := filepath.Join(scenDir, "hermem.ini")
+		if err := os.WriteFile(scenIni, parentCfg, 0644); err != nil {
+			t.Fatalf("copy config to scenario dir: %v", err)
+		}
+		RunScenario(t, scenDir, f)
 	}
 }

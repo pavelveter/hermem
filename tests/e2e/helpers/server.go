@@ -41,28 +41,30 @@ func StartServer(t *testing.T, dir string) *Server {
 	port := FindFreePort(t)
 	binary := BinaryPath(t)
 
-	// Place hermem.ini next to the binary (hermem looks for it relative to the executable)
-	binDir := filepath.Dir(binary)
-	iniPath := filepath.Join(binDir, "hermem.ini")
+	// The config file lives ONLY inside the per-test `dir` (NOT also in
+	// the binary directory). The hermem subprocess reads it via the
+	// HERMEM_INI env var (tier 2 in LoadConfigFromSources). Dropping
+	// the prior binDir write eliminates a per-process shared file that
+	// every e2e subtest was racing to overwrite under `go test -race`.
 	dbPath := filepath.Join(dir, "hermem.db")
-
-	// Use pre-written config from dir if it exists, otherwise create minimal config
 	dirConfig := filepath.Join(dir, "hermem.ini")
-	var iniContent string
-	if data, err := os.ReadFile(dirConfig); err == nil {
-		iniContent = string(data)
-	} else {
-		iniContent = fmt.Sprintf("[database]\npath = %s\nbackend = in-memory\nauto_migrate = true\n", dbPath)
+
+	// Use pre-written config from dir if it exists; otherwise seed a
+	// minimal one into dir. Never touch binDir/hermem.ini.
+	if _, err := os.Stat(dirConfig); os.IsNotExist(err) {
+		iniContent := fmt.Sprintf("[database]\npath = %s\nbackend = in-memory\nauto_migrate = true\n", dbPath)
+		if err := os.WriteFile(dirConfig, []byte(iniContent), 0644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
 	}
-	if err := os.WriteFile(iniPath, []byte(iniContent), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Remove(iniPath) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, binary, "serve", "--port", fmt.Sprintf("%d", port), "--skip-embedder-check")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "HOME="+dir)
+	cmd.Env = append(os.Environ(),
+		"HOME="+dir,
+		"HERMEM_INI="+dirConfig,
+	)
 
 	if err := cmd.Start(); err != nil {
 		cancel()
