@@ -123,6 +123,40 @@ jobs:
       - name: Run tests
         run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic -timeout 10m $(go list ./... | grep -v tests/e2e)
 
+      # Fails the build if total coverage drops below the threshold. The
+      # current threshold (50.0%) is a no-regression guard — it sits
+      # ~2.6% below today's measured coverage (52.6%) so a single
+      # flaky test run (e.g. a timing-sensitive skip) cannot push the
+      # measured total under the gate. The long-term target is 70%
+      # (see M2 sub-tasks in TODO.md). Raise the THRESHOLD value by
+      # ~3% per minor release until 70% is reached; once 70% is
+      # stable, raise the README badge color from yellow to
+      # brightgreen to signal "we hit the target".
+      #
+      # Implementation note: pure shell (no Codecov / bc dependency).
+      # `go tool cover -func` emits a per-function table; the trailing
+      # `total:` line carries the aggregate percentage. The awk END
+      # action captures that line's third whitespace-separated field
+      # (e.g. `52.6%` → `52.6`). The comparison is performed inside awk
+      # because awk understands floats natively; bash's `[ "$a" -lt "$b" ]`
+      # is integer-only and would miscompare `52.6 < 50.0`.
+      - name: Coverage threshold gate
+        run: |
+          THRESHOLD="50.0"
+          TOTAL=$(go tool cover -func=coverage.out | awk 'END{print $3}' | tr -d '%')
+          if [ -z "$TOTAL" ] || [ "$TOTAL" = "0.0" ]; then
+            echo "::error::Failed to parse coverage.out or coverage is 0% (test job may have produced no coverage data)"
+            exit 1
+          fi
+          awk -v total="$TOTAL" -v thresh="$THRESHOLD" 'BEGIN {
+            if (total+0 < thresh+0) {
+              print "::error::Test coverage " total "% is below required threshold of " thresh "%"
+              exit 1
+            } else {
+              print "Coverage " total "% meets/exceeds threshold (" thresh "%)"
+            }
+          }'
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

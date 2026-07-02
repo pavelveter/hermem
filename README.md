@@ -14,6 +14,7 @@ SQLite. Embeddings. Graph traversal. One binary.
   <img src="https://img.shields.io/badge/SQLite-Graph%20Storage-003B57" alt="SQLite">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
   <img src="https://img.shields.io/github/actions/workflow/status/pavelveter/hermem/ci.yml" alt="Build">
+  <img src="https://img.shields.io/badge/Coverage_gate->=50%25-yellow?style=flat-square&logo=go" alt="Coverage gate">
 </p>
 <p align="center">
   <a href="docs/OPENAPI.md"><img src="https://img.shields.io/badge/OpenAPI_3.1-Spec-purple?logo=openapiinit" alt="OpenAPI 3.1"></a>

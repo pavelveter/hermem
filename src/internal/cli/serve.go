@@ -78,7 +78,7 @@ func runServe(env *clienv.Env, port string, skipEmbedderCheck bool) error {
 	// when ctx is cancelled, so the inner for-range drains on shutdown.
 	safego.Go(env.Ctx, "sighup-reload", func(_ context.Context) {
 		for range sighup {
-			newCfg, err := config.LoadConfigFromBinaryDir()
+			newCfg, err := config.LoadConfigFromSources("")
 			if err != nil {
 				slog.Error("SIGHUP: load config", "err", err)
 				continue

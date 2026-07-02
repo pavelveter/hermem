@@ -1,16 +1,9 @@
 # AGENTS.md — Hermem Contributor Workflow
 
-> **Language**: This is the canonical English version. The original
-> Russian text is preserved as `AGENTS.ru.md` for reference.
-
 This document defines the rules for working with the code. All
 contributors — humans and AI agents alike — MUST follow them.
 
 ---
-
-**FIRST READ THE RULES FROM
-[docs/andrey-karpathy-skills.md](docs/andrey-karpathy-skills.md) —
-TOP PRIORITY.**
 
 ## 1. Git Flow
 

@@ -38,6 +38,9 @@ Flags:
   -p, --port string           HTTP port to listen on (default "8420")
       --skip-embedder-check   Skip embedder health check on startup (for testing)
 
+Global Flags:
+      --config string   path to hermem.ini (overrides HERMEM_INI env and binary-dir default)
+
 Use "hermem serve [command] --help" for more information about a command.
 
 Documentation: https://github.com/pavelveter/hermem

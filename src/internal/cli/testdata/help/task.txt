@@ -46,6 +46,9 @@ Available Commands:
 Flags:
   -h, --help   help for task
 
+Global Flags:
+      --config string   path to hermem.ini (overrides HERMEM_INI env and binary-dir default)
+
 Use "hermem task [command] --help" for more information about a command.
 
 Documentation: https://github.com/pavelveter/hermem

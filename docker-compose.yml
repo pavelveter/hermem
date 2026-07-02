@@ -9,6 +9,24 @@
 #
 # Stop:   docker compose down
 # Rebuild after source changes:  docker compose build hermem
+#
+# Pinning the image version (HERMEM_VERSION):
+#   By default the stack builds the local Dockerfile with
+#   VERSION=latest and tags the result as `hermem:latest`. The
+#   `image:` directive here is a "tag the build output as" pattern,
+#   not a registry pull — to consume a pre-built image instead,
+#   drop the `build:` block or set `pull_policy: always`. To pin a
+#   specific release (recommended for production), set HERMEM_VERSION
+#   before invoking docker compose — the value flows into both the
+#   `image:` tag and the build arg, so the OCI image.version label
+#   and the embedded version string in the binary (the
+#   `-X main.version=...` ldflags symbol) stay in sync:
+#
+#     HERMEM_VERSION=0.2.0 docker compose up -d
+#     HERMEM_VERSION=0.2.0 docker compose build hermem
+#
+#   Pair with a matching `.env` file (`HERMEM_VERSION=0.2.0`) to
+#   avoid repeating the override on every `docker compose` call.
 
 services:
 

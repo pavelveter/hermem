@@ -36,6 +36,9 @@ group usage; "hermem --help" prints the full tree.
 Flags:
   -h, --help   help for version
 
+Global Flags:
+      --config string   path to hermem.ini (overrides HERMEM_INI env and binary-dir default)
+
 Use "hermem version [command] --help" for more information about a command.
 
 Documentation: https://github.com/pavelveter/hermem

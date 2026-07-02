@@ -282,3 +282,96 @@ func TestGraphVerify(t *testing.T) {
 	resp := client.Get(t, "/graph/verify")
 	helpers.MustStatus(t, resp, 200)
 }
+
+// TestQueryTemporal — POST /query/temporal. C2 closes the
+// spec-but-no-handler gap: the OpenAPI spec has advertised this
+// route since the temporal-tagged path entry was added in api/paths.go,
+// but the HTTP handler was registered without an e2e test. Mirrors
+// TestQuery above so the 3 input branches (time_from-only, time_to-only,
+// both) plus the RFC3339 parse-error branch are all pinned.
+func TestQueryTemporal(t *testing.T) {
+	helpers.SkipIfNoEmbedder(t)
+	dir, _ := helpers.TempWorkspace(t)
+	helpers.WriteConfig(t, dir, helpers.DefaultConfig(helpers.DBPath(dir)))
+	srv := helpers.StartServer(t, dir)
+	client := helpers.NewHTTPClient(srv.URL)
+
+	// Store an entity so the query pipeline has a seed.
+	client.Post(t, "/store", map[string]interface{}{
+		"id":       "e1",
+		"category": "world",
+		"content":  "Paris is the capital of France",
+	})
+
+	// 1) No time bounds — must behave like /query (handler passes
+	//    empty TimeFrom/TimeTo, so opts.TimeFrom/TimeTo stay zero and
+	//    the walk is unfiltered).
+	t.Run("no_time_bounds", func(t *testing.T) {
+		resp := client.Post(t, "/query/temporal", map[string]interface{}{
+			"query": "What is the capital of France?",
+			"top_k": 3,
+		})
+		helpers.MustStatus(t, resp, 200)
+	})
+
+	// 2) time_from only — RFC3339 lower bound, no upper bound.
+	t.Run("time_from_only", func(t *testing.T) {
+		resp := client.Post(t, "/query/temporal", map[string]interface{}{
+			"query":     "What is the capital of France?",
+			"top_k":     3,
+			"time_from": "2020-01-01T00:00:00Z",
+		})
+		helpers.MustStatus(t, resp, 200)
+	})
+
+	// 3) time_to only — no lower bound, RFC3339 upper bound.
+	t.Run("time_to_only", func(t *testing.T) {
+		resp := client.Post(t, "/query/temporal", map[string]interface{}{
+			"query":   "What is the capital of France?",
+			"top_k":   3,
+			"time_to": "2099-12-31T23:59:59Z",
+		})
+		helpers.MustStatus(t, resp, 200)
+	})
+
+	// 4) Both bounds — inclusive RFC3339 window.
+	t.Run("both_bounds", func(t *testing.T) {
+		resp := client.Post(t, "/query/temporal", map[string]interface{}{
+			"query":     "What is the capital of France?",
+			"top_k":     3,
+			"time_from": "2020-01-01T00:00:00Z",
+			"time_to":   "2099-12-31T23:59:59Z",
+		})
+		helpers.MustStatus(t, resp, 200)
+	})
+
+	// 5) Malformed time_from must surface as 422 (the handler
+	//    returns WriteErrorWithCode(StatusUnprocessableEntity,
+	//    CodeInvalidInput) when time.Parse fails).
+	t.Run("invalid_time_from", func(t *testing.T) {
+		resp := client.Post(t, "/query/temporal", map[string]interface{}{
+			"query":     "anything",
+			"time_from": "not-rfc3339",
+		})
+		helpers.MustStatus(t, resp, 422)
+	})
+
+	// 6) Malformed time_to — same contract as time_from. The literal
+	//    is structurally-valid RFC3339 (T separator, Z suffix) but
+	//    carries an impossible month so time.Parse returns an error
+	//    for a *semantic* reason, not a structural one — this pins
+	//    the same code path the handler uses for any parse failure.
+	t.Run("invalid_time_to", func(t *testing.T) {
+		resp := client.Post(t, "/query/temporal", map[string]interface{}{
+			"query":   "anything",
+			"time_to": "2024-13-01T00:00:00Z", // month 13
+		})
+		helpers.MustStatus(t, resp, 422)
+	})
+
+	// 7) Missing query — same 422 contract as /query.
+	t.Run("missing_query", func(t *testing.T) {
+		resp := client.Post(t, "/query/temporal", map[string]interface{}{})
+		helpers.MustStatus(t, resp, 422)
+	})
+}

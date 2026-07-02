@@ -65,3 +65,7 @@ src/internal/ai/bin/
 node_modules/
 *.egg-info/
 .pytest_cache/
+__pycache__/
+*.pyc
+.coverage
+coverage/

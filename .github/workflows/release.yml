@@ -7,6 +7,11 @@ on:
 
 permissions:
   contents: write
+  # id-token: write + attestations: write are scoped tightly to the
+  # `provenance` job (see its own `permissions:` block). They are
+  # NOT granted at the workflow level so the build matrix
+  # (macOS code-signing, etc.) doesn't inherit OIDC + attestations
+  # scopes it has no use for.
 
 env:
   GO_VERSION: "1.26"
@@ -197,10 +202,16 @@ jobs:
       - name: Create final release archive
         shell: bash
         run: |
+          # Generate shell completions
+          mkdir -p completions
+          ./"${{ steps.names.outputs.bin }}" completion bash > completions/hermem.bash
+          ./"${{ steps.names.outputs.bin }}" completion zsh > completions/hermem.zsh
+          ./"${{ steps.names.outputs.bin }}" completion fish > completions/hermem.fish
+
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip "${{ steps.names.outputs.archive }}" "${{ steps.names.outputs.bin }}"
+            zip "${{ steps.names.outputs.archive }}" "${{ steps.names.outputs.bin }}" completions/*
           else
-            tar czf "${{ steps.names.outputs.archive }}" "${{ steps.names.outputs.bin }}"
+            tar czf "${{ steps.names.outputs.archive }}" "${{ steps.names.outputs.bin }}" completions/
           fi
 
       - name: Upload artifact
@@ -232,10 +243,39 @@ jobs:
           name: checksums
           path: checksums-sha256.txt
 
+  # SLSA Build L2 provenance — one signed in-toto attestation per
+  # build matrix artifact (6 archives + checksums-sha256.txt),
+  # recorded against the GH-native attestations API and shown in
+  # the release UI as a "Verified" badge. Verifiable with
+  # `gh attestation verify <asset> --owner pavelveter`. The
+  # `release` job's `needs` includes `provenance` purely as an
+  # ordering guarantee — the release step never touches the
+  # provenance artifacts (it talks to the GH API directly).
+  provenance:
+    name: SLSA Build Provenance
+    runs-on: ubuntu-latest
+    needs: [build, checksums]
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Attest release assets (SLSA Build L2)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/**/checksums-sha256.txt
+
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, checksums]
+    needs: [build, checksums, provenance]
     steps:
       - uses: actions/download-artifact@v4
         with:

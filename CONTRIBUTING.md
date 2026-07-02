@@ -95,6 +95,17 @@ matching mage function.
 - Fuzz tests are required for serialization/parsing code
 - Benchmarks are required for performance-sensitive code
 
+### Go Checksum Database
+
+`go.sum` is committed to ensure reproducible builds. The Go checksum
+database (`sum.golang.org`) verifies module authenticity. If you
+encounter checksum mismatches in CI:
+
+- Run `go mod tidy` to regenerate `go.sum`
+- Ensure `GONOSUMCHECK` is not set unless targeting private modules
+- For private modules, set `GONOSUMDB` and configure `GOPRIVATE`
+- Never edit `go.sum` manually — always regenerate via `go mod tidy`
+
 ### Commit Messages
 
 Follow Conventional Commits:
