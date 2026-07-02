@@ -5,6 +5,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/pavelveter/hermem/src/internal/bench"
@@ -22,11 +24,31 @@ import (
 )
 
 // noopPreRun is the PersistentPreRunE set on subcommands that must run
-// WITHOUT database access (currently `version` and `metrics`). It is a
-// package-local var (not nil) because cobra falls back to the parent's
-// PersistentPreRunE when a subcommand assigns nil — and the parent's
-// PersistentPreRunE opens the database, which we explicitly don't want.
-var noopPreRun = func(_ *cobra.Command, _ []string) error { return nil }
+// WITHOUT database access (currently `version`, `metrics`, `completion`,
+// `docs`, `bench`). Setting it to `nil` does NOT prevent root's
+// PersistentPreRunE from firing — cobra v1.10.x's Command.preRun walks
+// the ancestor chain top-down from the leaf and invokes each ancestor's
+// PersistentPreRunE if set (see github.com/spf13/cobra/command.go).
+//
+// To work around that walk, noopPreRun marks the invoking leaf on
+// cmd.Root().Annotations under a `skip_db_<leaf>` key. root's
+// PersistentPreRunE then scans cmd.Annotations for any such prefix
+// and short-circuits before env.EnsureDB opens the SQLite file. This
+// is what unblocks `./hermem completion bash` in CI (release.yml's
+// "Create final release archive" step), where the bug-trip otherwise
+// stops at the pending-migrations gate.
+//
+// The annotation is keyed by leaf name (not a single global flag) so
+// future no-DB additions only need to wire PersistentPreRunE=noopPreRun
+// — root.go's check reconciles via prefix scan.
+var noopPreRun = func(cmd *cobra.Command, _ []string) error {
+	root := cmd.Root()
+	if root.Annotations == nil {
+		root.Annotations = make(map[string]string)
+	}
+	root.Annotations["skip_db_"+cmd.Name()] = "true"
+	return nil
+}
 
 const banner = `
 ██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███╗   ███╗
@@ -93,6 +115,20 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		// syntax binds the receiver but leaves the parameter list
 		// wrong, so an explicit lambda is needed.
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Short-circuit before EnsureDB for any pure-output leaf
+			// that tagged itself skip_db_<leaf> via noopPreRun, and
+			// for cobra's hidden `__complete` command (auto-injected
+			// so the generated bash completion script handles TAB-press
+			// dynamic completion; it has no PersistentPreRunE of its
+			// own and otherwise inherits the DB-opening hook).
+			if cmd.Name() == "__complete" {
+				return nil
+			}
+			for k, v := range cmd.Annotations {
+				if strings.HasPrefix(k, "skip_db_") && v == "true" {
+					return nil
+				}
+			}
 			// `hermem db migrate apply` must open the DB before
 			// pending migrations exist, so it bypasses the §4
 			// assertSchemaUpToDate gate.

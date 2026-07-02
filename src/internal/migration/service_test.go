@@ -260,6 +260,21 @@ func TestService_Run_PendingMigrationsApplied(t *testing.T) {
 		t.Fatal("rollback returned empty name on a just-migrated DB; cannot validate re-apply")
 	}
 
+	// Migration 013 mutates the P2 episodic schema by DROP COLUMN-ing
+	// `started_at` / `timestamp` / `linked_at` (no `IF EXISTS` and no
+	// down-migration step). svc.Rollback only deletes the
+	// schema_migrations tracking row; the physical schema stays partially
+	// mutated. Drop the affected tables so the re-apply step runs against
+	// a clean slate, mirroring the §3 hardening comment in
+	// store.RollbackMigration and the existing idiom in
+	// store.migration_test.TestApplyAllThenRevertAll (which performs the
+	// same teardown for the same reason).
+	for _, table := range []string{"episodes", "events", "episode_memories", "episode_tasks"} {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + table); err != nil {
+			t.Fatalf("drop %s (reset before re-apply): %v", table, err)
+		}
+	}
+
 	pending, err := svc.DryRun(t.Context())
 	if err != nil {
 		t.Fatalf("post-Rollback DryRun: %v", err)

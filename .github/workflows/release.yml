@@ -30,7 +30,11 @@ jobs:
         shell: bash
         run: |
           TAG="${GITHUB_REF_NAME}"
-          TAG_MAJOR="${TAG%%.*}"
+          # Strip leading 'v' (if present) so MAJOR is just the numeric portion.
+          # `${TAG%%.*}` alone on "v0.3.1" returns "v0" (literal "v" prefix), which fails
+          # the strict string check against SDK MAJOR values like "0".
+          TAG_MAJOR="${TAG#v}"
+          TAG_MAJOR="${TAG_MAJOR%%.*}"
           echo "Release tag: $TAG  (MAJOR=$TAG_MAJOR)"
 
           # Go SDK — module path has no version; check sdk/go/go.mod for a version comment
@@ -62,10 +66,72 @@ jobs:
           fi
           echo "✓ MAJOR versions consistent: tag=$TAG_MAJOR python=$PY_MAJOR typescript=$TS_MAJOR"
 
+  # Build shell completions ONCE on a native x86_64 runner and share the
+  # result across the entire build matrix. Previously each matrix entry
+  # generated its own by invoking `.$/{{bin}} completion bash|zsh|fish`
+  # locally — which fails for cross-compiled targets (linux/arm64,
+  # windows/amd64, windows/arm64) because the freshly-built binary cannot
+  # be executed on an x86_64 runner ("Exec format error"). Completion
+  # scripts target the shell, not the binary's GOOS/GOARCH, so emitting
+  # them once from a native build and reusing them is correct.
+  completions:
+    name: Generate Shell Completions (native x86_64, single source of truth)
+    runs-on: ubuntu-latest
+    needs: [version-check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install zig (same toolchain as the matrix for hermetic output parity)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          use-tool-cache: true
+
+      # Mirror the matrix's pre-build step: go-sqlite3 / embedder
+      # factories require placeholder embed files at compile time
+      # (seeded by the bash script). Skipping it risks a build failure
+      # deeper than this job's apparent `Build` step, mirroring the
+      # exact path matrix entries already use.
+      - name: Create embedding placeholders
+        run: scripts/ensure-embed-placeholders.sh
+
+      - name: Build native linux/amd64 hermem and emit shell completions
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: "1"
+          CC: zig cc -target x86_64-linux-musl
+        run: |
+          mkdir -p completions
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          VERSION="${GITHUB_REF_NAME}"
+          go build \
+            -trimpath \
+            -ldflags="-s -w \
+              -X main.version=${VERSION} \
+              -X main.buildDate=${BUILD_DATE} \
+              -X main.gitCommit=${GIT_COMMIT}" \
+            -o hermem \
+            ./src
+          ./hermem completion bash > completions/hermem.bash
+          ./hermem completion zsh  > completions/hermem.zsh
+          ./hermem completion fish > completions/hermem.fish
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: completions
+          path: completions/
+
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ${{ matrix.runner }}
-    needs: [version-check]
+    needs: [version-check, completions]
     strategy:
       fail-fast: false
       matrix:
@@ -199,15 +265,23 @@ jobs:
             security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
           fi
 
+      # Download the shared `completions/` directory emitted by the
+      # `completions` job. We can't invoke ./hermem completion ...
+      # locally: the freshly-cross-compiled binary may not be executable
+      # on the x86_64 runner (e.g. linux/arm64, windows/amd64,
+      # windows/arm64 fail with "Exec format error"). Completion scripts
+      # depend on the cobra command tree, NOT on the binary's GOOS/GOARCH,
+      # so reusing a single natively-generated set across all 6 matrix
+      # targets is content-equivalent.
+      - name: Download shared shell completions (completions/ directory)
+        uses: actions/download-artifact@v4
+        with:
+          name: completions
+          path: completions
+
       - name: Create final release archive
         shell: bash
         run: |
-          # Generate shell completions
-          mkdir -p completions
-          ./"${{ steps.names.outputs.bin }}" completion bash > completions/hermem.bash
-          ./"${{ steps.names.outputs.bin }}" completion zsh > completions/hermem.zsh
-          ./"${{ steps.names.outputs.bin }}" completion fish > completions/hermem.fish
-
           if [ "${{ matrix.goos }}" = "windows" ]; then
             zip "${{ steps.names.outputs.archive }}" "${{ steps.names.outputs.bin }}" completions/*
           else

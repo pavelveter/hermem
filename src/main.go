@@ -21,6 +21,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/cli"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
+	"github.com/pavelveter/hermem/src/internal/metrics"
 )
 
 var (
@@ -69,6 +70,29 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	// Fast path: pure-output leaves don't need DB / vector index / AI
+	// clients / async workers. Identify the leaf BEFORE app.New so we
+	// don't pay the cost of `store.InitDBStrictWithOptions` (which fails
+	// with `app: open db: schema has pending migrations` on a fresh CI
+	// scratch DB with no hermem.ini — the case `release.yml`'s Build
+	// matrix tripped on `./hermem completion bash`). The full DI graph
+	// stays intact for the normal path; we just don't construct it when
+	// the leaf is a known pure-output reader of env.Build / env.Metrics
+	// only.
+	if leaf := firstLeafArg(flag.Args()); noDBLeaves[leaf] {
+		env := noDBEnv(ctx, cfg)
+		if err := cli.NewRootCommand(env).Execute(); err != nil {
+			if code := signalExitCode(ctx); code != 0 {
+				os.Exit(code)
+			}
+			clienv.Fatal("%v", err)
+		}
+		if code := signalExitCode(ctx); code != 0 {
+			os.Exit(code)
+		}
+		return
+	}
+
 	// Construct the typed DI container — ALL dependencies are eager,
 	// non-nil, and wired in deterministic order. No lazy EnsureDB.
 	buildInfo := app.BuildInfo{
@@ -98,6 +122,68 @@ func main() {
 	if code := signalExitCode(ctx); code != 0 {
 		_ = a.Stop(context.Background())
 		os.Exit(code)
+	}
+}
+
+// noDBLeaves is the closed set of cobra leaf commands that don't need
+// the SQLite database, vector index, AI clients, or async workers.
+// Inspected by main() BEFORE app.New() so a no-DB invocation skips the
+// eager DI graph entirely. Mirrors the skip_db_<leaf> annotations
+// also written by `cli.noopPreRun` (root.go, defence-in-depth — cobra's
+// UP-walk hooks will still execute for any future no-DB leaf that
+// forgets to register here, but the lifecycle order matters less once
+// app.Application isn't constructed at all).
+//
+// Hardcoded rather than auto-discovered: the set is small, stable,
+// and the gate exists to shield a known CI failure mode rather than
+// a generic optimisation.
+var noDBLeaves = map[string]bool{
+	"completion": true, // ./hermem completion bash|zsh|fish — Cobra internal generators only
+	"version":    true, // ./hermem version — env.Build only
+	"metrics":    true, // ./hermem metrics — env.Metrics.WriteExposition only
+	"docs":       true, // ./hermem docs <dir> — Cobra doc package only
+	"bench":      true, // ./hermem bench — env.Metrics only (worker / DB unused)
+	"help":       true, // ./hermem help [<sub>] — Cobra auto-registered help command
+	"__complete": true, // Cobra HIDDEN dynamic-completion command invoked by generated bash completion scripts on TAB-press
+}
+
+// firstLeafArg returns the first positional non-flag argument from a
+// post-`flag.CommandLine.Parse` slice. Empty string if the slice is empty.
+// `flag.Args()` already strips the binary name and known flags (`--config`),
+// returning only the trailing positional argv. Index 0 is the leaf in
+// all current hermem invocations because cobra's tree is single-level
+// for the no-DB leaves (e.g. `./hermem completion bash`, not `./hermem grp cmd`).
+func firstLeafArg(positional []string) string {
+	if len(positional) == 0 {
+		return ""
+	}
+	return positional[0]
+}
+
+// noDBEnv builds a minimal *clienv.Env for pure-output leaves. DB, VI,
+// AI clients, Worker, Tracer, and Retriever are deliberately nil — the
+// no-DB leaves don't touch them. Metrics is constructed lazily in
+// metrics.New() so `./hermem metrics` / `./hermem bench` have an
+// in-process registry to write to; other leaves ignore it.
+//
+// cfg is preserved so commands like `./hermem version` (future) can
+// read config metadata without the cost of a DB connection.
+func noDBEnv(ctx context.Context, cfg *config.Config) *clienv.Env {
+	return &clienv.Env{
+		Ctx:     ctx,
+		Cfg:     cfg,
+		Metrics: metrics.New(),
+		Build: clienv.BuildInfo{
+			Version:   version,
+			BuildDate: buildDate,
+			GitCommit: gitCommit,
+		},
+		// DB, VI, Embedder, Extractor, Reranker, Worker, Retriever, Tracer: nil.
+		// Plus initDone=false (no mock EnsureDB) so any DB-needing subcommand
+		// added later in a noDBLeaves sibling would fail-fast with the
+		// existing `env: nil Cfg` / `nil receiver` guardrails rather than
+		// silently fall through.
+		KeepDBOpen: false,
 	}
 }
 
