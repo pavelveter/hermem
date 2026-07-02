@@ -4,18 +4,31 @@ on:
   push:
     branches: [main]
 
-permissions: read-all
+# Workflow-level: only grant `contents: read` so future jobs inherit the
+# principle of least privilege by default.
+permissions:
+  contents: read
 
 jobs:
   scorecard:
     name: Scorecard
     runs-on: ubuntu-latest
+    # Job-level scope lift: scorecard-action needs `id-token: write` to mint
+    # the OIDC tokens used in its provenance attestations (must be write,
+    # not read — per scorecard-action@vx README). codeql-action/upload-sarif
+    # needs `security-events: write` to publish results.sarif to the
+    # code-scanning dashboard. Everything else stays at the workflow-level
+    # read default.
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
 
-      - uses: ossf/scorecard-action@v2
+      - uses: ossf/scorecard-action@v2.4.3
         with:
           results_file: results.sarif
           results_format: sarif

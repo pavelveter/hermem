@@ -6,7 +6,21 @@ ARG BUILD_DATE
 ARG VCS_REF
 ARG VERSION=dev
 
-RUN apk add --no-cache gcc musl-dev
+# Pinned to specific Alpine 3.21 revisions (satisfies hadolint DL3018).
+# Refresh cadence: before each release, query the apk index that ships
+# inside the base image and bump to whatever is reported there:
+#
+#   docker run --rm golang:1.24-alpine apk policy gcc musl-dev
+#
+# Reasoning: golang:1.24-alpine and alpine:3.21 ship with FROZEN apk
+# indices. A revision that exists in the live pkgs.alpinelinux.org main
+# repo but was published *after* the base image was tagged will not be
+# installable — `apk add` will fail with "unsatisfiable constraints" at
+# `docker build` time on release.yml. The values below were sourced from
+# the live v3.21 main index as of this commit.
+RUN apk add --no-cache \
+        gcc=14.2.0-r4 \
+        musl-dev=1.2.5-r11
 
 WORKDIR /build
 
@@ -38,10 +52,17 @@ LABEL org.opencontainers.image.revision="${VCS_REF}"
 LABEL org.opencontainers.image.source="https://github.com/pavelveter/hermem"
 
 # Runtime deps: ca-certificates for TLS to OpenAI/Ollama APIs.
-RUN apk add --no-cache ca-certificates curl
-
-# Non-root user with home directory for the SQLite DB.
-RUN adduser -D -h /data hermem
+# ca-certificates + curl pinned to specific Alpine 3.21 revisions
+# (satisfies hadolint DL3018); bumped the same way as the builder stage
+# (see that RUN block for the exact refresh procedure — the runtime
+# alpine:3.21 image also has a frozen apk index, just a different
+# snapshot date than golang:1.24-alpine). adduser chained into the
+# same RUN to address hadolint DL3059 (multiple consecutive RUN
+# instructions) and to keep the runtime image a single layer.
+RUN apk add --no-cache \
+        ca-certificates=20260413-r0 \
+        curl=8.14.1-r2 && \
+    adduser -D -h /data hermem
 
 COPY --from=builder --chown=hermem:hermem /hermem /usr/local/bin/hermem
 
