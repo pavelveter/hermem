@@ -86,7 +86,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
 
       - name: Install zig (same toolchain as the matrix for hermetic output parity)
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29  # v2
@@ -169,7 +169,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
 
       - name: Create embedding placeholders
         run: scripts/ensure-embed-placeholders.sh
