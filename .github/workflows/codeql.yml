@@ -9,7 +9,7 @@ on:
     - cron: "0 6 * * 1"
 
 permissions:
-  security-events: write
+  contents: read
 
 jobs:
   analyze:
@@ -19,6 +19,13 @@ jobs:
       fail-fast: false
       matrix:
         language: ["go"]
+    # Job-level scope lift: the analyze job needs `security-events: write`
+    # to upload SARIF (results.sarif) to the code-scanning dashboard.
+    # `contents: read` stays the workflow-level default and is inherited here
+    # (additive — explicit declaration documents the intent).
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
 

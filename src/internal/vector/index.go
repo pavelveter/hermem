@@ -34,6 +34,15 @@ var (
 // call-sites if you bump it.
 const maxSearchLimit = 500
 
+// MaxResultsCap is the cross-package exported alias of maxSearchLimit.
+// Other packages (notably src/internal/retrieval) should reference this
+// alias so their per-consumer defaults stay correctly anchored to the
+// cap if the underlying value is ever raised. The alias intentionally
+// keeps the unexported `maxSearchLimit` as the security-validation source
+// of truth inside vector/, since only this package stores the data on
+// which the cap matters.
+const MaxResultsCap = maxSearchLimit
+
 // ErrLimitOutOfRange is returned by Search/SearchBatch when the caller-supplied
 // limit is negative or exceeds maxSearchLimit. Wrap with fmt.Errorf("%w: ...") so
 // the actual offending value is visible in the error chain.

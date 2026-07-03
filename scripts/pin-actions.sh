@@ -42,6 +42,11 @@ info() { printf '%s==>%s %s\n' "${C_BLUE}" "${C_RESET}" "$*"; }
 ok()   { printf '%s ✓ %s%s\n' "${C_GREEN}" "${C_RESET}" "$*"; }
 warn() { printf '%s ! %s%s\n' "${C_YELLOW}" "${C_RESET}" "$*" >&2; }
 
+if ! command -v gh >/dev/null 2>&1; then
+  echo "Error: '`'"gh"'`'" CLI is required but not installed. Install: https://cli.github.com/" >&2
+  exit 1
+fi
+
 # -------- Resolve a ref to a 40-hex SHA via gh api --------
 
 declare -A CACHE=()
@@ -128,7 +133,7 @@ done
 
 echo
 if [[ $warn_count -gt 0 ]]; then
-  warn "$warn_count ref(s) could not be resolved — aborting without changes"
+  warn "$warn_count refs could not be resolved — aborting without changes"
   exit 1
 fi
 ok "resolved ${#RESOLVED[@]} distinct ref(s) across ${#FILES[@]} file(s)  (already-pinned: ${already}, local/docker skipped: ${local_docker_skip})"

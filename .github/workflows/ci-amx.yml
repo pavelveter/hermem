@@ -16,6 +16,9 @@ name: CI - AMX/Accelerate Guard
 # CI-load headroom above the AMX-fast range and 2.5-7.5× safety
 # margin below the pure-Go range.
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -29,6 +32,14 @@ jobs:
     name: Apple AMX/Accelerate runtime guard
     runs-on: macos-latest
     timeout-minutes: 10
+    # Per-job lift: workflow-level `contents: read` is the principle of
+    # least-privilege default, but `actions/upload-artifact@v7` (the
+    # bench-amx.txt step below) needs `contents: write` on github-hosted
+    # runners when the org's "Workflow permissions" setting is the
+    # read-only opt-in. Lift explicitly here so future settings changes
+    # don't silently break the AMX benchmark upload.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
