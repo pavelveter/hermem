@@ -24,9 +24,14 @@ var (
 // SearchBatch. Callers MUST validate against this before any allocation
 // sized by a user-controlled limit; the CodeQL `go/uncontrolled-allocation-size`
 // rule conservatively flags `make([]T, limit)` where `limit` is a function
-// parameter. The matching cap in SearchByVector (`if topK > 500 { topK = 500 }`)
-// was a hardcoded mirror of this number — extracted here as the single source
-// of truth.
+// parameter.
+//
+// SearchByVector's `if topK > maxSearchLimit { topK = maxSearchLimit }`
+// reads from this constant, unifying the cap across Search, SearchBatch,
+// and SearchByVector. Suite-wide consumers (e.g.
+// retrieval/service.go's DefaultSearchTopK) keep independent defaults
+// and are NOT auto-raised when this constant changes — audit those
+// call-sites if you bump it.
 const maxSearchLimit = 500
 
 // ErrLimitOutOfRange is returned by Search/SearchBatch when the caller-supplied
@@ -59,8 +64,8 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi core.VectorIndex, queryE
 	if len(queryEmbedding) == 0 {
 		return nil, fmt.Errorf("empty query embedding")
 	}
-	if topK > 500 {
-		topK = 500
+	if topK > maxSearchLimit {
+		topK = maxSearchLimit
 	}
 	ids, err := vi.Search(ctx, queryEmbedding, topK)
 	if err != nil {
