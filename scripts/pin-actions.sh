@@ -133,7 +133,7 @@ done
 
 echo
 if [[ $warn_count -gt 0 ]]; then
-  warn "$warn_count ref(s) could not be resolved — aborting without changes"
+  warn "$warn_count refs could not be resolved — aborting without changes"
   exit 1
 fi
 ok "resolved ${#RESOLVED[@]} distinct ref(s) across ${#FILES[@]} file(s)  (already-pinned: ${already}, local/docker skipped: ${local_docker_skip})"
