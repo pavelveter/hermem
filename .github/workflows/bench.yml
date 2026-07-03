@@ -62,9 +62,22 @@ jobs:
           cat bench_report.txt >> bench_report.md
           echo '```' >> bench_report.md
 
+      # GitHub artifact names cannot contain "/". On pull_request events
+      # `github.ref_name` is "<pr_number>/merge" (e.g. 22/merge) which
+      # actions/upload-artifact@v7 rejects with:
+      #   "The artifact name is not valid: ..."
+      # Compute a slash-safe name in a sibling step and consume it via
+      # ${{ steps.bench-name.outputs.name }} below. The shell substitution
+      # also handles branch names containing "/" (e.g. scorecard/pr1-...).
+      - name: Compute slash-safe artifact name
+        id: bench-name
+        run: |
+          SAFE_REF="${GITHUB_REF_NAME//\//-}"
+          echo "name=benchmark-results-${SAFE_REF}" >> "$GITHUB_OUTPUT"
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@v7
         with:
-          name: benchmark-results-${{ github.ref_name }}
+          name: ${{ steps.bench-name.outputs.name }}
           path: bench_results.txt
           retention-days: 90
