@@ -72,7 +72,7 @@ jobs:
       - name: Compute slash-safe artifact name
         id: bench-name
         run: |
-          SAFE_REF="${GITHUB_REF_NAME//\//-}"
+          SAFE_REF=$(printf '%s' "${GITHUB_REF_NAME}" | tr -c 'A-Za-z0-9._-' '-')
           echo "name=benchmark-results-${SAFE_REF}" >> "$GITHUB_OUTPUT"
 
       - name: Upload benchmark results
