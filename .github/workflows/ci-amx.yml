@@ -16,6 +16,9 @@ name: CI - AMX/Accelerate Guard
 # CI-load headroom above the AMX-fast range and 2.5-7.5× safety
 # margin below the pure-Go range.
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
