@@ -1,5 +1,5 @@
 # ── Build stage ──────────────────────────────────────────────
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS builder
 
 # Build-time metadata
 ARG BUILD_DATE
@@ -41,7 +41,7 @@ RUN CGO_ENABLED=1 \
     ./src
 
 # ── Runtime stage ────────────────────────────────────────────
-FROM alpine:3.21
+FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
 
 # Image metadata (OCI labels).
 LABEL org.opencontainers.image.title="Hermem"
