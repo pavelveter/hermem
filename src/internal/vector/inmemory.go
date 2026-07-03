@@ -170,6 +170,15 @@ func (idx *InMemoryVectorIndex) load() {
 }
 
 func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float32, limit int) ([]string, error) {
+	// Validate the caller-supplied limit BEFORE acquiring the RLock: a sanitised
+	// integer parameter does not need lock protection, so failing fast here
+	// avoids the cost of lock acquire/release for malformed input and, more
+	// importantly, satisfies the CodeQL go/uncontrolled-allocation-size rule
+	// (the `make([]string, limit)` further down cannot be reached with an
+	// attacker-controlled `limit`).
+	if limit < 0 || limit > maxSearchLimit {
+		return nil, fmt.Errorf("%w: got %d, want [0, %d]", ErrLimitOutOfRange, limit, maxSearchLimit)
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	n := len(idx.entries)
@@ -207,6 +216,12 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 }
 
 func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float32, limit int) ([][]string, error) {
+	// See Search(): validate caller-supplied limit before RLock to fail fast on
+	// malformed input. Critical for the loop body's `ids := make([]string, l)`
+	// which is what CodeQL originally flagged.
+	if limit < 0 || limit > maxSearchLimit {
+		return nil, fmt.Errorf("%w: got %d, want [0, %d]", ErrLimitOutOfRange, limit, maxSearchLimit)
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	n := len(idx.entries)

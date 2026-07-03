@@ -20,6 +20,20 @@ var (
 	ErrMatrixCorrupted = errors.New("vector: flat matrix size != N * dim")
 )
 
+// maxSearchLimit caps the per-call result count accepted by Search and
+// SearchBatch. Callers MUST validate against this before any allocation
+// sized by a user-controlled limit; the CodeQL `go/uncontrolled-allocation-size`
+// rule conservatively flags `make([]T, limit)` where `limit` is a function
+// parameter. The matching cap in SearchByVector (`if topK > 500 { topK = 500 }`)
+// was a hardcoded mirror of this number — extracted here as the single source
+// of truth.
+const maxSearchLimit = 500
+
+// ErrLimitOutOfRange is returned by Search/SearchBatch when the caller-supplied
+// limit is negative or exceeds maxSearchLimit. Wrap with fmt.Errorf("%w: ...") so
+// the actual offending value is visible in the error chain.
+var ErrLimitOutOfRange = errors.New("vector: search limit out of range")
+
 // NewIndex creates a VectorIndex for the given backend.
 // Currently supports:
 //   - "in-memory" (default): brute-force cosine similarity in memory
