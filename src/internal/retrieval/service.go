@@ -13,12 +13,17 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// Default topK/maxDepth/limit values.
+// Default topK/maxDepth/limit values. Defaults are kept BELOW or equal to
+// vector.MaxResultsCap so that any future bump of the cap doesn't silently
+// escalate the per-consumer default. The `min()` wrapper makes the
+// dependency explicit; today both resolve to 5 and 3 respectively (since
+// 5 < 500 and 3 < 500). See retrieval docs + ADR-020 for the recall/latency
+// rationale behind the specific small numbers.
 const (
-	DefaultSearchTopK       = 5  // ADR-020: balances recall vs latency for typical queries
-	DefaultQueryTopK        = 3  // ADR-020: focused results for LLM context window
-	DefaultRetrieveMaxDepth = 2  // ADR-020: two-hop captures friends-of-friends
-	DefaultProvenanceLimit  = 50 // ADR-020: caps audit trail response size
+	DefaultSearchTopK       = min(5, vector.MaxResultsCap) // ADR-020: balances recall vs latency for typical queries
+	DefaultQueryTopK        = min(3, vector.MaxResultsCap) // ADR-020: focused results for LLM context window
+	DefaultRetrieveMaxDepth = 2                            // ADR-020: two-hop captures friends-of-friends
+	DefaultProvenanceLimit  = 50                           // ADR-020: caps audit trail response size
 )
 
 // Service is the transport-agnostic read-side domain API.
