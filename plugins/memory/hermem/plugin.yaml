@@ -1,6 +1,6 @@
 name: hermem
-version: 0.4.0
-description: Hermem memory provider — lightweight graph memory via HTTP/CLI; 10 agent tools (search, store, query, edge, retrieve, timeline, contradictions, task create/status/list).
+version: 0.5.0
+description: Hermem memory provider — lightweight graph memory via HTTP/CLI; 10 agent tools (search, store, query, edge, retrieve, timeline, contradictions, task create/status/list). v0.5.0 — hermem_store memory ids are now deterministic SHA-256-prefix hashes (mem-<16hex>) — pre-v0.5.0 rows in id format mem-<8hex> will NOT dedup-merge with new writes — operators consolidating legacy data should re-ingest content under the new id scheme (no in-place id-rewrite migration is provided).
 author: hermem
 memory_provider: true
 dependencies:

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 
 	"gopkg.in/yaml.v3"
 )
@@ -148,41 +149,77 @@ type SecurityScheme struct {
 // SecurityRequirement references security schemes.
 type SecurityRequirement = map[string][]string
 
+// specCache publishes the built OpenAPI document behind an atomic.Pointer
+// so reads (the common path after warm-up) are lock-free pointer loads
+// and writes are single atomic stores. specMu serialises the rebuild
+// path to prevent a stampede of concurrent first-callers from racing to
+// build an immutable spec.
 var (
-	cachedSpec *Spec
-	specOnce   sync.Once
+	specCache atomic.Pointer[Spec]
+	specMu    sync.Mutex
 )
 
-// GenerateSpec builds the complete OpenAPI 3.1 specification.
-// The result is cached — the spec is immutable during runtime.
+// GenerateSpec returns the cached OpenAPI 3.1 specification, building it
+// lazily on first access. Reads (the common path after warm-up) are
+// lock-free: specCache.Load() is an atomic pointer dereference.
+//
+// The double-checked lock below protects the build path; without it the
+// first batch of concurrent requests after process start would all race
+// to build the spec. The lock is held once and dropped before the new
+// Spec is published via specCache.Store(s).
+//
+// To drop the cache (e.g. after mutating BuildVersion from a test, or
+// from a SIGHUP handler that wants the next request to observe a fresh
+// build), call InvalidateSpec(). Build() is deterministic for a given
+// call to NewSpecBuilder(), but BuildVersion is a process-global var
+// set via -ldflags, so callers that flip it must invalidate.
 func GenerateSpec() *Spec {
-	specOnce.Do(func() {
-		cachedSpec = NewSpecBuilder().
-			Title("Hermem API").
-			Description("Persistent graph memory for LLM agents. SQLite. Embeddings. Graph traversal. One binary.").
-			Version(BuildVersion).
-			License("MIT").
-			Server("http://localhost:8420", "Local development").
-			Tags(
-				Tag{Name: "memory", Description: "Entity storage, search, and retrieval"},
-				Tag{Name: "ingest", Description: "Dialog ingestion and entity extraction"},
-				Tag{Name: "task", Description: "Task lifecycle management"},
-				Tag{Name: "graph", Description: "Graph analytics and integrity"},
-				Tag{Name: "temporal", Description: "Time-based queries and timeline"},
-				Tag{Name: "admin", Description: "Administrative operations"},
-				Tag{Name: "health", Description: "Health checks and metrics"},
-			).
-			SecurityScheme("ApiKeyAuth", SecurityScheme{
-				Type: "apiKey",
-				In:   "header",
-				Name: "X-API-Key",
-			}).
-			Schemas(AllSchemas()).
-			Paths(AllPaths()).
-			GlobalResponseHeader("X-Hermem-API-Version", "Server API version (semver).", "string").
-			Build()
-	})
-	return cachedSpec
+	if s := specCache.Load(); s != nil {
+		return s
+	}
+	specMu.Lock()
+	defer specMu.Unlock()
+	if s := specCache.Load(); s != nil {
+		return s
+	}
+	s := NewSpecBuilder().
+		Title("Hermem API").
+		Description("Persistent graph memory for LLM agents. SQLite. Embeddings. Graph traversal. One binary.").
+		Version(BuildVersion).
+		License("MIT").
+		Server("http://localhost:8420", "Local development").
+		Tags(
+			Tag{Name: "memory", Description: "Entity storage, search, and retrieval"},
+			Tag{Name: "ingest", Description: "Dialog ingestion and entity extraction"},
+			Tag{Name: "task", Description: "Task lifecycle management"},
+			Tag{Name: "graph", Description: "Graph analytics and integrity"},
+			Tag{Name: "temporal", Description: "Time-based queries and timeline"},
+			Tag{Name: "admin", Description: "Administrative operations"},
+			Tag{Name: "health", Description: "Health checks and metrics"},
+		).
+		SecurityScheme("ApiKeyAuth", SecurityScheme{
+			Type: "apiKey",
+			In:   "header",
+			Name: "X-API-Key",
+		}).
+		Schemas(AllSchemas()).
+		Paths(AllPaths()).
+		GlobalResponseHeader("X-Hermem-API-Version", "Server API version (semver).", "string").
+		Build()
+	specCache.Store(s)
+	return s
+}
+
+// InvalidateSpec drops the cached OpenAPI spec so that the next call to
+// GenerateSpec() rebuilds it from scratch. Safe for concurrent use;
+// any in-flight readers of the previous spec continue with their
+// snapshot until they finish (the Spec tree is immutable after Build()).
+//
+// Wired to SIGHUP in src/internal/cli/serve.go and used by tests that
+// mutate BuildVersion and need the next call to observe the change
+// (see api/openapi_test.go).
+func InvalidateSpec() {
+	specCache.Store(nil)
 }
 
 // MarshalJSON returns the spec as JSON bytes.

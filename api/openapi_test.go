@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"testing"
 )
 
@@ -177,9 +176,17 @@ func TestUniqueOperationIDs(t *testing.T) {
 }
 
 func TestSpecVersionDeterministic(t *testing.T) {
+	origVersion := BuildVersion
+	// BuildVersion is a process-global var set via -ldflags; restore it
+	// (and invalidate the cache) so this test doesn't leak state into
+	// other tests in the same `go test` invocation ordering.
+	defer func() {
+		BuildVersion = origVersion
+		InvalidateSpec()
+	}()
+
 	BuildVersion = "1.2.3"
-	specOnce = sync.Once{}
-	cachedSpec = nil
+	InvalidateSpec()
 
 	spec := GenerateSpec()
 	if spec.Info.Version != "1.2.3" {
@@ -189,6 +196,74 @@ func TestSpecVersionDeterministic(t *testing.T) {
 	spec2 := GenerateSpec()
 	if spec2.Info.Version != "1.2.3" {
 		t.Fatalf("expected cached version '1.2.3', got %s", spec2.Info.Version)
+	}
+}
+
+// TestInvalidateSpecAllowsBuildVersionFlip is an explicit regression
+// test for the SIGHUP-InvalidateSpec contract. It locks down three
+// properties that api/spec.go now relies on:
+//
+//  1. After InvalidateSpec() + GenerateSpec(), a freshly mutated
+//     BuildVersion is observed.
+//  2. Without Invalidate, the cached Spec is returned regardless of
+//     BuildVersion (this is what makes InvalidateSpec() meaningful —
+//     it's the lever, not BuildVersion mutation alone).
+//  3. After InvalidateSpec() the next GenerateSpec() observes the new
+//     BuildVersion.
+//
+// If any of these flips the wrong way, the SIGHUP-driven spec refresh
+// in src/internal/cli/serve.go is silently broken — the server would
+// keep serving a spec that no longer reflects the running daemon.
+func TestInvalidateSpecAllowsBuildVersionFlip(t *testing.T) {
+	origVersion := BuildVersion
+	defer func() {
+		BuildVersion = origVersion
+		InvalidateSpec()
+	}()
+
+	// (1) Warm the spec and assert the initial BuildVersion is observed.
+	BuildVersion = "5.0.0"
+	InvalidateSpec()
+	if got := GenerateSpec().Info.Version; got != "5.0.0" {
+		t.Fatalf("after first Invalidate: expected 5.0.0, got %q", got)
+	}
+
+	// (2) Mutate BuildVersion WITHOUT invalidating. The cached spec
+	// must still report the previous version. If this assertion ever
+	// flips to "6.0.0", the cache would be observably build-version-
+	// sensitive without an explicit Invalidate trigger — i.e. the
+	// double-checked locking in GenerateSpec would be reading state
+	// instead of caching.
+	//
+	// ┌─────────────────────────────────────────────────────────────────┐
+	// │ LOAD-BEARING ASSERTION. DO NOT "FIX" WITHOUT READING THIS.      │
+	// │                                                                 │
+	// │ This assertion PROVES that BuildVersion mutation alone does    │
+	// │ NOT invalidate the cached spec. InvalidateSpec() is the lever. │
+	// │                                                                 │
+	// │ If a future maintainer "simplifies" api/spec.go so that        │
+	// │ GenerateSpec() reads BuildVersion (or any other mutable        │
+	// │ source) directly on every call, this assertion will flip to    │
+	// │ "6.0.0" and you'll have silently broken the SIGHUP-driven      │
+	// │ cache invalidation wired up in src/internal/cli/serve.go —     │
+	// │ operator reloads will look successful while the served spec    │
+	// │ reflects whatever was true at the first call after boot.       │
+	// │                                                                 │
+	// │ The intent is LITERAL: the fast path of GenerateSpec is an     │
+	// │ atomic.Pointer.Load; nothing else gets read until a cache miss  │
+	// │ + InvalidateSpec().                                             │
+	// └─────────────────────────────────────────────────────────────────┘
+	BuildVersion = "6.0.0"
+	if got := GenerateSpec().Info.Version; got != "5.0.0" {
+		t.Fatalf("cached call without Invalidate: expected cached 5.0.0, got %q "+
+			"(LOAD-BEARING: cache invalidated prematurely? InvalidateSpec is the contract lever — see comment above)", got)
+	}
+
+	// (3) Invalidate and re-Generate. Now the new BuildVersion reaches
+	// the spec.
+	InvalidateSpec()
+	if got := GenerateSpec().Info.Version; got != "6.0.0" {
+		t.Fatalf("after Invalidate with new BuildVersion: expected 6.0.0, got %q", got)
 	}
 }
 
@@ -232,14 +307,12 @@ func TestSpecBuilderBasic(t *testing.T) {
 }
 
 func TestSnapshotJSON(t *testing.T) {
-	specOnce = sync.Once{}
-	cachedSpec = nil
+	InvalidateSpec()
 	origVersion := BuildVersion
 	BuildVersion = "dev"
 	defer func() {
 		BuildVersion = origVersion
-		specOnce = sync.Once{}
-		cachedSpec = nil
+		InvalidateSpec()
 	}()
 	spec := GenerateSpec()
 	b, err := spec.JSON()

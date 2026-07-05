@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/pavelveter/hermem/api"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -89,6 +90,13 @@ func runServe(env *clienv.Env, port string, skipEmbedderCheck bool) error {
 			}
 			srv.ReloadState(buildState(newCfg, newCfg.NewReranker()))
 			_ = store.StoreSchemaFingerprint(env.DB, newCfg.Schema)
+			// Drop the cached OpenAPI doc so the next /openapi.{json,yaml}
+			// request rebuilds it. The spec is otherwise compile-time
+			// immutable, but BuildVersion is a process-global var —
+			// and forward-compatibility: if the spec ever grows
+			// config-driven content (e.g. allowed_categories enum),
+			// this hook is already in place.
+			api.InvalidateSpec()
 			slog.Info("SIGHUP applied")
 		}
 	})

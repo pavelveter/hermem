@@ -15,6 +15,7 @@ The admin / debugging surface (/admin/re-embed, /connected-components,
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -346,14 +347,18 @@ class HermemProvider(MemoryProvider):
 
         if tool_name == "hermem_store":
             content = args["content"]
-            # NOTE: `hash()` is per-process salted. Two Python invocations
-            # produce different IDs for the same content. That's OK here
-            # because hermem's b2 runner dedup-merges by cosine similarity
-            # at ingest time, not by hash. Within one process, repeated
-            # stores of identical content DO collide on the same id and
-            # therefore drop into the b2 merge path.
+            # Deterministic content hash so the same input reliably
+            # produces the same id across processes, machines, and
+            # interpreter runs. Python's built-in `hash()` is per-process
+            # salted (PYTHONHASHSEED) and would create cross-session
+            # duplicates even when the b2 merge dedup finally catches
+            # them — which costs LLM embedding calls. SHA-256 truncated
+            # to 16 hex chars (64 bits) is well within the collision
+            # range we need and matches the visual contract of the old
+            # 8-hex pattern + "mem-" prefix.
+            content_id = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
             resp = _call("store", {
-                "id": f"mem-{hash(content) & 0xFFFFFFFF:08x}",
+                "id": f"mem-{content_id}",
                 "category": args.get("category", "world"),
                 "content": content,
             })
