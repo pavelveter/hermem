@@ -130,13 +130,24 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}, 
 	}
 
 	if resp.StatusCode >= 400 {
-		var errResp ErrorResponse
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return &APIError{
-				StatusCode: resp.StatusCode,
-				Message:    errResp.Error,
-				Code:       errResp.Code,
-				Field:      errResp.Field,
+		// Only attempt JSON error parsing when the server actually
+		// advertised application/json. A non-JSON body (e.g. an HTML
+		// 502 from a proxy, or a Go http.Error text/plain page) would
+		// either silently "parse" through json.Unmarshal's lenient
+		// mode producing a misleading zero-value errResp, or burn CPU
+		// on a guaranteed failure. Skipping that round-trip leaves us
+		// at the same fallback path (raw body in Message), only
+		// without the wasted work.
+		ct := resp.Header.Get("Content-Type")
+		if strings.HasPrefix(ct, "application/json") {
+			var errResp ErrorResponse
+			if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
+				return &APIError{
+					StatusCode: resp.StatusCode,
+					Message:    errResp.Error,
+					Code:       errResp.Code,
+					Field:      errResp.Field,
+				}
 			}
 		}
 		return &APIError{
