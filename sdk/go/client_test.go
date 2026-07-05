@@ -2,6 +2,7 @@ package hermem
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -128,6 +129,169 @@ func TestVersionMismatchCalledOnce(t *testing.T) {
 
 	if n := count.Load(); n != 1 {
 		t.Fatalf("expected OnVersionMismatch called once, got %d", n)
+	}
+}
+
+// TestAPIErrorReturnsRawBodyForTextPlainContentType covers the
+// realistic case where the upstream returns an error response with
+// Content-Type: text/plain; charset=utf-8. This is also what
+// net/http's response-writer MIME-sNIFFER stamps on the wire when
+// code calls WriteHeader without explicitly setting Content-Type and
+// the body looks textual — so this test transitively covers both the
+// "explicit text/plain" and "implicit text/plain via missing
+// Content-Type" paths. (httptest.NewServer cannot easily produce a
+// truly Content-Type-less response because of the sniffer, but in
+// practice every Go HTTP server that "forgets" Content-Type delivers
+// text/plain on the wire.)
+//
+// The Content-Type guard correctly treats text/plain as "not JSON"
+// and falls through to the raw-body APIError path. Without this
+// assertion the contract "non-JSON Content-Type ⇒ no JSON parse" was
+// only implicitly covered by the HTML case (one observable family).
+func TestAPIErrorReturnsRawBodyForTextPlainContentType(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Explicit Set — not relying on net/http's MIME-sniffer
+		// behaviour (which would set this anyway for textual bodies).
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("Bad Gateway"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	var result interface{}
+	err := c.do(context.Background(), http.MethodGet, "/anything", nil, &result)
+	if err == nil {
+		t.Fatal("expected error from do(), got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T (%v)", err, err)
+	}
+	if apiErr.StatusCode != http.StatusBadGateway {
+		t.Errorf("expected StatusCode=502, got %d", apiErr.StatusCode)
+	}
+	if apiErr.Message != "Bad Gateway" {
+		t.Errorf("expected Message equal to raw body \"Bad Gateway\", got %q", apiErr.Message)
+	}
+	if apiErr.Code != "" {
+		t.Errorf("expected Code=\"\" (no JSON envelope to read), got %q", apiErr.Code)
+	}
+}
+
+// TestAPIErrorReturnsRawBodyWhenJSONBodyIsInvalid covers the second
+// valid fallthrough in the Content-Type guard: when the server DOES
+// advertise application/json but the body is not valid JSON (or is
+// valid JSON that lacks a populated "error" field), execution must
+// fall through to the raw-body APIError path. This branch is verbally
+// documented in the guard but — without this test — a maintainer
+// could refactor the guard to "always JSON-parse if Content-Type
+// starts with application/json" and silently lose the bad-body
+// fallback.
+func TestAPIErrorReturnsRawBodyWhenJSONBodyIsInvalid(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("not json {{{"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	var result interface{}
+	err := c.do(context.Background(), http.MethodGet, "/anything", nil, &result)
+	if err == nil {
+		t.Fatal("expected error from do(), got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T (%v)", err, err)
+	}
+	if apiErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected StatusCode=500, got %d", apiErr.StatusCode)
+	}
+	if apiErr.Message != "not json {{{" {
+		t.Errorf("expected Message equal to raw body, got %q", apiErr.Message)
+	}
+	if apiErr.Code != "" {
+		t.Errorf("expected Code=\"\" when JSON unmarshal produces no Error envelope, got %q", apiErr.Code)
+	}
+}
+
+// TestAPIErrorReturnsRawHTMLBodyForNonJSONError is the regression test
+// for the Content-Type guard added to (*Client).do. When the server (or
+// an upstream proxy in front of it) returns a non-2xx response with a
+// non-application/json Content-Type — the canonical example being an
+// nginx/cloudflare 502 Bad Gateway HTML page — the client must surface
+// the raw body in APIError.Message rather than (a) attempting JSON
+// unmarshal on HTML (which always fails), or (b) producing a
+// misleading zero-valued errResp envelope.
+func TestAPIErrorReturnsRawHTMLBodyForNonJSONError(t *testing.T) {
+	const htmlBody = "<html><body><h1>502 Bad Gateway</h1><p>cloudflare</p></body></html>"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(htmlBody))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	var result interface{}
+	err := c.do(context.Background(), http.MethodGet, "/anything", nil, &result)
+	if err == nil {
+		t.Fatal("expected error from do(), got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T (%v)", err, err)
+	}
+	if apiErr.StatusCode != http.StatusBadGateway {
+		t.Errorf("expected StatusCode=502, got %d", apiErr.StatusCode)
+	}
+	if apiErr.Message != htmlBody {
+		t.Errorf("expected Message equal to raw HTML body\nwant: %q\ngot:  %q", htmlBody, apiErr.Message)
+	}
+	if apiErr.Code != "" {
+		t.Errorf("expected Code=\"\" (no JSON envelope to read), got %q", apiErr.Code)
+	}
+}
+
+// TestAPIErrorParsesJSONErrorEnvelope is the companion to the
+// HTML-body test above: when the server *does* respond with
+// Content-Type: application/json and a structured ErrorResponse
+// envelope, the client must still surface the structured fields.
+func TestAPIErrorParsesJSONErrorEnvelope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid category","code":"invalid_category","field":"category"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	var result interface{}
+	err := c.do(context.Background(), http.MethodPost, "/store", nil, &result)
+	if err == nil {
+		t.Fatal("expected error from do(), got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T (%v)", err, err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected StatusCode=400, got %d", apiErr.StatusCode)
+	}
+	if apiErr.Message != "invalid category" {
+		t.Errorf("expected Message \"invalid category\", got %q", apiErr.Message)
+	}
+	if apiErr.Code != "invalid_category" {
+		t.Errorf("expected Code \"invalid_category\", got %q", apiErr.Code)
+	}
+	if apiErr.Field != "category" {
+		t.Errorf("expected Field \"category\", got %q", apiErr.Field)
 	}
 }
 
