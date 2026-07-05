@@ -79,7 +79,7 @@ func SaveCheckpoint(path string, ckpt IngestionCheckpoint) error {
 		return fmt.Errorf("checkpoint: marshal: %w", err)
 	}
 	tmp := fmt.Sprintf("%s.tmp.%d", path, saveTmpCounter.Add(1))
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := writeOwnerOnly(tmp, data); err != nil {
 		return fmt.Errorf("checkpoint: write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -96,7 +96,7 @@ func SaveCheckpoint(path string, ckpt IngestionCheckpoint) error {
 // core.MemoryMessage — the producer can replay them on restart. Empty
 // path is a no-op. Empty slice yields an empty file (no truncation
 // races on the writer side).
-func SavePendingQueue(path string, msgs []core.MemoryMessage) error {
+func SavePendingQueue(path string, msgs []core.MemoryMessage) (err error) {
 	if path == "" {
 		return nil
 	}
@@ -105,6 +105,22 @@ func SavePendingQueue(path string, msgs []core.MemoryMessage) error {
 		return fmt.Errorf("pending: create: %w", err)
 	}
 	defer f.Close()
+	// Belt-and-suspenders narrowing under two distinct contracts:
+	//   - On SUCCESS paths, Chmod errors must propagate so the caller
+	//     can escalate. The inline post-Sync f.Chmod below carries that.
+	//   - On ERROR paths (enc.Encode / f.Sync), the residual content
+	//     (partial or complete) MUST still be narrowed to 0o600 before
+	//     close, otherwise a co-resident process can read the failure-
+	//     mode snapshot. This defer Chmod is best-effort because the
+	//     primary error path has already returned — surfacing a SECOND
+	//     error would mask the primary. Defer registered AFTER defer
+	//     Close so it runs first via LIFO (on the still-open fd).
+	defer func() {
+		if err == nil {
+			return
+		}
+		_ = f.Chmod(0o600)
+	}()
 	enc := json.NewEncoder(f)
 	for _, m := range msgs {
 		if err := enc.Encode(m); err != nil {
@@ -113,6 +129,9 @@ func SavePendingQueue(path string, msgs []core.MemoryMessage) error {
 	}
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("pending: sync: %w", err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		return fmt.Errorf("pending: chmod 0o600: %w", err)
 	}
 	return nil
 }
@@ -123,3 +142,20 @@ func SavePendingQueue(path string, msgs []core.MemoryMessage) error {
 // 5s ceiling comfortably covers in-flight embedding/LLM calls in normal
 // operation.
 const defaultDrainTimeout = 5 * time.Second
+
+// writeOwnerOnly writes data to path with mode 0o600 AND issues an
+// os.Chmod(0o600). Plain os.WriteFile is NOT enough: open(2)'s mode
+// argument only applies on file CREATION, so a pre-existing 0o644
+// checkpoint (e.g. an upgraded-from-0.3.x install) would stay 0o644
+// after a WriteFile+truncate. The post-WriteFile Chmod is what
+// actively narrows the legacy case. SaveCheckpoint routes through this
+// helper; the parallel SavePendingQueue uses f.Chmod(0o600) directly
+// because it streams via os.Create (the buffer-then-WriteFile pattern
+// would re-allocate the message slice). Both paths converge on the
+// same owner-only invariant.
+func writeOwnerOnly(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}

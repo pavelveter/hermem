@@ -243,3 +243,117 @@ func splitLines(s string) []string {
 	}
 	return out
 }
+
+// TestSaveCheckpoint_FreshInstall_SmokeMode is a SMOKE test (not a
+// correctness canary): for a fresh install, the explicit 0o600 mode
+// argument on writeOwnerOnly's WriteFile alone produces a 0o600 file,
+// because open(2) consults the mode on file CREATION. This test would
+// pass even if the post-WriteFile Chmod were accidentally removed.
+// The actual canary is TestSaveCheckpoint_LegacyUpgrade_NarrowsMode
+// below — that one distinguishes the post-Chmod from bare WriteFile.
+// Both kept: this smoke test catches gross mode regressions; the canary
+// catches silent post-Chmod removal. Do NOT drop either as redundant.
+func TestSaveCheckpoint_FreshInstall_SmokeMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ckpt.json")
+
+	if err := SaveCheckpoint(path, IngestionCheckpoint{
+		LastCommittedIndex: 1,
+		WorkerID:           "w",
+	}); err != nil {
+		t.Fatalf("SaveCheckpoint: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+		t.Fatalf("mode after SaveCheckpoint: got %#o, want %#o", got, want)
+	}
+}
+
+// TestSaveCheckpoint_LegacyUpgrade_NarrowsMode is the CORRECTNESS
+// CANARY for the writeOwnerOnly helper. A 0o644 checkpoint file from
+// an upgraded-from-0.3.x install MUST be actively narrowed to 0o600 by
+// the next SaveCheckpoint call. Plain os.WriteFile does NOT narrow
+// (open(2)'s mode argument is only consulted on file creation); the
+// post-WriteFile Chmod in writeOwnerOnly is what closes that
+// migration gap. If this test fails, the post-Chmod was removed.
+func TestSaveCheckpoint_LegacyUpgrade_NarrowsMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ckpt.json")
+	if err := os.WriteFile(path, []byte("legacy 0o644 file"), 0o644); err != nil {
+		t.Fatalf("seed legacy 0o644: %v", err)
+	}
+
+	if err := SaveCheckpoint(path, IngestionCheckpoint{
+		LastCommittedIndex: 2,
+		WorkerID:           "w",
+	}); err != nil {
+		t.Fatalf("SaveCheckpoint: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+		t.Fatalf("mode after upgrade-mutation: got %#o, want %#o", got, want)
+	}
+}
+
+// TestSavePendingQueue_FreshInstall_SmokeMode is the SMOKE test for
+// the pending-queue hardening. For a fresh install, os.Create defaults
+// to 0666 (umask narrows to 0o644); the post-Create defer f.Chmod is
+// what gets us to 0o600. This test asserts the success path; the
+// legacy-upgrade canary below asserts the migration path. Both kept
+// for the same reason as the SaveCheckpoint pair.
+func TestSavePendingQueue_FreshInstall_SmokeMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pending.jsonl")
+	msgs := []core.MemoryMessage{
+		{Dialog: "test dialog", ConversationID: "c1", MessageID: "m1"},
+	}
+	if err := SavePendingQueue(path, msgs); err != nil {
+		t.Fatalf("SavePendingQueue: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+		t.Fatalf("mode after SavePendingQueue: got %#o, want %#o", got, want)
+	}
+}
+
+// TestSavePendingQueue_LegacyUpgrade_NarrowsMode is the CORRECTNESS
+// CANARY for the post-Create defer f.Chmod. A 0o644 pending.jsonl from
+// an upgraded-from-0.3.x install MUST be narrowed to 0o600 by the next
+// SavePendingQueue call regardless of how the original file got its
+// mode. The defer f.Chmod(0o600) runs after Create returns, narrowing
+// even existing files. If this test fails, the defer-Chmod was
+// removed or fell out of the success path.
+func TestSavePendingQueue_LegacyUpgrade_NarrowsMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pending.jsonl")
+	if err := os.WriteFile(path, []byte("legacy 0o644 file"), 0o644); err != nil {
+		t.Fatalf("seed legacy 0o644: %v", err)
+	}
+
+	msgs := []core.MemoryMessage{
+		{Dialog: "test dialog", ConversationID: "c1", MessageID: "m1"},
+	}
+	if err := SavePendingQueue(path, msgs); err != nil {
+		t.Fatalf("SavePendingQueue: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+		t.Fatalf("mode after upgrade-mutation: got %#o, want %#o", got, want)
+	}
+}
