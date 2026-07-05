@@ -69,3 +69,9 @@ __pycache__/
 *.pyc
 .coverage
 coverage/*.py[cod]
+
+# Python virtual environments (explicit, defense-in-depth)
+.venv/
+**/.venv/
+venv/
+**/venv/
