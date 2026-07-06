@@ -87,7 +87,11 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 			}
 			return e
 		}(); err != nil {
-			return nil, err
+			slog.Warn("reranker failed, returning pre-rerank results",
+				"err", err,
+				"world_facts", len(result.WorldFacts),
+				"opinions", len(result.Opinions),
+			)
 		}
 	}
 

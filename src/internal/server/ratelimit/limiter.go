@@ -20,8 +20,10 @@
 package ratelimit
 
 import (
+	"hash/fnv"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -49,30 +51,38 @@ type Decision struct {
 }
 
 // bucket is the per-key token bucket. All fields are guarded by the
-// parent Limiter's mu — buckets are never accessed outside the
-// Limiter's lock so we don't pay a per-bucket mutex cost.
+// parent Limiter's shard mu — buckets are never accessed outside the
+// shard's lock so we don't pay a per-bucket mutex cost.
 type bucket struct {
 	tokens   float64
 	lastTime time.Time
 }
 
+// shard is a striped lock + bucket map. Each shard independently
+// protects its own subset of keys, reducing contention under high
+// concurrency with many distinct keys.
+type shard struct {
+	mu      sync.Mutex
+	buckets map[string]*bucket
+}
+
 // Limiter is a per-key token-bucket rate limiter. Zero-value is not
 // usable; construct with New.
 //
-// Limiter is safe for concurrent use.
+// Limiter is safe for concurrent use. Internally, the key space is
+// striped across multiple shards (default 32) to reduce mutex
+// contention under multi-tenant or public-facing traffic. A global
+// atomic counter tracks total key count for the maxKeys backstop.
 type Limiter struct {
-	mu sync.Mutex
-	// buckets is keyed by the rate-limit key (an opaque string the
-	// caller extracts from the request — IP, API key, or "global").
-	// Memory is bounded by maxKeys + the periodic eviction sweep.
-	buckets map[string]*bucket
+	shards    []*shard
+	shardMask uint32
+	totalKeys atomic.Int64 // global key count for maxKeys check
 	// rps is the refill rate in tokens per second.
 	rps float64
 	// burst is the bucket capacity. Always >= 1.
 	burst int
-	// maxKeys caps the per-key map size. When len(buckets) == maxKeys
-	// and a new key arrives, the sweeper prunes the oldest idle
-	// entries to make room.
+	// maxKeys caps the total per-key map size across all shards.
+	// When the cap is reached, the oldest idle entries are pruned.
 	maxKeys int
 	// idleTTL is the per-key idle threshold. Buckets unseen for
 	// longer than this are pruned by the sweeper.
@@ -106,18 +116,28 @@ type Config struct {
 	EvictInterval time.Duration
 }
 
+// defaultShardCount is the number of shards for the striped lock map.
+// Power of two for fast FNV32 modulo via bitwise AND.
+const defaultShardCount = 32
+
 // New returns a Limiter built from cfg. The returned Limiter spawns
 // no goroutine — call Start() to enable background eviction. Split
 // so tests can construct a Limiter with deterministic eviction by
 // calling SweepNow directly.
 func New(cfg Config) *Limiter {
+	shardCount := defaultShardCount
+	shards := make([]*shard, shardCount)
+	for i := 0; i < shardCount; i++ {
+		shards[i] = &shard{buckets: make(map[string]*bucket)}
+	}
 	l := &Limiter{
-		buckets: make(map[string]*bucket),
-		rps:     cfg.RPS,
-		burst:   normalizeBurst(cfg.Burst, cfg.RPS),
-		maxKeys: normalizeMaxKeys(cfg.MaxKeys),
-		idleTTL: cfg.IdleTTL,
-		now:     time.Now,
+		shards:    shards,
+		shardMask: uint32(shardCount - 1),
+		rps:       cfg.RPS,
+		burst:     normalizeBurst(cfg.Burst, cfg.RPS),
+		maxKeys:   normalizeMaxKeys(cfg.MaxKeys),
+		idleTTL:   cfg.IdleTTL,
+		now:       time.Now,
 	}
 	if l.rps <= 0 {
 		l.rps = 1
@@ -134,29 +154,31 @@ func (l *Limiter) Burst() int { return l.burst }
 // RPS returns the configured refill rate in tokens per second.
 func (l *Limiter) RPS() float64 { return l.rps }
 
+// getShard returns the shard for the given key using FNV32 hashing.
+func (l *Limiter) getShard(key string) *shard {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key))
+	return l.shards[h.Sum32()&l.shardMask]
+}
+
 // Allow attempts to consume one token from the bucket identified by
 // key. Returns the Decision describing whether the call was allowed
 // and the headers to write. Creates a fresh full bucket on first
 // use of a key.
 func (l *Limiter) Allow(key string) Decision {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	s := l.getShard(key)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	now := l.now()
-	b, ok := l.buckets[key]
+	b, ok := s.buckets[key]
 	if !ok {
-		// Hard cap: if we're at the cap, prune the oldest idle
-		// entry to make room. SweepNow runs a more thorough pass;
-		// this is a fast inline trim so a hot-loop new-key flood
-		// can't OOM us between sweeps.
-		if len(l.buckets) >= l.maxKeys {
-			l.evictOldestLocked(1)
-		}
 		b = &bucket{
 			tokens:   float64(l.burst),
 			lastTime: now,
 		}
-		l.buckets[key] = b
+		s.buckets[key] = b
+		l.totalKeys.Add(1)
 	}
 
 	// Refill since last touch.
@@ -213,69 +235,33 @@ func (l *Limiter) Allow(key string) Decision {
 // want to spin up a real ticker. Returns the number of buckets
 // pruned.
 func (l *Limiter) SweepNow() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.evictIdleLocked()
+	total := 0
+	for _, s := range l.shards {
+		s.mu.Lock()
+		total += l.evictIdleLocked(s)
+		s.mu.Unlock()
+	}
+	return total
 }
 
-func (l *Limiter) evictIdleLocked() int {
+func (l *Limiter) evictIdleLocked(s *shard) int {
 	cutoff := l.now().Add(-l.idleTTL)
 	pruned := 0
-	for k, b := range l.buckets {
+	for k, b := range s.buckets {
 		if b.lastTime.Before(cutoff) {
-			delete(l.buckets, k)
+			delete(s.buckets, k)
+			l.totalKeys.Add(-1)
 			pruned++
 		}
 	}
 	return pruned
 }
 
-// evictOldestLocked prunes up to n of the least-recently-touched
-// entries. Used when the map is at maxKeys and a new key arrives.
-// Caller MUST hold l.mu.
-func (l *Limiter) evictOldestLocked(n int) int {
-	if n <= 0 || len(l.buckets) == 0 {
-		return 0
-	}
-	type kvp struct {
-		key      string
-		lastTime time.Time
-	}
-	all := make([]kvp, 0, len(l.buckets))
-	for k, b := range l.buckets {
-		all = append(all, kvp{k, b.lastTime})
-	}
-	// Selection: find the n oldest. O(len(buckets)) which is bounded
-	// by maxKeys. For very large maps this is dominated by the
-	// allocation; acceptable for a backstop-only path that runs at
-	// most once per new-key under cap pressure.
-	if n >= len(all) {
-		for _, e := range all {
-			delete(l.buckets, e.key)
-		}
-		return len(all)
-	}
-	// Partial selection: n-smallest-by-lastTime.
-	for i := 0; i < n; i++ {
-		oldestIdx := i
-		for j := i + 1; j < len(all); j++ {
-			if all[j].lastTime.Before(all[oldestIdx].lastTime) {
-				oldestIdx = j
-			}
-		}
-		all[i], all[oldestIdx] = all[oldestIdx], all[i]
-		delete(l.buckets, all[i].key)
-	}
-	return n
-}
-
 // Size returns the current number of tracked buckets. Test-only —
 // guarded by a method so the production code never accidentally
 // depends on the map size.
 func (l *Limiter) Size() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return len(l.buckets)
+	return int(l.totalKeys.Load())
 }
 
 // Start begins background eviction. Returns a stop function. Calling
@@ -307,8 +293,6 @@ func (l *Limiter) Start(interval time.Duration) (stop func()) {
 
 // SetClock overrides the time source. Test-only.
 func (l *Limiter) SetClock(now func() time.Time) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.now = now
 	if now != nil {
 		// Re-base existing buckets' lastTime so the test clock
@@ -316,8 +300,12 @@ func (l *Limiter) SetClock(now func() time.Time) {
 		// source. This is a best-effort helper — tests that need
 		// precise control should call SetClock BEFORE any Allow().
 		t := now()
-		for _, b := range l.buckets {
-			b.lastTime = t
+		for _, s := range l.shards {
+			s.mu.Lock()
+			for _, b := range s.buckets {
+				b.lastTime = t
+			}
+			s.mu.Unlock()
 		}
 	}
 }
@@ -346,4 +334,38 @@ func normalizeMaxKeys(n int) int {
 		return 100_000
 	}
 	return n
+}
+
+// LimiterRef is a thread-safe, reloadable holder for a *Limiter.
+// The server swaps it atomically on SIGHUP; the middleware reads it
+// per-request so in-flight handlers always use the current limiter.
+type LimiterRef struct {
+	ptr atomic.Pointer[Limiter]
+}
+
+// NewLimiterRef wraps an initial Limiter. Panics on nil.
+func NewLimiterRef(l *Limiter) *LimiterRef {
+	if l == nil {
+		panic("ratelimit: NewLimiterRef called with nil Limiter")
+	}
+	r := &LimiterRef{}
+	r.ptr.Store(l)
+	return r
+}
+
+// Load returns the current Limiter. Always non-nil after construction.
+func (r *LimiterRef) Load() *Limiter {
+	return r.ptr.Load()
+}
+
+// Swap atomically replaces the Limiter and stops the old one's
+// background eviction goroutine. The new Limiter must already be
+// started (or not need eviction). Returns the old Limiter for
+// optional cleanup.
+func (r *LimiterRef) Swap(new *Limiter) *Limiter {
+	if new == nil {
+		panic("ratelimit: LimiterRef.Swap called with nil Limiter")
+	}
+	old := r.ptr.Swap(new)
+	return old
 }

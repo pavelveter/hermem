@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
@@ -77,6 +78,7 @@ func APIKeyMiddleware(apiKey string) func(http.Handler) http.Handler {
 }
 
 func AuthMiddleware() func(http.Handler) http.Handler {
+	var authenticatorCache sync.Map // *config.Config → *auth.StaticAuthenticator
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			env := GetRuntime(r.Context())
@@ -96,8 +98,7 @@ func AuthMiddleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			keys := buildKeysFromCfg(env.Cfg)
-			authenticator := auth.NewStaticAuthenticator(keys)
+			authenticator := getOrCreateAuthenticator(&authenticatorCache, env.Cfg)
 
 			raw := r.Header.Get("X-API-Key")
 			required := auth.ScopeForPath(path)
@@ -115,6 +116,25 @@ func AuthMiddleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// getOrCreateAuthenticator returns a cached StaticAuthenticator for the
+// given config, creating one if the config pointer is new (SIGHUP reload).
+// sync.Map ensures thread-safety; the *config.Config pointer identity
+// guarantees a fresh authenticator after every reload.
+func getOrCreateAuthenticator(cache *sync.Map, cfg *config.Config) *auth.StaticAuthenticator {
+	if v, ok := cache.Load(cfg); ok {
+		if a, ok := v.(*auth.StaticAuthenticator); ok {
+			return a
+		}
+	}
+	keys := buildKeysFromCfg(cfg)
+	authenticator := auth.NewStaticAuthenticator(keys)
+	actual, _ := cache.LoadOrStore(cfg, authenticator)
+	if a, ok := actual.(*auth.StaticAuthenticator); ok {
+		return a
+	}
+	return authenticator
 }
 
 func authEnabled(cfg *config.Config) bool {

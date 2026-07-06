@@ -191,11 +191,16 @@ func (idx *InMemoryVectorIndex) Search(_ context.Context, queryEmbedding []float
 	if len(idx.flatMatrix) != n*idx.cols {
 		return nil, fmt.Errorf("%w: matrix has %d, expected %d", ErrMatrixCorrupted, len(idx.flatMatrix), n*idx.cols)
 	}
-	NormalizeVector(queryEmbedding)
-	queryNorm := VectorNorm(queryEmbedding)
+	// NormalizeVector mutates its argument in place; copy before normalising
+	// so call-sites that share one query slice across concurrent Search
+	// goroutines don't race on the backing array.
+	queryCopy := make([]float32, len(queryEmbedding))
+	copy(queryCopy, queryEmbedding)
+	NormalizeVector(queryCopy)
+	queryNorm := VectorNorm(queryCopy)
 	dots := getDots(n)
 	defer putDots(dots)
-	BatchDotProducts(queryEmbedding, idx.flatMatrix, n, idx.cols, dots)
+	BatchDotProducts(queryCopy, idx.flatMatrix, n, idx.cols, dots)
 	for i := range dots {
 		dots[i] /= queryNorm
 	}
@@ -241,12 +246,17 @@ func (idx *InMemoryVectorIndex) SearchBatch(_ context.Context, queries [][]float
 		if len(q) != idx.cols {
 			return nil, fmt.Errorf("%w: query %d has %d, want %d", ErrInvalidQueryDim, qi, len(q), idx.cols)
 		}
-		NormalizeVector(q)
-		qNorm := VectorNorm(q)
+		// NormalizeVector mutates its argument in place; copy each query so
+		// call-sites that share a `queries` value across concurrent
+		// SearchBatch goroutines don't race on the backing array.
+		qCopy := make([]float32, len(q))
+		copy(qCopy, q)
+		NormalizeVector(qCopy)
+		qNorm := VectorNorm(qCopy)
 		// O(n) scan per query — inherent to brute-force cosine. To improve
 		// beyond O(n·q) total, switch to an ANN index (HNSW, IVF) which
 		// trades exactness for sub-linear query time. See docs/perf-budgets.md.
-		BatchDotProducts(q, idx.flatMatrix, n, idx.cols, dots)
+		BatchDotProducts(qCopy, idx.flatMatrix, n, idx.cols, dots)
 		for i := range dots {
 			dots[i] /= qNorm
 		}
