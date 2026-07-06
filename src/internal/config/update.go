@@ -34,7 +34,13 @@ func AddKeyToFile(path string, key, scope, label string) error {
 	} else {
 		content = content + indent + "api_keys = " + spec + "\n"
 	}
-	return os.WriteFile(path, []byte(content), 0644)
+	// hermem.ini carries api_keys and AI-provider secrets (see Admin / Server
+	// sections). The previous 0644 mode was world-readable: any local user
+	// could `cat` the file and lift the keys. We route every mutator through
+	// writeConfig() below, which writes with mode 0o600 AND issues an explicit
+	// Chmod so legacy 0o644 installations are actively narrowed on the next
+	// mutation. Belt-and-suspenders: mode-on-create plus post-mutation chmod.
+	return writeConfig(path, []byte(content))
 }
 
 func RemoveKeyFromFile(path, labelOrValue string) error {
@@ -83,7 +89,8 @@ func RemoveKeyFromFile(path, labelOrValue string) error {
 		}
 		newLines = append(newLines, line)
 	}
-	return os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644)
+	// 0o600 + post-Chmod narrowing — see rationale in AddKeyToFile above.
+	return writeConfig(path, []byte(strings.Join(newLines, "\n")))
 }
 
 func RotateKeyInFile(path, labelOrValue, newKey string) error {
@@ -132,7 +139,8 @@ func RotateKeyInFile(path, labelOrValue, newKey string) error {
 			lines[i] = "api_keys = " + strings.Join(replaced, ", ")
 		}
 	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+	// 0o600 — see rationale in AddKeyToFile above.
+	return writeConfig(path, []byte(strings.Join(lines, "\n")))
 }
 
 func findOrCreateSection(content *string, section string) string {
@@ -181,4 +189,17 @@ func extractValue(line string) string {
 		return ""
 	}
 	return strings.TrimSpace(line[idx+1:])
+}
+
+// writeConfig writes content to path with mode 0o600 and then explicitly
+// chmods the result to 0o600. Plain os.WriteFile is NOT enough: open(2)'s
+// mode argument only applies on file creation, so a pre-existing 0o644
+// hermem.ini would stay 0o644 after a WriteFile+truncate. This helper is
+// the single chokepoint for hermem.ini mutations; route every new mutator
+// through it. Bypassing it requires an explicit justification.
+func writeConfig(path string, content []byte) error {
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
