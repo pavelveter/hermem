@@ -20,9 +20,10 @@ var okHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 // 204, then a 429 with Retry-After is returned.
 func TestMiddleware_BurstThenReject(t *testing.T) {
 	l := New(Config{RPS: 1, Burst: 3})
+	ref := NewLimiterRef(l)
 	h := Middleware(Options{
-		Limiter: l,
-		KeyFunc: KeyByGlobal(),
+		LimiterRef: ref,
+		KeyFunc:    KeyByGlobal(),
 	})(okHandler)
 
 	for i := 0; i < 3; i++ {
@@ -57,7 +58,8 @@ func TestMiddleware_BurstThenReject(t *testing.T) {
 // X-RateLimit-* headers so clients can self-throttle.
 func TestMiddleware_HeadersOn200(t *testing.T) {
 	l := New(Config{RPS: 1, Burst: 10})
-	h := Middleware(Options{Limiter: l, KeyFunc: KeyByGlobal()})(okHandler)
+	ref := NewLimiterRef(l)
+	h := Middleware(Options{LimiterRef: ref, KeyFunc: KeyByGlobal()})(okHandler)
 
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest("GET", "/x", nil))
@@ -79,8 +81,9 @@ func TestMiddleware_HeadersOn200(t *testing.T) {
 // are not rate-limited even when the global bucket is empty.
 func TestMiddleware_BypassHealth(t *testing.T) {
 	l := New(Config{RPS: 1, Burst: 1})
+	ref := NewLimiterRef(l)
 	h := Middleware(Options{
-		Limiter:      l,
+		LimiterRef:   ref,
 		KeyFunc:      KeyByGlobal(),
 		ShouldBypass: BypassHealthAndMetrics(),
 	})(okHandler)
@@ -109,8 +112,9 @@ func TestMiddleware_BypassHealth(t *testing.T) {
 // TestMiddleware_BypassMetrics — /metrics is exempt for Prometheus.
 func TestMiddleware_BypassMetrics(t *testing.T) {
 	l := New(Config{RPS: 1, Burst: 1})
+	ref := NewLimiterRef(l)
 	h := Middleware(Options{
-		Limiter:      l,
+		LimiterRef:   ref,
 		KeyFunc:      KeyByGlobal(),
 		ShouldBypass: BypassHealthAndMetrics(),
 	})(okHandler)
@@ -127,7 +131,8 @@ func TestMiddleware_BypassMetrics(t *testing.T) {
 // unless we override.
 func TestMiddleware_KeyByIPIsolation(t *testing.T) {
 	l := New(Config{RPS: 1, Burst: 1})
-	h := Middleware(Options{Limiter: l, KeyFunc: KeyByIP()})(okHandler)
+	ref := NewLimiterRef(l)
+	h := Middleware(Options{LimiterRef: ref, KeyFunc: KeyByIP()})(okHandler)
 
 	// Exhaust IP "A".
 	rrA := httptest.NewRecorder()
@@ -159,7 +164,8 @@ func TestMiddleware_KeyByIPIsolation(t *testing.T) {
 // limiting is a no-op.
 func TestMiddleware_KeyByIPStripsPort(t *testing.T) {
 	l := New(Config{RPS: 1, Burst: 1})
-	h := Middleware(Options{Limiter: l, KeyFunc: KeyByIP()})(okHandler)
+	ref := NewLimiterRef(l)
+	h := Middleware(Options{LimiterRef: ref, KeyFunc: KeyByIP()})(okHandler)
 
 	r1 := httptest.NewRequest("GET", "/x", nil)
 	r1.RemoteAddr = "10.0.0.5:11111"
@@ -178,7 +184,8 @@ func TestMiddleware_KeyByIPStripsPort(t *testing.T) {
 // present.
 func TestMiddleware_KeyByAPIKey(t *testing.T) {
 	l := New(Config{RPS: 1, Burst: 2})
-	h := Middleware(Options{Limiter: l, KeyFunc: KeyByAPIKey()})(okHandler)
+	ref := NewLimiterRef(l)
+	h := Middleware(Options{LimiterRef: ref, KeyFunc: KeyByAPIKey()})(okHandler)
 
 	r := httptest.NewRequest("GET", "/x", nil)
 	r.RemoteAddr = "10.0.0.1:1234"
@@ -208,7 +215,8 @@ func TestMiddleware_KeyByAPIKey(t *testing.T) {
 func TestMiddleware_KeyByAPIKeyFallsBackToIP(t *testing.T) {
 	// Burst=1 so the very NEXT request from the same IP is 429.
 	l := New(Config{RPS: 1, Burst: 1})
-	h := Middleware(Options{Limiter: l, KeyFunc: KeyByAPIKey()})(okHandler)
+	ref := NewLimiterRef(l)
+	h := Middleware(Options{LimiterRef: ref, KeyFunc: KeyByAPIKey()})(okHandler)
 
 	r := httptest.NewRequest("GET", "/x", nil)
 	r.RemoteAddr = "10.0.0.7:1234"

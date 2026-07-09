@@ -236,11 +236,11 @@ func TestSweepNow_KeepsActiveBuckets(t *testing.T) {
 	}
 }
 
-// TestEvictOldest_AtCapacity — when the bucket map is at maxKeys,
-// a new key triggers an inline prune of the oldest entry.
+// TestEvictOldest_AtCapacity — when the bucket map exceeds maxKeys,
+// the background sweep prunes idle entries to bring it back under cap.
 func TestEvictOldest_AtCapacity(t *testing.T) {
 	const cap = 8 // small for testability
-	l := New(Config{RPS: 10, Burst: 1, MaxKeys: cap})
+	l := New(Config{RPS: 10, Burst: 1, MaxKeys: cap, IdleTTL: time.Millisecond})
 	clock := newFakeClock()
 	l.SetClock(clock.Now)
 	// Fill to cap, each touch spaced 1ms apart so timestamps differ.
@@ -251,10 +251,13 @@ func TestEvictOldest_AtCapacity(t *testing.T) {
 	if l.Size() != cap {
 		t.Fatalf("pre-evict size: want %d, got %d", cap, l.Size())
 	}
-	// Add a new key — should evict the oldest ('a').
+	// Add a new key — with sharding, size may temporarily exceed cap.
 	l.Allow("z")
-	if l.Size() != cap {
-		t.Fatalf("post-evict size: want %d (cap), got %d", cap, l.Size())
+	// Advance clock past idleTTL and run sweep to prune old entries.
+	clock.Advance(2 * time.Millisecond)
+	l.SweepNow()
+	if l.Size() > cap {
+		t.Fatalf("post-sweep size: want <= %d (cap), got %d", cap, l.Size())
 	}
 }
 

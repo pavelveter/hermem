@@ -172,6 +172,19 @@ func (c *ResilientClient) Do(ctx context.Context, req *http.Request) (*http.Resp
 	}
 	p := resolvePolicy(c.Policy)
 
+	// Warn once if GetBody is nil and retries are possible — callers
+	// passing custom io.Reader bodies MUST attach GetBody or the
+	// second attempt will silently replay an empty body. This is a
+	// caller bug, not a runtime error; the warning makes it visible.
+	if req.GetBody == nil && p.MaxAttempts > 1 {
+		slog.Warn("ai_retry_getbody_nil",
+			"provider", c.Provider,
+			"model", c.Model,
+			"max_attempts", p.MaxAttempts,
+			"msg", "request has no GetBody; retries may replay empty body",
+		)
+	}
+
 	var deadline time.Time
 	if p.MaxWallClock >= 0 {
 		deadline = time.Now().Add(p.MaxWallClock)

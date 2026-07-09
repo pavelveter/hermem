@@ -14,8 +14,10 @@ type KeyFunc func(r *http.Request) string
 
 // Options configures Middleware.
 type Options struct {
-	// Limiter is the underlying token-bucket state. Required.
-	Limiter *Limiter
+	// LimiterRef is the reloadable limiter holder. Required.
+	// The middleware reads the current Limiter from it per-request,
+	// so a SIGHUP swap takes effect immediately for new requests.
+	LimiterRef *LimiterRef
 	// KeyFunc extracts the per-request key. Required.
 	// Pre-built helpers: KeyByIP, KeyByAPIKey, KeyByGlobal.
 	KeyFunc KeyFunc
@@ -42,7 +44,7 @@ func Middleware(opts Options) func(http.Handler) http.Handler {
 				return
 			}
 			key := opts.KeyFunc(r)
-			dec := opts.Limiter.Allow(key)
+			dec := opts.LimiterRef.Load().Allow(key)
 			writeRateLimitHeaders(w, dec)
 			if !dec.Allowed {
 				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(dec.RetryAfter.Seconds()))))

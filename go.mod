@@ -1,6 +1,6 @@
 module github.com/pavelveter/hermem
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/magefile/mage v1.17.2

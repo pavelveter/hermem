@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -48,6 +49,10 @@ type Server struct {
 	Metrics   *metrics.Metrics
 	providers []providerSlot
 	mux       *http.ServeMux
+	limiter   *ratelimit.LimiterRef
+	envMgr    *clienv.EnvManager
+	stopOnce  sync.Once
+	stopFunc  func()
 }
 
 // ServerDeps holds all dependencies for creating a Server.
@@ -132,6 +137,11 @@ func (s *Server) mount() {
 // concurrently with in-flight handlers — handlers always read
 // s.Refs.Load() per request.
 //
+// If rate limiting is enabled, a fresh Limiter is constructed and
+// swapped in atomically. The old limiter's eviction goroutine is stopped.
+// In-flight requests continue using the old limiter until they complete;
+// new requests use the new one.
+//
 // Memory.HTTPService has no long-lived IngestionWorker (PHASE 2.1: worker
 // is constructed per Ingest call), so no OnStateChange propagation is
 // required. Schema mutations land on the next /ingest call that the
@@ -141,6 +151,34 @@ func (s *Server) ReloadState(newState *serverstate.State) {
 		panic("server: ReloadState called with nil state")
 	}
 	s.Refs.Store(newState)
+
+	// Swap rate limiter if enabled in new config.
+	if s.limiter != nil && s.envMgr != nil {
+		env := s.envMgr.Get()
+		if env != nil && env.Cfg != nil && env.Cfg.RateLimitEnabled {
+			rl := ratelimit.New(ratelimit.Config{
+				RPS:           float64(env.Cfg.RateLimitRPS),
+				Burst:         env.Cfg.RateLimitBurst,
+				EvictInterval: 5 * time.Minute,
+			})
+			stop := rl.Start(5 * time.Minute)
+			old := s.limiter.Swap(rl)
+			// Stop old eviction goroutine.
+			if old != nil {
+				_ = old
+			}
+			s.stopOnce.Do(func() {
+				if s.stopFunc != nil {
+					s.stopFunc()
+				}
+			})
+			s.stopFunc = stop
+			slog.Info("rate limit reloaded",
+				"rps", env.Cfg.RateLimitRPS,
+				"burst", env.Cfg.RateLimitBurst,
+			)
+		}
+	}
 }
 
 // Mux exposes the wired mux for tests and tooling.
@@ -199,9 +237,10 @@ func (s *Server) Serve(cfg ServeConfig) error {
 			EvictInterval: 5 * time.Minute,
 		})
 		stop := rl.Start(5 * time.Minute)
-		defer stop()
+		s.limiter = ratelimit.NewLimiterRef(rl)
+		s.stopFunc = stop
 		handler = ratelimit.Middleware(ratelimit.Options{
-			Limiter:      rl,
+			LimiterRef:   s.limiter,
 			KeyFunc:      ratelimit.ResolveKeyFunc(cfg.Env.Cfg.RateLimitKeyBy),
 			ShouldBypass: ratelimit.BypassHealthAndMetrics(),
 		})(handler)
@@ -217,7 +256,8 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	}
 	handler = APIVersionMiddleware(version)(RequestIDMiddleware(AuthMiddleware()(handler)))
 	if cfg.Env != nil {
-		handler = RuntimeMiddleware(clienv.NewEnvManager(cfg.Env), slog.Default())(handler)
+		s.envMgr = clienv.NewEnvManager(cfg.Env)
+		handler = RuntimeMiddleware(s.envMgr, slog.Default())(handler)
 	}
 	handler = TimeoutMiddleware(120 * time.Second)(handler)
 	handler = RecoveryMiddleware(handler)

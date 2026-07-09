@@ -14,7 +14,7 @@ permissions:
   # scopes it has no use for.
 
 env:
-  GO_VERSION: "1.26"
+  GO_VERSION: "1.26.5"
   # Zig 0.16.0 (April 2026) — latest stable that ships `zig cc` for musl + windows-gnu targets.
   # Last user-visible breakage was a pin to non-existent v2.12.2 (Zig 2.x has not shipped).
   ZIG_VERSION: "0.16.0"
