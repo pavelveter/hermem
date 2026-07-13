@@ -118,7 +118,7 @@ jobs:
       # uv in a single action. Replacing actions/setup-python@v5 —
       # the latter's wheel cache would be wasted because uv manages
       # its own cache.
-      - uses: astral-sh/setup-uv@162b8acf397cb069dec09a3f5a9847cf71cfa46a  # v1
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
           python-version: ${{ matrix.python-version }}
 
