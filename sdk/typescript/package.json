@@ -12,17 +12,26 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
-  "keywords": ["hermem", "memory", "graph", "llm", "agent"],
+  "keywords": [
+    "hermem",
+    "memory",
+    "graph",
+    "llm",
+    "agent"
+  ],
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
-    "@vitest/coverage-v8": "^4.1.9"
-  }
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
+    "@vitest/coverage-v8": "4.1.10"
+  },
+  "dependencies": {}
 }
