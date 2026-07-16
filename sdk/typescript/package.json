@@ -21,8 +21,13 @@
   "keywords": ["hermem", "memory", "graph", "llm", "agent"],
   "license": "MIT",
   "devDependencies": {
+<<<<<<< HEAD
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
+=======
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.9",
+>>>>>>> 234a47d (deps(sdk/typescript): bump typescript in /sdk/typescript)
     "@vitest/coverage-v8": "^4.1.9"
   }
 }
