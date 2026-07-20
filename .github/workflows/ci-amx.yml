@@ -27,6 +27,16 @@ on:
       - 'src/internal/vector/**'
       - '.github/workflows/ci-amx.yml'
 
+# Match the Go version pinned in go.mod (1.26.5).
+#
+# Previously this workflow hardcoded go-version '1.24' which compiled fine
+# while setup-go silently reconciled the mismatch with go.mod. After the
+# setup-go bump in Dependabot #40 the AMX guard surfaced:
+#   go: go.mod requires go >= 1.26.5 (running go 1.24.13; GOTOOLCHAIN=local)
+# so the runtime pin must equal (or, as here, derive from) the module pin.
+env:
+  GO_VERSION: "1.26.5"
+
 jobs:
   amx-guard:
     name: Apple AMX/Accelerate runtime guard
@@ -45,7 +55,7 @@ jobs:
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
-          go-version: '1.24'
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
       - name: AMX runtime guard (wall-time assertion)
