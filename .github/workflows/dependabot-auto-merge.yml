@@ -1,0 +1,64 @@
+name: Dependabot auto-merge
+
+# Automatically approve and enable auto-merge for Dependabot pull
+# requests so routine dependency bumps land without manual
+# intervention (repo settings required: "Allow auto-merge" +
+# "Allow GitHub Actions to create and approve pull requests").
+#
+# Why `pull_request_target` instead of `pull_request`:
+#   - PRs opened by dependabot[bot] run with a read-only GITHUB_TOKEN
+#     and no secret access, so the approve/merge mutations would fail.
+#   - `pull_request_target` runs the workflow against the *base* branch
+#     (main) with the base branch's permissions, which is exactly what
+#     an approval + auto-merge bot needs.
+#   - Safety: the job never checks out the PR's code — it only reads
+#     PR metadata and calls `gh pr review` / `gh pr merge`, so a
+#     malicious PR cannot execute code in this workflow's context.
+#
+# Merge policy: all update types (patch, minor, major) are auto-merged
+# once required checks pass. This is deliberate — see the branch
+# protection rules (Lint/Test/Build required) which gate every merge.
+#
+# This workflow only acts on Dependabot PRs; everything else is left
+# to normal review flow.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    timeout-minutes: 5
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98  # v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # Satisfies the branch protection rule requiring 1 approving
+      # review. The github-actions[bot] approval counts because the
+      # repo setting "Allow GitHub Actions to create and approve pull
+      # requests" is enabled.
+      - name: Approve the PR
+        run: gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # `--auto` registers the PR with GitHub's auto-merge queue: it
+      # will merge via squash as soon as all required status checks
+      # (Lint, Test, Build) are green and the approval above lands.
+      # Re-triggered by the `synchronize`/`labeled`/`unlabeled` events
+      # so an updated (or manually labeled) PR re-registers cleanly.
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
