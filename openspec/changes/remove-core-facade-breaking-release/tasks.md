@@ -23,22 +23,14 @@
 
 ## 4. Production caller migration
 
-> Progress: value-type sweep of the group-4 service packages is DONE —
-> `Entity`/`Edge`/`SchemaConfig`/extraction DTOs/`MemoryMessage`/`Polarity`/
-> `TimePtr`/`RankingWeight`/`SearchResult`/slim projections are now aliases to
-> `pkg/domain`; `NewTaskID`→`id`, `RetentionPolicy`→`retention.Policy`,
-> `MigrationStatus/Mismatch/Migrator`→`migration` are deleted from `core`.
-> **Embedder + VectorStore are fully migrated**: service constructors,
-> `app`/`clienv.Env` fields, and the retrieval pipeline all hold
-> `spi.Embedder`; `core.Embedder` is a deprecated alias; both spiadapter
-> embedder bridges are gone. Every service and wiring point holds
-> `spi.VectorStore` (namespace = `spi.DefaultNamespace`, single-query
-> searches replace the legacy batch call); the raw backend keeps its
-> legacy IDs-only view behind `vector.NewIndex`, wrapped once at
-> composition.
-> Remaining in these packages: `LLMExtractor` constructor params
-> (blocked on ADR-035 ID semantics) and transport request DTOs —
-> tracked by 4.5/4.6 and 6.x.
+> Progress: production tree is facade-free outside the legacy-vector compat
+> surface ({spiadapter, vector} hold `core.VectorIndex` until 6.4/6.5).
+> All service/shell/MCP/CLI signatures speak canonical contracts
+> (`pkg/domain`, `pkg/spi`, `api/v1`, owning internals); test fixtures
+> migrated (5.1). Remaining core content: deprecated aliases consumed by
+> its own wire-pin tests (6.1 relocation), transport DTOs pinned by
+> `server/compat_test.go` (deleted at 6.3), `NormalizeSlice`,
+> `Component`/`Logger` natives, and `VectorIndex`.
 
 - [x] 4.1 Migrate provider implementations and `spiadapter` callers to public SPI contracts; retain adapters only for explicitly tracked compatibility tests.
 - [x] 4.2 Migrate repositories, vector consumers, and persistence boundaries to `pkg/domain` and `spi.VectorStore` or owning internal interfaces.
@@ -54,7 +46,7 @@
 - [x] 5.2 Add a repository-wide production import check proving no non-test caller depends on `src/internal/core`. (`scripts/check-zero-core-imports.sh` two-mode gate — compat allowlist {spiadapter, vector} now, hard-zero after removal; wired into `.githooks/pre-push`)
 - [x] 5.3 Run HTTP golden and OpenAPI contract tests against the migrated implementation and compare with the recorded baseline. (api/openapi byte-snapshot + server golden/integration suites green post-migration — 177 tests; no intentional wire deltas)
 - [x] 5.4 Run MCP, CLI, persistence, provider, external-like package, and SDK integration suites through the migrated wiring. (mcp + cli + e2e/persistence + pkg/spi external-provider + Go SDK suites green under race — 140 tests)
-- [ ] 5.5 Confirm all compatibility adapters have zero runtime and test references except the final removal task.
+- [ ] 5.5 Confirm all compatibility adapters have zero runtime and test references except the final removal task. (embedder bridges: zero-ref, DELETED; extractor bridges: referenced by app/providers wiring; vector wrap: referenced by env/app composition + admin write-only path — both clear at 6.4)
 
 ## 6. Breaking removal implementation
 
