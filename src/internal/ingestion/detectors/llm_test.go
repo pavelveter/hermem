@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 type mockLLMChecker struct {
@@ -23,48 +23,48 @@ func (m *mockLLMChecker) IsContradiction(_ context.Context, _, _ string) (bool, 
 func TestLLMDetector(t *testing.T) {
 	cases := []struct {
 		name      string
-		existing  core.Entity
-		incoming  core.Entity
+		existing  domain.Entity
+		incoming  domain.Entity
 		checker   *mockLLMChecker
 		want      bool
 		wantCalls int
 	}{
 		{
 			name:      "contradiction_detected",
-			existing:  core.Entity{Content: "Go is fast"},
-			incoming:  core.Entity{Content: "Go is slow"},
+			existing:  domain.Entity{Content: "Go is fast"},
+			incoming:  domain.Entity{Content: "Go is slow"},
 			checker:   &mockLLMChecker{contradicts: true, confidence: 0.9},
 			want:      true,
 			wantCalls: 1,
 		},
 		{
 			name:      "no_contradiction",
-			existing:  core.Entity{Content: "Go is fast"},
-			incoming:  core.Entity{Content: "Go is performant"},
+			existing:  domain.Entity{Content: "Go is fast"},
+			incoming:  domain.Entity{Content: "Go is performant"},
 			checker:   &mockLLMChecker{contradicts: false, confidence: 0.1},
 			want:      false,
 			wantCalls: 1,
 		},
 		{
 			name:      "llm_error_returns_miss",
-			existing:  core.Entity{Content: "a"},
-			incoming:  core.Entity{Content: "b"},
+			existing:  domain.Entity{Content: "a"},
+			incoming:  domain.Entity{Content: "b"},
 			checker:   &mockLLMChecker{err: errors.New("llm timeout")},
 			want:      false,
 			wantCalls: 1,
 		},
 		{
 			name:      "nil_checker_returns_miss",
-			existing:  core.Entity{Content: "a"},
-			incoming:  core.Entity{Content: "b"},
+			existing:  domain.Entity{Content: "a"},
+			incoming:  domain.Entity{Content: "b"},
 			checker:   nil,
 			want:      false,
 			wantCalls: 0,
 		},
 		{
 			name:      "zero_confidence_clamped_to_half",
-			existing:  core.Entity{Content: "a"},
-			incoming:  core.Entity{Content: "b"},
+			existing:  domain.Entity{Content: "a"},
+			incoming:  domain.Entity{Content: "b"},
 			checker:   &mockLLMChecker{contradicts: true, confidence: 0},
 			want:      true,
 			wantCalls: 1,

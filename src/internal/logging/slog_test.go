@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 func TestNewSlogLogger(t *testing.T) {
@@ -64,13 +62,13 @@ func TestPrefixedLoggerLevels(t *testing.T) {
 	tests := []struct {
 		name   string
 		level  slog.Level
-		fn     func(core.Logger, string, ...any)
+		fn     func(Logger, string, ...any)
 		expect string
 	}{
-		{"debug", slog.LevelDebug, func(l core.Logger, msg string, args ...any) { l.Debug(msg, args...) }, "DEBUG"},
-		{"info", slog.LevelInfo, func(l core.Logger, msg string, args ...any) { l.Info(msg, args...) }, "INFO"},
-		{"warn", slog.LevelWarn, func(l core.Logger, msg string, args ...any) { l.Warn(msg, args...) }, "WARN"},
-		{"error", slog.LevelError, func(l core.Logger, msg string, args ...any) { l.Error(msg, args...) }, "ERROR"},
+		{"debug", slog.LevelDebug, func(l Logger, msg string, args ...any) { l.Debug(msg, args...) }, "DEBUG"},
+		{"info", slog.LevelInfo, func(l Logger, msg string, args ...any) { l.Info(msg, args...) }, "INFO"},
+		{"warn", slog.LevelWarn, func(l Logger, msg string, args ...any) { l.Warn(msg, args...) }, "WARN"},
+		{"error", slog.LevelError, func(l Logger, msg string, args ...any) { l.Error(msg, args...) }, "ERROR"},
 	}
 
 	for _, tt := range tests {

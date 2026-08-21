@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // TestSavePendingQueue_NoOrphanTmpOnSuccess covers the atomicity
@@ -23,7 +23,7 @@ func TestSavePendingQueue_NoOrphanTmpOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pending.jsonl")
 
-	msgs := []core.MemoryMessage{
+	msgs := []domain.MemoryMessage{
 		{Dialog: "first", ConversationID: "c1", MessageID: "m1"},
 	}
 	if err := SavePendingQueue(path, msgs); err != nil {
@@ -66,7 +66,7 @@ func TestSavePendingQueue_AtomicRenameReplacesPreExisting(t *testing.T) {
 	}
 
 	// New save: a completely different content slice.
-	newMsgs := []core.MemoryMessage{
+	newMsgs := []domain.MemoryMessage{
 		{Dialog: "NEW", ConversationID: "fresh", MessageID: "n1"},
 		{Dialog: "NEW2", ConversationID: "fresh", MessageID: "n2"},
 	}
@@ -94,9 +94,9 @@ func TestSavePendingQueue_AtomicRenameReplacesPreExisting(t *testing.T) {
 	if len(lines) != len(newMsgs) {
 		t.Fatalf("post-rename line count = %d, want %d (content: %q)", len(lines), len(newMsgs), data)
 	}
-	var got []core.MemoryMessage
+	var got []domain.MemoryMessage
 	for i, line := range lines {
-		var m core.MemoryMessage
+		var m domain.MemoryMessage
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Errorf("post-rename line %d: Unmarshal: %v (content: %q)", i, err, line)
 			continue
@@ -154,9 +154,9 @@ func TestSavePendingQueueConcurrentWritesNoCorruption(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			msgs := make([]core.MemoryMessage, inputs[idx])
+			msgs := make([]domain.MemoryMessage, inputs[idx])
 			for j := range msgs {
-				msgs[j] = core.MemoryMessage{
+				msgs[j] = domain.MemoryMessage{
 					Dialog:         "msg-" + string(rune('a'+idx)) + "-" + string(rune('0'+j)),
 					ConversationID: "concurrent",
 					MessageID:      "m-" + string(rune('a'+idx)) + "-" + string(rune('0'+j)),
@@ -199,7 +199,7 @@ func TestSavePendingQueueConcurrentWritesNoCorruption(t *testing.T) {
 	// Every line parses as a valid MemoryMessage — guards against
 	// torn-write data inside any single record.
 	for i, line := range lines {
-		var m core.MemoryMessage
+		var m domain.MemoryMessage
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Errorf("post-concurrency line %d: Unmarshal: %v (content: %q)", i, err, line)
 		}

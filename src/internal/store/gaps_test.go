@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // =========================================================================
@@ -841,12 +841,12 @@ func TestHashSchema_Deterministic(t *testing.T) {
 // Audit gates: h1 == h2.
 func TestHashSchema_OrderIndependent(t *testing.T) {
 	t.Parallel()
-	a := core.SchemaConfig{
+	a := domain.SchemaConfig{
 		AllowedCategories:  map[string]bool{"world": true, "opinion": true, "experience": true},
 		AllowedRelations:   map[string]bool{"uses": true, "mentions": true},
 		StatefulCategories: map[string]bool{"task": true, "plan": true},
 	}
-	b := core.SchemaConfig{
+	b := domain.SchemaConfig{
 		AllowedCategories:  map[string]bool{"experience": true, "opinion": true, "world": true},
 		AllowedRelations:   map[string]bool{"mentions": true, "uses": true},
 		StatefulCategories: map[string]bool{"plan": true, "task": true},

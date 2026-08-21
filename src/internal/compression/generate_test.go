@@ -4,22 +4,22 @@ import (
 	"context"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 type mockExtractor struct {
-	result *core.ExtractionResult
+	result *domain.ExtractionResult
 	err    error
 }
 
-func (m *mockExtractor) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
+func (m *mockExtractor) ExtractEntities(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
 	return m.result, m.err
 }
 
 func TestCompress_NoEntities(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
-	cp := NewCompressor(db, &mockExtractor{result: &core.ExtractionResult{}, err: nil})
+	cp := NewCompressor(db, &mockExtractor{result: &domain.ExtractionResult{}, err: nil})
 	_, err := cp.Compress(t.Context(), nil)
 	if err == nil {
 		t.Fatal("expected error for empty IDs")
@@ -31,8 +31,8 @@ func TestCompress_SingleEntity(t *testing.T) {
 	db := openTestDB(t)
 	seedEntity(t, db, "e1", "world", "Go is a compiled language")
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "Go is a compiled, statically typed language"},
 			},
 		},
@@ -58,8 +58,8 @@ func TestCompress_MultipleEntities(t *testing.T) {
 	seedEntity(t, db, "e1", "world", "Go is fast")
 	seedEntity(t, db, "e2", "opinion", "Go is elegant")
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "Go is a fast compiled language"},
 				{Category: "opinion", Content: "Go syntax is clean and minimal"},
 			},
@@ -77,7 +77,7 @@ func TestCompress_MultipleEntities(t *testing.T) {
 func TestCompressCluster_Empty(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
-	cp := NewCompressor(db, &mockExtractor{result: &core.ExtractionResult{}, err: nil})
+	cp := NewCompressor(db, &mockExtractor{result: &domain.ExtractionResult{}, err: nil})
 	nodes, err := cp.CompressCluster(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -95,8 +95,8 @@ func TestCompressCluster_MultipleClusters(t *testing.T) {
 	seedEntity(t, db, "c", "world", "C is c")
 
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "summary"},
 			},
 		},
@@ -115,8 +115,8 @@ func TestRecompress_Success(t *testing.T) {
 	db := openTestDB(t)
 	seedEntity(t, db, "e1", "world", "Go is compiled")
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "Go is a compiled language"},
 			},
 		},
@@ -161,8 +161,8 @@ func TestRecompress_MaxDepth(t *testing.T) {
 	db := openTestDB(t)
 	seedEntity(t, db, "e1", "world", "data")
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "summary"},
 			},
 		},
@@ -191,8 +191,8 @@ func TestRegenerate_Success(t *testing.T) {
 	db := openTestDB(t)
 	seedEntity(t, db, "e1", "world", "Go is compiled")
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "regenerated summary"},
 			},
 		},
@@ -222,8 +222,8 @@ func TestProvenance_SurvivesRecompress(t *testing.T) {
 	seedEntity(t, db, "e1", "world", "Go fast")
 	seedEntity(t, db, "e2", "world", "Go simple")
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "merged summary"},
 			},
 		},

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // TestSafeSourceLabel_NilReturnsCanonical — nil pointer must NOT panic.
@@ -34,9 +34,9 @@ func TestSafeSourceLabel_NormalPath(t *testing.T) {
 // a LineageEntry that carries SourceTag and UpdatedAt.
 func TestWalkLineage_Baseline(t *testing.T) {
 	now := time.Date(2026, 6, 24, 10, 0, 0, 0, time.UTC)
-	nodes := []core.Entity{
-		{ID: "f1", Source: "user", UpdatedAt: core.TimePtr(now)},
-		{ID: "f2", Source: "", UpdatedAt: core.TimePtr(now.Add(1 * time.Minute))}, // deleted source
+	nodes := []domain.Entity{
+		{ID: "f1", Source: "user", UpdatedAt: domain.TimePtr(now)},
+		{ID: "f2", Source: "", UpdatedAt: domain.TimePtr(now.Add(1 * time.Minute))}, // deleted source
 	}
 	got := WalkLineage(nodes)
 	if len(got) != 2 {

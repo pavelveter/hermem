@@ -3,7 +3,7 @@ package retrieval
 import (
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -15,7 +15,7 @@ import (
 func BenchmarkCompositeScore_Default(b *testing.B) {
 	w := DefaultRanking{}.Weights()
 	scorer := defaultCompositeScorer(w)
-	node := GraphNode{Entity: core.Entity{ID: "x", Degree: 5}}
+	node := GraphNode{Entity: domain.Entity{ID: "x", Degree: 5}}
 	vec := []float32{1, 0, 0}
 	query := []float32{1, 0, 0}
 	qnorm := vector.VectorNorm(query)
@@ -28,7 +28,7 @@ func BenchmarkCompositeScore_Default(b *testing.B) {
 func BenchmarkCompositeScore_FreshnessFirst(b *testing.B) {
 	w := FreshnessFirst{}.Weights()
 	scorer := defaultCompositeScorer(w)
-	node := GraphNode{Entity: core.Entity{ID: "x", Degree: 5}}
+	node := GraphNode{Entity: domain.Entity{ID: "x", Degree: 5}}
 	vec := []float32{1, 0, 0}
 	query := []float32{1, 0, 0}
 	qnorm := vector.VectorNorm(query)
@@ -40,7 +40,7 @@ func BenchmarkCompositeScore_FreshnessFirst(b *testing.B) {
 
 func BenchmarkComputeScoreComponents(b *testing.B) {
 	w := RankingWeight{}.WithDefaults()
-	node := GraphNode{Entity: core.Entity{ID: "x", Degree: 10}}
+	node := GraphNode{Entity: domain.Entity{ID: "x", Degree: 10}}
 	vec := []float32{1, 0, 0}
 	query := []float32{1, 0, 0}
 	qnorm := vector.VectorNorm(query)
@@ -69,7 +69,7 @@ func BenchmarkSortByScoreDesc_100(b *testing.B) {
 	ranked := make([]rankedNode, 100)
 	for i := range ranked {
 		ranked[i] = rankedNode{
-			node:  GraphNode{Entity: core.Entity{ID: "n"}},
+			node:  GraphNode{Entity: domain.Entity{ID: "n"}},
 			score: float32(i) / 100,
 		}
 	}

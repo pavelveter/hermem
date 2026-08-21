@@ -28,9 +28,9 @@ import (
 	"time"
 
 	"github.com/mattn/go-sqlite3"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -158,7 +158,7 @@ func TestProcessDialog_ExtractorErrorIsWrapped(t *testing.T) {
 
 	err := worker.ProcessDialogWithProvenance(t.Context(),
 		"src/dlg-extractor-fail",
-		core.Provenance{ExtractedFrom: "src/dlg-extractor-fail"},
+		domain.Provenance{ExtractedFrom: "src/dlg-extractor-fail"},
 	)
 	if err == nil {
 		t.Fatal("extractor error must propagate")
@@ -176,7 +176,7 @@ func TestProcessDialog_ExtractorErrorIsWrapped(t *testing.T) {
 // non-recoverable failure at the Extract stage).
 type failingExtractor struct{ err error }
 
-func (f failingExtractor) ExtractEntities(_ context.Context, _ string) (*core.ExtractionResult, error) {
+func (f failingExtractor) ExtractEntities(_ context.Context, _ string) (*domain.ExtractionResult, error) {
 	return nil, f.err
 }
 
@@ -207,17 +207,17 @@ func TestProcessDialog_VISearchBatchErrorIsWrapped(t *testing.T) {
 
 	sentinel := errors.New("simulated vi outage")
 	vi := failingVIForBatch{err: sentinel}
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{ID: "e1", Category: "world", Content: "c1"},
 		},
 	}}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 
 	err = worker.ProcessDialogWithProvenance(t.Context(),
 		"src/dlg-vi-batch-fail",
-		core.Provenance{ExtractedFrom: "src/dlg-vi-batch-fail"},
+		domain.Provenance{ExtractedFrom: "src/dlg-vi-batch-fail"},
 	)
 	if err == nil {
 		t.Fatal("SearchBatch error must propagate")
@@ -241,8 +241,8 @@ func TestProcessDialog_AllEmbedsFail_ItemsSkipped_NoError(t *testing.T) {
 	defer db.Close()
 
 	worker.embedder = &stubEmbedder{err: errors.New("embed down")}
-	worker.extractor = &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	worker.extractor = &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{ID: "e1", Category: "world", Content: "c1"},
 			{ID: "e2", Category: "world", Content: "c2"},
 		},
@@ -250,7 +250,7 @@ func TestProcessDialog_AllEmbedsFail_ItemsSkipped_NoError(t *testing.T) {
 
 	if err := worker.ProcessDialogWithProvenance(t.Context(),
 		"src/dlg-embed-all-fail",
-		core.Provenance{ExtractedFrom: "src/dlg-embed-all-fail"},
+		domain.Provenance{ExtractedFrom: "src/dlg-embed-all-fail"},
 	); err != nil {
 		t.Fatalf("all-embed-fail path: want nil (items==0 → early return); got %v", err)
 	}
@@ -316,9 +316,9 @@ func TestMemoryWorker_ChannelClosedProcessesAllMessages(t *testing.T) {
 	defer db.Close()
 	_ = worker
 
-	ch := make(chan core.MemoryMessage, 4)
+	ch := make(chan domain.MemoryMessage, 4)
 	const N = 4
-	msgs := []core.MemoryMessage{
+	msgs := []domain.MemoryMessage{
 		{Dialog: "d1", ConversationID: "c1", MessageID: "m1"},
 		{Dialog: "d2", ConversationID: "c1", MessageID: "m2"},
 		{Dialog: "d3", ConversationID: "c2", MessageID: "m3"},
@@ -335,9 +335,9 @@ func TestMemoryWorker_ChannelClosedProcessesAllMessages(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		MemoryWorker(t.Context(), db, vi, &stubExtractor{result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
-		}}, &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}, 0.88, core.DefaultSchemaConfig(false), ch)
+		MemoryWorker(t.Context(), db, vi, &stubExtractor{result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
+		}}, &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}, 0.88, domain.DefaultSchemaConfig(false), ch)
 	}()
 
 	// Spin until MemoryWorker returns (bounded; a hang triggers the
@@ -424,8 +424,8 @@ func TestMemoryWorkerResilient_ChannelClosedFlushesCheckpoint(t *testing.T) {
 	defer db.Close()
 
 	vi := newVecSpy(nil)
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
 	}}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
 
@@ -433,9 +433,9 @@ func TestMemoryWorkerResilient_ChannelClosedFlushesCheckpoint(t *testing.T) {
 	pendingPath := filepath.Join(t.TempDir(), "pending.jsonl")
 
 	const N = 3
-	ch := make(chan core.MemoryMessage, N)
+	ch := make(chan domain.MemoryMessage, N)
 	for i := 0; i < N; i++ {
-		ch <- core.MemoryMessage{Dialog: fmt.Sprintf("d%d", i), ConversationID: "c", MessageID: fmt.Sprintf("m%d", i)}
+		ch <- domain.MemoryMessage{Dialog: fmt.Sprintf("d%d", i), ConversationID: "c", MessageID: fmt.Sprintf("m%d", i)}
 	}
 	close(ch)
 
@@ -443,7 +443,7 @@ func TestMemoryWorkerResilient_ChannelClosedFlushesCheckpoint(t *testing.T) {
 	go func() {
 		defer close(done)
 		MemoryWorkerResilient(t.Context(), db, vi, extract, embed, 0.88,
-			core.DefaultSchemaConfig(false), ckptPath, pendingPath, "rw-test", ch)
+			domain.DefaultSchemaConfig(false), ckptPath, pendingPath, "rw-test", ch)
 	}()
 	if err := waitFor(done, 5000); err != nil {
 		t.Fatalf("MemoryWorkerResilient did not return after channel close: %v", err)
@@ -493,8 +493,8 @@ func TestMemoryWorkerResilient_CtxCancelledBeforeChannelClose(t *testing.T) {
 	defer db.Close()
 
 	vi := newVecSpy(nil)
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
 	}}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
 
@@ -502,9 +502,9 @@ func TestMemoryWorkerResilient_CtxCancelledBeforeChannelClose(t *testing.T) {
 	pendingPath := filepath.Join(t.TempDir(), "pending.jsonl")
 
 	const N = 5
-	ch := make(chan core.MemoryMessage, N)
+	ch := make(chan domain.MemoryMessage, N)
 	for i := 0; i < N; i++ {
-		ch <- core.MemoryMessage{Dialog: fmt.Sprintf("d%d", i), ConversationID: "c", MessageID: fmt.Sprintf("m%d", i)}
+		ch <- domain.MemoryMessage{Dialog: fmt.Sprintf("d%d", i), ConversationID: "c", MessageID: fmt.Sprintf("m%d", i)}
 	}
 	// Channel is NOT closed (simulates a producer that did not
 	// honor shutdown protocol). The drain sub-loop will reach the
@@ -515,7 +515,7 @@ func TestMemoryWorkerResilient_CtxCancelledBeforeChannelClose(t *testing.T) {
 	go func() {
 		defer close(done)
 		MemoryWorkerResilient(ctx, db, vi, extract, embed, 0.88,
-			core.DefaultSchemaConfig(false), ckptPath, pendingPath, "rw-cancel", ch)
+			domain.DefaultSchemaConfig(false), ckptPath, pendingPath, "rw-cancel", ch)
 	}()
 	// Cancel immediately; keep the channel unbuffered-for-drain in mind.
 	cancel()
@@ -561,8 +561,8 @@ func TestHandleContradiction_NilDetectorFallsBackToLexical(t *testing.T) {
 	// KeepBoth branch (high existing → don't replace, mark contradiction).
 	// Without this the resolver branch is dictated by zero Confidence,
 	// which makes the action deterministic only by accident.
-	existing := &core.Entity{ID: "e1", Content: "User loves Go", Embedding: []float32{1, 0, 0}, Confidence: 1.0}
-	incoming := core.ExtractedEntity{ID: "e2", Content: "User hates Go"}
+	existing := &domain.Entity{ID: "e1", Content: "User loves Go", Embedding: []float32{1, 0, 0}, Confidence: 1.0}
+	incoming := domain.ExtractedEntity{ID: "e2", Content: "User hates Go"}
 
 	cfg := IngestionWorkerConfig{
 		DB:             nil, // unused by handleContradiction
@@ -570,7 +570,7 @@ func TestHandleContradiction_NilDetectorFallsBackToLexical(t *testing.T) {
 		Extractor:      nil,
 		Embedder:       nil,
 		DedupThreshold: 0.5,
-		Schema:         core.DefaultSchemaConfig(false),
+		Schema:         domain.DefaultSchemaConfig(false),
 		Detector:       nil, // Forces default lexical fallback in NewIngestionWorkerFromConfig
 	}
 	w := NewIngestionWorkerFromConfig(cfg)
@@ -590,12 +590,12 @@ func TestHandleContradiction_NilDetectorFallsBackToLexical(t *testing.T) {
 func TestHandleContradiction_NilResolverPrefersIncoming(t *testing.T) {
 	t.Parallel()
 	// existing with low confidence → ThresholdResolver picks PreferIncoming.
-	existing := &core.Entity{ID: "lowconf-e", Content: "User loves Go", Confidence: 0.3, Embedding: []float32{1, 0, 0}}
-	incoming := core.ExtractedEntity{ID: "incoming-e", Content: "User hates Go"}
+	existing := &domain.Entity{ID: "lowconf-e", Content: "User loves Go", Confidence: 0.3, Embedding: []float32{1, 0, 0}}
+	incoming := domain.ExtractedEntity{ID: "incoming-e", Content: "User hates Go"}
 
 	cfg := IngestionWorkerConfig{
 		DedupThreshold: 0.5,
-		Schema:         core.DefaultSchemaConfig(false),
+		Schema:         domain.DefaultSchemaConfig(false),
 		Detector:       &fakeDetectorPass{},
 		Resolver:       nil, // forces ThresholdResolver fallback
 	}
@@ -619,7 +619,7 @@ func TestHandleContradiction_NilResolverPrefersIncoming(t *testing.T) {
 // strings).
 type fakeDetectorPass struct{}
 
-func (fakeDetectorPass) Detect(_, _ core.Entity) contradiction.DetectionResult {
+func (fakeDetectorPass) Detect(_, _ domain.Entity) contradiction.DetectionResult {
 	return contradiction.DetectionResult{Detected: true, Reason: "fake:pass"}
 }
 
@@ -643,13 +643,13 @@ func TestConcurrentIngest_IdenticalDialog_FileBacked_ExactlyOneRowPerEntity(t *t
 	db.SetMaxOpenConns(8)
 
 	vi := newVecSpy(nil)
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{ID: "race-id-1", Category: "world", Content: "shared content"},
 		},
 	}}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 
 	const N = 8
 	var wg sync.WaitGroup
@@ -662,7 +662,7 @@ func TestConcurrentIngest_IdenticalDialog_FileBacked_ExactlyOneRowPerEntity(t *t
 			<-gate
 			errs[i] = worker.ProcessDialogWithProvenance(t.Context(),
 				"src/shared-dialog",
-				core.Provenance{ExtractedFrom: "src/shared-dialog"},
+				domain.Provenance{ExtractedFrom: "src/shared-dialog"},
 			)
 		}(i)
 	}
@@ -702,10 +702,10 @@ func TestConcurrentIngest_DistinctDialogs_FileBacked_AllIDsExactlyOnce(t *testin
 	vi := newVecSpy(nil)
 
 	const N = 8
-	results := make([]*core.ExtractionResult, N)
+	results := make([]*domain.ExtractionResult, N)
 	for i := 0; i < N; i++ {
-		results[i] = &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		results[i] = &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{ID: fmt.Sprintf("distinct-%d", i), Category: "world", Content: fmt.Sprintf("c-%d", i)},
 			},
 		}
@@ -720,10 +720,10 @@ func TestConcurrentIngest_DistinctDialogs_FileBacked_AllIDsExactlyOnce(t *testin
 			defer wg.Done()
 			<-gate
 			extract := &stubExtractor{result: results[i]}
-			worker := NewIngestionWorker(db, vi, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+			worker := NewIngestionWorker(db, vi, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 			_ = worker.ProcessDialogWithProvenance(t.Context(),
 				fmt.Sprintf("src/distinct-%d", i),
-				core.Provenance{ExtractedFrom: fmt.Sprintf("src/distinct-%d", i)},
+				domain.Provenance{ExtractedFrom: fmt.Sprintf("src/distinct-%d", i)},
 			)
 		}(i)
 	}
@@ -790,12 +790,12 @@ func TestMergeExistingEntity_EmbedFailurePropagated(t *testing.T) {
 	}
 
 	vi := newVecSpy([][]string{{existingID}})
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{{ID: incomingID, Category: "world", Content: "incoming"}},
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{{ID: incomingID, Category: "world", Content: "incoming"}},
 	}}
 	sentinel := errors.New("merge embed down")
 	embed := &stubEmbedder{err: sentinel}
-	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 
 	// ProcessDialogWithProvenance swallows per-item errors and returns nil
 	// (aggregate-skip is intentional). We assert the merge error via the
@@ -806,7 +806,7 @@ func TestMergeExistingEntity_EmbedFailurePropagated(t *testing.T) {
 	// executeItemTx runs — so no DB row and no viOps.
 	if err := worker.ProcessDialogWithProvenance(t.Context(),
 		"src/merge-embed-fail",
-		core.Provenance{ExtractedFrom: "src/merge-embed-fail"},
+		domain.Provenance{ExtractedFrom: "src/merge-embed-fail"},
 	); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil (per-item error logged)", err)
 	}
@@ -851,18 +851,18 @@ func TestMergeExistingEntity_ReEmbedNormalizedToUnitLength(t *testing.T) {
 	}
 
 	vi := newVecSpy([][]string{{existingID}})
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{{ID: incomingID, Category: "world", Content: "beta"}},
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{{ID: incomingID, Category: "world", Content: "beta"}},
 	}}
 	// Embedder returns NON-unit-length {5,0,0}; the merge path must
 	// renormalize this for the vi.Store call (else cosine similarity
 	// drifts between SQL query and Search).
 	embed := &stubEmbedder{vec: []float32{5.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+	worker := NewIngestionWorker(db, vi, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 
 	if err := worker.ProcessDialogWithProvenance(t.Context(),
 		"src/merge-norm",
-		core.Provenance{ExtractedFrom: "src/merge-norm"},
+		domain.Provenance{ExtractedFrom: "src/merge-norm"},
 	); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
 	}
@@ -895,7 +895,7 @@ func TestCreateEdgesInTx_EmptyRelations_NoInsert(t *testing.T) {
 	// vi.Store for the new entity, but createEdgesInTx should short-circuit.
 	if err := worker.ProcessDialogWithProvenance(t.Context(),
 		"src/empty-rel",
-		core.Provenance{ExtractedFrom: "src/empty-rel"},
+		domain.Provenance{ExtractedFrom: "src/empty-rel"},
 	); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance: %v", err)
 	}
@@ -923,14 +923,14 @@ func TestCreateEdgesInTx_EmptyRelations_NoInsert(t *testing.T) {
 func TestCreateEdgesInTx_UnknownRelationType_ReturnsError(t *testing.T) {
 	t.Parallel()
 	db, vi := newVecSpyOnMemDB(t)
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	// schema.AllowedRelations already excludes "illegal_type" by
 	// default; we add a relation with that type to trigger the filter.
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{
 				ID: "illegal-rel-e", Category: "world", Content: "x",
-				Relations: []core.Relation{
+				Relations: []domain.Relation{
 					{TargetID: "anywhere", RelationType: "illegal_type"},
 				},
 			},
@@ -942,7 +942,7 @@ func TestCreateEdgesInTx_UnknownRelationType_ReturnsError(t *testing.T) {
 	// Per-item error gets logged; outer returns nil.
 	_ = worker.ProcessDialogWithProvenance(t.Context(),
 		"src/illegal-rel",
-		core.Provenance{ExtractedFrom: "src/illegal-rel"},
+		domain.Provenance{ExtractedFrom: "src/illegal-rel"},
 	)
 
 	// Audit: entity INSERT runs first inside the same tx as the
@@ -975,7 +975,7 @@ func TestCreateEntityInTx_ProvenanceFieldsPersisted(t *testing.T) {
 	db, _, _, worker := newFreshEntityWorkerOnMem(t, []float32{1.0, 0.0, 0.0})
 	defer db.Close()
 
-	prov := core.Provenance{
+	prov := domain.Provenance{
 		ConversationID: "conv-xyz",
 		MessageID:      "msg-zyx",
 		ExtractedFrom:  "src/prov-test",
@@ -1021,12 +1021,12 @@ func TestCreateEntityInTx_ProvenanceFieldsPersisted(t *testing.T) {
 func TestReloadSchema_SwapsSchemaField(t *testing.T) {
 	t.Parallel()
 	db, vi := newVecSpyOnMemDB(t)
-	schema := core.DefaultSchemaConfig(false)
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	schema := domain.DefaultSchemaConfig(false)
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{
 				ID: "reload-e", Category: "world", Content: "x",
-				Relations: []core.Relation{{TargetID: "anywhere", RelationType: "uses"}},
+				Relations: []domain.Relation{{TargetID: "anywhere", RelationType: "uses"}},
 			},
 		},
 	}}
@@ -1045,7 +1045,7 @@ func TestReloadSchema_SwapsSchemaField(t *testing.T) {
 	}
 
 	_ = worker.ProcessDialogWithProvenance(t.Context(),
-		"src/reload-test", core.Provenance{ExtractedFrom: "src/reload-test"},
+		"src/reload-test", domain.Provenance{ExtractedFrom: "src/reload-test"},
 	)
 
 	// Per-item the unknown-relation error rolled back the entity
@@ -1137,8 +1137,8 @@ func TestMemoryWorkerResilientFromConfig_ChannelCloseFlushesCheckpoint(t *testin
 	defer db.Close()
 
 	vi := newVecSpy(nil)
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{{ID: "x", Category: "world", Content: "c"}},
 	}}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
 
@@ -1151,16 +1151,16 @@ func TestMemoryWorkerResilientFromConfig_ChannelCloseFlushesCheckpoint(t *testin
 		Extractor:      extract,
 		Embedder:       embed,
 		DedupThreshold: 0.88,
-		Schema:         core.DefaultSchemaConfig(false),
+		Schema:         domain.DefaultSchemaConfig(false),
 		CkptPath:       ckptPath,
 		PendingPath:    pendingPath,
 		WorkerID:       "rw-cfg-test",
 	}
 
 	const N = 2
-	ch := make(chan core.MemoryMessage, N)
+	ch := make(chan domain.MemoryMessage, N)
 	for i := 0; i < N; i++ {
-		ch <- core.MemoryMessage{Dialog: fmt.Sprintf("d%d", i), ConversationID: "c", MessageID: fmt.Sprintf("m%d", i)}
+		ch <- domain.MemoryMessage{Dialog: fmt.Sprintf("d%d", i), ConversationID: "c", MessageID: fmt.Sprintf("m%d", i)}
 	}
 	close(ch)
 
@@ -1227,7 +1227,7 @@ func TestReloadSchema_SwapsSchemaField_DomainRelationSet(t *testing.T) {
 		"implements": true,
 	}
 
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	// Pre-seed the edge target entity so the FK constraint on
 	// edges.target_id passes for the in-domain "calls" relation.
 	// Without this seeding, e1's tx would fail on createEdgesInTx's
@@ -1242,15 +1242,15 @@ func TestReloadSchema_SwapsSchemaField_DomainRelationSet(t *testing.T) {
 		t.Fatalf("seed target entity: %v", err)
 	}
 
-	extract := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	extract := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{
 				ID: "reload-domain-e1", Category: "code", Content: "func foo",
-				Relations: []core.Relation{{TargetID: "anywhere", RelationType: "calls"}},
+				Relations: []domain.Relation{{TargetID: "anywhere", RelationType: "calls"}},
 			},
 			{
 				ID: "reload-domain-e2", Category: "code", Content: "func bar",
-				Relations: []core.Relation{{TargetID: "anywhere", RelationType: "uses"}}, // outside the code-domain set
+				Relations: []domain.Relation{{TargetID: "anywhere", RelationType: "uses"}}, // outside the code-domain set
 			},
 		},
 	}}
@@ -1273,7 +1273,7 @@ func TestReloadSchema_SwapsSchemaField_DomainRelationSet(t *testing.T) {
 
 	// Ingest with mixed allowed/disallowed relations.
 	_ = worker.ProcessDialogWithProvenance(t.Context(),
-		"src/reload-domain-test", core.Provenance{ExtractedFrom: "src/reload-domain-test"})
+		"src/reload-domain-test", domain.Provenance{ExtractedFrom: "src/reload-domain-test"})
 
 	// Audit e1 ("calls"): row committed normally because the relation
 	// is in the domain set.
@@ -1311,13 +1311,13 @@ func newFreshEntityWorkerOnMem(t *testing.T, embedVec []float32) (*sql.DB, *fail
 		t.Fatalf("store.MemDBRandom: %v", err)
 	}
 	spy := &failingVIRecord{}
-	ext := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	ext := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{ID: "fresh-test-entity", Category: "world", Content: "test content"},
 		},
 	}}
 	embed := &stubEmbedder{vec: embedVec}
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	worker := NewIngestionWorker(db, spy, ext, embed, 0.88, schema, nil)
 	return db, spy, ext, worker
 }

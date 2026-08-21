@@ -6,21 +6,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"gopkg.in/ini.v1"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // --- ValidateSchema ---
 
 func TestValidateSchema_DefaultIsValid(t *testing.T) {
-	if err := ValidateSchema(core.DefaultSchemaConfig(false)); err != nil {
+	if err := ValidateSchema(domain.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("default schema must pass: %v", err)
 	}
 }
 
 func TestValidateSchema_EmptyCategories(t *testing.T) {
-	s := core.DefaultSchemaConfig(false)
+	s := domain.DefaultSchemaConfig(false)
 	s.AllowedCategories = nil
 	err := ValidateSchema(s)
 	if err == nil || !strings.Contains(err.Error(), "allowed_categories") {
@@ -29,7 +28,7 @@ func TestValidateSchema_EmptyCategories(t *testing.T) {
 }
 
 func TestValidateSchema_EmptyRelations(t *testing.T) {
-	s := core.DefaultSchemaConfig(false)
+	s := domain.DefaultSchemaConfig(false)
 	s.AllowedRelations = nil
 	err := ValidateSchema(s)
 	if err == nil || !strings.Contains(err.Error(), "allowed_relations") {
@@ -38,7 +37,7 @@ func TestValidateSchema_EmptyRelations(t *testing.T) {
 }
 
 func TestValidateSchema_DuplicateStateInOrder(t *testing.T) {
-	s := core.DefaultSchemaConfig(true)
+	s := domain.DefaultSchemaConfig(true)
 	s.ValidStateOrder = []string{"pending", "pending", "done"}
 	s.ValidStates = map[string]bool{"pending": true, "done": true}
 	err := ValidateSchema(s)
@@ -48,7 +47,7 @@ func TestValidateSchema_DuplicateStateInOrder(t *testing.T) {
 }
 
 func TestValidateSchema_StatefulWithoutStates(t *testing.T) {
-	s := core.DefaultSchemaConfig(true)
+	s := domain.DefaultSchemaConfig(true)
 	s.StatefulCategories = map[string]bool{"task": true}
 	s.ValidStateOrder = nil
 	s.ValidStates = nil
@@ -59,7 +58,7 @@ func TestValidateSchema_StatefulWithoutStates(t *testing.T) {
 }
 
 func TestValidateSchema_StateUnblockingNotInValidStates(t *testing.T) {
-	s := core.DefaultSchemaConfig(true)
+	s := domain.DefaultSchemaConfig(true)
 	// DefaultSchemaConfig(true) leaves ValidStates empty, so populate it so
 	// the validate path actually checks StateUnblocking membership.
 	s.ValidStateOrder = []string{"pending", "done"}
@@ -71,7 +70,7 @@ func TestValidateSchema_StateUnblockingNotInValidStates(t *testing.T) {
 }
 
 func TestValidateSchema_RelationBlockingNotInAllowedRelations(t *testing.T) {
-	s := core.DefaultSchemaConfig(false)
+	s := domain.DefaultSchemaConfig(false)
 	s.RelationBlocking = "mystery_rel"
 	if err := ValidateSchema(s); err == nil {
 		t.Fatal("expected error when relation_blocking is not in allowed_relations")
@@ -79,7 +78,7 @@ func TestValidateSchema_RelationBlockingNotInAllowedRelations(t *testing.T) {
 }
 
 func TestValidateSchema_RelationRecoveryNotInAllowedRelations(t *testing.T) {
-	s := core.DefaultSchemaConfig(false)
+	s := domain.DefaultSchemaConfig(false)
 	s.RelationRecovery = "mystery_rel"
 	if err := ValidateSchema(s); err == nil {
 		t.Fatal("expected error when relation_recovery is not in allowed_relations")
@@ -87,7 +86,7 @@ func TestValidateSchema_RelationRecoveryNotInAllowedRelations(t *testing.T) {
 }
 
 func TestValidateSchema_StateUnblockingEmptyOK(t *testing.T) {
-	s := core.DefaultSchemaConfig(true)
+	s := domain.DefaultSchemaConfig(true)
 	s.StateUnblocking = ""
 	if err := ValidateSchema(s); err != nil {
 		t.Fatalf("empty state_unblocking should pass: %v", err)

@@ -7,7 +7,6 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/graph/community"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
@@ -43,10 +42,10 @@ func TestE2E_StoreEdgeRetrieve(t *testing.T) {
 	db := openTestDB(t)
 	vi := newVectorIndex(db)
 	ctx := context.Background()
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 
-	e1 := core.Entity{ID: "e2e-a", Category: "world", Content: "alpha entity", Embedding: []float32{1, 0, 0}}
-	e2 := core.Entity{ID: "e2e-b", Category: "world", Content: "beta entity", Embedding: []float32{0, 1, 0}}
+	e1 := domain.Entity{ID: "e2e-a", Category: "world", Content: "alpha entity", Embedding: []float32{1, 0, 0}}
+	e2 := domain.Entity{ID: "e2e-b", Category: "world", Content: "beta entity", Embedding: []float32{0, 1, 0}}
 	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, e1); err != nil {
 		t.Fatalf("store a: %v", err)
 	}
@@ -83,7 +82,7 @@ func TestE2E_StoreEdgeRetrieve(t *testing.T) {
 	// Retrieve
 	res, err := retrieval.RetrieveContext(db, []string{"e2e-a"}, retrieval.RetrieveContextOptions{
 		MaxDepth:      2,
-		RankingWeight: core.RankingWeight{}.WithDefaults(),
+		RankingWeight: domain.RankingWeight{}.WithDefaults(),
 	})
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
@@ -116,16 +115,16 @@ func TestE2E_TaskLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	vi := newVectorIndex(db)
 
-	schema := core.DefaultSchemaConfig(true)
+	schema := domain.DefaultSchemaConfig(true)
 	schema.AllowedCategories["task"] = true
 	schema.StatefulCategories["task"] = true
 	schema.ValidStates = map[string]bool{"pending": true, "running": true, "completed": true}
 	schema.ValidStateOrder = []string{"pending", "running", "completed"}
 	schema.StateUnblocking = "completed"
 
-	task1 := core.Entity{ID: "e2e-task1", Category: "task", Content: "first task", Embedding: []float32{1, 0, 0}}
-	task2 := core.Entity{ID: "e2e-task2", Category: "task", Content: "second task", Embedding: []float32{0, 1, 0}}
-	task3 := core.Entity{ID: "e2e-task3", Category: "task", Content: "third task", Embedding: []float32{0, 0, 1}}
+	task1 := domain.Entity{ID: "e2e-task1", Category: "task", Content: "first task", Embedding: []float32{1, 0, 0}}
+	task2 := domain.Entity{ID: "e2e-task2", Category: "task", Content: "second task", Embedding: []float32{0, 1, 0}}
+	task3 := domain.Entity{ID: "e2e-task3", Category: "task", Content: "third task", Embedding: []float32{0, 0, 1}}
 
 	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, task1); err != nil {
 		t.Fatalf("store task1: %v", err)
@@ -270,7 +269,7 @@ func TestE2E_ProvenanceAndContradictions(t *testing.T) {
 
 	// Retrieve with ranking
 	res, err := retrieval.RetrieveContext(db, []string{"p1", "p2"}, retrieval.RetrieveContextOptions{
-		MaxDepth: 1, RankingWeight: core.RankingWeight{}.WithDefaults(),
+		MaxDepth: 1, RankingWeight: domain.RankingWeight{}.WithDefaults(),
 	})
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
@@ -286,18 +285,18 @@ func TestE2E_MultiHopRetrieval(t *testing.T) {
 	db := openTestDB(t)
 	vi := newVectorIndex(db)
 	embed := &stubEmbedder{}
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 
-	storeEntity(t, db, vi, schema, core.Entity{ID: "mh1", Category: "world", Content: "seed", Embedding: []float32{1, 0, 0}})
-	storeEntity(t, db, vi, schema, core.Entity{ID: "mh2", Category: "world", Content: "hop1", Embedding: []float32{0, 1, 0}})
-	storeEntity(t, db, vi, schema, core.Entity{ID: "mh3", Category: "world", Content: "hop2", Embedding: []float32{0, 0, 1}})
-	storeEntity(t, db, vi, schema, core.Entity{ID: "mh-disconnected", Category: "world", Content: "far away", Embedding: []float32{0.5, 0.5, 0.5}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "mh1", Category: "world", Content: "seed", Embedding: []float32{1, 0, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "mh2", Category: "world", Content: "hop1", Embedding: []float32{0, 1, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "mh3", Category: "world", Content: "hop2", Embedding: []float32{0, 0, 1}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "mh-disconnected", Category: "world", Content: "far away", Embedding: []float32{0.5, 0.5, 0.5}})
 	mustAddEdge(t, db, "mh1", "mh2", "related_to")
 	mustAddEdge(t, db, "mh2", "mh3", "related_to")
 
 	// Single-hop: stays within subgraph
 	res, err := retrieval.MultiHopRetrieveContext(db, vi, embed, []string{"mh1"}, retrieval.RetrieveContextOptions{
-		MaxDepth: 2, RankingWeight: core.RankingWeight{}.WithDefaults(), MultiHopCount: 1,
+		MaxDepth: 2, RankingWeight: domain.RankingWeight{}.WithDefaults(), MultiHopCount: 1,
 	})
 	if err != nil {
 		t.Fatalf("single-hop: %v", err)
@@ -317,11 +316,11 @@ func TestE2E_MultiHopRetrieval(t *testing.T) {
 func TestE2E_GraphIntegrity(t *testing.T) {
 	db := openTestDB(t)
 	vi := newVectorIndex(db)
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 
-	storeEntity(t, db, vi, schema, core.Entity{ID: "gi1", Category: "world", Content: "a", Embedding: []float32{1, 0, 0}})
-	storeEntity(t, db, vi, schema, core.Entity{ID: "gi2", Category: "world", Content: "b", Embedding: []float32{0, 1, 0}})
-	storeEntity(t, db, vi, schema, core.Entity{ID: "gi3", Category: "world", Content: "c", Embedding: []float32{0, 0, 1}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "gi1", Category: "world", Content: "a", Embedding: []float32{1, 0, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "gi2", Category: "world", Content: "b", Embedding: []float32{0, 1, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "gi3", Category: "world", Content: "c", Embedding: []float32{0, 0, 1}})
 	mustAddEdge(t, db, "gi1", "gi2", "related_to")
 	mustAddEdge(t, db, "gi2", "gi3", "related_to")
 
@@ -370,13 +369,13 @@ func TestE2E_GraphIntegrity(t *testing.T) {
 func TestE2E_TemporalRetrieval(t *testing.T) {
 	db := openTestDB(t)
 	vi := newVectorIndex(db)
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 
-	storeEntity(t, db, vi, schema, core.Entity{ID: "tmp1", Category: "world", Content: "recent", Embedding: []float32{1, 0, 0}})
-	storeEntity(t, db, vi, schema, core.Entity{ID: "tmp2", Category: "world", Content: "old", Embedding: []float32{0, 1, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "tmp1", Category: "world", Content: "recent", Embedding: []float32{1, 0, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "tmp2", Category: "world", Content: "old", Embedding: []float32{0, 1, 0}})
 
 	_, err := retrieval.RetrieveContext(db, []string{"tmp1", "tmp2"}, retrieval.RetrieveContextOptions{
-		MaxDepth: 1, RankingWeight: core.RankingWeight{}.WithDefaults(),
+		MaxDepth: 1, RankingWeight: domain.RankingWeight{}.WithDefaults(),
 	})
 	if err != nil {
 		t.Fatalf("temporal retrieve: %v", err)
@@ -389,7 +388,7 @@ func TestE2E_AgentLoop(t *testing.T) {
 	db := openTestDB(t)
 	vi := newVectorIndex(db)
 
-	schema := core.DefaultSchemaConfig(true)
+	schema := domain.DefaultSchemaConfig(true)
 	schema.AllowedCategories["task"] = true
 	schema.StatefulCategories["task"] = true
 	schema.ValidStates = map[string]bool{"pending": true, "running": true, "completed": true}
@@ -397,8 +396,8 @@ func TestE2E_AgentLoop(t *testing.T) {
 	schema.StateUnblocking = "completed"
 
 	// Create task chain where task2 blocked_by task1 (task1 blocks task2)
-	storeEntity(t, db, vi, schema, core.Entity{ID: "al-task1", Category: "task", Content: "do first", Embedding: []float32{1, 0, 0}})
-	storeEntity(t, db, vi, schema, core.Entity{ID: "al-task2", Category: "task", Content: "do second", Embedding: []float32{0, 1, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "al-task1", Category: "task", Content: "do first", Embedding: []float32{1, 0, 0}})
+	storeEntity(t, db, vi, schema, domain.Entity{ID: "al-task2", Category: "task", Content: "do second", Embedding: []float32{0, 1, 0}})
 	mustAddEdge(t, db, "al-task1", "al-task2", schema.RelationBlocking)
 
 	// First task (no blockers) should be executable. PHASE 2.4:
@@ -426,7 +425,7 @@ func TestE2E_AgentLoop(t *testing.T) {
 
 // --- Helpers ---
 
-func storeEntity(t *testing.T, db *sql.DB, vi spi.VectorStore, schema core.SchemaConfig, e core.Entity) {
+func storeEntity(t *testing.T, db *sql.DB, vi spi.VectorStore, schema domain.SchemaConfig, e domain.Entity) {
 	t.Helper()
 	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, e); err != nil {
 		t.Fatalf("store %s: %v", e.ID, err)
@@ -465,7 +464,7 @@ func contains(slice []string, s string) bool {
 	return false
 }
 
-func taskIDs(tasks []core.Task) []string {
+func taskIDs(tasks []domain.Task) []string {
 	out := make([]string, len(tasks))
 	for i, t := range tasks {
 		out[i] = t.ID
@@ -473,7 +472,7 @@ func taskIDs(tasks []core.Task) []string {
 	return out
 }
 
-func containsEntity(tasks []core.Task, id string) bool {
+func containsEntity(tasks []domain.Task, id string) bool {
 	for _, t := range tasks {
 		if t.ID == id {
 			return true

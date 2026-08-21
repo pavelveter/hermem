@@ -3,7 +3,7 @@ package migration
 import (
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -128,7 +128,7 @@ func TestService_Schema_NoError(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	report, err := svc.Schema(t.Context(), core.DefaultSchemaConfig(false))
+	report, err := svc.Schema(t.Context(), domain.DefaultSchemaConfig(false))
 	if err != nil {
 		t.Fatalf("Schema: %v", err)
 	}

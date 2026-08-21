@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -91,7 +91,7 @@ func TestService_Verify_EmptyDBReturnsClean(t *testing.T) {
 	}
 	defer db.Close()
 	svc := New(db)
-	report, err := svc.Verify(t.Context(), core.DefaultSchemaConfig(false), 3)
+	report, err := svc.Verify(t.Context(), domain.DefaultSchemaConfig(false), 3)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}

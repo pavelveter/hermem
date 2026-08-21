@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
 
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 )
@@ -25,7 +26,7 @@ func testEnv(t *testing.T) *clienv.Env {
 	dir := t.TempDir()
 	cfg := &config.Config{
 		DBPath:    filepath.Join(dir, "hermem_test.db"),
-		Schema:    core.DefaultSchemaConfig(false),
+		Schema:    domain.DefaultSchemaConfig(false),
 		VectorDim: 3,
 		// §4 audit closure: tests legitimately want the apply-on-open
 		// ergonomic so a freshly-created DB doesn't trip the
@@ -87,8 +88,8 @@ func testStatefulEnv(t *testing.T) *clienv.Env {
 	return env
 }
 
-func statefulSchema() core.SchemaConfig {
-	s := core.DefaultSchemaConfig(true)
+func statefulSchema() domain.SchemaConfig {
+	s := domain.DefaultSchemaConfig(true)
 	s.AllowedCategories["task"] = true
 	s.StatefulCategories["task"] = true
 	s.ValidStates = map[string]bool{"pending": true, "running": true, "completed": true}
@@ -433,5 +434,5 @@ func (f *fakeEmbedder) Ping(_ context.Context) error {
 	return nil
 }
 
-// Compile-time check that fakeEmbedder satisfies core.Embedder.
-var _ core.Embedder = (*fakeEmbedder)(nil)
+// Compile-time check that fakeEmbedder satisfies spi.Embedder.
+var _ spi.Embedder = (*fakeEmbedder)(nil)

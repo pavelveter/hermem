@@ -56,6 +56,12 @@ if grep -rn 'var RequiredScopes' src/ --include='*.go' 2>/dev/null; then
 fi
 ok "Architecture guardrails (ActiveSchema, exported mutable state)"
 
+# 1b. Facade import gate — scripts/check-zero-core-imports.sh (task 5.2).
+if ! bash scripts/check-zero-core-imports.sh; then
+    fail "core facade import gate failed"
+fi
+ok "Facade import gate (compat allowlist enforced)"
+
 # 2. gofmt — list any files needing format; non-zero if any.
 section "gofmt"
 unformatted=$(gofmt -l src/ 2>/dev/null || true)

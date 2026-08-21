@@ -5,15 +5,14 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
-
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // newGoalFixture wires an in-memory SQLite DB with a minimal entities
 // table and a Goal Service. The schema has one stateful category ("goal")
 // so store.SetStatus + store.ListTasks accept it.
-func newGoalFixture(t *testing.T) (*Service, *sql.DB, core.SchemaConfig) {
+func newGoalFixture(t *testing.T) (*Service, *sql.DB, domain.SchemaConfig) {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -38,7 +37,7 @@ func newGoalFixture(t *testing.T) (*Service, *sql.DB, core.SchemaConfig) {
 		db.Close()
 		t.Fatalf("create entities table: %v", err)
 	}
-	schema := core.SchemaConfig{
+	schema := domain.SchemaConfig{
 		StatefulCategories: map[string]bool{"goal": true},
 		ValidStates:        map[string]bool{"pending": true, "running": true, "completed": true},
 		ValidStateOrder:    []string{"pending", "running", "completed"},
@@ -76,7 +75,7 @@ func TestService_Status_RejectsEmptyFields(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	defer db.Close()
 	svc := New(db)
-	schema := core.SchemaConfig{StatefulEnabled: true}
+	schema := domain.SchemaConfig{StatefulEnabled: true}
 	if err := svc.Status(t.Context(), "", "running", schema); err == nil {
 		t.Fatal("expected error for empty id")
 	}

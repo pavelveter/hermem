@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -85,9 +85,9 @@ func TestCompositeScore_DepthPenaltySubtractive(t *testing.T) {
 // sortByScoreDesc: highest score first.
 func TestSortByScoreDesc_HighestFirst(t *testing.T) {
 	ranked := []rankedNode{
-		{node: GraphNode{Entity: core.Entity{ID: "c"}}, score: 0.3},
-		{node: GraphNode{Entity: core.Entity{ID: "a"}}, score: 0.9},
-		{node: GraphNode{Entity: core.Entity{ID: "b"}}, score: 0.6},
+		{node: GraphNode{Entity: domain.Entity{ID: "c"}}, score: 0.3},
+		{node: GraphNode{Entity: domain.Entity{ID: "a"}}, score: 0.9},
+		{node: GraphNode{Entity: domain.Entity{ID: "b"}}, score: 0.6},
 	}
 	sortByScoreDesc(ranked)
 	want := []string{"a", "b", "c"}
@@ -100,8 +100,8 @@ func TestSortByScoreDesc_HighestFirst(t *testing.T) {
 
 func TestSortByScoreDesc_StableOnTies(t *testing.T) {
 	ranked := []rankedNode{
-		{node: GraphNode{Entity: core.Entity{ID: "x"}}, score: 0.5},
-		{node: GraphNode{Entity: core.Entity{ID: "y"}}, score: 0.5},
+		{node: GraphNode{Entity: domain.Entity{ID: "x"}}, score: 0.5},
+		{node: GraphNode{Entity: domain.Entity{ID: "y"}}, score: 0.5},
 	}
 	sortByScoreDesc(ranked)
 	if ranked[0].node.Entity.ID != "x" || ranked[1].node.Entity.ID != "y" {
@@ -120,10 +120,10 @@ func TestDefaultCompositeScorer_UsesVectorAndRecency(t *testing.T) {
 	recentTime := time.Now()
 
 	old := GraphNode{
-		Entity: core.Entity{ID: "old", UpdatedAt: &oldTime, Degree: 0},
+		Entity: domain.Entity{ID: "old", UpdatedAt: &oldTime, Degree: 0},
 	}
 	recent := GraphNode{
-		Entity: core.Entity{ID: "recent", UpdatedAt: &recentTime, Degree: 0},
+		Entity: domain.Entity{ID: "recent", UpdatedAt: &recentTime, Degree: 0},
 	}
 
 	q := []float32{1, 0}
@@ -202,7 +202,7 @@ func TestComputeScoreComponents_PopulatesAllFields(t *testing.T) {
 	now := time.Now()
 	created := now.Add(-48 * time.Hour)
 	node := GraphNode{
-		Entity: core.Entity{
+		Entity: domain.Entity{
 			ID:        "x",
 			UpdatedAt: &now,
 			CreatedAt: &created,
@@ -240,7 +240,7 @@ func TestComputeScoreComponents_PopulatesAllFields(t *testing.T) {
 }
 
 func TestComputeScoreComponents_EmptyQueryYieldsZeroSim(t *testing.T) {
-	node := GraphNode{Entity: core.Entity{ID: "x"}}
+	node := GraphNode{Entity: domain.Entity{ID: "x"}}
 	w := RankingWeight{}.WithDefaults()
 	c := ComputeScoreComponents(node, []float32{1, 0, 0}, nil, 0, w)
 	if c.Sim != 0 {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -27,13 +27,13 @@ func TestProperty_RecencyNeverNegative(t *testing.T) {
 	now := time.Now()
 	for halfLife := float32(1); halfLife <= 1000; halfLife += 10 {
 		// Recent time
-		score := recencyScore(core.TimePtr(now), halfLife)
+		score := recencyScore(domain.TimePtr(now), halfLife)
 		if score < -0.001 {
 			t.Errorf("halfLife=%f: recency %f is negative", halfLife, score)
 		}
 		// Old time
 		old := now.Add(-time.Hour * 1000)
-		score = recencyScore(core.TimePtr(old), halfLife)
+		score = recencyScore(domain.TimePtr(old), halfLife)
 		if score < -0.001 {
 			t.Errorf("halfLife=%f, old time: recency %f is negative", halfLife, score)
 		}
@@ -127,7 +127,7 @@ func TestProperty_ScoreOrderingIsStable(t *testing.T) {
 		for i := range nodes {
 			nodes[i] = rankedNode{
 				node: GraphNode{
-					Entity: core.Entity{
+					Entity: domain.Entity{
 						ID:       "node-" + string(rune('a'+i%26)),
 						Category: "world",
 						Content:  "content",

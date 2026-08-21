@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
@@ -31,7 +31,7 @@ func validCfg() *config.Config {
 		ExtractProvider:   "ollama",
 		ExtractURL:        "http://localhost:11434",
 		Retention:         retention.Policy{},
-		Schema:            core.DefaultSchemaConfig(false),
+		Schema:            domain.DefaultSchemaConfig(false),
 	}
 }
 

@@ -3,77 +3,77 @@ package detectors
 import (
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 func TestEmbeddingDetector(t *testing.T) {
 	cases := []struct {
 		name      string
-		existing  core.Entity
-		incoming  core.Entity
+		existing  domain.Entity
+		incoming  domain.Entity
 		threshold float32
 		want      bool
 	}{
 		{
 			name:      "identical_embeddings_same_content_no_hit",
-			existing:  core.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
-			incoming:  core.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
+			existing:  domain.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
+			incoming:  domain.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "similar_embeddings_different_content_hit",
-			existing:  core.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
-			incoming:  core.Entity{Content: "Go is terrible", Embedding: []float32{0.95, 0.31, 0}},
+			existing:  domain.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
+			incoming:  domain.Entity{Content: "Go is terrible", Embedding: []float32{0.95, 0.31, 0}},
 			threshold: 0.8,
 			want:      true,
 		},
 		{
 			name:      "low_similarity_no_hit",
-			existing:  core.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
-			incoming:  core.Entity{Content: "Python is great", Embedding: []float32{0, 1, 0}},
+			existing:  domain.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
+			incoming:  domain.Entity{Content: "Python is great", Embedding: []float32{0, 1, 0}},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "missing_embedding_existing",
-			existing:  core.Entity{Content: "Go is great"},
-			incoming:  core.Entity{Content: "Go is terrible", Embedding: []float32{1, 0, 0}},
+			existing:  domain.Entity{Content: "Go is great"},
+			incoming:  domain.Entity{Content: "Go is terrible", Embedding: []float32{1, 0, 0}},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "missing_embedding_incoming",
-			existing:  core.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
-			incoming:  core.Entity{Content: "Go is terrible"},
+			existing:  domain.Entity{Content: "Go is great", Embedding: []float32{1, 0, 0}},
+			incoming:  domain.Entity{Content: "Go is terrible"},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "both_missing_embeddings",
-			existing:  core.Entity{Content: "Go is great"},
-			incoming:  core.Entity{Content: "Go is terrible"},
+			existing:  domain.Entity{Content: "Go is great"},
+			incoming:  domain.Entity{Content: "Go is terrible"},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "dimension_mismatch",
-			existing:  core.Entity{Content: "Go is great", Embedding: []float32{1, 0}},
-			incoming:  core.Entity{Content: "Go is terrible", Embedding: []float32{1, 0, 0}},
+			existing:  domain.Entity{Content: "Go is great", Embedding: []float32{1, 0}},
+			incoming:  domain.Entity{Content: "Go is terrible", Embedding: []float32{1, 0, 0}},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "zero_vector_no_hit",
-			existing:  core.Entity{Content: "Go is great", Embedding: []float32{0, 0, 0}},
-			incoming:  core.Entity{Content: "Go is terrible", Embedding: []float32{1, 0, 0}},
+			existing:  domain.Entity{Content: "Go is great", Embedding: []float32{0, 0, 0}},
+			incoming:  domain.Entity{Content: "Go is terrible", Embedding: []float32{1, 0, 0}},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "default_threshold_when_zero",
-			existing:  core.Entity{Content: "a", Embedding: []float32{1, 0, 0}},
-			incoming:  core.Entity{Content: "b", Embedding: []float32{0.99, 0.14, 0}},
+			existing:  domain.Entity{Content: "a", Embedding: []float32{1, 0, 0}},
+			incoming:  domain.Entity{Content: "b", Embedding: []float32{0.99, 0.14, 0}},
 			threshold: 0,
 			want:      true,
 		},

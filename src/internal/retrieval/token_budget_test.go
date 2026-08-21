@@ -3,7 +3,7 @@ package retrieval
 import (
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 func TestCountTokens(t *testing.T) {
@@ -35,7 +35,7 @@ func TestTrimByTokenBudget(t *testing.T) {
 
 	t.Run("zero budget unchanged", func(t *testing.T) {
 		result := &RetrievalResult{
-			SeedNodes:  []GraphNode{{Entity: core.Entity{ID: "a"}}},
+			SeedNodes:  []GraphNode{{Entity: domain.Entity{ID: "a"}}},
 			WorldFacts: []RetrievedFact{{Content: "fact one"}, {Content: "fact two"}},
 		}
 		out := TrimByTokenBudget(result, 0)
@@ -50,7 +50,7 @@ func TestTrimByTokenBudget(t *testing.T) {
 			facts[i] = RetrievedFact{Content: "This is a test fact with enough content to consume tokens"}
 		}
 		result := &RetrievalResult{
-			SeedNodes:  []GraphNode{{Entity: core.Entity{ID: "a"}}},
+			SeedNodes:  []GraphNode{{Entity: domain.Entity{ID: "a"}}},
 			WorldFacts: facts,
 		}
 		out := TrimByTokenBudget(result, 50)
@@ -64,7 +64,7 @@ func TestTrimByTokenBudget(t *testing.T) {
 
 	t.Run("large budget keeps all", func(t *testing.T) {
 		result := &RetrievalResult{
-			SeedNodes:  []GraphNode{{Entity: core.Entity{ID: "a"}}},
+			SeedNodes:  []GraphNode{{Entity: domain.Entity{ID: "a"}}},
 			WorldFacts: []RetrievedFact{{Content: "short"}},
 		}
 		out := TrimByTokenBudget(result, 100000)

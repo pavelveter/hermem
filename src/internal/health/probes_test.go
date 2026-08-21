@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/health"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -39,10 +39,10 @@ func (m *mockEmbedder) Ping(ctx context.Context) error {
 }
 
 type mockExtractor struct {
-	extractFunc func(ctx context.Context, dialog string) (*core.ExtractionResult, error)
+	extractFunc func(ctx context.Context, dialog string) (*domain.ExtractionResult, error)
 }
 
-func (m *mockExtractor) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
+func (m *mockExtractor) ExtractEntities(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
 	return m.extractFunc(ctx, dialog)
 }
 
@@ -167,8 +167,8 @@ func TestExtractorProbe_NilIsWarning(t *testing.T) {
 
 func TestExtractorProbe_OK(t *testing.T) {
 	ex := &mockExtractor{
-		extractFunc: func(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
-			return &core.ExtractionResult{}, nil
+		extractFunc: func(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
+			return &domain.ExtractionResult{}, nil
 		},
 	}
 	svc := health.New(health.ExtractorProbe(ex))

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // randomSuffix returns a short hex string for unique shared-cache
@@ -189,8 +189,8 @@ func TestIntegration_FullPipeline(t *testing.T) {
 	}
 
 	// 6. Summarize via stub LLM.
-	ext := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	ext := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{Category: "world", Content: "integration test fact"},
 		},
 	}}

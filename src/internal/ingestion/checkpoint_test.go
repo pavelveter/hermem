@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // TestLoadCheckpointMissingFileReturnsZero covers the first-run path:
@@ -156,11 +156,11 @@ func TestSaveCheckpointConcurrentWritesNoCorruption(t *testing.T) {
 
 // TestSavePendingQueueJSONLRoundTrip covers the § 4.2 drain contract:
 // the side file is one JSON object per line, and each line is a
-// complete core.MemoryMessage that a producer can replay.
+// complete domain.MemoryMessage that a producer can replay.
 func TestSavePendingQueueJSONLRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pending.jsonl")
-	msgs := []core.MemoryMessage{
+	msgs := []domain.MemoryMessage{
 		{Dialog: "first dialog", ConversationID: "c1", MessageID: "m1"},
 		{Dialog: "second dialog", ConversationID: "c1", MessageID: "m2"},
 		{Dialog: "third dialog", ConversationID: "c2", MessageID: "m3"},
@@ -178,7 +178,7 @@ func TestSavePendingQueueJSONLRoundTrip(t *testing.T) {
 		t.Fatalf("line count = %d, want %d (content: %q)", len(lines), len(msgs), data)
 	}
 	for i, ln := range lines {
-		var got core.MemoryMessage
+		var got domain.MemoryMessage
 		if err := json.Unmarshal([]byte(ln), &got); err != nil {
 			t.Errorf("line %d: Unmarshal: %v (content: %q)", i, err, ln)
 			continue
@@ -217,7 +217,7 @@ func TestSavePendingQueueEmptySlice(t *testing.T) {
 // pendingPath returns nil without filesystem writes — used by tests
 // and any producer that doesn't want replay-on-restart support.
 func TestSavePendingQueueEmptyPathNoOp(t *testing.T) {
-	if err := SavePendingQueue("", []core.MemoryMessage{{Dialog: "x"}}); err != nil {
+	if err := SavePendingQueue("", []domain.MemoryMessage{{Dialog: "x"}}); err != nil {
 		t.Errorf("empty path SavePendingQueue: err = %v, want nil", err)
 	}
 }
@@ -312,7 +312,7 @@ func TestSaveCheckpoint_LegacyUpgrade_NarrowsMode(t *testing.T) {
 func TestSavePendingQueue_FreshInstall_SmokeMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pending.jsonl")
-	msgs := []core.MemoryMessage{
+	msgs := []domain.MemoryMessage{
 		{Dialog: "test dialog", ConversationID: "c1", MessageID: "m1"},
 	}
 	if err := SavePendingQueue(path, msgs); err != nil {
@@ -342,7 +342,7 @@ func TestSavePendingQueue_LegacyUpgrade_NarrowsMode(t *testing.T) {
 		t.Fatalf("seed legacy 0o644: %v", err)
 	}
 
-	msgs := []core.MemoryMessage{
+	msgs := []domain.MemoryMessage{
 		{Dialog: "test dialog", ConversationID: "c1", MessageID: "m1"},
 	}
 	if err := SavePendingQueue(path, msgs); err != nil {

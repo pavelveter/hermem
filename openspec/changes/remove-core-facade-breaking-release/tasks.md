@@ -50,8 +50,8 @@
 
 ## 5. Zero-reference and compatibility verification
 
-- [ ] 5.1 Replace core-dependent tests and fakes with public domain/SPI/API contract fixtures; isolate and remove compatibility-only tests.
-- [ ] 5.2 Add a repository-wide production import check proving no non-test caller depends on `src/internal/core`.
+- [x] 5.1 Replace core-dependent tests and fakes with public domain/SPI/API contract fixtures; isolate and remove compatibility-only tests. (43 fixture files flipped to domain/spi/retrieval spellings; remaining core refs: the facade's own tests, the compat pin `server/compat_test.go` + legacy-vector tests, deleted at 6.x)
+- [x] 5.2 Add a repository-wide production import check proving no non-test caller depends on `src/internal/core`. (`scripts/check-zero-core-imports.sh` two-mode gate — compat allowlist {spiadapter, vector} now, hard-zero after removal; wired into `.githooks/pre-push`)
 - [ ] 5.3 Run HTTP golden and OpenAPI contract tests against the migrated implementation and compare with the recorded baseline.
 - [ ] 5.4 Run MCP, CLI, persistence, provider, external-like package, and SDK integration suites through the migrated wiring.
 - [ ] 5.5 Confirm all compatibility adapters have zero runtime and test references except the final removal task.

@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // statefulSchema returns a schema with `task` as the sole stateful category.
-func statefulSchema() core.SchemaConfig {
-	s := core.DefaultSchemaConfig(true)
+func statefulSchema() domain.SchemaConfig {
+	s := domain.DefaultSchemaConfig(true)
 	s.StatefulCategories = map[string]bool{"task": true}
 	s.ValidStateOrder = []string{"pending", "in_progress", "done"}
 	s.ValidStates = map[string]bool{"pending": true, "in_progress": true, "done": true}
@@ -54,7 +54,7 @@ func TestListTasks_FilterByStatus(t *testing.T) {
 
 func TestListTasks_NoStatefulCategoriesYieldsEmpty(t *testing.T) {
 	db := openTestDB(t)
-	s := core.DefaultSchemaConfig(false)
+	s := domain.DefaultSchemaConfig(false)
 	seedEntity(t, db, "t1", "task", "x")
 	tasks, err := ListTasks(db, s, "", "")
 	if err != nil {
@@ -291,7 +291,7 @@ func TestScanTaskEntities_PriorityScanned(t *testing.T) {
 
 // --- local helpers ---
 
-func taskIDs(xs []core.Task) []string {
+func taskIDs(xs []domain.Task) []string {
 	ids := make([]string, len(xs))
 	for i, x := range xs {
 		ids[i] = x.ID

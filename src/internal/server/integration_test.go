@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/ai"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	healthdomain "github.com/pavelveter/hermem/src/internal/health"
@@ -88,8 +88,8 @@ func newTestFixture(t *testing.T) *testFixture {
 	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	embed := &stubEmbedder{}
 
-	schema := core.DefaultSchemaConfig(false)
-	state := serverstate.New(schema, 0, 100, core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{})
+	schema := domain.DefaultSchemaConfig(false)
+	state := serverstate.New(schema, 0, 100, domain.RankingWeight{}.WithDefaults(), &ai.NoopReranker{})
 	refs := serverstate.NewRef(state)
 
 	metrics := metricspkg.New()
@@ -514,7 +514,7 @@ func TestTaskShow_RejectsNoID(t *testing.T) {
 func TestTaskCreate_Success(t *testing.T) {
 	f := newTestFixture(t)
 	// Need a stateful category for task creation — create with stateful schema
-	f.refs.Store(serverstate.New(core.DefaultSchemaConfig(true), 0, 100, core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
+	f.refs.Store(serverstate.New(domain.DefaultSchemaConfig(true), 0, 100, domain.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
 
 	body := map[string]string{"id": "task1", "content": "do the thing"}
 	resp := f.post(t, "/task/create", body)
@@ -671,8 +671,8 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	defer db.Close()
 	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	embed := &stubEmbedder{}
-	refs := serverstate.NewRef(serverstate.New(core.DefaultSchemaConfig(false), 0, 100,
-		core.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
+	refs := serverstate.NewRef(serverstate.New(domain.DefaultSchemaConfig(false), 0, 100,
+		domain.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
 	metrics := metricspkg.New()
 	retDom := retdomain.New(db, vi, embed)
 	memDom := memdomain.New(db, vi, embed)

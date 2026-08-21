@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -108,10 +108,10 @@ func TestIsIngestionContradiction(t *testing.T) {
 
 // stubExtractor returns a fixed ExtractionResult regardless of input.
 type stubExtractor struct {
-	result *core.ExtractionResult
+	result *domain.ExtractionResult
 }
 
-func (s *stubExtractor) ExtractEntities(_ context.Context, _ string) (*core.ExtractionResult, error) {
+func (s *stubExtractor) ExtractEntities(_ context.Context, _ string) (*domain.ExtractionResult, error) {
 	return s.result, nil
 }
 
@@ -254,14 +254,14 @@ func newFreshEntityWorker(t *testing.T, embedVec []float32, searchToReturn []str
 		spy.searchResults = searchToReturn
 	}
 	extract := &stubExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{ID: "fresh-test-entity", Category: "world", Content: "test content"},
 			},
 		},
 	}
 	embed := &stubEmbedder{vec: embedVec}
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, schema, nil)
 	return db, spy, worker
 }
@@ -287,7 +287,7 @@ func TestProcessDialogWithProvenance_VIOpFailureDoesNotFailCommit(t *testing.T) 
 	)
 	defer db.Close()
 
-	prov := core.Provenance{ExtractedFrom: "src/dlg-vifail"}
+	prov := domain.Provenance{ExtractedFrom: "src/dlg-vifail"}
 	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/dlg-vifail", prov); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil (vi.Store failure must NOT abort ingest per § 3.1)", err)
 	}
@@ -326,7 +326,7 @@ func TestProcessDialogWithProvenance_FreshEntityStoresExactlyOnce(t *testing.T) 
 	)
 	defer db.Close()
 
-	prov := core.Provenance{ExtractedFrom: "src/dlg-fresh"}
+	prov := domain.Provenance{ExtractedFrom: "src/dlg-fresh"}
 	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/dlg-fresh", prov); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
 	}
@@ -379,16 +379,16 @@ func TestProcessDialogWithProvenance_MergeComposesRemoveBeforeStore(t *testing.T
 	}
 
 	extract := &stubExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{ID: incomingID, Category: "world", Content: "merged content"},
 			},
 		},
 	}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 
-	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/merge-test", core.Provenance{ExtractedFrom: "src/merge-test"}); err != nil {
+	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/merge-test", domain.Provenance{ExtractedFrom: "src/merge-test"}); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
 	}
 
@@ -461,16 +461,16 @@ func TestProcessDialogWithProvenance_LowConfContradictionArchivesAtomically(t *t
 	}
 
 	extract := &stubExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{ID: incomingID, Category: "world", Content: "User hates X"}, // antonym pair triggers IsIngestionContradiction
 			},
 		},
 	}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 
-	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/lc-test", core.Provenance{ExtractedFrom: "src/lc-test"}); err != nil {
+	if err := worker.ProcessDialogWithProvenance(t.Context(), "src/lc-test", domain.Provenance{ExtractedFrom: "src/lc-test"}); err != nil {
 		t.Fatalf("ProcessDialogWithProvenance err=%v; want nil", err)
 	}
 
@@ -535,19 +535,19 @@ func TestProcessDialogWithProvenance_RollbackSkipsVIOps(t *testing.T) {
 
 	spy := &failingVIRecord{}
 	extract := &stubExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{ID: "rollback-test", Category: "world", Content: "should never reach vi"},
 			},
 		},
 	}
 	embed := &stubEmbedder{vec: []float32{1.0, 0.0, 0.0}}
-	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, core.DefaultSchemaConfig(false), nil)
+	worker := NewIngestionWorker(db, spy, extract, embed, 0.88, domain.DefaultSchemaConfig(false), nil)
 
 	// § 3.1 invariant: per-item errors are LOGGED, not propagated.
 	// Discard err so linter doesn't complain; spy.callOrder empty
 	// below is the real atomicity assertion.
-	_ = worker.ProcessDialogWithProvenance(t.Context(), "src/rb-test", core.Provenance{ExtractedFrom: "src/rb-test"})
+	_ = worker.ProcessDialogWithProvenance(t.Context(), "src/rb-test", domain.Provenance{ExtractedFrom: "src/rb-test"})
 
 	// § 3.1 atomicity contract: NO viOp fires when the DB tx never
 	// commits. callOrder must be empty (this is the regression-trap;

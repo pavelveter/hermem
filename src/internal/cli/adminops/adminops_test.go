@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
 
 	_ "github.com/mattn/go-sqlite3"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
@@ -20,7 +20,7 @@ func testAdminEnv(t *testing.T) *cli.Env {
 	dir := t.TempDir()
 	cfg := &config.Config{
 		DBPath:    dir + "/hermem_test.db",
-		Schema:    core.DefaultSchemaConfig(false),
+		Schema:    domain.DefaultSchemaConfig(false),
 		VectorDim: 3,
 		// §4 audit closure: tests legitimately want the apply-on-open
 		// ergonomic so a freshly-created DB doesn't trip the

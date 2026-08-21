@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingest"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -20,11 +20,11 @@ import (
 // together express every test path: empty result → no-op pipeline
 // pass; non-nil err → dial/HTTP failure simulation.
 type stubExtractor struct {
-	result *core.ExtractionResult
+	result *domain.ExtractionResult
 	err    error
 }
 
-func (s *stubExtractor) ExtractEntities(_ context.Context, _ string) (*core.ExtractionResult, error) {
+func (s *stubExtractor) ExtractEntities(_ context.Context, _ string) (*domain.ExtractionResult, error) {
 	return s.result, s.err
 }
 
@@ -44,7 +44,7 @@ func newIngestFixture(t *testing.T) (*sql.DB, spi.VectorStore) {
 
 func TestService_NewService_NotNil(t *testing.T) {
 	db, vi := newIngestFixture(t)
-	svc := ingest.New(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
+	svc := ingest.New(db, vi, nil, &stubExtractor{result: &domain.ExtractionResult{}})
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -52,8 +52,8 @@ func TestService_NewService_NotNil(t *testing.T) {
 
 func TestService_Ingest_EmptyDialogReturnsError(t *testing.T) {
 	db, vi := newIngestFixture(t)
-	svc := ingest.New(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
-	err := svc.Ingest(t.Context(), "", 0.5, core.DefaultSchemaConfig(false))
+	svc := ingest.New(db, vi, nil, &stubExtractor{result: &domain.ExtractionResult{}})
+	err := svc.Ingest(t.Context(), "", 0.5, domain.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected error from empty dialog, got nil")
 	}
@@ -65,7 +65,7 @@ func TestService_Ingest_EmptyDialogReturnsError(t *testing.T) {
 func TestService_Ingest_NilExtractorReturnsError(t *testing.T) {
 	db, vi := newIngestFixture(t)
 	svc := ingest.New(db, vi, nil, nil)
-	err := svc.Ingest(t.Context(), "user: hi", 0.5, core.DefaultSchemaConfig(false))
+	err := svc.Ingest(t.Context(), "user: hi", 0.5, domain.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected error from nil extractor, got nil")
 	}
@@ -80,8 +80,8 @@ func TestService_Ingest_HappyPath_NoEntities(t *testing.T) {
 	// IngestionWorker iterates zero entities, returns nil. PHASE 3.4
 	// preserves this short-circuit; if a regression reintroduces
 	// an early-return guard for empty results, this test catches it.
-	svc := ingest.New(db, vi, nil, &stubExtractor{result: &core.ExtractionResult{}})
-	if err := svc.Ingest(t.Context(), "user: hi", 0.5, core.DefaultSchemaConfig(false)); err != nil {
+	svc := ingest.New(db, vi, nil, &stubExtractor{result: &domain.ExtractionResult{}})
+	if err := svc.Ingest(t.Context(), "user: hi", 0.5, domain.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestService_Ingest_HappyPath_NoEntities(t *testing.T) {
 func TestService_Ingest_ExtractorErrorPropagates(t *testing.T) {
 	db, vi := newIngestFixture(t)
 	svc := ingest.New(db, vi, nil, &stubExtractor{err: errors.New("dial boom")})
-	err := svc.Ingest(t.Context(), "user: hi", 0.5, core.DefaultSchemaConfig(false))
+	err := svc.Ingest(t.Context(), "user: hi", 0.5, domain.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected dial error, got nil")
 	}

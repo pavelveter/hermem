@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 func BenchmarkCluster(b *testing.B) {
@@ -41,8 +41,8 @@ func BenchmarkCompress(b *testing.B) {
 	}
 
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "benchmark summary"},
 			},
 		},
@@ -67,8 +67,8 @@ func BenchmarkRecompress(b *testing.B) {
 	seedEntity(b, db, "e1", "world", "benchmark entity")
 
 	cp := NewCompressor(db, &mockExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "summary"},
 			},
 		},

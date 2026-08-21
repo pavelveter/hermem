@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // --- GetContradictions ---
@@ -303,7 +303,7 @@ func insertProvenanceEntity(t *testing.T, db *sql.DB, id, convID, msgID, source,
 	}
 }
 
-func ids(entities []core.Entity) []string {
+func ids(entities []domain.Entity) []string {
 	out := make([]string, len(entities))
 	for i, e := range entities {
 		out[i] = e.ID

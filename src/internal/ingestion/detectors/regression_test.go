@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 func TestLexicalDetector_Regression(t *testing.T) {
@@ -37,7 +37,7 @@ func TestLexicalDetector_Regression(t *testing.T) {
 	detector := NewLexicalDetector()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			result := detector.Detect(core.Entity{Content: c.a}, core.Entity{Content: c.b})
+			result := detector.Detect(domain.Entity{Content: c.a}, domain.Entity{Content: c.b})
 			if result.Detected != c.want {
 				t.Errorf("Detect(%q, %q) = %v, want %v", c.a, c.b, result.Detected, c.want)
 			}
@@ -48,29 +48,29 @@ func TestLexicalDetector_Regression(t *testing.T) {
 func TestEmbeddingDetector_Regression(t *testing.T) {
 	cases := []struct {
 		name      string
-		a         core.Entity
-		b         core.Entity
+		a         domain.Entity
+		b         domain.Entity
 		threshold float32
 		want      bool
 	}{
 		{
 			name:      "identical_content_same_emb_no_hit",
-			a:         core.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
-			b:         core.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
+			a:         domain.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
+			b:         domain.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
 			threshold: 0.8,
 			want:      false,
 		},
 		{
 			name:      "similar_emb_different_content_hit",
-			a:         core.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
-			b:         core.Entity{Content: "Go is slow", Embedding: []float32{0.95, 0.31, 0}},
+			a:         domain.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
+			b:         domain.Entity{Content: "Go is slow", Embedding: []float32{0.95, 0.31, 0}},
 			threshold: 0.8,
 			want:      true,
 		},
 		{
 			name:      "orthogonal_emb_no_hit",
-			a:         core.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
-			b:         core.Entity{Content: "Go is slow", Embedding: []float32{0, 1, 0}},
+			a:         domain.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
+			b:         domain.Entity{Content: "Go is slow", Embedding: []float32{0, 1, 0}},
 			threshold: 0.8,
 			want:      false,
 		},
@@ -93,31 +93,31 @@ func TestCompositeDetector_PipelineRegression(t *testing.T) {
 
 	cases := []struct {
 		name string
-		a, b core.Entity
+		a, b domain.Entity
 		want bool
 	}{
 		{
 			name: "lexical_catches_negation",
-			a:    core.Entity{Content: "Я люблю море", Embedding: []float32{1, 0, 0}},
-			b:    core.Entity{Content: "Я не люблю море", Embedding: []float32{0.95, 0.31, 0}},
+			a:    domain.Entity{Content: "Я люблю море", Embedding: []float32{1, 0, 0}},
+			b:    domain.Entity{Content: "Я не люблю море", Embedding: []float32{0.95, 0.31, 0}},
 			want: true,
 		},
 		{
 			name: "embedding_catches_semantic",
-			a:    core.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
-			b:    core.Entity{Content: "Go is slow", Embedding: []float32{0.95, 0.31, 0}},
+			a:    domain.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
+			b:    domain.Entity{Content: "Go is slow", Embedding: []float32{0.95, 0.31, 0}},
 			want: true,
 		},
 		{
 			name: "no_hit_on_identical",
-			a:    core.Entity{Content: "Go is fast"},
-			b:    core.Entity{Content: "Go is fast"},
+			a:    domain.Entity{Content: "Go is fast"},
+			b:    domain.Entity{Content: "Go is fast"},
 			want: false,
 		},
 		{
 			name: "no_hit_on_different_topic",
-			a:    core.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
-			b:    core.Entity{Content: "Python is slow", Embedding: []float32{0, 1, 0}},
+			a:    domain.Entity{Content: "Go is fast", Embedding: []float32{1, 0, 0}},
+			b:    domain.Entity{Content: "Python is slow", Embedding: []float32{0, 1, 0}},
 			want: false,
 		},
 	}
@@ -139,8 +139,8 @@ func TestLLMDetector_Regression(t *testing.T) {
 	detector := NewLLMDetector(mock)
 
 	result := detector.Detect(
-		core.Entity{Content: "Go is great"},
-		core.Entity{Content: "Go is terrible"},
+		domain.Entity{Content: "Go is great"},
+		domain.Entity{Content: "Go is terrible"},
 	)
 	if !result.Detected {
 		t.Error("expected detection")
@@ -152,8 +152,8 @@ func TestLLMDetector_Regression(t *testing.T) {
 	mock.err = context.DeadlineExceeded
 	mock.calls = 0
 	result = detector.Detect(
-		core.Entity{Content: "a"},
-		core.Entity{Content: "b"},
+		domain.Entity{Content: "a"},
+		domain.Entity{Content: "b"},
 	)
 	if result.Detected {
 		t.Error("expected miss on error")

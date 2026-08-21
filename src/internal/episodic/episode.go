@@ -33,7 +33,7 @@ var ErrInvalidEventType = errors.New("episodic: invalid event type")
 
 // Episode is the rich P2 episodic memory unit. Distinct from
 // domain.Episode (the thin Entity-projection wrapper in
-// src/internal/core/episode.go) — this type carries identity,
+// pkg/domain/episode.go (formerly) — this type carries identity,
 // timeline anchor, summary, and lifecycle fields directly, no
 // conversion round-trip required.
 //

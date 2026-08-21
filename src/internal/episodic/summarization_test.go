@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // openSummarizationTestDB returns an in-memory SQLite with the
@@ -67,11 +67,11 @@ func openSummarizationTestDB(t *testing.T) *sql.DB {
 // to the LLM and what the resulting summary looks like.
 type stubExtractor struct {
 	dialogs []string
-	result  *core.ExtractionResult
+	result  *domain.ExtractionResult
 	err     error
 }
 
-func (s *stubExtractor) ExtractEntities(_ context.Context, dialog string) (*core.ExtractionResult, error) {
+func (s *stubExtractor) ExtractEntities(_ context.Context, dialog string) (*domain.ExtractionResult, error) {
 	s.dialogs = append(s.dialogs, dialog)
 	if s.err != nil {
 		return nil, s.err
@@ -151,8 +151,8 @@ func TestSummarizer_BuildsDialogFromEventsAndMemories(t *testing.T) {
 	if err := linkSvc.LinkMemory(t.Context(), "ep-1", "m1", "extracted"); err != nil {
 		t.Fatalf("LinkMemory: %v", err)
 	}
-	ext := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{{Category: "world", Content: "summary fact"}},
+	ext := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{{Category: "world", Content: "summary fact"}},
 	}}
 	s := NewSummarizer(db, ext)
 	summary, err := s.SummarizeEpisode(t.Context(), "ep-1")
@@ -189,8 +189,8 @@ func TestSummarizer_PersistsSummaryToEpisode(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
-	ext := &stubExtractor{result: &core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	ext := &stubExtractor{result: &domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{Category: "world", Content: "alpha"},
 			{Category: "opinion", Content: "beta"},
 		},
@@ -250,7 +250,7 @@ func TestSummarizer_EmptyExtractionRendersPlaceholder(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateEvent: %v", err)
 	}
-	ext := &stubExtractor{result: &core.ExtractionResult{Entities: nil}}
+	ext := &stubExtractor{result: &domain.ExtractionResult{Entities: nil}}
 	s := NewSummarizer(db, ext)
 	summary, err := s.SummarizeEpisode(t.Context(), "ep-1")
 	if err != nil {
@@ -296,15 +296,15 @@ func TestFormatSummaryFromExtraction_EmptyResultPlaceholder(t *testing.T) {
 	if got != "(no entities extracted)" {
 		t.Fatalf("nil result: want placeholder, got %q", got)
 	}
-	got = formatSummaryFromExtraction(&core.ExtractionResult{})
+	got = formatSummaryFromExtraction(&domain.ExtractionResult{})
 	if got != "(no entities extracted)" {
 		t.Fatalf("empty entities: want placeholder, got %q", got)
 	}
 }
 
 func TestFormatSummaryFromExtraction_Bullets(t *testing.T) {
-	got := formatSummaryFromExtraction(&core.ExtractionResult{
-		Entities: []core.ExtractedEntity{
+	got := formatSummaryFromExtraction(&domain.ExtractionResult{
+		Entities: []domain.ExtractedEntity{
 			{Category: "world", Content: "alpha"},
 			{Category: "opinion", Content: "beta"},
 		},

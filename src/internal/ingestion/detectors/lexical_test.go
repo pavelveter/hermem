@@ -3,9 +3,8 @@ package detectors
 import (
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"golang.org/x/text/unicode/norm"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // TestStemPair_NormalizesNFD — Audit Part 5 #4 regression. Two strings
@@ -86,7 +85,7 @@ func TestLexicalDetector(t *testing.T) {
 	detector := NewLexicalDetector()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			result := detector.Detect(core.Entity{Content: c.a}, core.Entity{Content: c.b})
+			result := detector.Detect(domain.Entity{Content: c.a}, domain.Entity{Content: c.b})
 			if result.Detected != c.want {
 				t.Errorf("Detect(%q, %q) detected=%v, want %v", c.a, c.b, result.Detected, c.want)
 			}

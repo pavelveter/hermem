@@ -4,14 +4,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // TestNew_NilCategoryMapBecomesEmptyMap — handlers index into
 // ValidCategories without nil-checks. A nil map would silently swallow
 // the lookup into the void and let invalid categories pass.
 func TestNew_NilCategoryMapBecomesEmptyMap(t *testing.T) {
-	s := New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil)
+	s := New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil)
 	if s.ValidCategories == nil {
 		t.Fatal("ValidCategories nil: handlers would panic on map[K]V")
 	}
@@ -22,7 +22,7 @@ func TestNew_NilCategoryMapBecomesEmptyMap(t *testing.T) {
 
 // TestNew_NilRelationMapBecomesEmptyMap — same nil-defense as above.
 func TestNew_NilRelationMapBecomesEmptyMap(t *testing.T) {
-	s := New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil)
+	s := New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil)
 	if s.ValidRelationTypes == nil {
 		t.Fatal("ValidRelationTypes nil")
 	}
@@ -36,8 +36,8 @@ func TestNew_NilRelationMapBecomesEmptyMap(t *testing.T) {
 func TestNew_PreservesProvidedMap(t *testing.T) {
 	cats := map[string]bool{"world": true, "task": true}
 	rels := map[string]bool{"blocked_by": true}
-	schema := core.SchemaConfig{AllowedCategories: cats, AllowedRelations: rels}
-	s := New(schema, 5, 100, core.RankingWeight{}, nil)
+	schema := domain.SchemaConfig{AllowedCategories: cats, AllowedRelations: rels}
+	s := New(schema, 5, 100, domain.RankingWeight{}, nil)
 	if !s.ValidCategories["world"] || !s.ValidCategories["task"] {
 		t.Fatalf("ValidCategories lost entries: %+v", s.ValidCategories)
 	}
@@ -50,7 +50,7 @@ func TestNew_PreservesProvidedMap(t *testing.T) {
 // passed through unchanged. These power the graph walker; losing them
 // silently would mean every query walks the full graph.
 func TestNew_RoundTripsDepthBounds(t *testing.T) {
-	s := New(core.SchemaConfig{}, 7, 250, core.RankingWeight{}, nil)
+	s := New(domain.SchemaConfig{}, 7, 250, domain.RankingWeight{}, nil)
 	if s.DepthCeiling != 7 {
 		t.Fatalf("DepthCeiling: want 7, got %d", s.DepthCeiling)
 	}
@@ -63,8 +63,8 @@ func TestNew_RoundTripsDepthBounds(t *testing.T) {
 // come through verbatim. A nil reranker is a valid config (degraded
 // ordering) but the field must be the same pointer the caller passed.
 func TestNew_PreservesRankingAndReranker(t *testing.T) {
-	w := core.RankingWeight{}.WithDefaults()
-	s := New(core.SchemaConfig{}, 5, 100, w, nil)
+	w := domain.RankingWeight{}.WithDefaults()
+	s := New(domain.SchemaConfig{}, 5, 100, w, nil)
 	if s.RankingWeight.VectorWeight != w.VectorWeight {
 		t.Fatalf("RankingWeight.VectorWeight: want %v, got %v", w.VectorWeight, s.RankingWeight.VectorWeight)
 	}
@@ -79,7 +79,7 @@ func TestNew_PreservesRankingAndReranker(t *testing.T) {
 // Skipping 0 preserves "Generation 0 = pre-Ref construction" as a
 // diagnostic signal.
 func TestRef_NewRefStampsInitialStateWithGenerationOne(t *testing.T) {
-	s := New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil)
+	s := New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil)
 	if s.Generation != 0 {
 		t.Fatalf("pre-NewRef State.Generation: want 0, got %d", s.Generation)
 	}
@@ -98,8 +98,8 @@ func TestRef_NewRefStampsInitialStateWithGenerationOne(t *testing.T) {
 // sees (oldState, oldGen) or (newState, newGen) — never an inconsistent
 // pair. This is the contract that handlers' IsStale check relies on.
 func TestRef_StoreStampsIncomingStateWithNextGeneration(t *testing.T) {
-	refs := NewRef(New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil))
-	s2 := New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil)
+	refs := NewRef(New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil))
+	s2 := New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil)
 	if s2.Generation != 0 {
 		t.Fatalf("s2.Generation pre-Store: want 0, got %d", s2.Generation)
 	}
@@ -117,9 +117,9 @@ func TestRef_StoreStampsIncomingStateWithNextGeneration(t *testing.T) {
 // concurrent Store calls collapsed into one bump and in-flight handlers
 // will see stale Generation comparisons.
 func TestRef_StoreIsMonotonic(t *testing.T) {
-	refs := NewRef(New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil))
+	refs := NewRef(New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil))
 	for i := 2; i <= 5; i++ {
-		next := New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil)
+		next := New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil)
 		refs.Store(next)
 		if next.Generation != uint64(i) {
 			t.Fatalf("Store #%d: want Generation %d, got %d", i, i, next.Generation)
@@ -134,9 +134,9 @@ func TestRef_StoreIsMonotonic(t *testing.T) {
 // state.Generation at request start and re-checks before commit must
 // observe IsStale=true if a SIGHUP ran in between.
 func TestRef_IsStaleDetectsSwap(t *testing.T) {
-	refs := NewRef(New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil))
+	refs := NewRef(New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil))
 	captured := refs.Load().Generation
-	refs.Store(New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil))
+	refs.Store(New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil))
 	if !refs.IsStale(captured) {
 		t.Fatalf("after swap, captured gen %d must report stale", captured)
 	}
@@ -164,8 +164,8 @@ func TestRef_IsStaleDetectsSwap(t *testing.T) {
 // path reuse the source SchemaConfig for the next ReloadState; moving
 // instead of copying would silently drain the live config mid-reload.
 func TestNew_SchemaMapsNotAliasedToSource(t *testing.T) {
-	src := core.DefaultSchemaConfig(false)
-	s := New(src, 0, 0, core.RankingWeight{}, nil)
+	src := domain.DefaultSchemaConfig(false)
+	s := New(src, 0, 0, domain.RankingWeight{}, nil)
 	// Mutate SOURCE maps AFTER New() returns. If cloneSchema isolated the
 	// clone from the source, the State must be unaffected.
 	src.AllowedCategories["evil"] = true
@@ -213,7 +213,7 @@ func TestNew_SchemaMapsNotAliasedToSource(t *testing.T) {
 // counter serialises, but the redundant point with TestRef_StoreIsMonotonic
 // (sequential case) only materialises under -race.
 func TestRef_StoreConcurrentDistinct(t *testing.T) {
-	refs := NewRef(New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil))
+	refs := NewRef(New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil))
 	const N = 100
 	states := make([]*State, N)
 	var wg sync.WaitGroup
@@ -221,7 +221,7 @@ func TestRef_StoreConcurrentDistinct(t *testing.T) {
 	for i := 0; i < N; i++ {
 		go func(i int) {
 			defer wg.Done()
-			s := New(core.SchemaConfig{}, 0, 0, core.RankingWeight{}, nil)
+			s := New(domain.SchemaConfig{}, 0, 0, domain.RankingWeight{}, nil)
 			refs.Store(s)
 			states[i] = s
 		}(i)

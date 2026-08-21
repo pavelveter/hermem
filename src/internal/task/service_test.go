@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -67,7 +67,7 @@ func TestService_Executable_EmptyDBReturnsEmpty(t *testing.T) {
 
 func TestService_Executable_NonStatefulSchemaReturnsEmpty(t *testing.T) {
 	f := newSvcFixture(t)
-	tasks, err := f.svc.Executable(t.Context(), "", core.DefaultSchemaConfig(false))
+	tasks, err := f.svc.Executable(t.Context(), "", domain.DefaultSchemaConfig(false))
 	if err != nil {
 		t.Fatalf("Executable: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestService_Create_RejectsEmptyID(t *testing.T) {
 
 func TestService_Create_RejectsNonStatefulSchema(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Create(t.Context(), "t-new", "do thing", nil, core.DefaultSchemaConfig(false))
+	_, err := f.svc.Create(t.Context(), "t-new", "do thing", nil, domain.DefaultSchemaConfig(false))
 	if err == nil || !strings.Contains(err.Error(), "no stateful category") {
 		t.Errorf("expected no-stateful-category error, got: %v", err)
 	}
@@ -241,8 +241,8 @@ func newSvcFixture(t *testing.T) *svcFixture {
 	return &svcFixture{svc: svc, db: db, vi: vi}
 }
 
-func statefulSchema() core.SchemaConfig {
-	s := core.DefaultSchemaConfig(true)
+func statefulSchema() domain.SchemaConfig {
+	s := domain.DefaultSchemaConfig(true)
 	s.AllowedCategories["task"] = true
 	s.StatefulCategories["task"] = true
 	s.ValidStates = map[string]bool{"pending": true, "running": true, "completed": true, "blocked": true}

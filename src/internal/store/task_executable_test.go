@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // claimResult is the per-goroutine observation pushed into the result
@@ -15,7 +15,7 @@ import (
 // in-flight, so no shared-state counter can race against a descheduled
 // goroutine that has already seen its (nil, nil) return.
 type claimResult struct {
-	task *core.Task
+	task *domain.Task
 	err  error
 }
 
@@ -98,16 +98,16 @@ func TestClaimNextTask_ShortCircuitsWhenSchemaNotStateful(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
-		sch  core.SchemaConfig
+		sch  domain.SchemaConfig
 	}{
-		{"stateful_disabled", core.DefaultSchemaConfig(false)},
-		{"empty_categories", func() core.SchemaConfig {
-			s := core.DefaultSchemaConfig(true)
+		{"stateful_disabled", domain.DefaultSchemaConfig(false)},
+		{"empty_categories", func() domain.SchemaConfig {
+			s := domain.DefaultSchemaConfig(true)
 			s.StatefulCategories = map[string]bool{}
 			return s
 		}()},
-		{"empty_state_order", func() core.SchemaConfig {
-			s := core.DefaultSchemaConfig(true)
+		{"empty_state_order", func() domain.SchemaConfig {
+			s := domain.DefaultSchemaConfig(true)
 			s.StatefulCategories = map[string]bool{"task": true}
 			s.ValidStateOrder = nil
 			return s
@@ -192,7 +192,7 @@ func runClaimConcurrent(t *testing.T, m, n int) {
 	close(resultsCh)
 
 	var (
-		claimed     []*core.Task
+		claimed     []*domain.Task
 		sawNil      int
 		errs        []error
 		occurrences = map[string]int{}

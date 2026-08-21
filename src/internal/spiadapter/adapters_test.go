@@ -5,16 +5,16 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 type testLegacyExtractor struct{}
 
-func (testLegacyExtractor) ExtractEntities(_ context.Context, _ string) (*core.ExtractionResult, error) {
-	return &core.ExtractionResult{Entities: []core.ExtractedEntity{{
+func (testLegacyExtractor) ExtractEntities(_ context.Context, _ string) (*domain.ExtractionResult, error) {
+	return &domain.ExtractionResult{Entities: []domain.ExtractedEntity{{
 		ID: "model-id", Category: "world", Content: "fact",
-		Relations: []core.Relation{{TargetID: "legacy-ref", RelationType: "uses"}},
+		Relations: []domain.Relation{{TargetID: "legacy-ref", RelationType: "uses"}},
 	}}}, nil
 }
 

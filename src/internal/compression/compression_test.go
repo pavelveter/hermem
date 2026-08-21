@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 type countingExtractor struct {
 	calls  int
-	result *core.ExtractionResult
+	result *domain.ExtractionResult
 }
 
-func (c *countingExtractor) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
+func (c *countingExtractor) ExtractEntities(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
 	c.calls++
 	return c.result, nil
 }
@@ -31,8 +31,8 @@ func TestCompressionIntegration(t *testing.T) {
 	}
 
 	extractor := &countingExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "clustered summary"},
 			},
 		},
@@ -93,8 +93,8 @@ func TestCompressionIntegration(t *testing.T) {
 	}
 
 	extractor2 := &countingExtractor{
-		result: &core.ExtractionResult{
-			Entities: []core.ExtractedEntity{
+		result: &domain.ExtractionResult{
+			Entities: []domain.ExtractedEntity{
 				{Category: "world", Content: "regenerated content"},
 			},
 		},

@@ -3,7 +3,7 @@ package task
 import (
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 func TestProperty_TaskStatus_InitialStateAfterCreate(t *testing.T) {
@@ -201,5 +201,5 @@ func TestProperty_SchemaConfig_WellFormed(t *testing.T) {
 	}
 }
 
-// Verify core.SchemaConfig satisfies the expected interface.
-var _ core.SchemaConfig
+// Verify domain.SchemaConfig satisfies the expected interface.
+var _ domain.SchemaConfig
