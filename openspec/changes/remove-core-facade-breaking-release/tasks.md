@@ -18,7 +18,7 @@
 - [ ] 3.1 Complete ADR-035 identity generation and remove all production reliance on LLM-selected persistent IDs. (identity home done: all 5 `NewTaskID` callers now use `id.NewTaskID`, `core.NewTaskID` deleted; full ADR-035 strategy deferred — see adr-gates.md)
 - [ ] 3.2 Complete ADR-037 retrieval-stage contracts and migrate callers away from the legacy `core.Retriever` construction-dependency shape. (blocked by task 4.x capability migration — see adr-gates.md)
 - [x] 3.3 Verify ADR-030 tenancy/namespace decisions and ADR-032 ingestion decisions do not require core-owned contracts.
-- [ ] 3.4 Move remaining core-owned policy/config values such as ranking, retrieval options, migration values, and internal errors to explicit owning packages. (done: retention → `retention.Policy`, migration values → `migration` package, `RankingWeight` aliased to `domain`; deferred: retrieval-owned options + error taxonomy — see adr-gates.md)
+- [x] 3.4 Move remaining core-owned policy/config values such as ranking, retrieval options, migration values, and internal errors to explicit owning packages. (retention → `retention.Policy`; migration values → `migration`; `RankingWeight`/retrieval options/score types → `retrieval`; misc graph/task/reembed values → owners; legacy wire-error contract → `apperr` verbatim — typed `domain.Error` adoption deferred to the semantic release, see adr-gates.md)
 - [x] 3.5 Add migration tests proving each moved policy type preserves current defaults and behavior.
 
 ## 4. Production caller migration
@@ -42,7 +42,7 @@
 
 - [x] 4.1 Migrate provider implementations and `spiadapter` callers to public SPI contracts; retain adapters only for explicitly tracked compatibility tests.
 - [x] 4.2 Migrate repositories, vector consumers, and persistence boundaries to `pkg/domain` and `spi.VectorStore` or owning internal interfaces.
-- [ ] 4.3 Migrate ingestion, memory, edge, re-embedding, health, retention, and task services away from core types. (value types + `Embedder` + `VectorIndex` done: constructors/fields hold `spi.Embedder` and `spi.VectorStore`; wiring wraps the legacy backend once via `spiadapter.VectorStore`; SearchBatch fan-outs became per-query namespaced searches; remaining: `LLMExtractor` params, blocked on ADR-035 ID semantics)
+- [x] 4.3 Migrate ingestion, memory, edge, re-embedding, health, retention, and task services away from core types. (`spi.Embedder` + `spi.VectorStore` constructors/wiring; legacy extractor contract owned by `extraction` pkg pending ADR-035; all value types canonical)
 - [x] 4.4 Migrate application composition, lifecycle ownership, server state, and factory wiring away from core capability interfaces. (extended: `retrieval.Reranker` is now `type Reranker = spi.Reranker`; app/lifecycle/server-state/factory all hold canonical SPI handles; `retrieval.NewLegacyReranker` + `retrieval/legacy.go` removed completely)
 - [ ] 4.5 Migrate HTTP shells to `api/v1` DTOs and mappers while preserving routes, status codes, JSON fields, omission rules, and error envelopes.
 - [ ] 4.6 Migrate MCP and CLI adapters to public domain values or command-local DTOs without importing HTTP DTOs for sharing.

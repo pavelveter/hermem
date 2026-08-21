@@ -375,3 +375,42 @@ implementations satisfy `spi.Extractor`, the registry resolves to
 remaining consumers (compression, ingestion worker, health probes)
 keep using the legacy shape and stay on the cycle-coupled DTO move
 track.
+
+## Loop session: contract ownership completion (L1–L4)
+
+Four verified increments, each committed green (`go build` + `go vet` +
+`go test -race`, 1454 tests):
+
+- **L1 — misc value types to owners (6baf138):** `ReEmbedResult`→reembed,
+  `TreeNode`→store, graph result quartet
+  (`VerifyReport`/`Community`/`ContradictionPair`/`ConnectedComponent`) →
+  `pkg/domain/graph_results.go` (wire envelopes; store produces them, so a
+  below-store owner is impossible without cycles — same precedent as
+  `domain.SearchResult`).
+- **L2 — retrieval owns the read-side contract (3c8a910):** the interrupted
+  work's `retrieval/types.go` locals are now THE contracts;
+  `ScoreBreakdown`/`RetrievedFact`/`GraphNode`/`RetrievalResult`/
+  `CompositeScorer`/`RetrieveContextOptions`/`Retriever` deleted from core.
+  All three ai rerankers + fakes rewritten to the public `spi.Candidate`
+  API; `applyReranker` performs the RetrievedFact↔Candidate translation
+  inline (ordering is the only observable effect); the app-side legacy
+  reranker adapter was deleted — `config.NewReranker` returns `spi.Reranker`
+  directly. Closes the substance of task 3.2's in-scope slice and 4.1's
+  reranker complement.
+- **L3 — extraction owns the legacy extractor (16e8c56):** new
+  `internal/extraction` package holds the ID-bearing `LLMExtractor`
+  contract pending ADR-035; ingestion/compression/health/spiadapter/config
+  reference the owner, not core.
+- **L4 — apperr owns the wire-error contract:** `core.DomainError`,
+  codes, sentinels, constructors moved VERBATIM to `internal/apperr`.
+  Zero behavior change: §10 pinned rendering ("msg (field)") and HTTP/CLI
+  bytes preserved. Deliberate deferral with rationale: adopting the typed
+  `pkg/domain.Error` taxonomy changes error strings — that is a
+  behavior-visible change belonging to the semantic-foundation release,
+  forbidden by this change's own compatibility requirement. This is the
+  one intentional remainder in core after 6.x.
+
+Core facade residual after L1–L4: deprecated aliases (value types), the
+legacy `VectorIndex` interface (compat backends + spiadapter bridge),
+`Component`/`Logger` natives (callers flip during 5.x/6.x), `NormalizeSlice`,
+and the transport DTO family (consumed by shells until 4.5/4.6).
