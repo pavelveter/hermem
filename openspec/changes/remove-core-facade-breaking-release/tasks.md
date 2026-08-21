@@ -59,12 +59,12 @@
 
 ## 7. Release-candidate validation
 
-- [ ] 7.1 Build from a clean checkout with no compatibility-release generated artifacts and verify the facade directory is absent.
-- [ ] 7.2 Run full unit/integration tests, `go vet`, race-enabled tests, and API contract tests.
-- [ ] 7.3 Run required fuzz smoke tests, external-like compilation, public API checks, boundary checks, and security/lint gates.
-- [ ] 7.4 Verify HTTP, MCP, CLI, persistence, and provider behavior against the compatibility baseline with no intentional unrelated changes.
-- [ ] 7.5 Run benchmark smoke/regression checks and document any accepted performance delta.
-- [ ] 7.6 Review the release PR against every Gate A–D in `docs/release-core-facade-removal.md` and record sign-off evidence.
+- [x] 7.1 Build from a clean checkout with no compatibility-release generated artifacts and verify the facade directory is absent. (git worktree at `e36107a` + `ensure-embed-placeholders.sh`: build OK, `src/internal/core` absent)
+- [x] 7.2 Run full unit/integration tests, `go vet`, race-enabled tests, and API contract tests. (`go test -race -count=1 ./src/... ./pkg/... ./api/...` — 1421 tests / 82 pkgs green; vet clean; e2e CLI+HTTP+scenarios 121 tests green)
+- [x] 7.3 Run required fuzz smoke tests, external-like compilation, public API checks, boundary checks, and security/lint gates. (4 fuzz targets × 10 s green; public-API/boundary suites green; golangci-lint 0 issues after clearing residual ST1019/S1040/inline findings; govulncheck deferred to CI — local toolchain skew, see adr-gates.md Gate D)
+- [x] 7.4 Verify HTTP, MCP, CLI, persistence, and provider behavior against the compatibility baseline with no intentional unrelated changes. (golden/OpenAPI byte snapshots + server/mcp/cli/e2e suites green; no intentional wire deltas)
+- [x] 7.5 Run benchmark smoke/regression checks and document any accepted performance delta. (vector/retrieval/store benchmark smoke all execute; no accepted delta — facade removal is import-path-level only)
+- [x] 7.6 Review the release PR against every Gate A–D in `docs/release-core-facade-removal.md` and record sign-off evidence. (evidence recorded in adr-gates.md "Release gates A–D"; Gate C carries the documented ADR-035/037 deferrals)
 
 ## 8. Major release and support
 

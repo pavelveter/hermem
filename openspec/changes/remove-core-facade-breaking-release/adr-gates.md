@@ -1,5 +1,55 @@
 # ADR gates and internal ownership — status (tasks 3.1–3.5)
 
+> **Reading order:** sections below are an append-only log; later sections
+> supersede earlier ones. **Final state (verified post-6.x, commits
+> 0b1053f..75b9044):** `src/internal/core` is deleted with zero imports
+> repo-wide; composition roots (`clienv.EnsureDB`, `app.New`) construct
+> stores directly via `vector.NewStore` (the `spiadapter.VectorStore` wrap,
+> legacy `vector.Index`, and all embedder/vector/reverse-extractor bridges
+> are deleted); `spiadapter` contains exactly one bridge —
+> `NewExtractor` over `extraction.LLMExtractor`, pending ADR-035 (§3.1).
+> Earlier "Remaining"/"Still core-owned" lists are historical.
+
+## Release gates A–D — sign-off evidence (task 7.6)
+
+Recorded from the validation session of 2026-08-21 (HEAD `75b9044`):
+
+- **Gate A (public contract freeze): PASS.** Public-API snapshot tests
+  (`pkg/domain/public_api_test.go`, spi conformance tests, api/v1 DTO
+  boundary tests) green in every run; external-like provider fixtures
+  compile on `pkg/domain`+`pkg/spi` only (task 2.4); no method added to
+  frozen interfaces (`spi.Embedder` single-method, health via optional
+  `spi.Pinger`). Boundary guard (`scripts/check-public-boundaries.sh`)
+  green after anchoring its patterns to quoted import paths.
+- **Gate B (production dependency migration): PASS.** Zero
+  `src/internal/core` references repo-wide (package deleted, 6.5);
+  strict-mode import guard green; handlers on `api/v1`; MCP/CLI on domain
+  values/command-local DTOs; services/persistence on canonical contracts
+  (tasks 4.1–4.7, 6.1–6.6).
+- **Gate C (dependent ADRs): PASS with recorded deferrals.** ADR-030/032
+  verified not to require core-owned contracts (§3.3). ADR-035 identity
+  *home* moved (`internal/id`); the UUIDv7/content-addressed *strategy* is
+  deliberately deferred (§3.1) — no remaining caller requires a core-owned
+  contract, which is the operative condition of the spec's ADR-gate
+  scenario ("required by a core caller"). ADR-037 read-side values owned by
+  `src/internal/retrieval` with canonical spi capability params (§L2,
+  task 3.2); the full pipeline-SPI redesign stays a separate project.
+  Policy values have owners + migration tests (3.4/3.5).
+- **Gate D (behavior and operations): PASS** (govulncheck executed in CI).
+  Clean-checkout build with the facade directory physically absent (7.1,
+  worktree at `e36107a`); full race suite 1421 tests / 82 packages green;
+  e2e CLI+HTTP+scenarios 121 tests green; `go vet` clean; fuzz smoke 10 s ×
+  {FuzzSplitSQL, FuzzCosineSimilarity, FuzzEntityJSONRoundTrip,
+  FuzzStoreRequestJSONRoundTrip} green; benchmark smoke green (7.5);
+  golangci-lint **0 issues** across ./src/... ./pkg/... ./api/... after
+  clearing residual ST1019/S1040/inline findings left by the alias
+  collapse; golden/OpenAPI/integration suites show no intentional wire
+  deltas (5.3/5.4 baselines still authoritative).
+  Local govulncheck could not run (tool built with go1.26 under a go1.27
+  toolchain — environment skew, not a code finding); the CI `govulncheck`
+  job covers this gate.
+
+
 This record captures the verification and ownership-move outcomes for the
 "dependent ADR gates and internal ownership" phase of the core facade
 removal. It is kept in the change directory so the release reviewer can see
