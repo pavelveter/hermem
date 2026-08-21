@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 //go:embed assets/negations_en.txt
@@ -29,7 +29,7 @@ func NewLexicalDetector() *LexicalDetector {
 
 // Detect reports whether existing.Content and incoming.Content
 // disagree on a negation token.
-func (d *LexicalDetector) Detect(existing, incoming core.Entity) contradiction.DetectionResult {
+func (d *LexicalDetector) Detect(existing, incoming domain.Entity) contradiction.DetectionResult {
 	if lexicalNegationFlip(existing.Content, incoming.Content) {
 		return contradiction.DetectionResult{Detected: true, Reason: lexicalReasonHit, Confidence: 1.0}
 	}

@@ -3,8 +3,8 @@ package detectors
 import (
 	"context"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 const llmReasonHit = "LLM contradiction detected"
@@ -26,7 +26,7 @@ func NewLLMDetector(checker LLMChecker) *LLMDetector {
 }
 
 // Detect delegates to the LLM checker. Returns a miss on checker errors.
-func (d *LLMDetector) Detect(existing, incoming core.Entity) contradiction.DetectionResult {
+func (d *LLMDetector) Detect(existing, incoming domain.Entity) contradiction.DetectionResult {
 	if d.checker == nil {
 		return contradiction.DetectionResult{}
 	}

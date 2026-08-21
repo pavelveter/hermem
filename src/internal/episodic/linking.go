@@ -85,9 +85,9 @@ func (s *LinkService) UnlinkMemory(ctx context.Context, episodeID, entityID, rol
 // which are irrelevant to episode callers (e.g. Degree / Priority);
 // this projection keeps the JSON wire shape tight.
 //
-// Distinct from core.Entity to make the intent explicit at call
+// Distinct from domain.Entity to make the intent explicit at call
 // sites — ListMemoriesForEpisode returns []MemoryRef, not
-// []core.Entity.
+// []domain.Entity.
 //
 // BREAKING: LinkedAt was previously a string (RFC3339-ish
 // formatter); after migration 013 it is an int64 Unix millisecond

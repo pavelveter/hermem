@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
@@ -109,7 +110,7 @@ func buildSummarizationDialog(events []Event, memories []MemoryRef) string {
 // "(no entities extracted)" so the column is never empty when
 // the extractor ran successfully — distinct from "never
 // summarised".
-func formatSummaryFromExtraction(result *core.ExtractionResult) string {
+func formatSummaryFromExtraction(result *domain.ExtractionResult) string {
 	if result == nil || len(result.Entities) == 0 {
 		return "(no entities extracted)"
 	}

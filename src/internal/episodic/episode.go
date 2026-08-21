@@ -1,6 +1,6 @@
 // Package episodic owns the P2 EPISODIC MEMORY subsystem — the rich
 // episode / event / session / link model that sits on top of the
-// existing core.Entity thin wrappers and the sessions/conversations
+// existing domain.Entity thin wrappers and the sessions/conversations
 // tables from migration 004.
 //
 // Following the flat-package + stateless-Service pattern from
@@ -32,7 +32,7 @@ var ErrNotFound = errors.New("episodic: not found")
 var ErrInvalidEventType = errors.New("episodic: invalid event type")
 
 // Episode is the rich P2 episodic memory unit. Distinct from
-// core.Episode (the thin Entity-projection wrapper in
+// domain.Episode (the thin Entity-projection wrapper in
 // src/internal/core/episode.go) — this type carries identity,
 // timeline anchor, summary, and lifecycle fields directly, no
 // conversion round-trip required.

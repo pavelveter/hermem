@@ -3,8 +3,8 @@ package detectors
 import (
 	"math"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 const embeddingReasonHit = "embedding similarity contradiction"
@@ -26,7 +26,7 @@ func NewEmbeddingDetector(threshold float32) *EmbeddingDetector {
 
 // Detect checks whether existing and incoming entities are semantically
 // similar but textually divergent, indicating a potential contradiction.
-func (d *EmbeddingDetector) Detect(existing, incoming core.Entity) contradiction.DetectionResult {
+func (d *EmbeddingDetector) Detect(existing, incoming domain.Entity) contradiction.DetectionResult {
 	if len(existing.Embedding) == 0 || len(incoming.Embedding) == 0 {
 		return contradiction.DetectionResult{}
 	}

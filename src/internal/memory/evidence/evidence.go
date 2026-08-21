@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // Polarity is a named type (not an alias) so we can define Unmarshal methods.
-// Its underlying type is string, matching core.Polarity.
+// Its underlying type is string, matching domain.Polarity.
 type Polarity string
 
 const (
@@ -75,7 +75,7 @@ type Evidence struct {
 }
 
 // GetPolarity implements the evolution.EvidenceItem interface.
-func (e *Evidence) GetPolarity() core.Polarity { return core.Polarity(e.Polarity) }
+func (e *Evidence) GetPolarity() domain.Polarity { return domain.Polarity(e.Polarity) }
 
 // GetStrength implements the evolution.EvidenceItem interface.
 func (e *Evidence) GetStrength() float64 { return e.Strength }

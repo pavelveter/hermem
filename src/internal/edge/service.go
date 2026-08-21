@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -55,7 +56,7 @@ func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
 // with Field="relation_type". Both branches (auto_create true/false)
 // resolve through SchemaConfig.AllowedRelations before touching the DB
 // so a malformed request cannot bypass write-side guards.
-func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema core.SchemaConfig) error {
+func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema domain.SchemaConfig) error {
 	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
 		return fmt.Errorf("edge: source_id, target_id, relation_type required")
 	}

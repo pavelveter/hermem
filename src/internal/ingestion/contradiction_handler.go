@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -22,8 +22,8 @@ const (
 
 // handleContradiction detects contradictions between existing and incoming entities
 // and returns the action to take, an optional archive ID, and any vector index ops.
-func (w *IngestionWorker) handleContradiction(existing *core.Entity, incoming core.ExtractedEntity) (contradictionAction, string, []viOp) {
-	if !w.detector.Detect(*existing, core.Entity{Content: incoming.Content}).Detected {
+func (w *IngestionWorker) handleContradiction(existing *domain.Entity, incoming domain.ExtractedEntity) (contradictionAction, string, []viOp) {
+	if !w.detector.Detect(*existing, domain.Entity{Content: incoming.Content}).Detected {
 		return contradictionNone, "", nil
 	}
 
@@ -47,7 +47,7 @@ func (w *IngestionWorker) handleContradiction(existing *core.Entity, incoming co
 
 // mergeExistingEntity merges the incoming entity into the existing one and returns
 // the merged entity with a re-embedded vector.
-func (w *IngestionWorker) mergeExistingEntity(ctx context.Context, existing *core.Entity, incoming core.ExtractedEntity, prov core.Provenance) (*core.Entity, error) {
+func (w *IngestionWorker) mergeExistingEntity(ctx context.Context, existing *domain.Entity, incoming domain.ExtractedEntity, prov domain.Provenance) (*domain.Entity, error) {
 	mergedContent := existing.Content
 	if !strings.Contains(existing.Content, incoming.Content) {
 		mergedContent = existing.Content + "; " + incoming.Content
@@ -57,7 +57,7 @@ func (w *IngestionWorker) mergeExistingEntity(ctx context.Context, existing *cor
 		return nil, err
 	}
 	vector.NormalizeVector(updatedEmb)
-	return &core.Entity{
+	return &domain.Entity{
 		ID:             existing.ID,
 		Category:       existing.Category,
 		Content:        mergedContent,
@@ -70,6 +70,6 @@ func (w *IngestionWorker) mergeExistingEntity(ctx context.Context, existing *cor
 		ExtractedFrom:  prov.ExtractedFrom,
 		Source:         "dialog",
 		SourceType:     "extraction",
-		UpdatedAt:      core.TimePtr(time.Now().UTC()),
+		UpdatedAt:      domain.TimePtr(time.Now().UTC()),
 	}, nil
 }

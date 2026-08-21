@@ -1,8 +1,8 @@
 // Package belief delivers the first-class schema-backed Belief abstraction for
 // the P2 \u2014 MEMORY EVOLUTION subsystem (C1).
 //
-// It is intentionally separate from the existing core.Belief projection, which
-// remains a thin view off of core.Entity for backward compatibility. This
+// It is intentionally separate from the existing domain.Belief projection, which
+// remains a thin view off of domain.Entity for backward compatibility. This
 // package owns the canonical persistence shape for evolving, confidence-scoring,
 // support/refute-linked beliefs: it has its own SQLite table, lifecycle
 // (Active / Superseded / Archived), and CRUD service.

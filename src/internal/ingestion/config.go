@@ -3,6 +3,7 @@ package ingestion
 import (
 	"database/sql"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
@@ -15,7 +16,7 @@ type IngestionWorkerConfig struct {
 	Extractor      core.LLMExtractor
 	Embedder       core.Embedder
 	DedupThreshold float32
-	Schema         core.SchemaConfig
+	Schema         domain.SchemaConfig
 	Detector       contradiction.ContradictionDetector
 	Resolver       contradiction.ContradictionResolver
 }
@@ -49,7 +50,7 @@ type MemoryWorkerConfig struct {
 	Extractor      core.LLMExtractor
 	Embedder       core.Embedder
 	DedupThreshold float32
-	Schema         core.SchemaConfig
+	Schema         domain.SchemaConfig
 	CkptPath       string
 	PendingPath    string
 	WorkerID       string

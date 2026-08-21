@@ -28,6 +28,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -76,14 +77,14 @@ func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
 // with Field="category" so HTTP can map to 422 and CLI can print the
 // diagnostic. The DB unique-key constraint and a nil-embedding edge
 // case are inherited from store.StoreEntityWithEmbedding.
-func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema core.SchemaConfig) error {
+func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema domain.SchemaConfig) error {
 	if req.ID == "" || req.Category == "" || req.Content == "" {
 		return fmt.Errorf("store: id, category, content required")
 	}
 	if !schema.AllowedCategories[req.Category] {
 		return core.NewInvalidSchemaError("category", req.Category)
 	}
-	entity := core.Entity{
+	entity := domain.Entity{
 		ID:        req.ID,
 		Category:  req.Category,
 		Content:   req.Content,
@@ -104,7 +105,7 @@ func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema core.
 // on empty. This matches HTTP shell behavior exactly:
 // whatever embedding the caller supplied (possibly nil) is what
 // AutoLinkEdges sees.
-func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schema core.SchemaConfig) error {
+func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schema domain.SchemaConfig) error {
 	if err := s.Store(ctx, req, schema); err != nil {
 		return err
 	}

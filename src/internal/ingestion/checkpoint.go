@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // saveTmpCounter assigns each SaveCheckpoint call a unique .tmp.N
@@ -93,7 +93,7 @@ func SaveCheckpoint(path string, ckpt IngestionCheckpoint) error {
 
 // SavePendingQueue writes the unprocessed channel items the worker
 // drained on ctx-cancel as JSONL. Each line is a single
-// core.MemoryMessage — the producer can replay them on restart. Empty
+// domain.MemoryMessage — the producer can replay them on restart. Empty
 // path is a no-op.
 //
 // Atomicity: this mirrors SaveCheckpoint's tmp-and-rename pattern. The
@@ -108,7 +108,7 @@ func SaveCheckpoint(path string, ckpt IngestionCheckpoint) error {
 // os.Create + Sync + Chmod design had.
 // Empty slice yields an empty file (no truncation races on the .tmp
 // side, since OpenFile + Encode-loop writes zero records).
-func SavePendingQueue(path string, msgs []core.MemoryMessage) error {
+func SavePendingQueue(path string, msgs []domain.MemoryMessage) error {
 	if path == "" {
 		return nil
 	}
@@ -133,7 +133,7 @@ func SavePendingQueue(path string, msgs []core.MemoryMessage) error {
 // function's primary error from earlier returns. On error, the
 // caller benchmarks the .tmp file away (best-effort Remove) before
 // returning the wrapped error.
-func writePendingTmp(path string, msgs []core.MemoryMessage) (err error) {
+func writePendingTmp(path string, msgs []domain.MemoryMessage) (err error) {
 	// O_TRUNC handles the (impossibly rare) counter-rollover collision
 	// where .tmp.N might alias a stale file from a prior run; the
 	// 0o600 mode arg applies at file CREATION. The post-Sync f.Chmod

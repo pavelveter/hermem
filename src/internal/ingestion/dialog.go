@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-sqlite3"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -20,14 +21,14 @@ import (
 
 // ProcessDialog is the entry point for dialogs without provenance.
 func (w *IngestionWorker) ProcessDialog(ctx context.Context, dialog string) error {
-	return w.ProcessDialogWithProvenance(ctx, dialog, core.Provenance{ExtractedFrom: dialog})
+	return w.ProcessDialogWithProvenance(ctx, dialog, domain.Provenance{ExtractedFrom: dialog})
 }
 
 // ProcessDialogWithProvenance loads, embeds, and stores entities from one dialog.
 //
 // Pipeline: Extract → Embed → SearchBatch → Normalize → ProcessEachItem
 // (dedup → contradiction → merge/create → vi-ops)
-func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialog string, prov core.Provenance) error {
+func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialog string, prov domain.Provenance) error {
 	const extractionTimeout = 5 * time.Minute
 	ctx, cancel := context.WithTimeout(ctx, extractionTimeout)
 	defer cancel()
@@ -70,7 +71,7 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 	return nil
 }
 
-func (w *IngestionWorker) processOneItem(ctx context.Context, prov core.Provenance, it processInput, similarIDs []string, selfID string) error {
+func (w *IngestionWorker) processOneItem(ctx context.Context, prov domain.Provenance, it processInput, similarIDs []string, selfID string) error {
 	const maxAttempts = 5
 	backoff := 50 * time.Millisecond
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -122,7 +123,7 @@ func applyVIOps(ctx context.Context, vi core.VectorIndex, ops []viOp) {
 	}
 }
 
-func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Provenance, it processInput, similarIDs []string, selfID string) error {
+func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov domain.Provenance, it processInput, similarIDs []string, selfID string) error {
 	targetID := it.entity.ID
 	existing, err := w.findMatch(it.embedding, similarIDs, selfID)
 	if err != nil {
@@ -137,7 +138,7 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 		viOps = append(viOps, ops...)
 		switch action {
 		case contradictionKeepBoth:
-			it.entity.Relations = append(it.entity.Relations, core.Relation{TargetID: existing.ID, RelationType: w.schema.RelationContradicts})
+			it.entity.Relations = append(it.entity.Relations, domain.Relation{TargetID: existing.ID, RelationType: w.schema.RelationContradicts})
 			existing = nil
 		case contradictionPreferIncoming:
 			viOps = append(viOps, viOp{kind: viOpStore, id: it.entity.ID, vec: it.embedding})
@@ -145,7 +146,7 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 		}
 	}
 
-	var merged *core.Entity
+	var merged *domain.Entity
 	if existing != nil {
 		merged, err = w.mergeExistingEntity(ctx, existing, it.entity, prov)
 		if err != nil {
@@ -168,11 +169,11 @@ func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov core.Prov
 }
 
 type processInput struct {
-	entity    core.ExtractedEntity
+	entity    domain.ExtractedEntity
 	embedding []float32
 }
 
-func (w *IngestionWorker) executeItemTx(ctx context.Context, targetID string, entity core.ExtractedEntity, embedding []float32, prov core.Provenance, merged *core.Entity, archiveID string) error {
+func (w *IngestionWorker) executeItemTx(ctx context.Context, targetID string, entity domain.ExtractedEntity, embedding []float32, prov domain.Provenance, merged *domain.Entity, archiveID string) error {
 	itemTx, err := w.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin tx failed: %w", err)
@@ -198,7 +199,7 @@ func (w *IngestionWorker) executeItemTx(ctx context.Context, targetID string, en
 	return itemTx.Commit()
 }
 
-func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, selfID string) (*core.Entity, error) {
+func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, selfID string) (*domain.Entity, error) {
 	if len(similarIDs) == 0 {
 		return nil, nil
 	}
@@ -209,7 +210,7 @@ func (w *IngestionWorker) findMatch(embedding []float32, similarIDs []string, se
 		}
 		candidateID = similarIDs[1]
 	}
-	var entity core.Entity
+	var entity domain.Entity
 	var embBytes []byte
 	var confidence sql.NullFloat64
 	var source, sourceType, convID, msgID, extrFrom sql.NullString
@@ -271,13 +272,13 @@ func isSQLiteBusyError(err error) bool {
 // IsIngestionContradiction guards dedup by negation heuristic.
 func IsIngestionContradiction(a, b string) bool {
 	return detectors.NewLexicalDetector().Detect(
-		core.Entity{Content: a},
-		core.Entity{Content: b},
+		domain.Entity{Content: a},
+		domain.Entity{Content: b},
 	).Detected
 }
 
 // MemoryWorker processes MemoryMessage channel items without durability.
-func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ch <-chan core.MemoryMessage) {
+func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ch <-chan domain.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	const maxParallel = 1
 	sem := make(chan struct{}, maxParallel)
@@ -294,7 +295,7 @@ func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extracto
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			prov := core.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
+			prov := domain.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
 			if err := worker.ProcessDialogWithProvenance(ctx, msg.Dialog, prov); err != nil {
 				slog.Error("dialog processing failed", "err", err, "dialog_len", len(msg.Dialog))
 			}
@@ -314,7 +315,7 @@ type resilientConfig struct {
 
 // resilientLoop is the shared dispatch→drain→checkpoint loop used by both
 // MemoryWorkerResilient and MemoryWorkerResilientFromConfig.
-func resilientLoop(ctx context.Context, cfg resilientConfig, ch <-chan core.MemoryMessage) {
+func resilientLoop(ctx context.Context, cfg resilientConfig, ch <-chan domain.MemoryMessage) {
 	if cfg.ckptPath == "" && cfg.pendingPath == "" {
 		slog.Warn("MemoryWorkerResilient: ckptPath and pendingPath both empty — no durability on cancel",
 			"worker_id", cfg.workerID)
@@ -336,7 +337,7 @@ func resilientLoop(ctx context.Context, cfg resilientConfig, ch <-chan core.Memo
 	}
 
 	drain := func() {
-		pending := make([]core.MemoryMessage, 0, 16)
+		pending := make([]domain.MemoryMessage, 0, 16)
 		deadline := time.NewTimer(defaultDrainTimeout)
 		defer deadline.Stop()
 	drainLoop:
@@ -388,7 +389,7 @@ func resilientLoop(ctx context.Context, cfg resilientConfig, ch <-chan core.Memo
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
-				prov := core.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
+				prov := domain.Provenance{ConversationID: msg.ConversationID, MessageID: msg.MessageID, ExtractedFrom: msg.Dialog}
 				if err := cfg.worker.ProcessDialogWithProvenance(ctx, msg.Dialog, prov); err != nil {
 					slog.Error("dialog processing failed",
 						"err", err, "dialog_len", len(msg.Dialog), "worker_id", cfg.workerID)
@@ -410,7 +411,7 @@ func resilientLoop(ctx context.Context, cfg resilientConfig, ch <-chan core.Memo
 }
 
 // MemoryWorkerResilientFromConfig is the production-grade ingest entry point.
-func MemoryWorkerResilientFromConfig(ctx context.Context, cfg MemoryWorkerConfig, ch <-chan core.MemoryMessage) {
+func MemoryWorkerResilientFromConfig(ctx context.Context, cfg MemoryWorkerConfig, ch <-chan domain.MemoryMessage) {
 	worker := NewIngestionWorkerFromConfig(IngestionWorkerConfig{
 		DB:             cfg.DB,
 		VectorIndex:    cfg.VectorIndex,
@@ -430,7 +431,7 @@ func MemoryWorkerResilientFromConfig(ctx context.Context, cfg MemoryWorkerConfig
 
 // MemoryWorkerResilient is the production-grade ingest entry point.
 // Deprecated: Use MemoryWorkerResilientFromConfig instead.
-func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan core.MemoryMessage) {
+func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan domain.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	resilientLoop(ctx, resilientConfig{
 		worker:      worker,

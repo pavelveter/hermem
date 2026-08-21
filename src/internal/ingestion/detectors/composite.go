@@ -1,8 +1,8 @@
 package detectors
 
 import (
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // CompositeDetector runs a fixed-order pipeline of ContradictionDetector
@@ -25,7 +25,7 @@ func NewCompositeDetector(detectors ...contradiction.ContradictionDetector) *Com
 // detectors run to verify. The last confirming result wins.
 // If the first detector definitively says no (not Detected, not
 // Inconclusive), the pipeline short-circuits.
-func (c *CompositeDetector) Detect(existing, incoming core.Entity) contradiction.DetectionResult {
+func (c *CompositeDetector) Detect(existing, incoming domain.Entity) contradiction.DetectionResult {
 	if len(c.detectors) == 0 {
 		return contradiction.DetectionResult{}
 	}

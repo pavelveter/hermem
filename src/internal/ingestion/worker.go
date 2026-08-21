@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -19,7 +20,7 @@ type IngestionWorker struct {
 	extractor   core.LLMExtractor
 	embedder    core.Embedder
 	dedupThresh float32
-	schema      core.SchemaConfig
+	schema      domain.SchemaConfig
 	detector    contradiction.ContradictionDetector
 	resolver    contradiction.ContradictionResolver
 }
@@ -27,7 +28,7 @@ type IngestionWorker struct {
 // NewIngestionWorker creates a worker.
 //
 // Deprecated: Use NewIngestionWorkerFromConfig instead.
-func NewIngestionWorker(db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema core.SchemaConfig, detector contradiction.ContradictionDetector) *IngestionWorker {
+func NewIngestionWorker(db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder core.Embedder, dedupThreshold float32, schema domain.SchemaConfig, detector contradiction.ContradictionDetector) *IngestionWorker {
 	return NewIngestionWorkerFromConfig(IngestionWorkerConfig{
 		DB:             db,
 		VectorIndex:    vi,
@@ -40,7 +41,7 @@ func NewIngestionWorker(db *sql.DB, vi core.VectorIndex, extractor core.LLMExtra
 }
 
 // ReloadSchema swaps the schema on SIGHUP.
-func (w *IngestionWorker) ReloadSchema(schema core.SchemaConfig) { w.schema = schema }
+func (w *IngestionWorker) ReloadSchema(schema domain.SchemaConfig) { w.schema = schema }
 
 // createEntityInTx inserts a freshly extracted entity with embedding and provenance.
 //
@@ -50,8 +51,8 @@ func (w *IngestionWorker) ReloadSchema(schema core.SchemaConfig) { w.schema = sc
 // post-commit vi.Store write the SAME vec slice, so both sides must
 // observe the normalized form — otherwise the DB-stored vec and the
 // vec index drift apart on cosine similarity at the next SearchBatch.
-func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, entity core.ExtractedEntity, embedding []float32, prov core.Provenance) error {
-	dbEntity := core.Entity{
+func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, entity domain.ExtractedEntity, embedding []float32, prov domain.Provenance) error {
+	dbEntity := domain.Entity{
 		ID:             entity.ID,
 		Category:       entity.Category,
 		Content:        entity.Content,
@@ -79,7 +80,7 @@ func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, enti
 // caller (processOneItemOnce runs vector.NormalizeVector after the
 // merge-prep Embed call). Same rationale as createEntityInTx — keep
 // DB BLOB and post-commit vi.Store on the same vec form.
-func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e core.Entity) error {
+func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e domain.Entity) error {
 	embBytes := store.EmbeddingToBytes(e.Embedding)
 	e = e.WithInitialStatus(w.schema)
 	_, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status, confidence, source, source_type, created_at, conversation_id, message_id, extracted_from) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -91,7 +92,7 @@ func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e cor
 }
 
 // createEdgesInTx bulk-inserts edges in chunks of 166 (SQLite variable limit) filtered by schema.
-func (w *IngestionWorker) createEdgesInTx(ctx context.Context, tx *sql.Tx, entityID string, relations []core.Relation) error {
+func (w *IngestionWorker) createEdgesInTx(ctx context.Context, tx *sql.Tx, entityID string, relations []domain.Relation) error {
 	if len(relations) == 0 {
 		return nil
 	}
