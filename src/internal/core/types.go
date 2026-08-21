@@ -74,11 +74,6 @@ type ExtractedEntity = domain.ExtractedEntity
 // Deprecated: alias to the canonical pkg/domain.ExtractionResult.
 type ExtractionResult = domain.ExtractionResult
 
-// LLMExtractor runs entity+relation extraction on a dialog.
-type LLMExtractor interface {
-	ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error)
-}
-
 // Provenance records where an ingested entity came from.
 //
 // Deprecated: alias to the canonical pkg/domain.Provenance.

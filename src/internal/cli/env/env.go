@@ -27,7 +27,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
@@ -57,7 +57,7 @@ type Env struct {
 	DB        *sql.DB
 	VI        spi.VectorStore
 	Embedder  spi.Embedder
-	Extractor core.LLMExtractor
+	Extractor extraction.LLMExtractor
 	Reranker  spi.Reranker
 	Retriever retrieval.Retriever
 	Metrics   *metrics.Metrics
@@ -345,7 +345,7 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 		DB:         safeGet(prev, func(e *Env) *sql.DB { return e.DB }),
 		VI:         safeGet(prev, func(e *Env) spi.VectorStore { return e.VI }),
 		Embedder:   safeGet(prev, func(e *Env) spi.Embedder { return e.Embedder }),
-		Extractor:  safeGet(prev, func(e *Env) core.LLMExtractor { return e.Extractor }),
+		Extractor:  safeGet(prev, func(e *Env) extraction.LLMExtractor { return e.Extractor }),
 		Reranker:   safeGet(prev, func(e *Env) spi.Reranker { return e.Reranker }),
 		Metrics:    safeGet(prev, func(e *Env) *metrics.Metrics { return e.Metrics }),
 		Worker:     safeGet(prev, func(e *Env) *metrics.AsyncMetricsWorker { return e.Worker }),

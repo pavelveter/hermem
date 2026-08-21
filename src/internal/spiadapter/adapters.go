@@ -9,6 +9,7 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 )
 
 const legacyNamespace = spi.DefaultNamespace
@@ -16,12 +17,12 @@ const legacyNamespace = spi.DefaultNamespace
 // NewExtractor adapts the current LLM extractor result into identity-free
 // public domain drafts. Prompt version and schema are retained for future
 // providers but cannot be forwarded to the legacy extractor yet.
-func NewExtractor(legacy core.LLMExtractor) spi.Extractor {
+func NewExtractor(legacy extraction.LLMExtractor) spi.Extractor {
 	return &extractorAdapter{legacy: legacy}
 }
 
 type extractorAdapter struct {
-	legacy core.LLMExtractor
+	legacy extraction.LLMExtractor
 }
 
 func (a *extractorAdapter) Extract(ctx context.Context, req spi.ExtractRequest) (spi.ExtractResponse, error) {
@@ -45,14 +46,14 @@ func (a *extractorAdapter) Extract(ctx context.Context, req spi.ExtractRequest) 
 // neither direction needs an adapter anymore.
 
 // NewLegacyExtractor adapts a public spi.Extractor to the legacy
-// core.LLMExtractor shape that the ingestion, compression, and contradiction
+// extraction.LLMExtractor shape that the ingestion, compression, and contradiction
 // pipelines still consume. The conversion is LOSSY: the public SPI emits
 // identity-free domain.EntityDraft values and the legacy shape carries
 // LLM-suggested entity IDs, so the bridge fabricates synthetic IDs drawn
 // from the candidate's position in the draft list. Only use this bridge
 // for callers that no longer need the original LLM IDs (typically: tests
 // and post-ADR-035 pipelines).
-func NewLegacyExtractor(public spi.Extractor) core.LLMExtractor {
+func NewLegacyExtractor(public spi.Extractor) extraction.LLMExtractor {
 	return &legacyExtractorAdapter{public: public}
 }
 
@@ -148,7 +149,7 @@ func (a *legacyVectorIndexAdapter) Remove(ctx context.Context, ids []string) err
 }
 
 var (
-	_ spi.Extractor     = (*extractorAdapter)(nil)
-	_ core.LLMExtractor = (*legacyExtractorAdapter)(nil)
-	_ core.VectorIndex  = (*legacyVectorIndexAdapter)(nil)
+	_ spi.Extractor           = (*extractorAdapter)(nil)
+	_ extraction.LLMExtractor = (*legacyExtractorAdapter)(nil)
+	_ core.VectorIndex        = (*legacyVectorIndexAdapter)(nil)
 )

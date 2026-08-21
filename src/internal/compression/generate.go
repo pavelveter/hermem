@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/id"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -18,11 +19,11 @@ const (
 
 type Compressor struct {
 	db        *sql.DB
-	extractor core.LLMExtractor
+	extractor extraction.LLMExtractor
 	metrics   *Metrics
 }
 
-func NewCompressor(db *sql.DB, extractor core.LLMExtractor) *Compressor {
+func NewCompressor(db *sql.DB, extractor extraction.LLMExtractor) *Compressor {
 	return &Compressor{db: db, extractor: extractor}
 }
 

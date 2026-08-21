@@ -10,7 +10,7 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -18,7 +18,7 @@ import (
 type IngestionWorker struct {
 	db          *sql.DB
 	vi          spi.VectorStore
-	extractor   core.LLMExtractor
+	extractor   extraction.LLMExtractor
 	embedder    spi.Embedder
 	dedupThresh float32
 	schema      domain.SchemaConfig
@@ -29,7 +29,7 @@ type IngestionWorker struct {
 // NewIngestionWorker creates a worker.
 //
 // Deprecated: Use NewIngestionWorkerFromConfig instead.
-func NewIngestionWorker(db *sql.DB, vi spi.VectorStore, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, detector contradiction.ContradictionDetector) *IngestionWorker {
+func NewIngestionWorker(db *sql.DB, vi spi.VectorStore, extractor extraction.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, detector contradiction.ContradictionDetector) *IngestionWorker {
 	return NewIngestionWorkerFromConfig(IngestionWorkerConfig{
 		DB:             db,
 		VectorIndex:    vi,

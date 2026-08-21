@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 )
 
 func DBProbe(db *sql.DB) Check {
@@ -63,7 +63,7 @@ func EmbedderProbe(em spi.Embedder) Check {
 	}
 }
 
-func ExtractorProbe(ex core.LLMExtractor) Check {
+func ExtractorProbe(ex extraction.LLMExtractor) Check {
 	return Check{
 		Name: "extractor",
 		Probe: func(ctx context.Context) error {

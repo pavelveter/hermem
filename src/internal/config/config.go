@@ -10,6 +10,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/auth"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 
 	"github.com/pavelveter/hermem/src/internal/ai"
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -84,7 +85,7 @@ func (c *Config) NewEmbedder() spi.Embedder {
 
 // NewExtractor creates an LLM extractor from config.
 // Delegates to ai.Factory for construction.
-func (c *Config) NewExtractor() core.LLMExtractor {
+func (c *Config) NewExtractor() extraction.LLMExtractor {
 	return c.aiFactory().NewExtractor()
 }
 

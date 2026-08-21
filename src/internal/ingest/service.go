@@ -27,6 +27,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/ingestion"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
 )
@@ -42,7 +43,7 @@ type Service struct {
 	db        *sql.DB
 	vi        spi.VectorStore
 	embedder  spi.Embedder
-	extractor core.LLMExtractor
+	extractor extraction.LLMExtractor
 }
 
 // NewService constructs a Service. All four deps are required; passing
@@ -51,7 +52,7 @@ type Service struct {
 //
 // Parameter order matches memory.Service.New so callers (cli + HTTP
 // fixture) can keep their reference shape: db, vi, embedder, extractor.
-func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, extractor core.LLMExtractor) *Service {
+func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, extractor extraction.LLMExtractor) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder, extractor: extractor}
 }
 

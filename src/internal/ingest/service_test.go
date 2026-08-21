@@ -15,7 +15,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
-// stubExtractor satisfies core.LLMExtractor for tests that don't
+// stubExtractor satisfies extraction.LLMExtractor for tests that don't
 // exercise the real Ollama / OpenAI HTTP clients. result + err
 // together express every test path: empty result → no-op pipeline
 // pass; non-nil err → dial/HTTP failure simulation.

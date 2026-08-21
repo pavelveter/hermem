@@ -14,7 +14,7 @@ import (
 	"github.com/mattn/go-sqlite3"
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -299,7 +299,7 @@ func IsIngestionContradiction(a, b string) bool {
 }
 
 // MemoryWorker processes MemoryMessage channel items without durability.
-func MemoryWorker(ctx context.Context, db *sql.DB, vi spi.VectorStore, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ch <-chan domain.MemoryMessage) {
+func MemoryWorker(ctx context.Context, db *sql.DB, vi spi.VectorStore, extractor extraction.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ch <-chan domain.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	const maxParallel = 1
 	sem := make(chan struct{}, maxParallel)
@@ -452,7 +452,7 @@ func MemoryWorkerResilientFromConfig(ctx context.Context, cfg MemoryWorkerConfig
 
 // MemoryWorkerResilient is the production-grade ingest entry point.
 // Deprecated: Use MemoryWorkerResilientFromConfig instead.
-func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi spi.VectorStore, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan domain.MemoryMessage) {
+func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi spi.VectorStore, extractor extraction.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan domain.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	resilientLoop(ctx, resilientConfig{
 		worker:      worker,

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 )
 
 // Config holds the parsed AI configuration values needed to construct
@@ -103,7 +103,7 @@ func (f *Factory) NewEmbedder() spi.Embedder {
 }
 
 // NewExtractor creates an LLM extractor from the factory config.
-func (f *Factory) NewExtractor() core.LLMExtractor {
+func (f *Factory) NewExtractor() extraction.LLMExtractor {
 	provider := f.cfg.ExtractProvider
 	if provider == "" {
 		provider = f.cfg.Provider

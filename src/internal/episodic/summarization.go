@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/pavelveter/hermem/pkg/domain"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 )
 
 // Summarizer produces a text summary for an episode by collecting
@@ -21,13 +21,13 @@ import (
 // wiring.
 type Summarizer struct {
 	db        *sql.DB
-	extractor core.LLMExtractor
+	extractor extraction.LLMExtractor
 }
 
 // NewSummarizer constructs a Summarizer. Both db and extractor are
 // required — summarisation is intrinsically an LLM-backed
 // operation; without an extractor callers should not be here.
-func NewSummarizer(db *sql.DB, extractor core.LLMExtractor) *Summarizer {
+func NewSummarizer(db *sql.DB, extractor extraction.LLMExtractor) *Summarizer {
 	return &Summarizer{db: db, extractor: extractor}
 }
 

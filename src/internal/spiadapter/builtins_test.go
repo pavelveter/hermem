@@ -3,7 +3,7 @@ package spiadapter_test
 import (
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/ai"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 )
 
@@ -18,10 +18,10 @@ var (
 	// Extractors still expose the legacy LLM-ID-bearing shape; the
 	// public Extract method is adapted through spiadapter until the
 	// extraction DTO move completes (task 6.3).
-	_ core.LLMExtractor = (*ai.OllamaLLMExtractor)(nil)
-	_ core.LLMExtractor = (*ai.OpenAILLMExtractor)(nil)
-	_ spi.Extractor     = spiadapter.NewExtractor((*ai.OllamaLLMExtractor)(nil))
-	_ spi.Extractor     = spiadapter.NewExtractor((*ai.OpenAILLMExtractor)(nil))
+	_ extraction.LLMExtractor = (*ai.OllamaLLMExtractor)(nil)
+	_ extraction.LLMExtractor = (*ai.OpenAILLMExtractor)(nil)
+	_ spi.Extractor           = spiadapter.NewExtractor((*ai.OllamaLLMExtractor)(nil))
+	_ spi.Extractor           = spiadapter.NewExtractor((*ai.OpenAILLMExtractor)(nil))
 
 	// Rerankers still implement the legacy facts-based contract; the
 	// public Candidate-based adaptation happens at the application

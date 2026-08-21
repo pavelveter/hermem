@@ -171,7 +171,7 @@ func TestProcessDialog_ExtractorErrorIsWrapped(t *testing.T) {
 	}
 }
 
-// failingExtractor implements core.LLMExtractor. Always returns the
+// failingExtractor implements extraction.LLMExtractor. Always returns the
 // configured err (used by the cancel-pipeline tests to force a
 // non-recoverable failure at the Extract stage).
 type failingExtractor struct{ err error }

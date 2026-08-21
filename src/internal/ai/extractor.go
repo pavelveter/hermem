@@ -9,7 +9,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// OllamaLLMExtractor implements core.LLMExtractor against the Ollama /api/chat endpoint.
+// OllamaLLMExtractor implements extraction.LLMExtractor against the Ollama /api/chat endpoint.
 //
 // The Ollama chat response nests the extraction JSON inside `cr.Message.Content`
 // (i.e. the LLM returns a string that is itself JSON). doPOST streams the
@@ -76,7 +76,7 @@ func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string)
 	return &result, nil
 }
 
-// OpenAILLMExtractor implements core.LLMExtractor against the OpenAI /v1/chat/completions endpoint.
+// OpenAILLMExtractor implements extraction.LLMExtractor against the OpenAI /v1/chat/completions endpoint.
 //
 // Same double-decode pattern as Ollama: doPOST decodes the outer chat envelope
 // into a local struct, then json.Unmarshal on cr.Choices[0].Message.Content

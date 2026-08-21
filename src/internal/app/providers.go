@@ -12,6 +12,7 @@ import (
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 )
 
@@ -153,7 +154,7 @@ func NewConfiguredEmbedder(cfg *config.Config) (spi.Embedder, error) {
 }
 
 // NewConfiguredExtractor resolves extraction through the typed registry.
-func NewConfiguredExtractor(cfg *config.Config) (core.LLMExtractor, error) {
+func NewConfiguredExtractor(cfg *config.Config) (extraction.LLMExtractor, error) {
 	registry := NewExtractorFactoryRegistry()
 	for _, name := range []string{"ollama", "openai"} {
 		if err := registry.RegisterWithDescriptor(name, func(context.Context, spi.ProviderConfig) (spi.Extractor, error) {
@@ -205,7 +206,7 @@ func NewConfiguredReranker(cfg *config.Config) (spi.Reranker, error) {
 // The current service layer still consumes the legacy extractor shape for
 // its LLM-ID-bearing ExtractionResult pipeline; the adapter remains at the
 // boundary.
-func legacyExtractorFromPublic(public spi.Extractor) core.LLMExtractor {
+func legacyExtractorFromPublic(public spi.Extractor) extraction.LLMExtractor {
 	return &publicExtractorAdapter{public: public}
 }
 

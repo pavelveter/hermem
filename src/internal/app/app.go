@@ -13,7 +13,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
@@ -39,7 +39,7 @@ type Application struct {
 	VI        spi.VectorStore
 	Worker    *metrics.AsyncMetricsWorker
 	Embedder  spi.Embedder
-	Extractor core.LLMExtractor
+	Extractor extraction.LLMExtractor
 	Reranker  spi.Reranker
 	Retriever retrieval.Retriever
 	Metrics   *metrics.Metrics
