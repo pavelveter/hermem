@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // GenerateResponse is the one-shot "answer" pipeline: embed the user query,
@@ -20,7 +19,7 @@ import (
 // userQuery is the raw text query; opts carries depth/ranking settings,
 // opts.QueryEmbedding/QueryText/Ctx are populated here so the inner walk
 // re-uses the same query vector for re-ranking consistency.
-func GenerateResponse(ctx context.Context, db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, opts core.RetrieveContextOptions, userQuery string) (string, error) {
+func GenerateResponse(ctx context.Context, db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, opts RetrieveContextOptions, userQuery string) (string, error) {
 	if userQuery == "" {
 		return "", fmt.Errorf("userQuery is required")
 	}

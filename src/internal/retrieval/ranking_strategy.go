@@ -1,7 +1,5 @@
 package retrieval
 
-import "github.com/pavelveter/hermem/src/internal/core"
-
 // RankingStrategy defines a named ranking policy that produces
 // RankingWeight parameters and optional score modifiers for the
 // retrieval engine. Implementations encapsulate the "philosophy"
@@ -10,21 +8,21 @@ type RankingStrategy interface {
 	// Name returns a short identifier for logging/config (e.g. "default", "freshness_first").
 	Name() string
 	// Weights returns the ranking weights for this strategy.
-	Weights() core.RankingWeight
+	Weights() RankingWeight
 }
 
 // DefaultRanking uses the canonical weights from RankingWeight.WithDefaults().
 type DefaultRanking struct{}
 
-func (DefaultRanking) Name() string                { return "default" }
-func (DefaultRanking) Weights() core.RankingWeight { return core.RankingWeight{}.WithDefaults() }
+func (DefaultRanking) Name() string           { return "default" }
+func (DefaultRanking) Weights() RankingWeight { return RankingWeight{}.WithDefaults() }
 
 // FreshnessFirst prioritizes recency over vector similarity.
 type FreshnessFirst struct{}
 
 func (FreshnessFirst) Name() string { return "freshness_first" }
-func (FreshnessFirst) Weights() core.RankingWeight {
-	return core.RankingWeight{
+func (FreshnessFirst) Weights() RankingWeight {
+	return RankingWeight{
 		VectorWeight:          0.3,
 		RecencyWeight:         0.5,
 		TemporalWeight:        0.1,
@@ -39,8 +37,8 @@ func (FreshnessFirst) Weights() core.RankingWeight {
 type SemanticSearch struct{}
 
 func (SemanticSearch) Name() string { return "semantic_search" }
-func (SemanticSearch) Weights() core.RankingWeight {
-	return core.RankingWeight{
+func (SemanticSearch) Weights() RankingWeight {
+	return RankingWeight{
 		VectorWeight:          0.85,
 		RecencyWeight:         0.05,
 		TemporalWeight:        0.02,
@@ -55,8 +53,8 @@ func (SemanticSearch) Weights() core.RankingWeight {
 type GraphExpansion struct{}
 
 func (GraphExpansion) Name() string { return "graph_expansion" }
-func (GraphExpansion) Weights() core.RankingWeight {
-	return core.RankingWeight{
+func (GraphExpansion) Weights() RankingWeight {
+	return RankingWeight{
 		VectorWeight:          0.3,
 		RecencyWeight:         0.1,
 		TemporalWeight:        0.05,

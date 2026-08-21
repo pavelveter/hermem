@@ -4,20 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // Renderer renders a RetrievalResult to a specific output format.
 type Renderer interface {
-	Render(result *core.RetrievalResult) string
+	Render(result *RetrievalResult) string
 }
 
 // FactFormatter formats a single RetrievedFact for display.
-type FactFormatter func(f core.RetrievedFact) string
+type FactFormatter func(f RetrievedFact) string
 
 // traverseBuckets iterates over the four fact categories and calls fn for each.
-func traverseBuckets(result *core.RetrievalResult, fn func(category string, facts []core.RetrievedFact)) {
+func traverseBuckets(result *RetrievalResult, fn func(category string, facts []RetrievedFact)) {
 	if result == nil || len(result.SeedNodes) == 0 {
 		return
 	}
@@ -31,10 +29,10 @@ func traverseBuckets(result *core.RetrievalResult, fn func(category string, fact
 type MarkdownRenderer struct{}
 
 // Render implements Renderer.
-func (r *MarkdownRenderer) Render(result *core.RetrievalResult) string {
+func (r *MarkdownRenderer) Render(result *RetrievalResult) string {
 	var sb strings.Builder
 	sb.WriteString("# Memory Context\n\n")
-	traverseBuckets(result, func(cat string, facts []core.RetrievedFact) {
+	traverseBuckets(result, func(cat string, facts []RetrievedFact) {
 		writeBucket(&sb, cat, facts)
 	})
 	return sb.String()
@@ -44,9 +42,9 @@ func (r *MarkdownRenderer) Render(result *core.RetrievalResult) string {
 type PlainTextRenderer struct{}
 
 // Render implements Renderer.
-func (r *PlainTextRenderer) Render(result *core.RetrievalResult) string {
+func (r *PlainTextRenderer) Render(result *RetrievalResult) string {
 	var sb strings.Builder
-	traverseBuckets(result, func(cat string, facts []core.RetrievedFact) {
+	traverseBuckets(result, func(cat string, facts []RetrievedFact) {
 		writePlainTextBucket(&sb, cat, facts)
 	})
 	return sb.String()
@@ -56,7 +54,7 @@ func (r *PlainTextRenderer) Render(result *core.RetrievalResult) string {
 type JSONRenderer struct{}
 
 // Render implements Renderer.
-func (r *JSONRenderer) Render(result *core.RetrievalResult) string {
+func (r *JSONRenderer) Render(result *RetrievalResult) string {
 	if result == nil || len(result.SeedNodes) == 0 {
 		return "{}"
 	}
@@ -73,7 +71,7 @@ func (r *JSONRenderer) Render(result *core.RetrievalResult) string {
 	return string(b)
 }
 
-func renderFactsJSON(facts []core.RetrievedFact) []string {
+func renderFactsJSON(facts []RetrievedFact) []string {
 	if len(facts) == 0 {
 		return nil
 	}
@@ -84,7 +82,7 @@ func renderFactsJSON(facts []core.RetrievedFact) []string {
 	return out
 }
 
-func writeBucket(sb *strings.Builder, heading string, facts []core.RetrievedFact) {
+func writeBucket(sb *strings.Builder, heading string, facts []RetrievedFact) {
 	if len(facts) == 0 {
 		return
 	}
@@ -99,7 +97,7 @@ func writeBucket(sb *strings.Builder, heading string, facts []core.RetrievedFact
 	sb.WriteString("\n")
 }
 
-func writePlainTextBucket(sb *strings.Builder, heading string, facts []core.RetrievedFact) {
+func writePlainTextBucket(sb *strings.Builder, heading string, facts []RetrievedFact) {
 	if len(facts) == 0 {
 		return
 	}

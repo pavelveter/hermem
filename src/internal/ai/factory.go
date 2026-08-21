@@ -126,7 +126,7 @@ func (f *Factory) NewExtractor() core.LLMExtractor {
 }
 
 // NewReranker creates a reranker from the factory config.
-func (f *Factory) NewReranker() core.Reranker {
+func (f *Factory) NewReranker() spi.Reranker {
 	provider := f.cfg.RerankerProvider
 	if provider == "" {
 		return &NoopReranker{}

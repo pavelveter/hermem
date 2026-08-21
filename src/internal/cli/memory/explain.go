@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
@@ -54,7 +54,7 @@ Examples:
 				return fmt.Errorf("query required")
 			}
 			svc := retdomain.New(env.DB, env.VI, env.Embedder)
-			opts := core.RetrieveContextOptions{
+			opts := retrieval.RetrieveContextOptions{
 				MaxDepth:          2,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
@@ -80,7 +80,7 @@ Examples:
 	return cmd
 }
 
-func printExplainTree(cmd *cobra.Command, query string, result *core.RetrievalResult, env *cli.Env) error {
+func printExplainTree(cmd *cobra.Command, query string, result *retrieval.RetrievalResult, env *cli.Env) error {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "Query: %q\n\n", query)
@@ -144,8 +144,8 @@ func printExplainTree(cmd *cobra.Command, query string, result *core.RetrievalRe
 	return err
 }
 
-func collectAllFacts(r *core.RetrievalResult) []core.RetrievedFact {
-	var all []core.RetrievedFact
+func collectAllFacts(r *retrieval.RetrievalResult) []retrieval.RetrievedFact {
+	var all []retrieval.RetrievedFact
 	all = append(all, r.WorldFacts...)
 	all = append(all, r.Opinions...)
 	all = append(all, r.Experiences...)
@@ -167,7 +167,7 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-func printJSON(cmd *cobra.Command, result *core.RetrievalResult) error {
+func printJSON(cmd *cobra.Command, result *retrieval.RetrievalResult) error {
 	// Use vector's cosine similarity to show seed similarity if available.
 	return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 }

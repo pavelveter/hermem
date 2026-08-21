@@ -27,7 +27,7 @@ var (
 	// public Candidate-based adaptation happens at the application
 	// boundary (app.publicRerankerFromLegacy) until the retrieval
 	// capability migration lands (tasks 4.x / 6.2).
-	_ core.Reranker = (*ai.NoopReranker)(nil)
-	_ core.Reranker = (*ai.OllamaReranker)(nil)
-	_ core.Reranker = (*ai.OpenAIReranker)(nil)
+	_ spi.Reranker = (*ai.NoopReranker)(nil)
+	_ spi.Reranker = (*ai.OllamaReranker)(nil)
+	_ spi.Reranker = (*ai.OpenAIReranker)(nil)
 )

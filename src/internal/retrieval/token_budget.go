@@ -1,13 +1,11 @@
 package retrieval
 
-import "github.com/pavelveter/hermem/src/internal/core"
-
 // TrimByTokenBudget trims a RetrievalResult so that the total estimated
 // token count stays within the budget. Facts are trimmed per-bucket
 // (world, opinion, experience, observation) starting from the lowest-scored
 // (last in each bucket, since buckets are sorted by ranking score DESC).
 // If budget is 0, the result is returned unchanged.
-func TrimByTokenBudget(result *core.RetrievalResult, budget int) *core.RetrievalResult {
+func TrimByTokenBudget(result *RetrievalResult, budget int) *RetrievalResult {
 	if result == nil || budget <= 0 {
 		return result
 	}
@@ -21,7 +19,7 @@ func TrimByTokenBudget(result *core.RetrievalResult, budget int) *core.Retrieval
 	// Trim from each bucket proportionally, starting with the largest.
 	type bucket struct {
 		name  string
-		facts *[]core.RetrievedFact
+		facts *[]RetrievedFact
 	}
 	buckets := []bucket{
 		{"world", &result.WorldFacts},
@@ -49,7 +47,7 @@ func TrimByTokenBudget(result *core.RetrievalResult, budget int) *core.Retrieval
 	return result
 }
 
-func estimateResultTokens(r *core.RetrievalResult) int {
+func estimateResultTokens(r *RetrievalResult) int {
 	total := 0
 	total += estimateFactsTokens(r.WorldFacts)
 	total += estimateFactsTokens(r.Opinions)
@@ -58,7 +56,7 @@ func estimateResultTokens(r *core.RetrievalResult) int {
 	return total
 }
 
-func estimateFactsTokens(facts []core.RetrievedFact) int {
+func estimateFactsTokens(facts []RetrievedFact) int {
 	total := 0
 	for _, f := range facts {
 		total += CountTokens(f.Content) + 2 // +2 for "- " prefix and "\n"
@@ -69,7 +67,7 @@ func estimateFactsTokens(facts []core.RetrievedFact) int {
 // trimFactsToBudget keeps facts from the start (highest-scored) until
 // the token budget is exhausted. Fact ordering in each bucket is already
 // sorted by ranking score DESC from scoreAndRank.
-func trimFactsToBudget(facts []core.RetrievedFact, budget int) []core.RetrievedFact {
+func trimFactsToBudget(facts []RetrievedFact, budget int) []RetrievedFact {
 	used := 0
 	for i, f := range facts {
 		cost := CountTokens(f.Content) + 2

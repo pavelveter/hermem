@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -26,9 +26,9 @@ import (
 // Behavior is unchanged from the pre-refactor inline implementation; the
 // stage split is for clarity and per-stage testability, not a semantic
 // shift.
-func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func RetrieveContext(db *sql.DB, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	if len(seedIDs) == 0 {
-		return &core.RetrievalResult{}, nil
+		return &RetrievalResult{}, nil
 	}
 	effDepth := effectiveDepth(opts)
 
@@ -51,7 +51,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		return nil, err
 	}
 
-	ranked, seeds := func() ([]rankedNode, []core.GraphNode) {
+	ranked, seeds := func() ([]rankedNode, []GraphNode) {
 		span := startStageSpan(opts, "score_and_rank")
 		defer span.End()
 		r, s := scoreAndRank(nodes, opts, w, scorer)
@@ -67,7 +67,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 		span.SetAttribute("sorted_count", len(ranked))
 	}()
 
-	result := func() *core.RetrievalResult {
+	result := func() *RetrievalResult {
 		span := startStageSpan(opts, "bucketize")
 		defer span.End()
 		r := bucketize(ranked, seeds, w, opts.Explain)
@@ -111,7 +111,7 @@ func RetrieveContext(db *sql.DB, seedIDs []string, opts core.RetrieveContextOpti
 // effectiveDepth resolves the requested MaxDepth against the
 // DepthCeiling clamp, defaulting to 2 when unset. Pulled out so the
 // RetrieveContext orchestrator stays focused on pipeline composition.
-func effectiveDepth(opts core.RetrieveContextOptions) int {
+func effectiveDepth(opts RetrieveContextOptions) int {
 	d := opts.MaxDepth
 	if d <= 0 {
 		d = 2
@@ -129,10 +129,10 @@ func effectiveDepth(opts core.RetrieveContextOptions) int {
 // Explain=true funnels through ComputeScoreComponents so sim / recency /
 // temporal / centrality / path are extracted exactly once and the
 // breakdown derives from the same intermediates as the final score.
-func scoreAndRank(items []scannedNode, opts core.RetrieveContextOptions, w core.RankingWeight, scorer core.CompositeScorer) ([]rankedNode, []core.GraphNode) {
+func scoreAndRank(items []scannedNode, opts RetrieveContextOptions, w RankingWeight, scorer CompositeScorer) ([]rankedNode, []GraphNode) {
 	queryNorm := vector.VectorNorm(opts.QueryEmbedding)
 	ranked := make([]rankedNode, 0, len(items))
-	var seeds []core.GraphNode
+	var seeds []GraphNode
 	for _, it := range items {
 		node, nodeVec := it.node, it.vec
 		var (
@@ -174,13 +174,13 @@ func scoreAndRank(items []scannedNode, opts core.RetrieveContextOptions, w core.
 //
 // Returns the full RetrievalResult with SeedNodes already set from
 // stage 2.
-func bucketize(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight, explain bool) *core.RetrievalResult {
-	result := &core.RetrievalResult{
+func bucketize(ranked []rankedNode, seeds []GraphNode, w RankingWeight, explain bool) *RetrievalResult {
+	result := &RetrievalResult{
 		SeedNodes:    seeds,
-		WorldFacts:   []core.RetrievedFact{},
-		Opinions:     []core.RetrievedFact{},
-		Experiences:  []core.RetrievedFact{},
-		Observations: []core.RetrievedFact{},
+		WorldFacts:   []RetrievedFact{},
+		Opinions:     []RetrievedFact{},
+		Experiences:  []RetrievedFact{},
+		Observations: []RetrievedFact{},
 	}
 	seenContents := make(map[string]bool)
 	for _, rn := range ranked {
@@ -188,7 +188,7 @@ func bucketize(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight
 			continue
 		}
 		seenContents[rn.node.Entity.Content] = true
-		fact := core.RetrievedFact{
+		fact := RetrievedFact{
 			Content:        rn.node.Entity.Content,
 			ParentID:       rn.node.ParentID,
 			RelationType:   rn.node.RelationType,
@@ -215,7 +215,7 @@ func bucketize(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight
 	return result
 }
 
-// applyReranker — stage 4. Invokes the optional core.Reranker on
+// applyReranker — stage 4. Invokes the optional Reranker on
 // each non-empty bucket and replaces the bucket contents in place.
 // nil Reranker is a no-op pass-through so the pipeline composition
 // stays uniform across callers. Cancellation propagates through ctx
@@ -225,7 +225,7 @@ func bucketize(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight
 // Per-bucket invocation (rather than cross-bucket) keeps each
 // bucket's category semantics intact — the Reranker only re-orders
 // facts within their category.
-func applyReranker(result *core.RetrievalResult, r core.Reranker, ctx context.Context, query string) error {
+func applyReranker(result *RetrievalResult, r Reranker, ctx context.Context, query string) error {
 	if result == nil || r == nil {
 		return nil
 	}
@@ -234,7 +234,7 @@ func applyReranker(result *core.RetrievalResult, r core.Reranker, ctx context.Co
 	}
 	buckets := []struct {
 		name  string
-		facts *[]core.RetrievedFact
+		facts *[]RetrievedFact
 	}{
 		{"world", &result.WorldFacts},
 		{"opinion", &result.Opinions},
@@ -245,22 +245,60 @@ func applyReranker(result *core.RetrievalResult, r core.Reranker, ctx context.Co
 		if len(*b.facts) == 0 {
 			continue
 		}
-		reranked, err := r.Rerank(ctx, query, *b.facts)
+		// The public contract speaks spi.Candidate; the internal buckets
+		// speak RetrievedFact. Translate inline so internal shapes never
+		// leak into the Reranker contract (ordering is the only observable
+		// effect — every field round-trips).
+		candidates := make([]spi.Candidate, 0, len(*b.facts))
+		for _, fact := range *b.facts {
+			candidates = append(candidates, factToCandidate(fact))
+		}
+		reranked, err := r.Rerank(ctx, query, candidates)
 		if err != nil {
 			return fmt.Errorf("rerank %s: %w", b.name, err)
 		}
 		if reranked != nil {
-			*b.facts = reranked
+			facts := make([]RetrievedFact, 0, len(reranked))
+			for _, candidate := range reranked {
+				facts = append(facts, candidateToFact(candidate))
+			}
+			*b.facts = facts
 		}
 	}
 	return nil
+}
+
+// factToCandidate converts a bucket fact into its public Candidate view.
+func factToCandidate(fact RetrievedFact) spi.Candidate {
+	return spi.Candidate{
+		ID:    fact.ParentID,
+		Text:  fact.Content,
+		Score: fact.RankingScore,
+		Metadata: map[string]string{
+			"relation_type": fact.RelationType,
+			"depth":         strconv.Itoa(fact.Depth),
+		},
+	}
+}
+
+// candidateToFact converts a reranked Candidate back into its bucket-fact
+// view, restoring the fields carried through metadata.
+func candidateToFact(candidate spi.Candidate) RetrievedFact {
+	depth, _ := strconv.Atoi(candidate.Metadata["depth"])
+	return RetrievedFact{
+		Content:      candidate.Text,
+		ParentID:     candidate.ID,
+		RankingScore: candidate.Score,
+		RelationType: candidate.Metadata["relation_type"],
+		Depth:        depth,
+	}
 }
 
 // logRetrievalExplanation emits a single structured INFO log per
 // retrieval call (when Explain=true) summarising the per-bucket counts
 // and the score breakdown of the top-ranked entry per bucket. One log
 // line per call — bounded, greppable by entity ID or FinalScore.
-func logRetrievalExplanation(r *core.RetrievalResult, seedCount, depth int) {
+func logRetrievalExplanation(r *RetrievalResult, seedCount, depth int) {
 	if r == nil {
 		return
 	}
@@ -282,7 +320,7 @@ func logRetrievalExplanation(r *core.RetrievalResult, seedCount, depth int) {
 
 // topBreakdownForLog returns a compact map[string]float32 of the top
 // entry's breakdown so slog emits it as flat fields. Empty bucket → nil.
-func topBreakdownForLog(facts []core.RetrievedFact) map[string]float32 {
+func topBreakdownForLog(facts []RetrievedFact) map[string]float32 {
 	if len(facts) == 0 {
 		return nil
 	}
@@ -338,11 +376,11 @@ func topBreakdownForLog(facts []core.RetrievedFact) map[string]float32 {
 // Returned *RetrievalResult comes from the FINAL RetrieveContext call, so
 // its scoring semantics match a single-hop retrieval exactly. The discovery
 // loop only contributes additional seeds.
-func MultiHopRetrieveContext(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func MultiHopRetrieveContext(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	// Empty-seeds short-circuit: matches RetrieveContext's early-return so
 	// nil vi/embedder are tolerated when there's nothing to walk.
 	if len(seedIDs) == 0 {
-		return &core.RetrievalResult{}, nil
+		return &RetrievalResult{}, nil
 	}
 	ctx := opts.Ctx
 	if ctx == nil {
@@ -469,7 +507,7 @@ func MultiHopRetrieveContext(db *sql.DB, vi spi.VectorStore, embedder spi.Embedd
 //     embeddings anchor on the user's actual interests. On later hops
 //     those seeds are either already-discovered anchors OR the discoveries
 //     themselves — re-embedding them just wastes a round-trip.
-func topKFromResult(res *core.RetrievalResult, k int, includeSeedContents bool) []core.RetrievedFact {
+func topKFromResult(res *RetrievalResult, k int, includeSeedContents bool) []RetrievedFact {
 	if res == nil || k <= 0 {
 		return nil
 	}
@@ -478,13 +516,13 @@ func topKFromResult(res *core.RetrievalResult, k int, includeSeedContents bool) 
 	if includeSeedContents {
 		cap += len(res.SeedNodes)
 	}
-	all := make([]core.RetrievedFact, 0, cap)
+	all := make([]RetrievedFact, 0, cap)
 	add := func(content string, score float32) {
 		if content == "" || seen[content] {
 			return
 		}
 		seen[content] = true
-		all = append(all, core.RetrievedFact{Content: content, RankingScore: score})
+		all = append(all, RetrievedFact{Content: content, RankingScore: score})
 	}
 	// Iteration order below is intentional. walk.go dual-buckets depth-0
 	// seeds (SeedNodes AND their category bucket), so the dedup's
@@ -524,7 +562,7 @@ func topKFromResult(res *core.RetrievalResult, k int, includeSeedContents bool) 
 }
 
 // hopEmbedFacts embeds each fact's content and returns the resulting vectors.
-func hopEmbedFacts(ctx context.Context, embedder spi.Embedder, facts []core.RetrievedFact, hop int) ([][]float32, error) {
+func hopEmbedFacts(ctx context.Context, embedder spi.Embedder, facts []RetrievedFact, hop int) ([][]float32, error) {
 	vecs := make([][]float32, 0, len(facts))
 	for _, f := range facts {
 		emb, err := embedder.Embed(ctx, f.Content)

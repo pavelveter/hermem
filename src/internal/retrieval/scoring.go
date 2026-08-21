@@ -5,13 +5,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 // rankedNode pairs a graph node with its composite score and (optional) explain fields.
 type rankedNode struct {
-	node    core.GraphNode
+	node    GraphNode
 	score   float32
 	sim     float32
 	recency float32
@@ -22,8 +21,8 @@ type rankedNode struct {
 // extraction lives in exactly one place; previously the scorer body and
 // ComputeScoreComponents both recomputed sim/recency/temporal/centrality
 // independently.
-func defaultCompositeScorer(w core.RankingWeight) core.CompositeScorer {
-	return func(node core.GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32) float32 {
+func defaultCompositeScorer(w RankingWeight) CompositeScorer {
+	return func(node GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32) float32 {
 		comps := ComputeScoreComponents(node, nodeVec, queryEmbedding, queryNorm, w)
 		return compositeScore(w, comps.Sim, comps.Recency, comps.Temporal, comps.Centrality, comps.Path)
 	}
@@ -33,7 +32,7 @@ func defaultCompositeScorer(w core.RankingWeight) core.CompositeScorer {
 // exponential depth decay. The depth penalty is multiplicative
 // (2^(-depth)) instead of subtractive, so deeper nodes are penalised
 // exponentially rather than linearly.
-func compositeScore(w core.RankingWeight, sim, recency, temporalBoost, centrality, pathWeight float32) float32 {
+func compositeScore(w RankingWeight, sim, recency, temporalBoost, centrality, pathWeight float32) float32 {
 	depthDecay := depthDecay(pathWeight)
 	s := (w.VectorWeight*sim + w.RecencyWeight*recency + w.TemporalWeight*temporalBoost + w.CentralityWeight*centrality) * depthDecay
 	if math.IsNaN(float64(s)) || math.IsInf(float64(s), 0) {
@@ -54,7 +53,7 @@ func depthDecay(pathWeight float32) float32 {
 }
 
 // ScoreComponents holds the raw feature values used by compositeScore.
-// These are the values that get packed into core.ScoreBreakdown for
+// These are the values that get packed into ScoreBreakdown for
 // explainability — keep the struct flat so call sites can populate it
 // from one set of intermediate computations.
 type ScoreComponents struct {
@@ -70,7 +69,7 @@ type ScoreComponents struct {
 // ScoreComponents derive the final score without re-running the
 // weighted sum themselves — used by walk.go on the Explain path so
 // sim/recency/temporal/centrality are computed exactly once per node.
-func (c ScoreComponents) Final(w core.RankingWeight) float32 {
+func (c ScoreComponents) Final(w RankingWeight) float32 {
 	return compositeScore(w, c.Sim, c.Recency, c.Temporal, c.Centrality, c.Path)
 }
 
@@ -82,7 +81,7 @@ func (c ScoreComponents) Final(w core.RankingWeight) float32 {
 // walk.go Explain path, and any future caller should funnel through here so
 // the per-node feature arithmetic stays in lockstep with ScoreBreakdown
 // semantics.
-func ComputeScoreComponents(node core.GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32, w core.RankingWeight) ScoreComponents {
+func ComputeScoreComponents(node GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32, w RankingWeight) ScoreComponents {
 	var sim float32
 	if len(queryEmbedding) > 0 && len(nodeVec) > 0 {
 		sim = vector.CosineSimilarityWithNorm(nodeVec, queryEmbedding, queryNorm)
@@ -97,14 +96,14 @@ func ComputeScoreComponents(node core.GraphNode, nodeVec []float32, queryEmbeddi
 }
 
 // BuildScoreBreakdown converts raw ScoreComponents into the public
-// core.ScoreBreakdown shape (weights × features, depth penalty
+// ScoreBreakdown shape (weights × features, depth penalty
 // subtracted, NaN/Inf clamped). Used by walk.go to populate the
 // explain fields on GraphNode / RetrievedFact when Explain=true.
-func BuildScoreBreakdown(c ScoreComponents, w core.RankingWeight) *core.ScoreBreakdown {
+func BuildScoreBreakdown(c ScoreComponents, w RankingWeight) *ScoreBreakdown {
 	final := compositeScore(w, c.Sim, c.Recency, c.Temporal, c.Centrality, c.Path)
 	decay := depthDecay(c.Path)
 	weightsCopy := w
-	return &core.ScoreBreakdown{
+	return &ScoreBreakdown{
 		VectorScore:     c.Sim,
 		RecencyScore:    c.Recency,
 		TemporalScore:   c.Temporal,

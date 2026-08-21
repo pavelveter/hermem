@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
@@ -64,7 +64,7 @@ Examples:
 			for _, r := range results {
 				seedIDs = append(seedIDs, r.Entity.ID)
 			}
-			opts := core.RetrieveContextOptions{
+			opts := retrieval.RetrieveContextOptions{
 				MaxDepth:          2,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,

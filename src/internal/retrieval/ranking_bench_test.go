@@ -15,7 +15,7 @@ import (
 func BenchmarkCompositeScore_Default(b *testing.B) {
 	w := DefaultRanking{}.Weights()
 	scorer := defaultCompositeScorer(w)
-	node := core.GraphNode{Entity: core.Entity{ID: "x", Degree: 5}}
+	node := GraphNode{Entity: core.Entity{ID: "x", Degree: 5}}
 	vec := []float32{1, 0, 0}
 	query := []float32{1, 0, 0}
 	qnorm := vector.VectorNorm(query)
@@ -28,7 +28,7 @@ func BenchmarkCompositeScore_Default(b *testing.B) {
 func BenchmarkCompositeScore_FreshnessFirst(b *testing.B) {
 	w := FreshnessFirst{}.Weights()
 	scorer := defaultCompositeScorer(w)
-	node := core.GraphNode{Entity: core.Entity{ID: "x", Degree: 5}}
+	node := GraphNode{Entity: core.Entity{ID: "x", Degree: 5}}
 	vec := []float32{1, 0, 0}
 	query := []float32{1, 0, 0}
 	qnorm := vector.VectorNorm(query)
@@ -39,8 +39,8 @@ func BenchmarkCompositeScore_FreshnessFirst(b *testing.B) {
 }
 
 func BenchmarkComputeScoreComponents(b *testing.B) {
-	w := core.RankingWeight{}.WithDefaults()
-	node := core.GraphNode{Entity: core.Entity{ID: "x", Degree: 10}}
+	w := RankingWeight{}.WithDefaults()
+	node := GraphNode{Entity: core.Entity{ID: "x", Degree: 10}}
 	vec := []float32{1, 0, 0}
 	query := []float32{1, 0, 0}
 	qnorm := vector.VectorNorm(query)
@@ -51,7 +51,7 @@ func BenchmarkComputeScoreComponents(b *testing.B) {
 }
 
 func BenchmarkBuildScoreBreakdown(b *testing.B) {
-	w := core.RankingWeight{}.WithDefaults()
+	w := RankingWeight{}.WithDefaults()
 	c := ScoreComponents{Sim: 0.9, Recency: 0.8, Temporal: 0.7, Centrality: 0.5, Path: 1.0}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -69,7 +69,7 @@ func BenchmarkSortByScoreDesc_100(b *testing.B) {
 	ranked := make([]rankedNode, 100)
 	for i := range ranked {
 		ranked[i] = rankedNode{
-			node:  core.GraphNode{Entity: core.Entity{ID: "n"}},
+			node:  GraphNode{Entity: core.Entity{ID: "n"}},
 			score: float32(i) / 100,
 		}
 	}

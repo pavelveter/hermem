@@ -10,7 +10,10 @@
 // mounts those sub-package services).
 package serverstate
 
-import "github.com/pavelveter/hermem/src/internal/core"
+import (
+	"github.com/pavelveter/hermem/pkg/spi"
+	"github.com/pavelveter/hermem/src/internal/core"
+)
 
 // State bundles every piece of runtime config that handlers read while
 // SIGHUP may concurrently swap it. State.Store() / State.Load() at the
@@ -43,7 +46,7 @@ type State struct {
 	MaxRetrievedNodes  int
 	TokenBudget        int
 	RankingWeight      core.RankingWeight
-	Reranker           core.Reranker
+	Reranker           spi.Reranker
 	Generation         uint64
 }
 
@@ -54,7 +57,7 @@ type State struct {
 // iterate over State without contending with a SIGHUP writer. Nil maps in
 // the source copy to non-nil empty maps so handlers index freely without
 // nil-checks.
-func New(schema core.SchemaConfig, depthCeiling, maxRetrieved int, ranking core.RankingWeight, reranker core.Reranker) *State {
+func New(schema core.SchemaConfig, depthCeiling, maxRetrieved int, ranking core.RankingWeight, reranker spi.Reranker) *State {
 	return &State{
 		Schema:             cloneSchema(schema),
 		ValidCategories:    cloneBoolMap(schema.AllowedCategories),

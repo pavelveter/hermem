@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
@@ -54,7 +54,7 @@ Examples:
 				return fmt.Errorf("query is required")
 			}
 			svc := retdomain.New(env.DB, env.VI, env.Embedder)
-			opts := core.RetrieveContextOptions{
+			opts := retrieval.RetrieveContextOptions{
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,
 				TokenBudget:       env.Cfg.TokenBudget,

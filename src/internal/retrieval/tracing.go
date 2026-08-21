@@ -3,7 +3,6 @@ package retrieval
 import (
 	"context"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 )
 
@@ -15,7 +14,7 @@ import (
 //
 // Span name is prefixed with "retrieval." so it nests under any
 // outer /retrieve handler span in the OTLP tree.
-func startStageSpan(opts core.RetrieveContextOptions, name string) tracing.Span {
+func startStageSpan(opts RetrieveContextOptions, name string) tracing.Span {
 	var t tracing.Tracer
 	if opts.Ctx != nil {
 		t = tracing.TracerFrom(opts.Ctx)

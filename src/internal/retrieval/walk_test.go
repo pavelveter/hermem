@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
@@ -20,7 +20,7 @@ import (
 
 func TestRetrieveContext_EmptySeedsReturnsEmptyResult(t *testing.T) {
 	db := openTestDB(t)
-	res, err := RetrieveContext(db, nil, core.RetrieveContextOptions{})
+	res, err := RetrieveContext(db, nil, RetrieveContextOptions{})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestRetrieveContext_EmptySeedsReturnsEmptyResult(t *testing.T) {
 func TestRetrieveContext_SingleSeedGoesIntoSeedNodes(t *testing.T) {
 	db := openTestDB(t)
 	seedEntityWithEmbedding(t, db, "a", "world", "alpha fact", []float32{1, 0, 0})
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth: 1,
 	})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestRetrieveContext_GraphWalkExpandsNeighbors(t *testing.T) {
 	seedEdge(t, db, "a", "b", "uses")
 	seedEdge(t, db, "b", "c", "uses")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{MaxDepth: 2})
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{MaxDepth: 2})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestRetrieveContext_DefaultDepthIsTwo(t *testing.T) {
 	seedEdge(t, db, "a", "b", "uses")
 	seedEdge(t, db, "b", "c", "uses")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{MaxDepth: 0})
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{MaxDepth: 0})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestRetrieveContext_DepthCeilingClampsMaxDepth(t *testing.T) {
 	seedEdge(t, db, "a", "b", "uses")
 	seedEdge(t, db, "b", "c", "uses")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:     5,
 		DepthCeiling: 1,
 	})
@@ -143,7 +143,7 @@ func TestRetrieveContext_ArchivedEntitiesExcluded(t *testing.T) {
 	seedEdge(t, db, "a", "b", "uses")
 	archive(t, db, "b")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{MaxDepth: 2})
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{MaxDepth: 2})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestRetrieveContext_MaxRetrievedNodesCapped(t *testing.T) {
 		seedEdge(t, db, nID(i), nID(i+1), "uses")
 	}
 
-	got, err := RetrieveContext(db, []string{"n0"}, core.RetrieveContextOptions{
+	got, err := RetrieveContext(db, []string{"n0"}, RetrieveContextOptions{
 		MaxDepth:          5,
 		MaxRetrievedNodes: 2,
 	})
@@ -197,7 +197,7 @@ func TestRetrieveContext_DuplicateContentCollapsed(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "b", "world", "shared", []float32{0, 1, 0}) // duplicate content
 	seedEdge(t, db, "a", "b", "related_to")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{MaxDepth: 1})
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{MaxDepth: 1})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestRetrieveContext_TimeFromFilter(t *testing.T) {
 
 	// TimeFrom = 36h ago should include "recent" and "old" but not "very_old".
 	timeFrom := now.Add(-36 * time.Hour)
-	res, err := RetrieveContext(db, []string{"recent"}, core.RetrieveContextOptions{
+	res, err := RetrieveContext(db, []string{"recent"}, RetrieveContextOptions{
 		MaxDepth: 5,
 		TimeFrom: timeFrom,
 	})
@@ -274,7 +274,7 @@ func TestRetrieveContext_TimeToFilter(t *testing.T) {
 
 	// TimeTo = 12h ago should include "old" but not "recent".
 	timeTo := now.Add(-12 * time.Hour)
-	res, err := RetrieveContext(db, []string{"recent"}, core.RetrieveContextOptions{
+	res, err := RetrieveContext(db, []string{"recent"}, RetrieveContextOptions{
 		MaxDepth: 5,
 		TimeTo:   timeTo,
 	})
@@ -288,7 +288,7 @@ func TestRetrieveContext_TimeToFilter(t *testing.T) {
 }
 
 // factIDs extracts entity IDs from all buckets in a RetrievalResult.
-func factIDs(res *core.RetrievalResult) []string {
+func factIDs(res *RetrievalResult) []string {
 	if res == nil {
 		return nil
 	}
@@ -332,7 +332,7 @@ func TestRetrieveContext_CyclicGraphDoesNotInfiniteLoop(t *testing.T) {
 	// Must terminate. With our default-depth logic and visited CTE marker this
 	// terminates after at most one expansion. If the bug returns, this test
 	// hangs (or fails after timeout).
-	got, err := RetrieveContext(db, []string{"x"}, core.RetrieveContextOptions{MaxDepth: 5})
+	got, err := RetrieveContext(db, []string{"x"}, RetrieveContextOptions{MaxDepth: 5})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestMultiHopRetrieveContext_PassthroughOnCountOne(t *testing.T) {
 	db := openTestDB(t)
 	seedEntityWithEmbedding(t, db, "a", "world", "alpha", []float32{1, 0, 0})
 
-	res, err := MultiHopRetrieveContext(db, nil, nil, []string{"a"}, core.RetrieveContextOptions{
+	res, err := MultiHopRetrieveContext(db, nil, nil, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:      0,
 		MultiHopCount: 1,
 	})
@@ -409,7 +409,7 @@ func TestMultiHopRetrieveContext_DiscoversDisconnectedSubgraph(t *testing.T) {
 	}}
 	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 
-	res, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, core.RetrieveContextOptions{
+	res, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:       1,
 		MultiHopCount:  2,
 		QueryEmbedding: []float32{1, 0, 0}, // matches alpha + delta
@@ -468,7 +468,7 @@ func TestMultiHopRetrieveContext_NoContentReEmbedded(t *testing.T) {
 	}}
 	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 
-	if _, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, core.RetrieveContextOptions{
+	if _, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:      1,
 		MultiHopCount: 3, // 2 discovery iterations: h=1 (include seeds), h=2 (exclude).
 		// Loop is `for h := 1; h < hops; h++`, so hops=3 runs h=1 AND h=2
@@ -510,7 +510,7 @@ func TestMultiHopRetrieveContext_NoContentReEmbedded(t *testing.T) {
 // fast path). DB is nil on purpose — the short-circuit returns before
 // any DB read.
 func TestMultiHopRetrieveContext_EmptySeedsReturnsEmptyResult(t *testing.T) {
-	res, err := MultiHopRetrieveContext(nil, nil, nil, nil, core.RetrieveContextOptions{})
+	res, err := MultiHopRetrieveContext(nil, nil, nil, nil, RetrieveContextOptions{})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -528,10 +528,10 @@ func TestMultiHopRetrieveContext_RequiresIndexAndEmbedderWhenCountGTE2(t *testin
 	db := openTestDB(t)
 	seedEntityWithEmbedding(t, db, "a", "world", "alpha", []float32{1, 0, 0})
 
-	if _, err := MultiHopRetrieveContext(db, nil, &stubEmbedder{}, []string{"a"}, core.RetrieveContextOptions{MultiHopCount: 2}); err == nil {
+	if _, err := MultiHopRetrieveContext(db, nil, &stubEmbedder{}, []string{"a"}, RetrieveContextOptions{MultiHopCount: 2}); err == nil {
 		t.Fatal("expected error on nil vi when MultiHopCount=2")
 	}
-	if _, err := MultiHopRetrieveContext(db, spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db)), nil, []string{"a"}, core.RetrieveContextOptions{MultiHopCount: 2}); err == nil {
+	if _, err := MultiHopRetrieveContext(db, spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db)), nil, []string{"a"}, RetrieveContextOptions{MultiHopCount: 2}); err == nil {
 		t.Fatal("expected error on nil embedder when MultiHopCount=2")
 	}
 }
@@ -548,7 +548,7 @@ func TestSingleHopRetrieveDoesNotCrossTopologicalGap(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "d", "world", "delta", []float32{1, 0, 0})
 	seedEdge(t, db, "c", "d", "uses")
 
-	res, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	res, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:       2,
 		QueryEmbedding: []float32{1, 0, 0},
 	})
@@ -570,7 +570,7 @@ func TestRetrieveContext_ExplainPopulatesFactScores(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "b", "world", "beta", emb)
 	seedEdge(t, db, "a", "b", "uses")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth: 1, Explain: true, QueryEmbedding: emb,
 	})
 	if err != nil {
@@ -601,7 +601,7 @@ func TestRetrieveContext_ExplainPopulatesScoreBreakdown(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "b", "world", "beta-bd", emb)
 	seedEdge(t, db, "a", "b", "uses")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth: 1, Explain: true, QueryEmbedding: emb,
 	})
 	if err != nil {
@@ -672,7 +672,7 @@ func TestRetrieveContext_NonExplainOmitsBreakdown(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "b", "world", "beta-noexplain", []float32{0, 1, 0})
 	seedEdge(t, db, "a", "b", "uses")
 
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth: 1,
 		// Explain intentionally left false.
 	})
@@ -684,7 +684,7 @@ func TestRetrieveContext_NonExplainOmitsBreakdown(t *testing.T) {
 			t.Fatalf("SeedNode[%d] (%s): want nil ScoreBreakdown when Explain=false, got %+v", i, sn.Entity.ID, sn.ScoreBreakdown)
 		}
 	}
-	for _, bucket := range [][]core.RetrievedFact{
+	for _, bucket := range [][]RetrievedFact{
 		got.WorldFacts, got.Opinions, got.Experiences, got.Observations,
 	} {
 		for _, f := range bucket {
@@ -716,7 +716,7 @@ func TestRetrieveContext_ExplainLogsStructuredSummary(t *testing.T) {
 	slog.SetDefault(slog.New(buf))
 	defer slog.SetDefault(prev)
 
-	if _, err := RetrieveContext(db, []string{"la"}, core.RetrieveContextOptions{
+	if _, err := RetrieveContext(db, []string{"la"}, RetrieveContextOptions{
 		MaxDepth: 1, Explain: true, QueryEmbedding: emb,
 	}); err != nil {
 		t.Fatalf("err: %v", err)
@@ -756,7 +756,7 @@ func TestRetrieveContext_NonExplainDoesNotLog(t *testing.T) {
 	slog.SetDefault(slog.New(buf))
 	defer slog.SetDefault(prev)
 
-	if _, err := RetrieveContext(db, []string{"na"}, core.RetrieveContextOptions{
+	if _, err := RetrieveContext(db, []string{"na"}, RetrieveContextOptions{
 		MaxDepth: 1, // Explain=false
 	}); err != nil {
 		t.Fatalf("err: %v", err)
@@ -824,31 +824,31 @@ type stubRerankerCall struct {
 	Count int
 }
 
-func (s *stubReranker) Rerank(_ context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
-	s.calls = append(s.calls, stubRerankerCall{Query: query, Count: len(facts)})
+func (s *stubReranker) Rerank(_ context.Context, query string, candidates []spi.Candidate) ([]spi.Candidate, error) {
+	s.calls = append(s.calls, stubRerankerCall{Query: query, Count: len(candidates)})
 	if s.failOn != "" {
-		// Pick the first fact's category as the trigger — tests use
+		// Pick the first candidate's text as the trigger — tests use
 		// distinct categories per bucket so this maps cleanly.
-		if len(facts) > 0 && facts[0].Content == s.failOn {
+		if len(candidates) > 0 && candidates[0].Text == s.failOn {
 			return nil, errors.New("stub-reranker-fail")
 		}
 	}
 	if !s.reversed {
-		return facts, nil
+		return candidates, nil
 	}
-	out := make([]core.RetrievedFact, len(facts))
-	for i, f := range facts {
-		out[len(facts)-1-i] = f
+	out := make([]spi.Candidate, len(candidates))
+	for i, c := range candidates {
+		out[len(candidates)-1-i] = c
 	}
 	return out, nil
 }
 
 func TestApplyReranker_NilRerankerIsNoOp(t *testing.T) {
-	r := &core.RetrievalResult{
-		WorldFacts:   []core.RetrievedFact{{Content: "alpha"}},
-		Opinions:     []core.RetrievedFact{{Content: "beta"}},
-		Experiences:  []core.RetrievedFact{{Content: "gamma"}},
-		Observations: []core.RetrievedFact{{Content: "delta"}},
+	r := &RetrievalResult{
+		WorldFacts:   []RetrievedFact{{Content: "alpha"}},
+		Opinions:     []RetrievedFact{{Content: "beta"}},
+		Experiences:  []RetrievedFact{{Content: "gamma"}},
+		Observations: []RetrievedFact{{Content: "delta"}},
 	}
 	if err := applyReranker(r, nil, t.Context(), "q"); err != nil {
 		t.Fatalf("nil reranker: want nil err, got %v", err)
@@ -870,12 +870,12 @@ func TestApplyReranker_NilResultIsNoOp(t *testing.T) {
 }
 
 func TestApplyReranker_ReverseBucketContents(t *testing.T) {
-	r := &core.RetrievalResult{
-		WorldFacts: []core.RetrievedFact{
+	r := &RetrievalResult{
+		WorldFacts: []RetrievedFact{
 			{Content: "w1"}, {Content: "w2"}, {Content: "w3"},
 		},
-		Opinions:    []core.RetrievedFact{}, // empty — must not invoke
-		Experiences: []core.RetrievedFact{{Content: "e1"}},
+		Opinions:    []RetrievedFact{}, // empty — must not invoke
+		Experiences: []RetrievedFact{{Content: "e1"}},
 	}
 	stub := &stubReranker{reversed: true}
 	if err := applyReranker(r, stub, t.Context(), "q"); err != nil {
@@ -911,9 +911,9 @@ func TestApplyReranker_ReverseBucketContents(t *testing.T) {
 }
 
 func TestApplyReranker_ErrorPropagates(t *testing.T) {
-	r := &core.RetrievalResult{
-		WorldFacts: []core.RetrievedFact{{Content: "trigger"}},
-		Opinions:   []core.RetrievedFact{{Content: "after"}},
+	r := &RetrievalResult{
+		WorldFacts: []RetrievedFact{{Content: "trigger"}},
+		Opinions:   []RetrievedFact{{Content: "after"}},
 	}
 	stub := &stubReranker{failOn: "trigger"}
 	err := applyReranker(r, stub, t.Context(), "q")
@@ -926,8 +926,8 @@ func TestApplyReranker_ErrorPropagates(t *testing.T) {
 }
 
 func TestApplyReranker_NilContextDefaultsToBackground(t *testing.T) {
-	r := &core.RetrievalResult{
-		WorldFacts: []core.RetrievedFact{{Content: "w1"}},
+	r := &RetrievalResult{
+		WorldFacts: []RetrievedFact{{Content: "w1"}},
 	}
 	stub := &stubReranker{}
 	if err := applyReranker(r, stub, nil, "q"); err != nil {
@@ -948,7 +948,7 @@ func TestRetrieveContext_RerankerIsInvokedAfterBucketize(t *testing.T) {
 	seedEdge(t, db, "a", "b", "uses")
 
 	stub := &stubReranker{reversed: true}
-	got, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	got, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:  1,
 		Reranker:  stub,
 		QueryText: "any",
@@ -1009,7 +1009,7 @@ func TestRetrieveContext_TracesAllStages(t *testing.T) {
 	tracer := &stubTracer{}
 	ctx := tracing.WithTracer(t.Context(), tracer)
 
-	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	if _, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth: 1,
 		Ctx:      ctx,
 	}); err != nil {
@@ -1042,7 +1042,7 @@ func TestRetrieveContext_TracesRerankWhenSet(t *testing.T) {
 	tracer := &stubTracer{}
 	ctx := tracing.WithTracer(t.Context(), tracer)
 
-	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	if _, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:  1,
 		Ctx:       ctx,
 		Reranker:  &stubReranker{},
@@ -1070,7 +1070,7 @@ func TestRetrieveContext_NoTracerUsesNoop(t *testing.T) {
 	db := openTestDB(t)
 	seedEntityWithEmbedding(t, db, "a", "world", "alpha-noop", []float32{1, 0, 0})
 
-	if _, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{
+	if _, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{
 		MaxDepth: 1, // no Ctx → NoopTracer via TracerFrom
 	}); err != nil {
 		t.Fatalf("err: %v", err)
@@ -1079,7 +1079,7 @@ func TestRetrieveContext_NoTracerUsesNoop(t *testing.T) {
 
 // --- helpers ---
 
-func seedNodeIDs(r *core.RetrievalResult) []string {
+func seedNodeIDs(r *RetrievalResult) []string {
 	out := make([]string, len(r.SeedNodes))
 	for i, n := range r.SeedNodes {
 		out[i] = n.Entity.ID
@@ -1096,7 +1096,7 @@ func contains(slice []string, s string) bool {
 	return false
 }
 
-func factContents(facts []core.RetrievedFact) []string {
+func factContents(facts []RetrievedFact) []string {
 	out := make([]string, len(facts))
 	for i, f := range facts {
 		out[i] = f.Content
@@ -1104,12 +1104,12 @@ func factContents(facts []core.RetrievedFact) []string {
 	return out
 }
 
-func seenFactIDs(r *core.RetrievalResult) []string {
+func seenFactIDs(r *RetrievalResult) []string {
 	var out []string
 	for _, n := range r.SeedNodes {
 		out = append(out, n.Entity.ID)
 	}
-	for _, bucket := range [][]core.RetrievedFact{
+	for _, bucket := range [][]RetrievedFact{
 		r.WorldFacts, r.Opinions, r.Experiences, r.Observations,
 	} {
 		for _, f := range bucket {
@@ -1166,7 +1166,7 @@ func TestHopEmbedFacts(t *testing.T) {
 		"hello": {0.1, 0.2, 0.3},
 		"world": {0.4, 0.5, 0.6},
 	}}
-	facts := []core.RetrievedFact{
+	facts := []RetrievedFact{
 		{Content: "hello"},
 		{Content: "world"},
 	}
@@ -1184,7 +1184,7 @@ func TestHopEmbedFacts(t *testing.T) {
 
 func TestHopEmbedFacts_Error(t *testing.T) {
 	emb := &stubEmbedder{vecs: map[string][]float32{}}
-	facts := []core.RetrievedFact{
+	facts := []RetrievedFact{
 		{Content: "missing"},
 	}
 	_, err := hopEmbedFacts(t.Context(), emb, facts, 1)

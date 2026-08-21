@@ -8,6 +8,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/id"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
 // checkRateLimit returns a rate-limit error if the limiter is exhausted.
@@ -91,7 +92,7 @@ func (s *Server) handleMemoryRetrieve(ctx context.Context, _ *gomcp.CallToolRequ
 	}
 
 	state := s.deps.Refs.Load()
-	opts := core.RetrieveContextOptions{TopK: limit}
+	opts := retrieval.RetrieveContextOptions{TopK: limit}
 	if state != nil {
 		opts.DepthCeiling = state.DepthCeiling
 		opts.MaxRetrievedNodes = state.MaxRetrievedNodes

@@ -67,9 +67,9 @@ func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 }
 
 // optsFromState — unchanged from pre-§3.2 (helper, not a handler).
-func (s *HTTPService) optsFromState() core.RetrieveContextOptions {
+func (s *HTTPService) optsFromState() retrieval.RetrieveContextOptions {
 	state := s.Refs.Load()
-	return core.RetrieveContextOptions{
+	return retrieval.RetrieveContextOptions{
 		DepthCeiling:      state.DepthCeiling,
 		MaxRetrievedNodes: state.MaxRetrievedNodes,
 		TokenBudget:       state.TokenBudget,

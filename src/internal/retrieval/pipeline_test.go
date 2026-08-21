@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"testing"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 func TestPipeline_NewPipelineHasDefaults(t *testing.T) {
@@ -39,7 +37,7 @@ func TestPipeline_DefaultAssemblyStageName(t *testing.T) {
 func TestPipeline_EmptySeedsReturnsEmpty(t *testing.T) {
 	db := openTestDB(t)
 	p := NewPipeline()
-	result, rendered, err := p.Run(db, nil, core.RetrieveContextOptions{}, "test query")
+	result, rendered, err := p.Run(db, nil, RetrieveContextOptions{}, "test query")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -58,7 +56,7 @@ func TestPipeline_WithFixture(t *testing.T) {
 	db.Exec(`INSERT INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, ?, 1.0)`, "a", "b")
 
 	p := NewPipeline()
-	opts := core.RetrieveContextOptions{
+	opts := RetrieveContextOptions{
 		MaxDepth:       2,
 		QueryEmbedding: []float32{1, 0},
 	}
@@ -80,7 +78,7 @@ type mockExpandStage struct {
 }
 
 func (m *mockExpandStage) Name() string { return m.name }
-func (m *mockExpandStage) Expand(_ context.Context, _ *sql.DB, _ []string, _ core.RetrieveContextOptions, _ int) ([]scannedNode, error) {
+func (m *mockExpandStage) Expand(_ context.Context, _ *sql.DB, _ []string, _ RetrieveContextOptions, _ int) ([]scannedNode, error) {
 	return nil, nil
 }
 

@@ -81,7 +81,7 @@ func TestE2E_StoreEdgeRetrieve(t *testing.T) {
 	}
 
 	// Retrieve
-	res, err := retrieval.RetrieveContext(db, []string{"e2e-a"}, core.RetrieveContextOptions{
+	res, err := retrieval.RetrieveContext(db, []string{"e2e-a"}, retrieval.RetrieveContextOptions{
 		MaxDepth:      2,
 		RankingWeight: core.RankingWeight{}.WithDefaults(),
 	})
@@ -269,7 +269,7 @@ func TestE2E_ProvenanceAndContradictions(t *testing.T) {
 	}
 
 	// Retrieve with ranking
-	res, err := retrieval.RetrieveContext(db, []string{"p1", "p2"}, core.RetrieveContextOptions{
+	res, err := retrieval.RetrieveContext(db, []string{"p1", "p2"}, retrieval.RetrieveContextOptions{
 		MaxDepth: 1, RankingWeight: core.RankingWeight{}.WithDefaults(),
 	})
 	if err != nil {
@@ -296,7 +296,7 @@ func TestE2E_MultiHopRetrieval(t *testing.T) {
 	mustAddEdge(t, db, "mh2", "mh3", "related_to")
 
 	// Single-hop: stays within subgraph
-	res, err := retrieval.MultiHopRetrieveContext(db, vi, embed, []string{"mh1"}, core.RetrieveContextOptions{
+	res, err := retrieval.MultiHopRetrieveContext(db, vi, embed, []string{"mh1"}, retrieval.RetrieveContextOptions{
 		MaxDepth: 2, RankingWeight: core.RankingWeight{}.WithDefaults(), MultiHopCount: 1,
 	})
 	if err != nil {
@@ -375,7 +375,7 @@ func TestE2E_TemporalRetrieval(t *testing.T) {
 	storeEntity(t, db, vi, schema, core.Entity{ID: "tmp1", Category: "world", Content: "recent", Embedding: []float32{1, 0, 0}})
 	storeEntity(t, db, vi, schema, core.Entity{ID: "tmp2", Category: "world", Content: "old", Embedding: []float32{0, 1, 0}})
 
-	_, err := retrieval.RetrieveContext(db, []string{"tmp1", "tmp2"}, core.RetrieveContextOptions{
+	_, err := retrieval.RetrieveContext(db, []string{"tmp1", "tmp2"}, retrieval.RetrieveContextOptions{
 		MaxDepth: 1, RankingWeight: core.RankingWeight{}.WithDefaults(),
 	})
 	if err != nil {
@@ -440,7 +440,7 @@ func mustAddEdge(t *testing.T, db *sql.DB, src, dst, rel string) {
 	}
 }
 
-func seedNodeIDs(r *core.RetrievalResult) []string {
+func seedNodeIDs(r *retrieval.RetrievalResult) []string {
 	out := make([]string, len(r.SeedNodes))
 	for i, n := range r.SeedNodes {
 		out[i] = n.Entity.ID
@@ -448,7 +448,7 @@ func seedNodeIDs(r *core.RetrievalResult) []string {
 	return out
 }
 
-func factContents(facts []core.RetrievedFact) []string {
+func factContents(facts []retrieval.RetrievedFact) []string {
 	out := make([]string, len(facts))
 	for i, f := range facts {
 		out[i] = f.Content

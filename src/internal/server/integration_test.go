@@ -26,6 +26,7 @@ import (
 	migrationdomain "github.com/pavelveter/hermem/src/internal/migration"
 	reembeddomain "github.com/pavelveter/hermem/src/internal/reembed"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	"github.com/pavelveter/hermem/src/internal/server/edge"
@@ -435,7 +436,7 @@ func TestRetrieve_ReturnsResults(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("want 200, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
-	var result core.RetrievalResult
+	var result retrieval.RetrievalResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -455,7 +456,7 @@ func TestQueryExplain_ReturnsExplain(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("want 200, got %d: %s", resp.StatusCode, readBody(t, resp))
 	}
-	var result core.RetrievalResult
+	var result retrieval.RetrievalResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

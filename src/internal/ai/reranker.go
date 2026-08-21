@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/spi"
 )
 
-// NoopReranker returns the input facts unchanged — used when no reranker is configured.
+// NoopReranker returns the input candidates unchanged — used when no reranker is configured.
 type NoopReranker struct{}
 
-func (r *NoopReranker) Rerank(_ context.Context, _ string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
-	return facts, nil
+func (r *NoopReranker) Rerank(_ context.Context, _ string, candidates []spi.Candidate) ([]spi.Candidate, error) {
+	return candidates, nil
 }
 
 // OllamaReranker calls Ollama's /api/rerank endpoint; on failure it returns input unchanged.
@@ -39,13 +39,13 @@ func NewOllamaReranker(baseURL, model string, timeout time.Duration) *OllamaRera
 	}
 }
 
-func (r *OllamaReranker) Rerank(ctx context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
-	if len(facts) == 0 {
-		return facts, nil
+func (r *OllamaReranker) Rerank(ctx context.Context, query string, candidates []spi.Candidate) ([]spi.Candidate, error) {
+	if len(candidates) == 0 {
+		return candidates, nil
 	}
-	docs := make([]string, len(facts))
-	for i, f := range facts {
-		docs[i] = f.Content
+	docs := make([]string, len(candidates))
+	for i, c := range candidates {
+		docs[i] = c.Text
 	}
 	body := map[string]interface{}{
 		"model":     r.Model,
@@ -58,16 +58,16 @@ func (r *OllamaReranker) Rerank(ctx context.Context, query string, facts []core.
 		} `json:"results"`
 	}
 	if err := r.http.doPOST(ctx, "/api/rerank", body, &rr); err != nil {
-		return facts, nil
+		return candidates, nil
 	}
-	reranked := make([]core.RetrievedFact, 0, len(facts))
+	reranked := make([]spi.Candidate, 0, len(candidates))
 	for _, item := range rr.Results {
-		if item.Index >= 0 && item.Index < len(facts) {
-			reranked = append(reranked, facts[item.Index])
+		if item.Index >= 0 && item.Index < len(candidates) {
+			reranked = append(reranked, candidates[item.Index])
 		}
 	}
 	if len(reranked) == 0 {
-		return facts, nil
+		return candidates, nil
 	}
 	return reranked, nil
 }
@@ -93,13 +93,13 @@ func NewOpenAIReranker(baseURL, model, key string, timeout time.Duration) *OpenA
 	}
 }
 
-func (r *OpenAIReranker) Rerank(ctx context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
-	if len(facts) <= 1 {
-		return facts, nil
+func (r *OpenAIReranker) Rerank(ctx context.Context, query string, candidates []spi.Candidate) ([]spi.Candidate, error) {
+	if len(candidates) <= 1 {
+		return candidates, nil
 	}
 	var docList strings.Builder
-	for i, f := range facts {
-		fmt.Fprintf(&docList, "%d. %s\n", i+1, f.Content)
+	for i, c := range candidates {
+		fmt.Fprintf(&docList, "%d. %s\n", i+1, c.Text)
 	}
 	// Force structured JSON output via response_format so we never need to
 	// parse a free-form "3,1,2"-style response. Free-form parsing was
@@ -125,10 +125,10 @@ Reorder the documents by relevance to the query. Return ONLY a JSON object with 
 		} `json:"choices"`
 	}
 	if err := r.http.doPOST(ctx, "/chat/completions", body, &cr); err != nil {
-		return facts, nil
+		return candidates, nil
 	}
 	if len(cr.Choices) == 0 {
-		return facts, nil
+		return candidates, nil
 	}
 	// Even with response_format=json_object, the LLM can still wrap the
 	// payload in ```json fences or leading/trailing whitespace — strip
@@ -136,31 +136,31 @@ Reorder the documents by relevance to the query. Return ONLY a JSON object with 
 	// back to the no-op ordering.
 	content := stripJSONFence(cr.Choices[0].Message.Content)
 	if content == "" {
-		return facts, nil
+		return candidates, nil
 	}
 	var ordered struct {
 		Order []int `json:"order"`
 	}
 	if err := json.Unmarshal([]byte(content), &ordered); err != nil {
-		return facts, nil
+		return candidates, nil
 	}
 	seen := make(map[int]bool, len(ordered.Order))
-	reranked := make([]core.RetrievedFact, 0, len(facts))
+	reranked := make([]spi.Candidate, 0, len(candidates))
 	for _, idx := range ordered.Order {
 		i := idx - 1
-		if i < 0 || i >= len(facts) || seen[i] {
+		if i < 0 || i >= len(candidates) || seen[i] {
 			continue
 		}
 		seen[i] = true
-		reranked = append(reranked, facts[i])
+		reranked = append(reranked, candidates[i])
 	}
-	// Preserve any fact the LLM forgot to mention so the caller's
-	// downstream contract ("all input facts appear in the output") holds
+	// Preserve any candidate the LLM forgot to mention so the caller's
+	// downstream contract ("all input candidates appear in the output") holds
 	// even on partial responses.
-	for i := range facts {
+	for i := range candidates {
 		if !seen[i] {
 			seen[i] = true
-			reranked = append(reranked, facts[i])
+			reranked = append(reranked, candidates[i])
 		}
 	}
 	return reranked, nil

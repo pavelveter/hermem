@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -24,7 +23,7 @@ import (
 // each row is decoded exactly once. The decoded embedding vector is
 // returned alongside the node so stage 2 can feed it into the scorer
 // without re-querying the row.
-func expandGraph(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions, effDepth int) ([]scannedNode, error) {
+func expandGraph(db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effDepth int) ([]scannedNode, error) {
 	phs, args := store.InClauseArgs(seedIDs)
 	var timeFilter string
 	if !opts.TimeFrom.IsZero() {
@@ -59,7 +58,7 @@ func expandGraph(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions,
 	var nodes []scannedNode
 	seenIDs := make(map[string]bool)
 	for rows.Next() {
-		var node core.GraphNode
+		var node GraphNode
 		var embBlob []byte
 		if err := rows.Scan(&node.Entity.ID, &node.Entity.Category, &node.Entity.Content, &node.Entity.UpdatedAt, &embBlob, &node.Entity.Degree, &node.Depth, &node.PathWeight, &node.ParentID, &node.RelationType); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
@@ -82,6 +81,6 @@ func expandGraph(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions,
 // package-private; it is not part of any public contract. Lives in
 // expand.go because it is the expand stage's output type.
 type scannedNode struct {
-	node core.GraphNode
+	node GraphNode
 	vec  []float32
 }

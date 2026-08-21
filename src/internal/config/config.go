@@ -90,7 +90,7 @@ func (c *Config) NewExtractor() core.LLMExtractor {
 
 // NewReranker creates a reranker from config.
 // Delegates to ai.Factory for construction.
-func (c *Config) NewReranker() core.Reranker {
+func (c *Config) NewReranker() spi.Reranker {
 	return c.aiFactory().NewReranker()
 }
 

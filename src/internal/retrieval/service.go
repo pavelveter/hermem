@@ -62,7 +62,7 @@ func (s *Service) Search(ctx context.Context, query string, topK int) ([]core.Se
 
 // Retrieve runs the graph-walk from seed IDs and returns the ranked
 // RetrievalResult. Empty seed list is rejected.
-func (s *Service) Retrieve(ctx context.Context, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func (s *Service) Retrieve(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	if len(seedIDs) == 0 {
 		return nil, fmt.Errorf("retrieve: seed_ids required")
 	}
@@ -78,13 +78,13 @@ func (s *Service) Retrieve(ctx context.Context, seedIDs []string, opts core.Retr
 
 // RetrieveContext satisfies core.Retriever by delegating to the package-level
 // RetrieveContext function.
-func (s *Service) RetrieveContext(ctx context.Context, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func (s *Service) RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	return s.Retrieve(ctx, seedIDs, opts)
 }
 
 // MultiHopRetrieveContext satisfies core.Retriever by delegating to the
 // package-level MultiHopRetrieveContext function.
-func (s *Service) MultiHopRetrieveContext(ctx context.Context, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func (s *Service) MultiHopRetrieveContext(ctx context.Context, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	if opts.Ctx == nil {
 		opts.Ctx = ctx
 	}
@@ -115,7 +115,7 @@ func (s *Service) ResolveSeeds(ctx context.Context, query string, topK int) ([]s
 
 // Query embeds → runs vector search → uses top-K as seeds → graph
 // walks → returns a Markdown context blob.
-func (s *Service) Query(ctx context.Context, query string, topK int, opts core.RetrieveContextOptions) (string, error) {
+func (s *Service) Query(ctx context.Context, query string, topK int, opts RetrieveContextOptions) (string, error) {
 	result, err := s.QueryResult(ctx, query, topK, opts)
 	if err != nil {
 		return "", err
@@ -128,7 +128,7 @@ func (s *Service) Query(ctx context.Context, query string, topK int, opts core.R
 // using any Renderer (MarkdownRenderer, PlainTextRenderer, JSONRenderer, etc.)
 // or use the convenience Query() method for markdown output.
 // If opts.TopK is set, it takes precedence over the topK parameter.
-func (s *Service) QueryResult(ctx context.Context, query string, topK int, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func (s *Service) QueryResult(ctx context.Context, query string, topK int, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	if opts.TopK > 0 {
 		topK = opts.TopK
 	}
@@ -149,7 +149,7 @@ func (s *Service) QueryResult(ctx context.Context, query string, topK int, opts 
 // Response delegates to pkgretrieval.GenerateResponse — the LLM-rendered
 // natural-language answer that uses the retrieved graph context as
 // evidence.
-func (s *Service) Response(ctx context.Context, query string, opts core.RetrieveContextOptions) (string, error) {
+func (s *Service) Response(ctx context.Context, query string, opts RetrieveContextOptions) (string, error) {
 	if query == "" {
 		return "", fmt.Errorf("response: query required")
 	}
@@ -164,7 +164,7 @@ func (s *Service) Response(ctx context.Context, query string, opts core.Retrieve
 // returned RetrievalResult carries the per-hop ranking reasoning
 // (RankingScore / PathWeight / ParentID populated for each node).
 // Embed errors are swallowed (degrades to empty pipeline).
-func (s *Service) Explain(ctx context.Context, query string, topK int, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func (s *Service) Explain(ctx context.Context, query string, topK int, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	if topK <= 0 {
 		topK = DefaultQueryTopK
 	}
@@ -192,7 +192,7 @@ func (s *Service) Explain(ctx context.Context, query string, topK int, opts core
 // Computes recency (from UpdatedAt), temporal decay (from CreatedAt),
 // and centrality (from edge degree). PathScore and DepthPenalty are 0
 // (no graph-walk context). Returns nil if the entity is not found.
-func (s *Service) ExplainNode(ctx context.Context, id, queryText string) (*core.ScoreBreakdown, error) {
+func (s *Service) ExplainNode(ctx context.Context, id, queryText string) (*ScoreBreakdown, error) {
 	if id == "" {
 		return nil, fmt.Errorf("explain node: id required")
 	}
@@ -206,7 +206,7 @@ func (s *Service) ExplainNode(ctx context.Context, id, queryText string) (*core.
 	}
 
 	// Use zero-value weights so callers see the raw feature values.
-	w := core.RankingWeight{}.WithDefaults()
+	w := RankingWeight{}.WithDefaults()
 
 	var queryEmbedding []float32
 	var queryNorm float32
@@ -217,7 +217,7 @@ func (s *Service) ExplainNode(ctx context.Context, id, queryText string) (*core.
 		}
 	}
 
-	node := core.GraphNode{
+	node := GraphNode{
 		Entity:     entity,
 		PathWeight: 0,
 	}

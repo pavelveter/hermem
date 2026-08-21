@@ -8,6 +8,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
@@ -53,7 +54,7 @@ Examples:
 				req.MaxDepth = retdomain.DefaultRetrieveMaxDepth
 			}
 			svc := retdomain.New(env.DB, env.VI, env.Embedder)
-			opts := core.RetrieveContextOptions{
+			opts := retrieval.RetrieveContextOptions{
 				MaxDepth:          req.MaxDepth,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,
 				MaxRetrievedNodes: env.Cfg.MaxRetrievedNodes,

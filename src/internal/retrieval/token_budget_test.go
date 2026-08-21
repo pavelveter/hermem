@@ -34,9 +34,9 @@ func TestTrimByTokenBudget(t *testing.T) {
 	})
 
 	t.Run("zero budget unchanged", func(t *testing.T) {
-		result := &core.RetrievalResult{
-			SeedNodes:  []core.GraphNode{{Entity: core.Entity{ID: "a"}}},
-			WorldFacts: []core.RetrievedFact{{Content: "fact one"}, {Content: "fact two"}},
+		result := &RetrievalResult{
+			SeedNodes:  []GraphNode{{Entity: core.Entity{ID: "a"}}},
+			WorldFacts: []RetrievedFact{{Content: "fact one"}, {Content: "fact two"}},
 		}
 		out := TrimByTokenBudget(result, 0)
 		if len(out.WorldFacts) != 2 {
@@ -45,12 +45,12 @@ func TestTrimByTokenBudget(t *testing.T) {
 	})
 
 	t.Run("budget trims facts", func(t *testing.T) {
-		facts := make([]core.RetrievedFact, 20)
+		facts := make([]RetrievedFact, 20)
 		for i := range facts {
-			facts[i] = core.RetrievedFact{Content: "This is a test fact with enough content to consume tokens"}
+			facts[i] = RetrievedFact{Content: "This is a test fact with enough content to consume tokens"}
 		}
-		result := &core.RetrievalResult{
-			SeedNodes:  []core.GraphNode{{Entity: core.Entity{ID: "a"}}},
+		result := &RetrievalResult{
+			SeedNodes:  []GraphNode{{Entity: core.Entity{ID: "a"}}},
 			WorldFacts: facts,
 		}
 		out := TrimByTokenBudget(result, 50)
@@ -63,9 +63,9 @@ func TestTrimByTokenBudget(t *testing.T) {
 	})
 
 	t.Run("large budget keeps all", func(t *testing.T) {
-		result := &core.RetrievalResult{
-			SeedNodes:  []core.GraphNode{{Entity: core.Entity{ID: "a"}}},
-			WorldFacts: []core.RetrievedFact{{Content: "short"}},
+		result := &RetrievalResult{
+			SeedNodes:  []GraphNode{{Entity: core.Entity{ID: "a"}}},
+			WorldFacts: []RetrievedFact{{Content: "short"}},
 		}
 		out := TrimByTokenBudget(result, 100000)
 		if len(out.WorldFacts) != 1 {

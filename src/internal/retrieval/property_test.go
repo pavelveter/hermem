@@ -16,15 +16,15 @@ import (
 // produce the same ranking order. Runs the scorer twice on identical data
 // and asserts byte-identical score sequences.
 func TestRanking_DeterministicOrdering(t *testing.T) {
-	w := core.RankingWeight{}.WithDefaults()
+	w := RankingWeight{}.WithDefaults()
 	scorer := defaultCompositeScorer(w)
 	nodes := []struct {
-		node    core.GraphNode
+		node    GraphNode
 		nodeVec []float32
 	}{
-		{core.GraphNode{Entity: core.Entity{ID: "a", Degree: 5}}, []float32{1, 0}},
-		{core.GraphNode{Entity: core.Entity{ID: "b", Degree: 10}}, []float32{0, 1}},
-		{core.GraphNode{Entity: core.Entity{ID: "c", Degree: 3}}, []float32{0.7, 0.7}},
+		{GraphNode{Entity: core.Entity{ID: "a", Degree: 5}}, []float32{1, 0}},
+		{GraphNode{Entity: core.Entity{ID: "b", Degree: 10}}, []float32{0, 1}},
+		{GraphNode{Entity: core.Entity{ID: "c", Degree: 3}}, []float32{0.7, 0.7}},
 	}
 	query := []float32{1, 0}
 	qnorm := vector.VectorNorm(query)
@@ -45,11 +45,11 @@ func TestRanking_DeterministicOrdering(t *testing.T) {
 // TestRanking_IdenticalInputsProduceIdenticalScores verifies that two
 // nodes with identical features produce identical composite scores.
 func TestRanking_IdenticalInputsProduceIdenticalScores(t *testing.T) {
-	w := core.RankingWeight{}.WithDefaults()
+	w := RankingWeight{}.WithDefaults()
 	scorer := defaultCompositeScorer(w)
 	now := core.TimePtr(timeNow())
-	nodeA := core.GraphNode{Entity: core.Entity{ID: "a", UpdatedAt: now, Degree: 5}, PathWeight: 1.0}
-	nodeB := core.GraphNode{Entity: core.Entity{ID: "b", UpdatedAt: now, Degree: 5}, PathWeight: 1.0}
+	nodeA := GraphNode{Entity: core.Entity{ID: "a", UpdatedAt: now, Degree: 5}, PathWeight: 1.0}
+	nodeB := GraphNode{Entity: core.Entity{ID: "b", UpdatedAt: now, Degree: 5}, PathWeight: 1.0}
 	vec := []float32{1, 0}
 	query := []float32{1, 0}
 	qnorm := vector.VectorNorm(query)
@@ -85,8 +85,8 @@ func TestScoring_SimilarityInUnitRange(t *testing.T) {
 
 // TestScoring_RecencyNonNegative verifies recencyScore ≥ 0 for all inputs.
 func TestScoring_RecencyNonNegative(t *testing.T) {
-	w := core.RankingWeight{}.WithDefaults()
-	node := core.GraphNode{Entity: core.Entity{ID: "x"}}
+	w := RankingWeight{}.WithDefaults()
+	node := GraphNode{Entity: core.Entity{ID: "x"}}
 	c := ComputeScoreComponents(node, nil, nil, 0, w)
 	if c.Recency < 0 {
 		t.Fatalf("recency should be ≥ 0, got %v", c.Recency)
@@ -107,7 +107,7 @@ func TestScoring_CentralityNonNegative(t *testing.T) {
 // that BuildScoreBreakdown.FinalScore matches a direct compositeScore
 // call with the same components.
 func TestScoring_BuildScoreBreakdownMatchesComputeCompositeScore(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight:     0.6,
 		RecencyWeight:    0.2,
 		TemporalWeight:   0.1,
@@ -159,7 +159,7 @@ func TestTraversal_MaxDepthRespected(t *testing.T) {
 		db.Exec(`INSERT INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, ?, 1.0)`, edge[0], edge[1])
 	}
 
-	res, err := RetrieveContext(db, []string{"a"}, core.RetrieveContextOptions{MaxDepth: 2})
+	res, err := RetrieveContext(db, []string{"a"}, RetrieveContextOptions{MaxDepth: 2})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestTraversal_NoDuplicateIDs(t *testing.T) {
 	seedEntityWithEmbedding(t, db, "y", "world", "fact y", []float32{0, 1})
 	db.Exec(`INSERT INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, ?, 1.0)`, "x", "y")
 
-	res, err := RetrieveContext(db, []string{"x"}, core.RetrieveContextOptions{MaxDepth: 2})
+	res, err := RetrieveContext(db, []string{"x"}, RetrieveContextOptions{MaxDepth: 2})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestProperty_EmptyDatabaseNeverPanics(t *testing.T) {
 		{"a", "b", "c"},
 	}
 	for _, seeds := range cases {
-		res, err := RetrieveContext(db, seeds, core.RetrieveContextOptions{MaxDepth: 1})
+		res, err := RetrieveContext(db, seeds, RetrieveContextOptions{MaxDepth: 1})
 		if err != nil {
 			t.Fatalf("empty DB with seeds %v: unexpected error: %v", seeds, err)
 		}
@@ -224,10 +224,10 @@ func TestProperty_EmptyDatabaseNeverPanics(t *testing.T) {
 // TestProperty_ScoresRemainFinite verifies that composite scoring
 // never produces NaN or Inf for any combination of valid inputs.
 func TestProperty_ScoresRemainFinite(t *testing.T) {
-	w := core.RankingWeight{}.WithDefaults()
+	w := RankingWeight{}.WithDefaults()
 	scorer := defaultCompositeScorer(w)
 	for trial := 0; trial < 200; trial++ {
-		node := core.GraphNode{
+		node := GraphNode{
 			Entity: core.Entity{
 				ID:        "test",
 				UpdatedAt: core.TimePtr(time.Now().Add(-time.Duration(trial) * time.Second)),
@@ -267,7 +267,7 @@ func TestProperty_RankingStableAcrossRuns(t *testing.T) {
 	for trial := 0; trial < 50; trial++ {
 		nodes := make([]rankedNode, len(orig))
 		for i, e := range orig {
-			nodes[i] = rankedNode{node: core.GraphNode{Entity: core.Entity{ID: e.id}}, score: e.score}
+			nodes[i] = rankedNode{node: GraphNode{Entity: core.Entity{ID: e.id}}, score: e.score}
 		}
 		sortByScoreDesc(nodes)
 		ids := make([]string, len(nodes))
@@ -304,7 +304,7 @@ func TestProperty_RandomGraphNeverCrashesRetrieval(t *testing.T) {
 			dst := fmt.Sprintf("n%d", (i+1)%n)
 			db.Exec(`INSERT INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, 'related_to', 1.0)`, src, dst)
 		}
-		res, err := RetrieveContext(db, []string{"n0"}, core.RetrieveContextOptions{MaxDepth: 3})
+		res, err := RetrieveContext(db, []string{"n0"}, RetrieveContextOptions{MaxDepth: 3})
 		if err != nil {
 			t.Fatalf("trial %d: unexpected error: %v", trial, err)
 		}

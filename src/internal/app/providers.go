@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -179,7 +178,7 @@ func NewConfiguredExtractor(cfg *config.Config) (core.LLMExtractor, error) {
 
 // NewConfiguredReranker resolves the optional reranker through the typed
 // registry. Empty configuration selects the explicit no-op provider.
-// The configured provider implementations are still legacy core.Reranker
+// The configured provider implementations are still legacy spi.Reranker
 // values (task 4.x capability migration); the public boundary adapts them
 // to spi.Reranker with an inline RetrievedFact ↔ Candidate translation so
 // internal shapes never leak into the registry contract.
@@ -187,7 +186,7 @@ func NewConfiguredReranker(cfg *config.Config) (spi.Reranker, error) {
 	registry := NewRerankerFactoryRegistry()
 	for _, name := range []string{"none", "ollama", "openai"} {
 		if err := registry.RegisterWithDescriptor(name, func(context.Context, spi.ProviderConfig) (spi.Reranker, error) {
-			return publicRerankerFromLegacy(cfg.NewReranker()), nil
+			return cfg.NewReranker(), nil
 		}, spi.ProviderDescriptor{Kind: spi.ProviderKindReranker, Name: name, Version: "v1"}); err != nil {
 			return nil, err
 		}
@@ -201,65 +200,6 @@ func NewConfiguredReranker(cfg *config.Config) (spi.Reranker, error) {
 		return nil, err
 	}
 	return public, nil
-}
-
-// legacyRerankerFromPublic was deleted: extraction/spi boundaries no longer
-// need an inline adapter here because spieadapter.NewLegacyReranker is the
-// canonical bridge at env/serverstate edges.
-
-// publicRerankerFromLegacy adapts a legacy core.Reranker to the public
-// spi.Reranker contract. The translation is faithful: every field the
-// legacy implementations read (Content) and preserve (identity, scores)
-// round-trips through Candidate Text/ID/Score/Metadata, and ordering is
-// the only observable effect.
-type legacyRerankerAdapter struct{ legacy core.Reranker }
-
-var _ spi.Reranker = (*legacyRerankerAdapter)(nil)
-
-func publicRerankerFromLegacy(legacy core.Reranker) spi.Reranker {
-	if legacy == nil {
-		return nil
-	}
-	return &legacyRerankerAdapter{legacy: legacy}
-}
-
-func factToCandidate(fact core.RetrievedFact) spi.Candidate {
-	return spi.Candidate{
-		ID:    fact.ParentID,
-		Text:  fact.Content,
-		Score: fact.RankingScore,
-		Metadata: map[string]string{
-			"relation_type": fact.RelationType,
-			"depth":         fmt.Sprint(fact.Depth),
-		},
-	}
-}
-
-func candidateToFact(candidate spi.Candidate) core.RetrievedFact {
-	depth, _ := strconv.Atoi(candidate.Metadata["depth"])
-	return core.RetrievedFact{
-		Content:      candidate.Text,
-		ParentID:     candidate.ID,
-		RankingScore: candidate.Score,
-		RelationType: candidate.Metadata["relation_type"],
-		Depth:        depth,
-	}
-}
-
-func (a *legacyRerankerAdapter) Rerank(ctx context.Context, query string, candidates []spi.Candidate) ([]spi.Candidate, error) {
-	facts := make([]core.RetrievedFact, 0, len(candidates))
-	for _, candidate := range candidates {
-		facts = append(facts, candidateToFact(candidate))
-	}
-	reranked, err := a.legacy.Rerank(ctx, query, facts)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]spi.Candidate, 0, len(reranked))
-	for _, fact := range reranked {
-		out = append(out, factToCandidate(fact))
-	}
-	return out, nil
 }
 
 // The current service layer still consumes the legacy extractor shape for

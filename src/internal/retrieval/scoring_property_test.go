@@ -60,7 +60,7 @@ func TestProperty_CentralityNeverNegative(t *testing.T) {
 // increasing similarity (holding other variables constant) never decreases
 // the total composite score.
 func TestProperty_IncreasingSimilarityNeverDecreasesTotalScore(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight:          0.7,
 		RecencyWeight:         0.3,
 		DepthPenalty:          0.05,
@@ -89,7 +89,7 @@ func TestProperty_IncreasingSimilarityNeverDecreasesTotalScore(t *testing.T) {
 // TestProperty_BuildScoreBreakdownMatchesComputeCompositeScore verifies that
 // BuildScoreBreakdown always produces a FinalScore matching compositeScore.
 func TestProperty_BuildScoreBreakdownMatchesComputeCompositeScore(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight:          0.7,
 		RecencyWeight:         0.3,
 		DepthPenalty:          0.05,
@@ -126,7 +126,7 @@ func TestProperty_ScoreOrderingIsStable(t *testing.T) {
 		nodes := make([]rankedNode, 20)
 		for i := range nodes {
 			nodes[i] = rankedNode{
-				node: core.GraphNode{
+				node: GraphNode{
 					Entity: core.Entity{
 						ID:       "node-" + string(rune('a'+i%26)),
 						Category: "world",
@@ -172,7 +172,7 @@ func TestProperty_ScoreOrderingIsStable(t *testing.T) {
 // the composite score never exceeds the sum of all positive weights.
 func TestProperty_CompositeScoreNeverExceedsSumOfWeights(t *testing.T) {
 	for trial := 0; trial < 100; trial++ {
-		w := core.RankingWeight{
+		w := RankingWeight{
 			VectorWeight:          float32(trial%10) * 0.1,
 			RecencyWeight:         float32((trial+1)%10) * 0.1,
 			TemporalWeight:        float32((trial+2)%10) * 0.1,
@@ -195,7 +195,7 @@ func TestProperty_CompositeScoreNeverExceedsSumOfWeights(t *testing.T) {
 // TestProperty_DepthPenaltyNeverIncreasesScore verifies that
 // depth penalty always reduces or maintains the score.
 func TestProperty_DepthPenaltyNeverIncreasesScore(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight:          0.7,
 		RecencyWeight:         0.3,
 		DepthPenalty:          0.1,

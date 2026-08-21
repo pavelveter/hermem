@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // PipelineStage is a single stage in the retrieval pipeline.
@@ -31,26 +29,26 @@ type EmbeddingStage interface {
 // CandidateRetrievalStage fetches raw graph nodes from seed IDs.
 type CandidateRetrievalStage interface {
 	PipelineStage
-	Expand(ctx context.Context, db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions, effDepth int) ([]scannedNode, error)
+	Expand(ctx context.Context, db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effDepth int) ([]scannedNode, error)
 }
 
 // RankingStage scores and sorts candidates.
 type RankingStage interface {
 	PipelineStage
-	Rank(items []scannedNode, opts core.RetrieveContextOptions, w core.RankingWeight, scorer core.CompositeScorer) ([]rankedNode, []core.GraphNode)
+	Rank(items []scannedNode, opts RetrieveContextOptions, w RankingWeight, scorer CompositeScorer) ([]rankedNode, []GraphNode)
 }
 
 // ContextAssemblyStage buckets ranked nodes into the RetrievalResult.
 type ContextAssemblyStage interface {
 	PipelineStage
-	Assemble(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight, explain bool) *core.RetrievalResult
+	Assemble(ranked []rankedNode, seeds []GraphNode, w RankingWeight, explain bool) *RetrievalResult
 }
 
 // RenderingStage converts a RetrievalResult into a string representation.
 // This is a subset of the existing Renderer interface — any Renderer
 // (MarkdownRenderer, PlainTextRenderer, JSONRenderer) satisfies it.
 type RenderingStage interface {
-	Render(result *core.RetrievalResult) string
+	Render(result *RetrievalResult) string
 }
 
 // Pipeline is the explicit, stage-based retrieval pipeline.
@@ -86,9 +84,9 @@ func (p *Pipeline) SetAssembly(s ContextAssemblyStage) { p.assemble = s }
 func (p *Pipeline) SetRender(s RenderingStage) { p.render = s }
 
 // Run executes the full pipeline: expand → rank → assemble → render.
-func (p *Pipeline) Run(db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions, query string) (*core.RetrievalResult, string, error) {
+func (p *Pipeline) Run(db *sql.DB, seedIDs []string, opts RetrieveContextOptions, query string) (*RetrievalResult, string, error) {
 	if len(seedIDs) == 0 {
-		return &core.RetrievalResult{}, "", nil
+		return &RetrievalResult{}, "", nil
 	}
 	effDepth := effectiveDepth(opts)
 	w := opts.RankingWeight.WithDefaults()
@@ -125,20 +123,20 @@ func (p *Pipeline) Run(db *sql.DB, seedIDs []string, opts core.RetrieveContextOp
 type defaultExpandStage struct{}
 
 func (s *defaultExpandStage) Name() string { return "expand_graph" }
-func (s *defaultExpandStage) Expand(_ context.Context, db *sql.DB, seedIDs []string, opts core.RetrieveContextOptions, effDepth int) ([]scannedNode, error) {
+func (s *defaultExpandStage) Expand(_ context.Context, db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effDepth int) ([]scannedNode, error) {
 	return expandGraph(db, seedIDs, opts, effDepth)
 }
 
 type defaultRankStage struct{}
 
 func (s *defaultRankStage) Name() string { return "score_and_rank" }
-func (s *defaultRankStage) Rank(items []scannedNode, opts core.RetrieveContextOptions, w core.RankingWeight, scorer core.CompositeScorer) ([]rankedNode, []core.GraphNode) {
+func (s *defaultRankStage) Rank(items []scannedNode, opts RetrieveContextOptions, w RankingWeight, scorer CompositeScorer) ([]rankedNode, []GraphNode) {
 	return scoreAndRank(items, opts, w, scorer)
 }
 
 type defaultAssemblyStage struct{}
 
 func (s *defaultAssemblyStage) Name() string { return "bucketize" }
-func (s *defaultAssemblyStage) Assemble(ranked []rankedNode, seeds []core.GraphNode, w core.RankingWeight, explain bool) *core.RetrievalResult {
+func (s *defaultAssemblyStage) Assemble(ranked []rankedNode, seeds []GraphNode, w RankingWeight, explain bool) *RetrievalResult {
 	return bucketize(ranked, seeds, w, explain)
 }

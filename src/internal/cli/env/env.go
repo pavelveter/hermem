@@ -30,6 +30,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
@@ -57,8 +58,8 @@ type Env struct {
 	VI        spi.VectorStore
 	Embedder  spi.Embedder
 	Extractor core.LLMExtractor
-	Reranker  core.Reranker
-	Retriever core.Retriever
+	Reranker  spi.Reranker
+	Retriever retrieval.Retriever
 	Metrics   *metrics.Metrics
 	Worker    *metrics.AsyncMetricsWorker
 	Tracer    tracing.Tracer
@@ -345,7 +346,7 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 		VI:         safeGet(prev, func(e *Env) spi.VectorStore { return e.VI }),
 		Embedder:   safeGet(prev, func(e *Env) spi.Embedder { return e.Embedder }),
 		Extractor:  safeGet(prev, func(e *Env) core.LLMExtractor { return e.Extractor }),
-		Reranker:   safeGet(prev, func(e *Env) core.Reranker { return e.Reranker }),
+		Reranker:   safeGet(prev, func(e *Env) spi.Reranker { return e.Reranker }),
 		Metrics:    safeGet(prev, func(e *Env) *metrics.Metrics { return e.Metrics }),
 		Worker:     safeGet(prev, func(e *Env) *metrics.AsyncMetricsWorker { return e.Worker }),
 		KeepDBOpen: safeGet(prev, func(e *Env) bool { return e.KeepDBOpen }),

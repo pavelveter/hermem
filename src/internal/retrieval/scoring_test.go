@@ -11,7 +11,7 @@ import (
 
 // (RankingWeight).WithDefaults fills zero fields with the canonical defaults.
 func TestWithDefaults_ZeroFieldsGetDefaults(t *testing.T) {
-	got := core.RankingWeight{}.WithDefaults()
+	got := RankingWeight{}.WithDefaults()
 	if got.VectorWeight != 0.7 {
 		t.Fatalf("VectorWeight default: want 0.7, got %v", got.VectorWeight)
 	}
@@ -33,7 +33,7 @@ func TestWithDefaults_ZeroFieldsGetDefaults(t *testing.T) {
 }
 
 func TestWithDefaults_NonZeroFieldsPreserved(t *testing.T) {
-	in := core.RankingWeight{
+	in := RankingWeight{
 		VectorWeight:          0.5,
 		RecencyWeight:         0.4,
 		DepthPenalty:          0.1,
@@ -54,7 +54,7 @@ func TestWithDefaults_NonZeroFieldsPreserved(t *testing.T) {
 
 // compositeScore: linear combination with exponential depth decay.
 func TestCompositeScore_LinearComb(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight:     0.5,
 		RecencyWeight:    0.3,
 		TemporalWeight:   0.1,
@@ -70,7 +70,7 @@ func TestCompositeScore_LinearComb(t *testing.T) {
 }
 
 func TestCompositeScore_DepthPenaltySubtractive(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight: 1, RecencyWeight: 0, TemporalWeight: 0, CentralityWeight: 0,
 		DepthPenalty: 0.5,
 	}
@@ -85,9 +85,9 @@ func TestCompositeScore_DepthPenaltySubtractive(t *testing.T) {
 // sortByScoreDesc: highest score first.
 func TestSortByScoreDesc_HighestFirst(t *testing.T) {
 	ranked := []rankedNode{
-		{node: core.GraphNode{Entity: core.Entity{ID: "c"}}, score: 0.3},
-		{node: core.GraphNode{Entity: core.Entity{ID: "a"}}, score: 0.9},
-		{node: core.GraphNode{Entity: core.Entity{ID: "b"}}, score: 0.6},
+		{node: GraphNode{Entity: core.Entity{ID: "c"}}, score: 0.3},
+		{node: GraphNode{Entity: core.Entity{ID: "a"}}, score: 0.9},
+		{node: GraphNode{Entity: core.Entity{ID: "b"}}, score: 0.6},
 	}
 	sortByScoreDesc(ranked)
 	want := []string{"a", "b", "c"}
@@ -100,8 +100,8 @@ func TestSortByScoreDesc_HighestFirst(t *testing.T) {
 
 func TestSortByScoreDesc_StableOnTies(t *testing.T) {
 	ranked := []rankedNode{
-		{node: core.GraphNode{Entity: core.Entity{ID: "x"}}, score: 0.5},
-		{node: core.GraphNode{Entity: core.Entity{ID: "y"}}, score: 0.5},
+		{node: GraphNode{Entity: core.Entity{ID: "x"}}, score: 0.5},
+		{node: GraphNode{Entity: core.Entity{ID: "y"}}, score: 0.5},
 	}
 	sortByScoreDesc(ranked)
 	if ranked[0].node.Entity.ID != "x" || ranked[1].node.Entity.ID != "y" {
@@ -111,7 +111,7 @@ func TestSortByScoreDesc_StableOnTies(t *testing.T) {
 
 // defaultCompositeScorer: integration with vector + recency.
 func TestDefaultCompositeScorer_UsesVectorAndRecency(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight: 1, RecencyWeight: 0, DepthPenalty: 0,
 	}.WithDefaults()
 	scorer := defaultCompositeScorer(w)
@@ -119,10 +119,10 @@ func TestDefaultCompositeScorer_UsesVectorAndRecency(t *testing.T) {
 	oldTime := time.Now().Add(-2000 * time.Hour)
 	recentTime := time.Now()
 
-	old := core.GraphNode{
+	old := GraphNode{
 		Entity: core.Entity{ID: "old", UpdatedAt: &oldTime, Degree: 0},
 	}
-	recent := core.GraphNode{
+	recent := GraphNode{
 		Entity: core.Entity{ID: "recent", UpdatedAt: &recentTime, Degree: 0},
 	}
 
@@ -201,7 +201,7 @@ func floatNear(a, b float32) bool {
 func TestComputeScoreComponents_PopulatesAllFields(t *testing.T) {
 	now := time.Now()
 	created := now.Add(-48 * time.Hour)
-	node := core.GraphNode{
+	node := GraphNode{
 		Entity: core.Entity{
 			ID:        "x",
 			UpdatedAt: &now,
@@ -210,7 +210,7 @@ func TestComputeScoreComponents_PopulatesAllFields(t *testing.T) {
 		},
 		PathWeight: 1.5,
 	}
-	w := core.RankingWeight{
+	w := RankingWeight{
 		RecencyHalfLifeHours:  720,
 		TemporalHalfLifeHours: 720,
 	}.WithDefaults()
@@ -240,8 +240,8 @@ func TestComputeScoreComponents_PopulatesAllFields(t *testing.T) {
 }
 
 func TestComputeScoreComponents_EmptyQueryYieldsZeroSim(t *testing.T) {
-	node := core.GraphNode{Entity: core.Entity{ID: "x"}}
-	w := core.RankingWeight{}.WithDefaults()
+	node := GraphNode{Entity: core.Entity{ID: "x"}}
+	w := RankingWeight{}.WithDefaults()
 	c := ComputeScoreComponents(node, []float32{1, 0, 0}, nil, 0, w)
 	if c.Sim != 0 {
 		t.Fatalf("Sim with nil query: want 0, got %v", c.Sim)
@@ -249,7 +249,7 @@ func TestComputeScoreComponents_EmptyQueryYieldsZeroSim(t *testing.T) {
 }
 
 func TestBuildScoreBreakdown_FinalMatchesCompositeScore(t *testing.T) {
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight:     0.5,
 		RecencyWeight:    0.3,
 		TemporalWeight:   0.1,
@@ -292,7 +292,7 @@ func TestBuildScoreBreakdown_FinalMatchesCompositeScore(t *testing.T) {
 func TestBuildScoreBreakdown_DepthPenaltySubtractsFromFinal(t *testing.T) {
 	// Build a breakdown with high features and a non-zero path;
 	// FinalScore = weighted_sum * 2^(-path).
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight: 1.0,
 	}.WithDefaults()
 	c := ScoreComponents{
@@ -309,7 +309,7 @@ func TestBuildScoreBreakdown_DepthPenaltySubtractsFromFinal(t *testing.T) {
 func TestBuildScoreBreakdown_NaNInfFinalClampedToZero(t *testing.T) {
 	// Sim=+Inf drives FinalScore to +Inf through compositeScore; clamp
 	// must bring it back to 0 so downstream sort doesn't propagate NaN.
-	w := core.RankingWeight{
+	w := RankingWeight{
 		VectorWeight: 1.0,
 	}.WithDefaults()
 	c := ScoreComponents{

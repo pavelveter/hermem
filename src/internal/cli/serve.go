@@ -14,7 +14,6 @@ import (
 	"github.com/pavelveter/hermem/pkg/spi"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/server"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -120,7 +119,7 @@ func runServe(env *clienv.Env, port string, skipEmbedderCheck bool) error {
 
 // buildState constructs a *serverstate.State from a config + Reranker.
 // Used at boot AND inside the SIGHUP loop — same shape as pre-cobra serve.
-func buildState(cfg *config.Config, reranker core.Reranker) *serverstate.State {
+func buildState(cfg *config.Config, reranker spi.Reranker) *serverstate.State {
 	cats := cfg.Schema.AllowedCategories
 	if cats == nil {
 		cats = map[string]bool{}

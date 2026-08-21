@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"testing"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // Per-stage retrieval benchmarks — let operators measure the cost of
@@ -46,7 +44,7 @@ func benchSetup(b *testing.B) (*sql.DB, string) {
 // can drive their stage without re-running upstream setup.
 func preBuiltScanned(b *testing.B, db *sql.DB, seedID string) []scannedNode {
 	b.Helper()
-	out, err := expandGraph(db, []string{seedID}, core.RetrieveContextOptions{MaxDepth: 2}, 2)
+	out, err := expandGraph(db, []string{seedID}, RetrieveContextOptions{MaxDepth: 2}, 2)
 	if err != nil {
 		b.Fatalf("expandGraph: %v", err)
 	}
@@ -57,7 +55,7 @@ func BenchmarkRetrieveContext(b *testing.B) {
 	db, seedID := benchSetup(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = RetrieveContext(db, []string{seedID}, core.RetrieveContextOptions{
+		_, _ = RetrieveContext(db, []string{seedID}, RetrieveContextOptions{
 			MaxDepth:       2,
 			QueryEmbedding: []float32{0.5, 0.5, 0.5},
 		})
@@ -68,14 +66,14 @@ func BenchmarkExpandGraph(b *testing.B) {
 	db, seedID := benchSetup(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = expandGraph(db, []string{seedID}, core.RetrieveContextOptions{MaxDepth: 2}, 2)
+		_, _ = expandGraph(db, []string{seedID}, RetrieveContextOptions{MaxDepth: 2}, 2)
 	}
 }
 
 func BenchmarkScoreAndRank(b *testing.B) {
 	db, seedID := benchSetup(b)
 	items := preBuiltScanned(b, db, seedID)
-	opts := core.RetrieveContextOptions{
+	opts := RetrieveContextOptions{
 		QueryEmbedding: []float32{0.5, 0.5, 0.5},
 	}
 	w := opts.RankingWeight.WithDefaults()
@@ -89,7 +87,7 @@ func BenchmarkScoreAndRank(b *testing.B) {
 func BenchmarkBucketize(b *testing.B) {
 	db, seedID := benchSetup(b)
 	items := preBuiltScanned(b, db, seedID)
-	opts := core.RetrieveContextOptions{
+	opts := RetrieveContextOptions{
 		QueryEmbedding: []float32{0.5, 0.5, 0.5},
 	}
 	w := opts.RankingWeight.WithDefaults()

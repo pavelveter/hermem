@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
 // FakeEmbedder returns a fixed embedding for any input.
@@ -38,7 +39,7 @@ type FakeReranker struct {
 	Calls int
 }
 
-func (f *FakeReranker) Rerank(_ context.Context, _ string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
+func (f *FakeReranker) Rerank(_ context.Context, _ string, facts []retrieval.RetrievedFact) ([]retrieval.RetrievedFact, error) {
 	f.Calls++
 	return facts, nil
 }

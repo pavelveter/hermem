@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -163,7 +162,7 @@ func TestService_Retrieve_OK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed edge: %v", err)
 	}
-	opts := core.RetrieveContextOptions{Ctx: t.Context()}
+	opts := RetrieveContextOptions{Ctx: t.Context()}
 	result, err := f.svc.Retrieve(t.Context(), []string{"ra"}, opts)
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
@@ -175,7 +174,7 @@ func TestService_Retrieve_OK(t *testing.T) {
 
 func TestService_Retrieve_RejectsEmptySeeds(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Retrieve(t.Context(), nil, core.RetrieveContextOptions{})
+	_, err := f.svc.Retrieve(t.Context(), nil, RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected empty-seeds error, got nil")
 	}
@@ -187,7 +186,7 @@ func TestService_Retrieve_RejectsEmptySeeds(t *testing.T) {
 func TestService_Retrieve_AutoFillsCtx(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "ctx-1", "ctx alpha")
-	result, err := f.svc.Retrieve(t.Context(), []string{"ctx-1"}, core.RetrieveContextOptions{})
+	result, err := f.svc.Retrieve(t.Context(), []string{"ctx-1"}, RetrieveContextOptions{})
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -201,7 +200,7 @@ func TestService_Retrieve_AutoFillsCtx(t *testing.T) {
 func TestService_Query_OK_ReturnsMarkdown(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "qa", "alpha query")
-	opts := core.RetrieveContextOptions{Ctx: t.Context()}
+	opts := RetrieveContextOptions{Ctx: t.Context()}
 	md, err := f.svc.Query(t.Context(), "alpha", 0, opts)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
@@ -211,7 +210,7 @@ func TestService_Query_OK_ReturnsMarkdown(t *testing.T) {
 
 func TestService_Query_RejectsEmptyQuery(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Query(t.Context(), "", 0, core.RetrieveContextOptions{})
+	_, err := f.svc.Query(t.Context(), "", 0, RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected empty-query error, got nil")
 	}
@@ -228,7 +227,7 @@ func TestService_Query_PropagatesEmbedError(t *testing.T) {
 	defer db.Close()
 	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, &svcErrEmbedder{msg: "query-embed-fail"})
-	_, err = svc.Query(t.Context(), "anything", 0, core.RetrieveContextOptions{})
+	_, err = svc.Query(t.Context(), "anything", 0, RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected embed error, got nil")
 	}
@@ -238,7 +237,7 @@ func TestService_Query_PropagatesEmbedError(t *testing.T) {
 
 func TestService_Response_RejectsEmptyQuery(t *testing.T) {
 	f := newSvcFixture(t)
-	_, err := f.svc.Response(t.Context(), "", core.RetrieveContextOptions{})
+	_, err := f.svc.Response(t.Context(), "", RetrieveContextOptions{})
 	if err == nil {
 		t.Fatal("expected empty-query rejection, got nil")
 	}
@@ -252,7 +251,7 @@ func TestService_Response_RejectsEmptyQuery(t *testing.T) {
 func TestService_Explain_OK(t *testing.T) {
 	f := newSvcFixture(t)
 	seedSvcEntity(t, f.svc, "ea", "explain alpha")
-	opts := core.RetrieveContextOptions{Ctx: t.Context()}
+	opts := RetrieveContextOptions{Ctx: t.Context()}
 	result, err := f.svc.Explain(t.Context(), "alpha", 0, opts)
 	if err != nil {
 		t.Fatalf("Explain: %v", err)
@@ -276,7 +275,7 @@ func TestService_Explain_SwallowsEmbedError(t *testing.T) {
 	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, &svcErrEmbedder{msg: "explain-embed-fail"})
 
-	result, err := svc.Explain(t.Context(), "anything", 0, core.RetrieveContextOptions{})
+	result, err := svc.Explain(t.Context(), "anything", 0, RetrieveContextOptions{})
 	if err != nil {
 		t.Fatalf("Explain should swallow embed error, got: %v", err)
 	}

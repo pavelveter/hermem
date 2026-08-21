@@ -8,7 +8,6 @@ package core
 
 import (
 	"context"
-	"time"
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
@@ -60,15 +59,6 @@ type VectorIndex interface {
 // an optional spi.Pinger assertion instead of a required Ping method.
 type Embedder = spi.Embedder
 
-// Retriever performs graph-walk retrieval from seed IDs.
-type Retriever interface {
-	// RetrieveContext runs a graph walk from seed IDs and returns ranked results.
-	RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
-	// MultiHopRetrieveContext runs multiple hops of discovery, expanding seeds
-	// via vector search at each hop.
-	MultiHopRetrieveContext(ctx context.Context, vi spi.VectorStore, embedder Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
-}
-
 // Relation — a typed connection extracted from dialog.
 //
 // Deprecated: alias to the canonical pkg/domain.Relation.
@@ -87,94 +77,6 @@ type ExtractionResult = domain.ExtractionResult
 // LLMExtractor runs entity+relation extraction on a dialog.
 type LLMExtractor interface {
 	ExtractEntities(ctx context.Context, dialog string) (*ExtractionResult, error)
-}
-
-// ScoreBreakdown decomposes the ranking score into its constituent
-// components so callers can understand why a particular node was
-// retrieved. Field semantics mirror scoring.go's named contributions:
-//
-//	VectorScore     — cosine similarity to query (0..1)
-//	RecencyScore    — exponential decay on UpdatedAt, half-life = RecencyHalfLifeHours
-//	TemporalScore   — exponential decay on CreatedAt, half-life = TemporalHalfLifeHours
-//	CentralityScore — log10(1 + Degree) graph centrality
-//	PathScore       — cumulative edge weight from seed (path_weight)
-//	DepthPenalty    — PathScore × DepthPenalty weight, subtracted from sum
-//	FinalScore      — composite final ranking score (mirrors RankingScore)
-//	Weights         — the ranking weights used for this score (for full explainability)
-//
-// ScoreBreakdown is populated when RetrieveContextOptions.Explain is true
-// (or for /query/explain). Nil otherwise — the omitempty tag keeps the
-// /retrieve JSON envelope byte-compatible for non-explain callers.
-type ScoreBreakdown struct {
-	VectorScore     float32        `json:"vector_score"`
-	RecencyScore    float32        `json:"recency_score"`
-	TemporalScore   float32        `json:"temporal_score"`
-	CentralityScore float32        `json:"centrality_score"`
-	PathScore       float32        `json:"path_score"`
-	DepthPenalty    float32        `json:"depth_penalty"`
-	FinalScore      float32        `json:"final_score"`
-	Weights         *RankingWeight `json:"weights,omitempty"`
-}
-
-// RetrievedFact is one re-ranked item in a category bucket.
-type RetrievedFact struct {
-	Content        string          `json:"content"`
-	ParentID       string          `json:"parent_id,omitempty"`
-	RelationType   string          `json:"relation_type,omitempty"`
-	Depth          int             `json:"depth"`
-	VectorScore    float32         `json:"vector_score,omitempty"`
-	RecencyScore   float32         `json:"recency_score,omitempty"`
-	DepthPenalty   float32         `json:"depth_penalty,omitempty"`
-	RankingScore   float32         `json:"ranking_score,omitempty"`
-	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
-}
-
-// Reranker reorders a list of facts based on relevance to a query.
-type Reranker interface {
-	Rerank(ctx context.Context, query string, facts []RetrievedFact) ([]RetrievedFact, error)
-}
-
-// GraphNode is one node returned by the graph-walk CTE.
-type GraphNode struct {
-	Entity         Entity          `json:"entity"`
-	Relations      []Edge          `json:"relations,omitempty"`
-	Depth          int             `json:"depth"`
-	PathWeight     float32         `json:"path_weight,omitempty"`
-	ParentID       string          `json:"parent_id"`
-	RelationType   string          `json:"relation_type,omitempty"`
-	RankingScore   float32         `json:"ranking_score"`
-	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
-}
-
-// RetrievalResult is the output of a RetrieveContext call.
-type RetrievalResult struct {
-	SeedNodes    []GraphNode     `json:"seed_nodes"`
-	WorldFacts   []RetrievedFact `json:"world_facts"`
-	Opinions     []RetrievedFact `json:"opinions"`
-	Experiences  []RetrievedFact `json:"experiences"`
-	Observations []RetrievedFact `json:"observations"`
-}
-
-// CompositeScorer computes a ranking score for a graph node.
-type CompositeScorer func(node GraphNode, nodeVec []float32, queryEmbedding []float32, queryNorm float32) float32
-
-// RetrieveContextOptions controls graph-walk bounds for a single retrieval call.
-type RetrieveContextOptions struct {
-	TopK              int
-	MaxDepth          int
-	DepthCeiling      int
-	MaxRetrievedNodes int
-	TokenBudget       int // soft token limit; 0 = unlimited (use MaxRetrievedNodes only)
-	QueryEmbedding    []float32
-	CompositeScorer   CompositeScorer
-	Ctx               context.Context
-	Explain           bool
-	RankingWeight     RankingWeight
-	Reranker          Reranker
-	QueryText         string
-	MultiHopCount     int
-	TimeFrom          time.Time
-	TimeTo            time.Time
 }
 
 // Provenance records where an ingested entity came from.

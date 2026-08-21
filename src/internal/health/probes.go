@@ -78,7 +78,7 @@ func ExtractorProbe(ex core.LLMExtractor) Check {
 	}
 }
 
-func RerankerProbe(r core.Reranker) Check {
+func RerankerProbe(r spi.Reranker) Check {
 	return Check{
 		Name: "reranker",
 		Probe: func(ctx context.Context) error {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/health"
 	metricspkg "github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -262,6 +262,6 @@ func TestReady_RerankerFailure_NonBlocking(t *testing.T) {
 // used to pin the non-blocking-reranker invariant.
 type failingReranker struct{}
 
-func (failingReranker) Rerank(_ context.Context, _ string, _ []core.RetrievedFact) ([]core.RetrievedFact, error) {
+func (failingReranker) Rerank(_ context.Context, _ string, _ []spi.Candidate) ([]spi.Candidate, error) {
 	return nil, errors.New("reranker unreachable")
 }

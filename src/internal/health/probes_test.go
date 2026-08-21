@@ -47,11 +47,11 @@ func (m *mockExtractor) ExtractEntities(ctx context.Context, dialog string) (*co
 }
 
 type mockReranker struct {
-	rerankFunc func(ctx context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error)
+	rerankFunc func(ctx context.Context, query string, candidates []spi.Candidate) ([]spi.Candidate, error)
 }
 
-func (m *mockReranker) Rerank(ctx context.Context, query string, facts []core.RetrievedFact) ([]core.RetrievedFact, error) {
-	return m.rerankFunc(ctx, query, facts)
+func (m *mockReranker) Rerank(ctx context.Context, query string, candidates []spi.Candidate) ([]spi.Candidate, error) {
+	return m.rerankFunc(ctx, query, candidates)
 }
 
 func TestDBProbe_ClosedDB(t *testing.T) {
@@ -185,8 +185,8 @@ func TestExtractorProbe_OK(t *testing.T) {
 // that might, say, swap the probe to a deeper connectivity check.
 func TestRerankerProbe_OK(t *testing.T) {
 	r := &mockReranker{
-		rerankFunc: func(ctx context.Context, _ string, _ []core.RetrievedFact) ([]core.RetrievedFact, error) {
-			return []core.RetrievedFact{}, nil
+		rerankFunc: func(ctx context.Context, _ string, _ []spi.Candidate) ([]spi.Candidate, error) {
+			return []spi.Candidate{}, nil
 		},
 	}
 	svc := health.New(health.RerankerProbe(r))
@@ -222,7 +222,7 @@ func TestRerankerProbe_Nil(t *testing.T) {
 // upstream error verbatim and stays non-critical.
 func TestRerankerProbe_Error(t *testing.T) {
 	r := &mockReranker{
-		rerankFunc: func(ctx context.Context, _ string, _ []core.RetrievedFact) ([]core.RetrievedFact, error) {
+		rerankFunc: func(ctx context.Context, _ string, _ []spi.Candidate) ([]spi.Candidate, error) {
 			return nil, errors.New("reranker backend down")
 		},
 	}

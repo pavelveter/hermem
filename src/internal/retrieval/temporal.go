@@ -12,7 +12,7 @@ import (
 // like graph expansion lives in expand.go.
 //
 // temporalScore is one of the four raw features inside
-// core.ScoreBreakdown (the other three — vector similarity, recency,
+// ScoreBreakdown (the other three — vector similarity, recency,
 // centrality — stay in scoring.go because they are the ranker's
 // primary signals; temporal is its own axis).
 

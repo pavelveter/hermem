@@ -40,8 +40,8 @@ type Application struct {
 	Worker    *metrics.AsyncMetricsWorker
 	Embedder  spi.Embedder
 	Extractor core.LLMExtractor
-	Reranker  core.Reranker
-	Retriever core.Retriever
+	Reranker  spi.Reranker
+	Retriever retrieval.Retriever
 	Metrics   *metrics.Metrics
 	Tracer    tracing.Tracer
 	Cfg       *config.Config
@@ -83,7 +83,7 @@ func New(_ context.Context, cfg *config.Config, build BuildInfo) (*Application, 
 	// --- Tracer ---
 	tracer := tracing.NewTracerFromEnv()
 
-	// --- Retrieval service (exposed as core.Retriever interface) ---
+	// --- Retrieval service (exposed as retrieval.Retriever interface) ---
 	retSvc := retrieval.New(db, vi, embedder)
 
 	return &Application{
