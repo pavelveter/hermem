@@ -1,160 +1,49 @@
 // Package core defines the foundational domain types shared across all hermem packages.
 // It has zero internal dependencies and is imported by every other package.
+//
+// Deprecated: the facade is being removed in the breaking release. Value
+// types whose canonical home is pkg/domain are now aliases; new code must
+// import pkg/domain directly.
 package core
 
 import (
 	"context"
-	"fmt"
-	"sync/atomic"
 	"time"
+
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // Entity is the central domain object — a fact, opinion, experience, or observation.
-type Entity struct {
-	ID             string     `json:"id"`
-	Category       string     `json:"category"`
-	Content        string     `json:"content"`
-	Embedding      []float32  `json:"embedding,omitempty"`
-	UpdatedAt      *time.Time `json:"updated_at"`
-	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
-	Archived       bool       `json:"archived"`
-	Status         string     `json:"status,omitempty"`
-	Confidence     float32    `json:"confidence,omitempty"`
-	Source         string     `json:"source,omitempty"`
-	SourceType     string     `json:"source_type,omitempty"`
-	CreatedAt      *time.Time `json:"created_at,omitempty"`
-	ValidFrom      *time.Time `json:"valid_from,omitempty"`
-	ValidTo        *time.Time `json:"valid_to,omitempty"`
-	ConversationID string     `json:"conversation_id,omitempty"`
-	MessageID      string     `json:"message_id,omitempty"`
-	ExtractedFrom  string     `json:"extracted_from,omitempty"`
-	Degree         int        `json:"degree,omitempty"`
-	Priority       int        `json:"priority,omitempty"`
-}
-
-// WithInitialStatus returns a copy of e with Status set to the first
-// valid state from schema.ValidStateOrder when Status is empty.
-// This centralizes the "stateful entities start at the first valid state"
-// rule that was previously duplicated in store/entity.go and ingestion/worker.go.
-func (e Entity) WithInitialStatus(schema SchemaConfig) Entity {
-	if e.Status == "" && schema.StatefulCategories[e.Category] && len(schema.ValidStateOrder) > 0 {
-		e.Status = schema.ValidStateOrder[0]
-	}
-	return e
-}
+//
+// Deprecated: alias to the canonical pkg/domain.Entity.
+type Entity = domain.Entity
 
 // Edge is a directed relation between two entities.
-type Edge struct {
-	SourceID     string  `json:"source_id"`
-	TargetID     string  `json:"target_id"`
-	RelationType string  `json:"relation_type"`
-	Weight       float32 `json:"weight,omitempty"`
-}
+//
+// Deprecated: alias to the canonical pkg/domain.Edge.
+type Edge = domain.Edge
 
 // SchemaConfig defines the allowed categories, relations, and state machine.
-type SchemaConfig struct {
-	AllowedCategories   map[string]bool
-	AllowedRelations    map[string]bool
-	StatefulCategories  map[string]bool
-	ValidStates         map[string]bool
-	ValidStateOrder     []string
-	RelationBlocking    string
-	RelationContradicts string
-	StateUnblocking     string
-	RelationRecovery    string
-	StatefulEnabled     bool
-	CascadeLimit        int // max tasks per cascade rollback; 0 = default (4096)
-}
+//
+// Deprecated: alias to the canonical pkg/domain.SchemaConfig.
+type SchemaConfig = domain.SchemaConfig
 
 // DefaultSchemaConfig returns a SchemaConfig with built-in defaults.
-func DefaultSchemaConfig(stateful bool) SchemaConfig {
-	cats := map[string]bool{
-		"world": true, "opinion": true, "experience": true, "observation": true,
-		"summary": true,
-	}
-	rels := map[string]bool{
-		"prefers": true, "uses": true, "mentions": true, "related_to": true,
-		"part_of": true, "causes": true, "contradicts": true,
-		"blocked_by": true, "recovers_via": true,
-	}
-	return SchemaConfig{
-		AllowedCategories:   cats,
-		AllowedRelations:    rels,
-		StatefulCategories:  map[string]bool{},
-		ValidStates:         map[string]bool{},
-		ValidStateOrder:     nil,
-		RelationBlocking:    "blocked_by",
-		RelationContradicts: "contradicts",
-		StateUnblocking:     "completed",
-		RelationRecovery:    "recovers_via",
-		StatefulEnabled:     stateful,
-	}
-}
-
-// taskSeq is a monotonic counter for unique task IDs within a process.
-var taskSeq atomic.Uint64
-
-// NewTaskID returns a unique task ID using an atomic counter.
-// Guaranteed unique within a process — no collision under concurrency.
-func NewTaskID() string {
-	return fmt.Sprintf("task-%d", taskSeq.Add(1))
-}
-
-// TimePtr returns a pointer to t. Convenience helper for constructing
-// *time.Time fields in struct literals.
-func TimePtr(t time.Time) *time.Time { return &t }
-
-// RetentionPolicy controls automatic archival of stale nodes.
-type RetentionPolicy struct {
-	ObservationTTL  time.Duration
-	RunInterval     time.Duration
-	DeleteBatchSize int
-}
+//
+// Deprecated: call domain.DefaultSchemaConfig directly.
+func DefaultSchemaConfig(stateful bool) SchemaConfig { return domain.DefaultSchemaConfig(stateful) }
 
 // RankingWeight holds tunable parameters for the composite ranker.
 // Zero fields are treated as "unset" — call WithDefaults to resolve a
 // zero-means-unset struct into one safe to feed the ranker.
-type RankingWeight struct {
-	VectorWeight          float32
-	RecencyWeight         float32
-	DepthPenalty          float32
-	RecencyHalfLifeHours  float32
-	TemporalWeight        float32
-	TemporalHalfLifeHours float32
-	CentralityWeight      float32
-}
-
-// WithDefaults returns w with zero-valued fields replaced by the canonical
-// ranking defaults (see ADR-022). This is the single source of truth for
-// the default values; both config/ini.go (after LoadConfigFromBinaryDir)
-// and retrieval/walk.go call it to finalize a partially-populated weight.
-func (w RankingWeight) WithDefaults() RankingWeight {
-	if w.VectorWeight == 0 {
-		w.VectorWeight = 0.7
-	}
-	if w.RecencyWeight == 0 {
-		w.RecencyWeight = 0.3
-	}
-	if w.DepthPenalty == 0 {
-		w.DepthPenalty = 0.05
-	}
-	if w.RecencyHalfLifeHours == 0 {
-		w.RecencyHalfLifeHours = 720
-	}
-	if w.TemporalHalfLifeHours == 0 {
-		w.TemporalHalfLifeHours = 720
-	}
-	if w.CentralityWeight == 0 {
-		w.CentralityWeight = 0.05
-	}
-	return w
-}
+//
+// Deprecated: alias to the canonical pkg/domain.RankingWeight.
+type RankingWeight = domain.RankingWeight
 
 // SearchResult pairs an entity with its cosine similarity to a query.
-type SearchResult struct {
-	Entity     Entity  `json:"entity"`
-	Similarity float32 `json:"similarity"`
-}
+//
+// Deprecated: alias to the canonical pkg/domain.SearchResult.
+type SearchResult = domain.SearchResult
 
 // VectorIndex is the interface for vector similarity search and storage.
 type VectorIndex interface {
@@ -182,23 +71,19 @@ type Retriever interface {
 }
 
 // Relation — a typed connection extracted from dialog.
-type Relation struct {
-	TargetID     string `json:"target_id"`
-	RelationType string `json:"relation_type"`
-}
+//
+// Deprecated: alias to the canonical pkg/domain.Relation.
+type Relation = domain.Relation
 
 // ExtractedEntity is one entity extracted from a dialog by an LLM.
-type ExtractedEntity struct {
-	ID        string     `json:"id"`
-	Category  string     `json:"category"`
-	Content   string     `json:"content"`
-	Relations []Relation `json:"relations"`
-}
+//
+// Deprecated: alias to the canonical pkg/domain.ExtractedEntity.
+type ExtractedEntity = domain.ExtractedEntity
 
 // ExtractionResult is the full output of an LLM extraction call.
-type ExtractionResult struct {
-	Entities []ExtractedEntity `json:"entities"`
-}
+//
+// Deprecated: alias to the canonical pkg/domain.ExtractionResult.
+type ExtractionResult = domain.ExtractionResult
 
 // LLMExtractor runs entity+relation extraction on a dialog.
 type LLMExtractor interface {
@@ -294,21 +179,17 @@ type RetrieveContextOptions struct {
 }
 
 // Provenance records where an ingested entity came from.
-type Provenance struct {
-	ConversationID string
-	MessageID      string
-	ExtractedFrom  string
-}
+//
+// Deprecated: alias to the canonical pkg/domain.Provenance.
+type Provenance = domain.Provenance
 
 // MemoryMessage is a dialog to be processed by the ingestion pipeline.
 // JSON tags normalize the surface so the pending.jsonl drain file
 // (written by MemoryWorkerResilient § 4.2) is readable by Go AND
 // by any external producer/language that consumes it on restart.
-type MemoryMessage struct {
-	Dialog         string `json:"dialog"`
-	ConversationID string `json:"conversation_id"`
-	MessageID      string `json:"message_id"`
-}
+//
+// Deprecated: alias to the canonical pkg/domain.MemoryMessage.
+type MemoryMessage = domain.MemoryMessage
 
 // ReEmbedResult is the output of ReEmbedAll.
 type ReEmbedResult struct {
@@ -366,14 +247,20 @@ type ConnectedComponent struct {
 }
 
 // Polarity represents whether evidence supports or refutes a belief.
-// Moved here from memory/evidence to fix the layering violation where
-// evolution/ (domain) imported memory/evidence (persistence).
-type Polarity string
+//
+// Deprecated: alias to the canonical pkg/domain.Polarity.
+type Polarity = domain.Polarity
 
 const (
-	PolaritySupport Polarity = "support"
-	PolarityRefute  Polarity = "refute"
+	PolaritySupport = domain.PolaritySupport
+	PolarityRefute  = domain.PolarityRefute
 )
+
+// TimePtr returns a pointer to t. Convenience helper for constructing
+// *time.Time fields in struct literals.
+//
+// Deprecated: call domain.TimePtr directly.
+var TimePtr = domain.TimePtr
 
 // TreeNode represents a node in the task tree.
 type TreeNode struct {
@@ -485,42 +372,4 @@ type TaskCreateRequest struct {
 type TaskCreateResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
-}
-
-// --- Migration types (C3.2) ---
-
-// MigrationStatus mirrors store.MigStatus for the core package.
-// The migration.Service adapter converts between the two.
-type MigrationStatus struct {
-	Name           string `json:"name"`
-	Applied        bool   `json:"applied"`
-	AppliedAt      string `json:"applied_at,omitempty"`
-	ChecksumSHA256 string `json:"checksum_sha256"`
-	ChecksumMatch  *bool  `json:"checksum_match,omitempty"`
-}
-
-// MigrationMismatch mirrors store.MigMismatch for the core package.
-type MigrationMismatch struct {
-	Name            string `json:"name"`
-	StoredChecksum  string `json:"stored_checksum"`
-	CurrentChecksum string `json:"current_checksum"`
-}
-
-// Migrator is the minimal interface for migration operations.
-// migration.Service satisfies this interface. CLI commands and HTTP
-// shells depend on Migrator (or *migration.Service) rather than
-// calling store functions directly.
-type Migrator interface {
-	// Run applies all pending migrations and returns the post-apply status.
-	Run(ctx context.Context) ([]MigrationStatus, error)
-	// DryRun returns pending migrations without applying them.
-	DryRun(ctx context.Context) ([]MigrationStatus, error)
-	// Status returns the applied/pending state of every migration.
-	Status(ctx context.Context) ([]MigrationStatus, error)
-	// Verify returns migrations whose stored checksum diverges from the
-	// current embedded file. Empty result = no drift.
-	Verify(ctx context.Context) ([]MigrationMismatch, error)
-	// Rollback removes applied migrations back to the target version.
-	// Empty target rolls back the last applied migration.
-	Rollback(ctx context.Context, target string) (string, error)
 }
