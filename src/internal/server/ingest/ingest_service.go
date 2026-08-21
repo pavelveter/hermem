@@ -9,6 +9,7 @@ package ingest
 import (
 	"net/http"
 
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/ingest"
@@ -72,7 +73,7 @@ func (h *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if req.Dialog == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "dialog required", Field: "dialog"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "dialog required", Field: "dialog"})
 		return nil
 	}
 	state := h.Refs.Load()

@@ -9,6 +9,7 @@ package edge
 import (
 	"net/http"
 
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	"github.com/pavelveter/hermem/src/internal/httputil"
@@ -74,7 +75,7 @@ func (h *HTTPService) HandleEdge(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "source_id, target_id, relation_type required", Field: ""})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "source_id, target_id, relation_type required", Field: ""})
 		return nil
 	}
 	state := h.Refs.Load()

@@ -21,6 +21,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -62,7 +63,7 @@ func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema doma
 		return fmt.Errorf("edge: source_id, target_id, relation_type required")
 	}
 	if !schema.AllowedRelations[req.RelationType] {
-		return core.NewInvalidSchemaError("relation_type", req.RelationType)
+		return apperr.NewInvalidSchemaError("relation_type", req.RelationType)
 	}
 	if req.AutoCreate {
 		if err := vector.AddEdgeWithAutoCreate(ctx, s.db, s.vi, s.embedder, req.SourceID, req.TargetID, req.RelationType); err != nil {

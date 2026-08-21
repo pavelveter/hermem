@@ -13,6 +13,7 @@ package memory
 import (
 	"net/http"
 
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
@@ -79,7 +80,7 @@ func (s *HTTPService) HandleStore(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if req.ID == "" || req.Category == "" || req.Content == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "id, category, content required", Field: ""})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "id, category, content required", Field: ""})
 		return nil
 	}
 	state := s.Refs.Load()

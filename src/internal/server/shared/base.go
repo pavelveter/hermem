@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -66,13 +66,13 @@ type BaseHTTPService struct {
 //  2. Map err → (HTTP status, message) via mapStatus. Behaviour
 //     aligns with the explicit inline error→status checks the
 //     shells used pre-§3.2:
-//     - core.DomainError{Code: CodeNotFound}          → 400
-//     - core.DomainError{Code: CodeInvalidInput}      → 422
-//     - core.DomainError{Code: CodeSchemaConflict}    → 409
-//     - core.DomainError{Code: CodeInvalidSchema}     → 422
-//     - core.DomainError{Code: CodeUnauthorized}      → 401
-//     - core.ErrInvalidInput  (uncoded)               → 422
-//     - core.ErrSchemaConflict (uncoded)              → 409
+//     - apperr.DomainError{Code: CodeNotFound}          → 400
+//     - apperr.DomainError{Code: CodeInvalidInput}      → 422
+//     - apperr.DomainError{Code: CodeSchemaConflict}    → 409
+//     - apperr.DomainError{Code: CodeInvalidSchema}     → 422
+//     - apperr.DomainError{Code: CodeUnauthorized}      → 401
+//     - apperr.ErrInvalidInput  (uncoded)               → 422
+//     - apperr.ErrSchemaConflict (uncoded)              → 409
 //     - everything else                                → 500
 //  3. Write the standard JSON error envelope (httputil.WriteError).
 //
@@ -98,7 +98,7 @@ func (b *BaseHTTPService) Wrap(fn func(w http.ResponseWriter, r *http.Request) e
 				b.Metrics.IncErr()
 			}
 			status, msg := mapStatus(err)
-			// When err carries a *core.DomainError, route through
+			// When err carries a *apperr.DomainError, route through
 			// WriteErrorWithCode so the wire envelope carries the
 			// `code` + `field` JSON attributes that pre-§10 inline
 			// handlers emitted via the same call. Without this routing
@@ -108,7 +108,7 @@ func (b *BaseHTTPService) Wrap(fn func(w http.ResponseWriter, r *http.Request) e
 			// Non-DomainError paths (network errors, context-cancelled,
 			// plain fmt.Errorf) keep falling through to WriteError
 			// because no structured detail is available.
-			var de *core.DomainError
+			var de *apperr.DomainError
 			if errors.As(err, &de) {
 				// Use err.Error() (verbatim) so the wire envelope
 				// carries the same text pre-§10 inline handlers emitted
@@ -149,7 +149,7 @@ func (noServerStateError) Error() string { return "no server state" }
 //
 // CodeNotFound → 400 (matches the explicit
 //
-//	`if errors.Is(err, core.ErrNotFound) { httputil.WriteError(w, 400, ...) }`
+//	`if errors.Is(err, apperr.ErrNotFound) { httputil.WriteError(w, 400, ...) }`
 //
 // mapping in task.HandleTaskStatus / HandleTaskShow). Preserves the
 // pre-§3.2 wire contract.
@@ -166,20 +166,20 @@ func mapStatus(err error) (int, string) {
 	if err == nil {
 		return http.StatusOK, ""
 	}
-	if errors.Is(err, core.ErrInvalidInput) {
+	if errors.Is(err, apperr.ErrInvalidInput) {
 		return http.StatusUnprocessableEntity, err.Error()
 	}
-	if errors.Is(err, core.ErrSchemaConflict) {
+	if errors.Is(err, apperr.ErrSchemaConflict) {
 		return http.StatusConflict, err.Error()
 	}
-	if errors.Is(err, core.ErrNotFound) {
+	if errors.Is(err, apperr.ErrNotFound) {
 		// Sentinel-only (uncoded DomainError): keep the 400 behaviour
 		// the inline checks used pre-§3.2. DomainError-wrapped
 		// CodeNotFound falls through to the next branch and gets the
 		// 400 mapping there as well — same outcome, two paths.
 		return http.StatusBadRequest, err.Error()
 	}
-	var de *core.DomainError
+	var de *apperr.DomainError
 	if errors.As(err, &de) {
 		// Use err.Error() (which renders de.Message + "(de.Field)" when
 		// Field is set) instead of de.Message verbatim. Pre-§3.2 inline
@@ -188,17 +188,17 @@ func mapStatus(err error) (int, string) {
 		// like the validation-error dashboard parse. Preserving that
 		// contract here keeps the §3.2 refactor invisible to consumers.
 		switch de.Code {
-		case core.CodeNotFound:
+		case apperr.CodeNotFound:
 			return http.StatusBadRequest, err.Error()
-		case core.CodeInvalidInput:
+		case apperr.CodeInvalidInput:
 			return http.StatusUnprocessableEntity, err.Error()
-		case core.CodeSchemaConflict:
+		case apperr.CodeSchemaConflict:
 			return http.StatusConflict, err.Error()
-		case core.CodeInvalidSchema:
+		case apperr.CodeInvalidSchema:
 			return http.StatusUnprocessableEntity, err.Error()
-		case core.CodeUnauthorized:
+		case apperr.CodeUnauthorized:
 			return http.StatusUnauthorized, err.Error()
-		case core.CodeInternalError:
+		case apperr.CodeInternalError:
 			return http.StatusInternalServerError, err.Error()
 		default:
 			return http.StatusInternalServerError, err.Error()

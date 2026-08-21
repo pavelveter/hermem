@@ -9,7 +9,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -24,19 +24,19 @@ func RejectSchemaConflict(w http.ResponseWriter, gen uint64, refs *serverstate.R
 		return false
 	}
 	m.IncSchemaConflict()
-	httputil.WriteErrorWithCode(w, http.StatusConflict, &core.DomainError{
-		Code: core.CodeSchemaConflict, Message: "schema changed during request; retry",
+	httputil.WriteErrorWithCode(w, http.StatusConflict, &apperr.DomainError{
+		Code: apperr.CodeSchemaConflict, Message: "schema changed during request; retry",
 	})
 	return true
 }
 
-// IsSchemaErr reports whether err is a core.DomainError with
+// IsSchemaErr reports whether err is a apperr.DomainError with
 // CodeInvalidSchema — the domain's signal that a request field
 // violates the current schema. HTTP shells map this to 422.
 func IsSchemaErr(err error) bool {
 	if err == nil {
 		return false
 	}
-	var de *core.DomainError
-	return errors.As(err, &de) && de.Code == core.CodeInvalidSchema
+	var de *apperr.DomainError
+	return errors.As(err, &de) && de.Code == apperr.CodeInvalidSchema
 }

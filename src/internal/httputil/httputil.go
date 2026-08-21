@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
@@ -50,21 +51,21 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 }
 
 // WriteErrorWithCode writes a structured JSON error response from err.
-// When err is a *core.DomainError (or wraps one via fmt.Errorf %w),
+// When err is a *apperr.DomainError (or wraps one via fmt.Errorf %w),
 // the code + field JSON attributes are populated; otherwise the
 // response falls through to WriteError's bare-envelope shape
 // ({"error": err.Error()}). Replaces the pre-§7.2
 // (w, status, msg, code, field) 5-arg shape with this 3-arg form.
 //
-// Wire-byte preservation: when err IS a *core.DomainError, the
+// Wire-byte preservation: when err IS a *apperr.DomainError, the
 // envelope uses err.Error() (NOT de.Error()) as the `error` field
 // so wrap-chain prefixes like "failed to parse payload:" survive
 // the round-trip — matching the pre-§7.2 base.go path which
 // explicitly chose err.Error() for the same reason. DomainError's
 // own "msg (field)" inline rendering is preserved when callers
-// pass a bare *core.DomainError literal (no wrap).
+// pass a bare *apperr.DomainError literal (no wrap).
 //
-// Callers that already have a *core.DomainError (e.g. §3.2 Wrap,
+// Callers that already have a *apperr.DomainError (e.g. §3.2 Wrap,
 // §10 DecodeJSON[T]) just pass it through; callers with a plain
 // error pass it directly and get the bare-envelope fallback.
 // Inline-validation sites that previously hard-coded
@@ -74,7 +75,7 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 // (clients that parsed code/field separately keep working; human
 // readers see the field name inline).
 func WriteErrorWithCode(w http.ResponseWriter, status int, err error) {
-	var de *core.DomainError
+	var de *apperr.DomainError
 	if errors.As(err, &de) {
 		WriteJSON(w, status, core.ErrorResponse{
 			Error: err.Error(),
@@ -141,7 +142,7 @@ func ParseIntParam(r *http.Request, name string, def int) int {
 }
 
 // MapError converts a domain error to (HTTP status code, message).
-// It unwraps *core.DomainError to map machine-readable error codes
+// It unwraps *apperr.DomainError to map machine-readable error codes
 // to HTTP statuses. Non-DomainError values default to 500.
 //
 // Note: §3.2 fixed the CodeInvalidInput mapping from 400 → 422.
@@ -157,24 +158,24 @@ func MapError(err error) (int, string) {
 	if err == nil {
 		return http.StatusOK, ""
 	}
-	if errors.Is(err, core.ErrInvalidInput) {
+	if errors.Is(err, apperr.ErrInvalidInput) {
 		return http.StatusUnprocessableEntity, err.Error()
 	}
-	if errors.Is(err, core.ErrSchemaConflict) {
+	if errors.Is(err, apperr.ErrSchemaConflict) {
 		return http.StatusConflict, err.Error()
 	}
-	var de *core.DomainError
+	var de *apperr.DomainError
 	if errors.As(err, &de) {
 		switch de.Code {
-		case core.CodeNotFound:
+		case apperr.CodeNotFound:
 			return http.StatusBadRequest, de.Message
-		case core.CodeInvalidInput:
+		case apperr.CodeInvalidInput:
 			return http.StatusUnprocessableEntity, de.Message
-		case core.CodeSchemaConflict:
+		case apperr.CodeSchemaConflict:
 			return http.StatusConflict, de.Message
-		case core.CodeInvalidSchema:
+		case apperr.CodeInvalidSchema:
 			return http.StatusUnprocessableEntity, de.Message
-		case core.CodeUnauthorized:
+		case apperr.CodeUnauthorized:
 			return http.StatusUnauthorized, de.Message
 		default:
 			return http.StatusInternalServerError, de.Message
@@ -191,9 +192,9 @@ func MapError(err error) (int, string) {
 //
 // On any decode failure — empty body, malformed JSON, body larger than
 // MaxBodyBytes, trailing data after a JSON value, unknown field, type
-// mismatch on a typed field — returns a *core.DomainError{Code:
+// mismatch on a typed field — returns a *apperr.DomainError{Code:
 // CodeInvalidInput, Message: <detail>, Field: <offending key>, Err:
-// core.ErrInvalidInput}. Returning *core.DomainError is what makes
+// apperr.ErrInvalidInput}. Returning *apperr.DomainError is what makes
 // §10 integrate cleanly with §3.2 Wrap: callers can `return err`, and
 // Wrap's mapStatus maps CodeInvalidInput to HTTP 422 (Unprocessable
 // Entity) — fixing the §3.2 silent bug where every inline handler
@@ -224,11 +225,11 @@ func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (T, error) {
 	var dst T
 	_, field, msg, ok := DecodeStrict(r.Body, &dst)
 	if !ok {
-		return zero, &core.DomainError{
-			Code:    core.CodeInvalidInput,
+		return zero, &apperr.DomainError{
+			Code:    apperr.CodeInvalidInput,
 			Message: msg,
 			Field:   field,
-			Err:     core.ErrInvalidInput,
+			Err:     apperr.ErrInvalidInput,
 		}
 	}
 	return dst, nil

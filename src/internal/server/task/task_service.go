@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/id"
@@ -87,17 +88,17 @@ func (s *HTTPService) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
 	var req core.TaskStatusRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: code, Message: msg, Field: field})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: code, Message: msg, Field: field})
 		return
 	}
 	if req.ID == "" || req.Status == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "id, status required", Field: ""})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "id, status required", Field: ""})
 		return
 	}
 	state := s.Refs.Load()
 	if err := s.Svc.Status(r.Context(), req.ID, req.Status, state.Schema); err != nil {
 		s.Metrics.IncErr()
-		if errors.Is(err, core.ErrNotFound) {
+		if errors.Is(err, apperr.ErrNotFound) {
 			httputil.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -164,7 +165,7 @@ func (s *HTTPService) HandleTaskList(w http.ResponseWriter, r *http.Request) err
 	}
 	state := s.Refs.Load()
 	if req.Status != "" && len(state.Schema.ValidStates) > 0 && !state.Schema.ValidStates[req.Status] {
-		return core.NewInvalidInputError(fmt.Sprintf("invalid status: %q", req.Status))
+		return apperr.NewInvalidInputError(fmt.Sprintf("invalid status: %q", req.Status))
 	}
 	tasks, err := s.Svc.List(r.Context(), req.Status, req.GoalID, state.Schema)
 	if err != nil {
@@ -191,7 +192,7 @@ func (s *HTTPService) HandleTaskShow(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	if req.ID == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "id required", Field: "id"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "id required", Field: "id"})
 		return nil
 	}
 	state := s.Refs.Load()
@@ -219,7 +220,7 @@ func (s *HTTPService) HandleTaskDep(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	if req.SourceID == "" || req.TargetID == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "source_id, target_id required", Field: ""})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "source_id, target_id required", Field: ""})
 		return nil
 	}
 	state := s.Refs.Load()
@@ -252,7 +253,7 @@ func (s *HTTPService) HandleTaskRollback(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	if req.ID == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "id required", Field: "id"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "id required", Field: "id"})
 		return nil
 	}
 	rollbackID, err := s.Svc.Rollback(r.Context(), req.ID, s.Refs.Load().Schema)
@@ -301,7 +302,7 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 	if req.Content == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "content required", Field: "content"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "content required", Field: "content"})
 		return nil
 	}
 	if req.ID == "" {
@@ -327,7 +328,7 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 func (s *HTTPService) HandleRecoveryPlan(w http.ResponseWriter, r *http.Request) error {
 	id := r.URL.Query().Get("id")
 	if id == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "id required", Field: "id"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "id required", Field: "id"})
 		return nil
 	}
 	plan, err := s.Svc.RecoveryPlan(r.Context(), id, s.Refs.Load().Schema)

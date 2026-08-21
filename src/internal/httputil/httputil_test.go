@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 )
 
 // TestDecodeStrict_Valid covers the happy path — well-formed JSON decodes
@@ -142,7 +142,7 @@ func TestWriteError_UsesErrorResponse(t *testing.T) {
 // downstream UIs use to highlight the offending input.
 func TestWriteErrorWithCode_IncludesField(t *testing.T) {
 	rr := httptest.NewRecorder()
-	WriteErrorWithCode(rr, http.StatusUnprocessableEntity, &core.DomainError{
+	WriteErrorWithCode(rr, http.StatusUnprocessableEntity, &apperr.DomainError{
 		Code: "required_field_missing", Message: "missing", Field: "email",
 	})
 	body := rr.Body.String()
@@ -204,7 +204,7 @@ func TestDecodeJSON_HappyPath(t *testing.T) {
 }
 
 // TestDecodeJSON_EmptyBodyReturnsDomainError verifies the §10 contract:
-// empty body surfaces as a *core.DomainError{Code: CodeInvalidInput,
+// empty body surfaces as a *apperr.DomainError{Code: CodeInvalidInput,
 // Message: containing "empty"}. The error must NOT be a bare string.
 // §3.2 Wrap's mapStatus will recognise CodeInvalidInput and map to 422
 // instead of the 500 a plain error would produce.
@@ -214,11 +214,11 @@ func TestDecodeJSON_EmptyBodyReturnsDomainError(t *testing.T) {
 	if err == nil {
 		t.Fatal("empty body: want DomainError, got nil")
 	}
-	var de *core.DomainError
+	var de *apperr.DomainError
 	if !errors.As(err, &de) {
-		t.Fatalf("empty body: want *core.DomainError, got %T: %v", err, err)
+		t.Fatalf("empty body: want *apperr.DomainError, got %T: %v", err, err)
 	}
-	if de.Code != core.CodeInvalidInput {
+	if de.Code != apperr.CodeInvalidInput {
 		t.Fatalf("empty body code: want CodeInvalidInput, got %q", de.Code)
 	}
 	if !strings.Contains(err.Error(), "empty") {
@@ -234,11 +234,11 @@ func TestDecodeJSON_MalformedReturnsDomainError(t *testing.T) {
 	if err == nil {
 		t.Fatal("malformed: want DomainError, got nil")
 	}
-	var de *core.DomainError
+	var de *apperr.DomainError
 	if !errors.As(err, &de) {
-		t.Fatalf("malformed: want *core.DomainError, got %T: %v", err, err)
+		t.Fatalf("malformed: want *apperr.DomainError, got %T: %v", err, err)
 	}
-	if de.Code != core.CodeInvalidInput {
+	if de.Code != apperr.CodeInvalidInput {
 		t.Fatalf("malformed code: want CodeInvalidInput, got %q", de.Code)
 	}
 }
@@ -255,8 +255,8 @@ func TestDecodeJSON_UnknownFieldPopulatesFieldAnnotation(t *testing.T) {
 	if err == nil {
 		t.Fatal("unknown field: want DomainError, got nil")
 	}
-	var de *core.DomainError
-	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+	var de *apperr.DomainError
+	if !errors.As(err, &de) || de.Code != apperr.CodeInvalidInput {
 		t.Fatalf("unknown field: want CodeInvalidInput DomainError, got %T: %v", err, err)
 	}
 	if de.Field != "extra" {
@@ -277,8 +277,8 @@ func TestDecodeJSON_TypeErrorPopulatesFieldAnnotation(t *testing.T) {
 	if err == nil {
 		t.Fatal("type error: want DomainError, got nil")
 	}
-	var de *core.DomainError
-	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+	var de *apperr.DomainError
+	if !errors.As(err, &de) || de.Code != apperr.CodeInvalidInput {
 		t.Fatalf("type error: want CodeInvalidInput DomainError, got %T: %v", err, err)
 	}
 	if de.Field != "name" {
@@ -318,8 +318,8 @@ func TestDecodeJSON_TrailingDataReturnsDomainError(t *testing.T) {
 	if err == nil {
 		t.Fatal("trailing data: want DomainError, got nil")
 	}
-	var de *core.DomainError
-	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+	var de *apperr.DomainError
+	if !errors.As(err, &de) || de.Code != apperr.CodeInvalidInput {
 		t.Fatalf("trailing data: want CodeInvalidInput DomainError, got %T: %v", err, err)
 	}
 	if !strings.Contains(err.Error(), "trailing") {
@@ -342,8 +342,8 @@ func TestDecodeJSON_NestedUnknownFieldReturnsDomainError(t *testing.T) {
 	if err == nil {
 		t.Fatal("nested unknown: want DomainError, got nil")
 	}
-	var de *core.DomainError
-	if !errors.As(err, &de) || de.Code != core.CodeInvalidInput {
+	var de *apperr.DomainError
+	if !errors.As(err, &de) || de.Code != apperr.CodeInvalidInput {
 		t.Fatalf("nested unknown: want CodeInvalidInput DomainError, got %T: %v", err, err)
 	}
 	if de.Field != "extra" {

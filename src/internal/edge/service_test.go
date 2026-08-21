@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/edge"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
@@ -126,11 +127,11 @@ func TestEdgeService_AddEdge_RejectsUnknownRelation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected DomainError, got nil")
 	}
-	var de *core.DomainError
+	var de *apperr.DomainError
 	if !errors.As(err, &de) {
-		t.Fatalf("want *core.DomainError, got %T: %v", err, err)
+		t.Fatalf("want *apperr.DomainError, got %T: %v", err, err)
 	}
-	if de.Code != core.CodeInvalidSchema || de.Field != "relation_type" {
+	if de.Code != apperr.CodeInvalidSchema || de.Field != "relation_type" {
 		t.Fatalf("want {code=invalid_schema, field=relation_type}, got {code=%s, field=%s}", de.Code, de.Field)
 	}
 }
@@ -156,8 +157,8 @@ func TestEdgeService_AddEdge_RejectsMissingFields(t *testing.T) {
 // --- DomainError (formerly ErrInvalidSchema) ---
 
 func TestDomainError_InvalidSchema(t *testing.T) {
-	de := core.NewInvalidSchemaError("relation_type", "nonexistent")
-	if de.Code != core.CodeInvalidSchema || de.Field != "relation_type" {
+	de := apperr.NewInvalidSchemaError("relation_type", "nonexistent")
+	if de.Code != apperr.CodeInvalidSchema || de.Field != "relation_type" {
 		t.Fatalf("want {code=invalid_schema, field=relation_type}, got {code=%s, field=%s}", de.Code, de.Field)
 	}
 	if !strings.Contains(de.Error(), "invalid relation_type") {

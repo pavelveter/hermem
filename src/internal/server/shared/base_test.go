@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 )
@@ -28,7 +28,7 @@ import (
 
 // Sentinel-only mapping: each error listed in the inline pre-§3.2
 // checks must keep its specific status. Plain errors.Is walks the
-// wrap chain via %w, so a `fmt.Errorf("prefix: %w", core.ErrNotFound)`
+// wrap chain via %w, so a `fmt.Errorf("prefix: %w", apperr.ErrNotFound)`
 // tests the unwrap path too.
 func TestMapStatusSentinels(t *testing.T) {
 	cases := []struct {
@@ -37,11 +37,11 @@ func TestMapStatusSentinels(t *testing.T) {
 		wantM string
 	}{
 		{nil, http.StatusOK, ""},
-		{core.ErrNotFound, http.StatusBadRequest, "not found"},
-		{core.ErrInvalidInput, http.StatusUnprocessableEntity, "invalid input"},
-		{core.ErrSchemaConflict, http.StatusConflict, "schema conflict"},
-		{fmt.Errorf("task missing: %w", core.ErrNotFound), http.StatusBadRequest, "task missing: not found"},
-		{fmt.Errorf("validation failed: %w", core.ErrInvalidInput), http.StatusUnprocessableEntity, "validation failed: invalid input"},
+		{apperr.ErrNotFound, http.StatusBadRequest, "not found"},
+		{apperr.ErrInvalidInput, http.StatusUnprocessableEntity, "invalid input"},
+		{apperr.ErrSchemaConflict, http.StatusConflict, "schema conflict"},
+		{fmt.Errorf("task missing: %w", apperr.ErrNotFound), http.StatusBadRequest, "task missing: not found"},
+		{fmt.Errorf("validation failed: %w", apperr.ErrInvalidInput), http.StatusUnprocessableEntity, "validation failed: invalid input"},
 		{ErrNoServerState, http.StatusInternalServerError, "no server state"},
 		{errors.New("plain db error"), http.StatusInternalServerError, "plain db error"},
 	}
@@ -53,23 +53,23 @@ func TestMapStatusSentinels(t *testing.T) {
 	}
 }
 
-// *core.DomainError mapping: each Code must produce the status
+// *apperr.DomainError mapping: each Code must produce the status
 // promised by shared.BaseHTTPService.Wrap's doc. Fix #1 from §3.2
 // (CodeInvalidInput → 422, was 400 in pre-§3.2 httputil.MapError) is
 // asserted here so future refactors can't silently revert.
 func TestMapStatusDomainError(t *testing.T) {
 	cases := []struct {
 		name  string
-		err   *core.DomainError
+		err   *apperr.DomainError
 		wantS int
 		wantM string
 	}{
-		{"not_found", core.NewNotFoundError("task abc"), http.StatusBadRequest, "task abc"},
-		{"invalid_input", core.NewInvalidInputError("bad content"), http.StatusUnprocessableEntity, "bad content"},
-		{"schema_conflict", core.NewSchemaConflictError("generation drift"), http.StatusConflict, "generation drift"},
-		{"invalid_schema_with_field", core.NewInvalidSchemaError("category", "weird"), http.StatusUnprocessableEntity, "invalid category: weird (category)"},
-		{"unauthorized", &core.DomainError{Code: core.CodeUnauthorized, Message: "no api key"}, http.StatusUnauthorized, "no api key"},
-		{"internal_error", &core.DomainError{Code: core.CodeInternalError, Message: "boom"}, http.StatusInternalServerError, "boom"},
+		{"not_found", apperr.NewNotFoundError("task abc"), http.StatusBadRequest, "task abc"},
+		{"invalid_input", apperr.NewInvalidInputError("bad content"), http.StatusUnprocessableEntity, "bad content"},
+		{"schema_conflict", apperr.NewSchemaConflictError("generation drift"), http.StatusConflict, "generation drift"},
+		{"invalid_schema_with_field", apperr.NewInvalidSchemaError("category", "weird"), http.StatusUnprocessableEntity, "invalid category: weird (category)"},
+		{"unauthorized", &apperr.DomainError{Code: apperr.CodeUnauthorized, Message: "no api key"}, http.StatusUnauthorized, "no api key"},
+		{"internal_error", &apperr.DomainError{Code: apperr.CodeInternalError, Message: "boom"}, http.StatusInternalServerError, "boom"},
 	}
 	for _, c := range cases {
 		gotS, gotM := mapStatus(c.err)
@@ -79,13 +79,13 @@ func TestMapStatusDomainError(t *testing.T) {
 	}
 }
 
-// *core.DomainError.Field annotation must survive mapStatus. The
+// *apperr.DomainError.Field annotation must survive mapStatus. The
 // second-pass review of §3.2 caught that the DomainError branch was
 // returning de.Message instead of err.Error(); this test pins the
 // "msg (field)" shape so log parsers / validation dashboards keep
 // working.
 func TestMapStatusPreservesFieldAnnotation(t *testing.T) {
-	de := core.NewInvalidSchemaError("category", "no-such")
+	de := apperr.NewInvalidSchemaError("category", "no-such")
 	gotS, gotM := mapStatus(de)
 	if gotS != http.StatusUnprocessableEntity {
 		t.Errorf("got status %d; want %d", gotS, http.StatusUnprocessableEntity)
@@ -157,7 +157,7 @@ func TestWrapCodeInvalidInputIs422(t *testing.T) {
 	m := metrics.New()
 	base := &BaseHTTPService{Metrics: m}
 	wrapped := base.Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		return core.NewInvalidInputError("content too long")
+		return apperr.NewInvalidInputError("content too long")
 	})
 	w := httptest.NewRecorder()
 	wrapped(w, httptest.NewRequest(http.MethodGet, "/x", nil))
@@ -243,7 +243,7 @@ func TestWrapCustomBodyReturnNilPreservesBody(t *testing.T) {
 
 // TestWrapDomainErrorRoutedThroughWriteErrorWithCode pins §10's
 // wire-contract preservation: when the handler returns
-// *core.DomainError, Wrap must route through WriteErrorWithCode so the
+// *apperr.DomainError, Wrap must route through WriteErrorWithCode so the
 // response carries {error, code, field} as top-level JSON attributes —
 // NOT collapse to {error: msg} via the legacy WriteError path. Status
 // 422 (CodeInvalidInput) + Field="email" + Message="required" verifies
@@ -256,11 +256,11 @@ func TestWrapCustomBodyReturnNilPreservesBody(t *testing.T) {
 func TestWrapDomainErrorRoutedThroughWriteErrorWithCode(t *testing.T) {
 	base := &BaseHTTPService{Metrics: metrics.New()}
 	wrapped := base.Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		return &core.DomainError{
-			Code:    core.CodeInvalidInput,
+		return &apperr.DomainError{
+			Code:    apperr.CodeInvalidInput,
 			Field:   "email",
 			Message: "required",
-			Err:     core.ErrInvalidInput,
+			Err:     apperr.ErrInvalidInput,
 		}
 	})
 	rr := httptest.NewRecorder()
@@ -269,7 +269,7 @@ func TestWrapDomainErrorRoutedThroughWriteErrorWithCode(t *testing.T) {
 		t.Fatalf("status: want 422, got %d", rr.Code)
 	}
 	body := rr.Body.String()
-	// Wire envelope: err.Error() for *core.DomainError with Field="email"
+	// Wire envelope: err.Error() for *apperr.DomainError with Field="email"
 	// and Message="required" renders as "required (email)" — the
 	// pre-§10 inline WriteErrorWithCode shape that operator logs grep on.
 	for _, want := range []string{

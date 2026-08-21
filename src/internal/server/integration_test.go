@@ -989,7 +989,7 @@ func TestConnectedComponents_WithMinSize(t *testing.T) {
 func TestStore_MalformedJSONReturns422WithCodeField(t *testing.T) {
 	f := newTestFixture(t)
 	// Truncated JSON → DecodeStrict returns ("bad_json", "", "invalid
-	// json: ...", false) which DecodeJSON wraps as *core.DomainError
+	// json: ...", false) which DecodeJSON wraps as *apperr.DomainError
 	// {Code: CodeInvalidInput}, surfaced by §3.2 Wrap → 422 + {error,
 	// code, field=""}.
 	truncated := `{"id":"a","category":"world","content":"hello"`
@@ -1013,7 +1013,7 @@ func TestStore_MalformedJSONReturns422WithCodeField(t *testing.T) {
 		t.Fatalf("expected non-empty error message, got empty (envelope: %+v)", envelope)
 	}
 	// Pin the wire contract exactly: any future rename of
-	// core.CodeInvalidInput OR a routing regression that drops the
+	// apperr.CodeInvalidInput OR a routing regression that drops the
 	// code attribute will fail this assertion at the integration level
 	// rather than silently sliding past the looser non-empty check.
 	if envelope.Code != "invalid_input" {
@@ -1040,7 +1040,7 @@ func TestStore_UnknownFieldReturns422WithFieldAttribute(t *testing.T) {
 	// Extra field "extra" not in {id, category, content} triggers
 	// DecodeStrict's unknown-field branch → ("unknown_field", "extra",
 	// "unknown field: extra", false) → DecodeJSON wraps it as
-	// *core.DomainError{Code: CodeInvalidInput, Field: "extra",
+	// *apperr.DomainError{Code: CodeInvalidInput, Field: "extra",
 	// Message: "unknown field: extra"}, surfaced by §3.2 Wrap → 422 +
 	// {error: "unknown field: extra (extra)", code: "invalid_input",
 	// field: "extra"}. DomainError.Error() renders Message+Field as

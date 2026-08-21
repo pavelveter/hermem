@@ -14,8 +14,8 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -48,17 +48,17 @@ func New(db *sql.DB, embedder spi.Embedder, vi spi.VectorStore) *Service {
 // Status transitions a task's status (e.g. pending → running → completed).
 // Validation is delegated to store.SetStatus.
 //
-// Errors: returns core.NewNotFoundError if the entity doesn't exist;
+// Errors: returns apperr.NewNotFoundError if the entity doesn't exist;
 // other store errors (invalid status, non-stateful) are wrapped as-is
 // and map to 422 in the HTTP shell via MapError's default→500 codepath
 // plus a task-specific override in HandleTaskStatus.
 func (s *Service) Status(_ context.Context, id, newStatus string, schema domain.SchemaConfig) error {
 	if id == "" || newStatus == "" {
-		return core.NewInvalidInputError("id and new status required")
+		return apperr.NewInvalidInputError("id and new status required")
 	}
 	if err := store.SetStatus(s.db, schema, id, newStatus); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return core.NewNotFoundError(err.Error())
+			return apperr.NewNotFoundError(err.Error())
 		}
 		return fmt.Errorf("status: %w", err)
 	}
@@ -109,16 +109,16 @@ type TaskShowResult struct {
 // Show returns one task entity plus its blocked_by + recovers_via
 // edge lists.
 //
-// Errors: returns core.NewNotFoundError if the entity doesn't exist;
+// Errors: returns apperr.NewNotFoundError if the entity doesn't exist;
 // other store errors are wrapped as-is.
 func (s *Service) Show(_ context.Context, id string, schema domain.SchemaConfig) (TaskShowResult, error) {
 	if id == "" {
-		return TaskShowResult{}, core.NewInvalidInputError("id required")
+		return TaskShowResult{}, apperr.NewInvalidInputError("id required")
 	}
 	task, blocked, recovers, err := store.GetTaskWithRelations(s.db, schema, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return TaskShowResult{}, core.NewNotFoundError(err.Error())
+			return TaskShowResult{}, apperr.NewNotFoundError(err.Error())
 		}
 		return TaskShowResult{}, fmt.Errorf("show: %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *Service) Show(_ context.Context, id string, schema domain.SchemaConfig)
 // non-fatal, a duplicate edge on add is non-fatal.
 func (s *Service) Dep(ctx context.Context, sourceID, targetID, relationType string, add bool) error {
 	if sourceID == "" || targetID == "" {
-		return core.NewInvalidInputError("dep: source_id and target_id required")
+		return apperr.NewInvalidInputError("dep: source_id and target_id required")
 	}
 	if add {
 		if err := store.AddEdge(ctx, s.db, sourceID, targetID, relationType, 1.0); err != nil {
@@ -202,7 +202,7 @@ func (s *Service) Create(ctx context.Context, id, content string, contextIDs []s
 	}
 	cat := config.FirstStatefulCategory(schema)
 	if cat == "" {
-		return "", core.NewInvalidInputError("no stateful category configured")
+		return "", apperr.NewInvalidInputError("no stateful category configured")
 	}
 	entity := domain.Entity{
 		ID:        id,

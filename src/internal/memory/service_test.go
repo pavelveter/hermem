@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pavelveter/hermem/pkg/spi"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -98,11 +99,11 @@ func TestMemoryService_Store_RejectsUnknownCategory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected DomainError, got nil")
 	}
-	var de *core.DomainError
+	var de *apperr.DomainError
 	if !errors.As(err, &de) {
-		t.Fatalf("want *core.DomainError, got %T: %v", err, err)
+		t.Fatalf("want *apperr.DomainError, got %T: %v", err, err)
 	}
-	if de.Code != core.CodeInvalidSchema || de.Field != "category" || !strings.Contains(de.Message, "category") {
+	if de.Code != apperr.CodeInvalidSchema || de.Field != "category" || !strings.Contains(de.Message, "category") {
 		t.Fatalf("want {code=invalid_schema, field=category}, got {code=%s, field=%s, msg=%s}", de.Code, de.Field, de.Message)
 	}
 }
@@ -162,7 +163,7 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 // src/internal/timeline/service_test.go. The HTTP shell route /timeline
 // moved from server/memory to server/timeline — URL contract unchanged.
 
-// --- ErrInvalidSchema (now core.DomainError) ---
+// --- ErrInvalidSchema (now apperr.DomainError) ---
 //
 // : TestErrInvalidSchema_Error was removed from here because
 // the relation_type field case moved to edge.ErrInvalidSchema. The

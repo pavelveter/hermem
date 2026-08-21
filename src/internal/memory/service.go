@@ -30,6 +30,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -83,7 +84,7 @@ func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema domai
 		return fmt.Errorf("store: id, category, content required")
 	}
 	if !schema.AllowedCategories[req.Category] {
-		return core.NewInvalidSchemaError("category", req.Category)
+		return apperr.NewInvalidSchemaError("category", req.Category)
 	}
 	entity := domain.Entity{
 		ID:        req.ID,

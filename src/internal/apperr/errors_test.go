@@ -1,10 +1,10 @@
-package core_test
+package apperr_test
 
 import (
 	"errors"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/apperr"
 )
 
 // §10 wire-contract unit tests for DomainError.Error() rendering.
@@ -14,7 +14,7 @@ import (
 // strings.Contains checks on the wire envelope — they can MISS a
 // regression that drops the inline " (field)" suffix as long as the
 // field name still appears somewhere in Error(). The unit tests here
-// pin the EXACT rendering format at the source (core.DomainError.Error)
+// pin the EXACT rendering format at the source (apperr.DomainError.Error)
 // so a redesign that lifts the field exclusively into the JSON envelope,
 // or reorders the suffix, fails immediately.
 //
@@ -32,7 +32,7 @@ import (
 // §10-valid for code consumers, but operator-log consumers would lose
 // the inline diagnostic).
 func TestDomainError_RendersMsgWithField(t *testing.T) {
-	de := &core.DomainError{
+	de := &apperr.DomainError{
 		Message: "unknown field: extra",
 		Field:   "extra",
 	}
@@ -48,7 +48,7 @@ func TestDomainError_RendersMsgWithField(t *testing.T) {
 // should never see a stray "()" suffix in those paths even if the
 // rendering helper accidentally widens the field branch.
 func TestDomainError_RendersMsgWithoutField(t *testing.T) {
-	de := &core.DomainError{
+	de := &apperr.DomainError{
 		Message: "invalid json: unexpected EOF",
 	}
 	if got, want := de.Error(), "invalid json: unexpected EOF"; got != want {
@@ -58,20 +58,20 @@ func TestDomainError_RendersMsgWithoutField(t *testing.T) {
 
 // TestDomainError_UnwrapReturnsErr pins errors.Is traversability —
 // DomainError.Unwrap() returns the sentinel (ErrInvalidInput, etc.) so
-// callers can write errors.Is(err, core.ErrInvalidInput) regardless of
+// callers can write errors.Is(err, apperr.ErrInvalidInput) regardless of
 // how deep the DomainError is fmt.Errorf-wrapped downstream. This is
 // the mechanism that lets §3.2 Wrap + mapStatus route an unwrapped
 // error back to the correct HTTP status even after layers of middleware
 // have applied their own fmt.Errorf prefixes.
 func TestDomainError_UnwrapReturnsErr(t *testing.T) {
-	de := core.NewInvalidInputError("bad content")
-	if !errors.Is(de, core.ErrInvalidInput) {
+	de := apperr.NewInvalidInputError("bad content")
+	if !errors.Is(de, apperr.ErrInvalidInput) {
 		t.Fatal("errors.Is(de, ErrInvalidInput): want true, got false")
 	}
 	// Same for NotFound so callers can swap the type without rewriting
 	// the test — pin the constructor wiring while we're here.
-	dnf := core.NewNotFoundError("task abc")
-	if !errors.Is(dnf, core.ErrNotFound) {
+	dnf := apperr.NewNotFoundError("task abc")
+	if !errors.Is(dnf, apperr.ErrNotFound) {
 		t.Fatal("errors.Is(dnf, ErrNotFound): want true, got false")
 	}
 }

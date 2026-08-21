@@ -1,13 +1,12 @@
-// Package core — central error taxonomy for hermem.
+// Package apperr owns the legacy application error contract:
+// a typed code + message (+ optional field) rendered as "msg (field)".
 //
-// DomainError is the canonical typed error for all domain-level failure modes.
-// It carries a machine-readable Code so HTTP/CLI shells can map errors to
-// status codes without string-matching.
-//
-// Sentinel errors (ErrNotFound, ErrInvalidInput, etc.) are embedded via
-// DomainError.Err so callers can use errors.Is(err, core.ErrNotFound)
-// regardless of how deep the error is wrapped.
-package core
+// This is a verbatim relocation of the former core.DomainError — the
+// §10 wire contract (HTTP envelopes and CLI stderr render Error()
+// byte-exactly) is preserved. Adoption of the pkg/domain.Error
+// taxonomy (typed ErrorCode) is a behavior-visible change that belongs
+// to the semantic-foundation release, not the facade removal.
+package apperr
 
 import (
 	"errors"

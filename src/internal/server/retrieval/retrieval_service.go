@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
@@ -92,7 +93,7 @@ func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if req.Query == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "query required", Field: "query"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "query required", Field: "query"})
 		return nil
 	}
 	results, err := s.Svc.Search(r.Context(), req.Query, req.TopK)
@@ -117,7 +118,7 @@ func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	if len(req.SeedIDs) == 0 {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "seed_ids required", Field: "seed_ids"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "seed_ids required", Field: "seed_ids"})
 		return nil
 	}
 	if req.MaxDepth <= 0 {
@@ -148,7 +149,7 @@ func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if req.Query == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "query required", Field: "query"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "query required", Field: "query"})
 		return nil
 	}
 	opts := s.optsFromState()
@@ -176,7 +177,7 @@ func (s *HTTPService) HandleQueryTemporal(w http.ResponseWriter, r *http.Request
 		return err
 	}
 	if req.Query == "" {
-		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "query required", Field: "query"})
+		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "query required", Field: "query"})
 		return nil
 	}
 	opts := s.optsFromState()
@@ -184,7 +185,7 @@ func (s *HTTPService) HandleQueryTemporal(w http.ResponseWriter, r *http.Request
 	if req.TimeFrom != "" {
 		t, err := time.Parse(time.RFC3339, req.TimeFrom)
 		if err != nil {
-			httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "invalid time_from: must be RFC3339", Field: "time_from"})
+			httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "invalid time_from: must be RFC3339", Field: "time_from"})
 			return nil
 		}
 		opts.TimeFrom = t
@@ -192,7 +193,7 @@ func (s *HTTPService) HandleQueryTemporal(w http.ResponseWriter, r *http.Request
 	if req.TimeTo != "" {
 		t, err := time.Parse(time.RFC3339, req.TimeTo)
 		if err != nil {
-			httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &core.DomainError{Code: core.CodeInvalidInput, Message: "invalid time_to: must be RFC3339", Field: "time_to"})
+			httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "invalid time_to: must be RFC3339", Field: "time_to"})
 			return nil
 		}
 		opts.TimeTo = t
