@@ -1,9 +1,11 @@
-package core
+package v1_test
 
 import (
 	"encoding/json"
 	"testing"
 	"unicode/utf8"
+
+	v1 "github.com/pavelveter/hermem/api/v1"
 )
 
 func FuzzStoreRequestJSONRoundTrip(f *testing.F) {
@@ -15,7 +17,7 @@ func FuzzStoreRequestJSONRoundTrip(f *testing.F) {
 			t.Skip()
 		}
 
-		req := StoreRequest{
+		req := v1.StoreRequest{
 			ID:       id,
 			Category: category,
 			Content:  content,
@@ -26,7 +28,7 @@ func FuzzStoreRequestJSONRoundTrip(f *testing.F) {
 			t.Skip()
 		}
 
-		var req2 StoreRequest
+		var req2 v1.StoreRequest
 		if err := json.Unmarshal(data, &req2); err != nil {
 			t.Fatalf("unmarshal failed: %v", err)
 		}
