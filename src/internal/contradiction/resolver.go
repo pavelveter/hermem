@@ -1,6 +1,6 @@
 package contradiction
 
-import "github.com/pavelveter/hermem/src/internal/core"
+import "github.com/pavelveter/hermem/pkg/domain"
 
 // ResolutionAction describes the outcome of contradiction resolution.
 type ResolutionAction int
@@ -17,7 +17,7 @@ const (
 // return a decision without side effects. The ingest pipeline applies
 // the decision (archive, create edge, etc.).
 type ContradictionResolver interface {
-	Resolve(existing core.Entity, incoming core.ExtractedEntity) ResolutionAction
+	Resolve(existing domain.Entity, incoming domain.ExtractedEntity) ResolutionAction
 }
 
 // ThresholdResolver implements ContradictionResolver using a
@@ -30,7 +30,7 @@ type ThresholdResolver struct {
 }
 
 // Resolve implements ContradictionResolver.
-func (r *ThresholdResolver) Resolve(existing core.Entity, _ core.ExtractedEntity) ResolutionAction {
+func (r *ThresholdResolver) Resolve(existing domain.Entity, _ domain.ExtractedEntity) ResolutionAction {
 	t := r.Threshold
 	if t <= 0 {
 		t = 0.7

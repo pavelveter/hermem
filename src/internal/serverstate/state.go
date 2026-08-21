@@ -11,8 +11,8 @@
 package serverstate
 
 import (
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // State bundles every piece of runtime config that handlers read while
@@ -39,13 +39,13 @@ import (
 // Ref" — handlers must not rely on it as a sentinel; the first handler
 // read happens AFTER Ref wires the State into the lifecycle.
 type State struct {
-	Schema             core.SchemaConfig
+	Schema             domain.SchemaConfig
 	ValidCategories    map[string]bool
 	ValidRelationTypes map[string]bool
 	DepthCeiling       int
 	MaxRetrievedNodes  int
 	TokenBudget        int
-	RankingWeight      core.RankingWeight
+	RankingWeight      domain.RankingWeight
 	Reranker           spi.Reranker
 	Generation         uint64
 }
@@ -57,7 +57,7 @@ type State struct {
 // iterate over State without contending with a SIGHUP writer. Nil maps in
 // the source copy to non-nil empty maps so handlers index freely without
 // nil-checks.
-func New(schema core.SchemaConfig, depthCeiling, maxRetrieved int, ranking core.RankingWeight, reranker spi.Reranker) *State {
+func New(schema domain.SchemaConfig, depthCeiling, maxRetrieved int, ranking domain.RankingWeight, reranker spi.Reranker) *State {
 	return &State{
 		Schema:             cloneSchema(schema),
 		ValidCategories:    cloneBoolMap(schema.AllowedCategories),
@@ -91,7 +91,7 @@ func cloneBoolMap(src map[string]bool) map[string]bool {
 // and Valid… because handlers in retrieval/ hold schema maps directly
 // (not just the State.Valid* cache) and a partial clone would re-introduce
 // the same aliasing bug class for those callers.
-func cloneSchema(s core.SchemaConfig) core.SchemaConfig {
+func cloneSchema(s domain.SchemaConfig) domain.SchemaConfig {
 	out := s // shallow copy of scalars; maps/slices below are replaced.
 	out.AllowedCategories = cloneBoolMap(s.AllowedCategories)
 	out.AllowedRelations = cloneBoolMap(s.AllowedRelations)

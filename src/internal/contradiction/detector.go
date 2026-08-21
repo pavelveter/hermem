@@ -4,7 +4,7 @@
 // implementations live in ingestion/detectors/.
 package contradiction
 
-import "github.com/pavelveter/hermem/src/internal/core"
+import "github.com/pavelveter/hermem/pkg/domain"
 
 // DetectionResult is the unified return shape for a contradiction
 // detection pass.
@@ -41,8 +41,8 @@ type DetectionResult struct {
 // short-circuits on the first Detected=true so a cheap lexical pass
 // can run before a more expensive semantic pass.
 //
-// Existing/Incoming are passed by value because core.Entity is small
+// Existing/Incoming are passed by value because domain.Entity is small
 // enough to copy and Detect must not mutate either side.
 type ContradictionDetector interface {
-	Detect(existing, incoming core.Entity) DetectionResult
+	Detect(existing, incoming domain.Entity) DetectionResult
 }

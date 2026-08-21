@@ -1,15 +1,13 @@
 package config
 
-import (
-	"github.com/pavelveter/hermem/src/internal/core"
-)
+import "github.com/pavelveter/hermem/pkg/domain"
 
 // RetrievalProfile bundles ranking weights and retrieval tuning
 // parameters into a named, reusable profile. Profiles make the
 // retrieval engine configurable without changing code.
 type RetrievalProfile struct {
 	Name              string
-	Ranking           core.RankingWeight
+	Ranking           domain.RankingWeight
 	MaxDepth          int
 	MaxRetrievedNodes int
 	TopK              int
@@ -19,7 +17,7 @@ type RetrievalProfile struct {
 func DefaultRetrievalProfile() RetrievalProfile {
 	return RetrievalProfile{
 		Name:              "default",
-		Ranking:           core.RankingWeight{}.WithDefaults(),
+		Ranking:           domain.RankingWeight{}.WithDefaults(),
 		MaxDepth:          2,
 		MaxRetrievedNodes: 100,
 		TopK:              5,
@@ -30,7 +28,7 @@ func DefaultRetrievalProfile() RetrievalProfile {
 func FreshnessFirstProfile() RetrievalProfile {
 	return RetrievalProfile{
 		Name: "freshness_first",
-		Ranking: core.RankingWeight{
+		Ranking: domain.RankingWeight{
 			VectorWeight:          0.3,
 			RecencyWeight:         0.5,
 			TemporalWeight:        0.1,
@@ -49,7 +47,7 @@ func FreshnessFirstProfile() RetrievalProfile {
 func SemanticSearchProfile() RetrievalProfile {
 	return RetrievalProfile{
 		Name: "semantic_search",
-		Ranking: core.RankingWeight{
+		Ranking: domain.RankingWeight{
 			VectorWeight:          0.85,
 			RecencyWeight:         0.05,
 			TemporalWeight:        0.02,
@@ -68,7 +66,7 @@ func SemanticSearchProfile() RetrievalProfile {
 func GraphExpansionProfile() RetrievalProfile {
 	return RetrievalProfile{
 		Name: "graph_expansion",
-		Ranking: core.RankingWeight{
+		Ranking: domain.RankingWeight{
 			VectorWeight:          0.3,
 			RecencyWeight:         0.1,
 			TemporalWeight:        0.05,
@@ -87,7 +85,7 @@ func GraphExpansionProfile() RetrievalProfile {
 func ConversationMemoryProfile() RetrievalProfile {
 	return RetrievalProfile{
 		Name: "conversation_memory",
-		Ranking: core.RankingWeight{
+		Ranking: domain.RankingWeight{
 			VectorWeight:          0.5,
 			RecencyWeight:         0.35,
 			TemporalWeight:        0.1,

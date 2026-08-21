@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/pavelveter/hermem/pkg/domain"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // GetContradictions returns contradicts edges, optionally filtered by entity ID.
@@ -35,7 +34,7 @@ func GetContradictions(db *sql.DB, entityID string) ([]domain.ContradictionPair,
 }
 
 // GetEntitiesByProvenance returns entities matching at least one provenance filter.
-func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source string, limit int) ([]core.Entity, error) {
+func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source string, limit int) ([]domain.Entity, error) {
 	if conversationID == "" && messageID == "" && source == "" {
 		return nil, fmt.Errorf("at least one provenance filter required")
 	}
@@ -66,9 +65,9 @@ func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source strin
 		return nil, fmt.Errorf("query provenance: %w", err)
 	}
 	defer rows.Close()
-	out := make([]core.Entity, 0)
+	out := make([]domain.Entity, 0)
 	for rows.Next() {
-		var e core.Entity
+		var e domain.Entity
 		var convID, msgID, src, srcType sql.NullString
 		var confidence sql.NullFloat64
 		var createdAt sql.NullTime

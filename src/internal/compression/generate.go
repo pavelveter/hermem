@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/id"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -52,7 +52,7 @@ func (cp *Compressor) Compress(ctx context.Context, entityIDs []string) (*Summar
 		ID:             fmt.Sprintf("summary-%s", id),
 		Content:        formatSummary(result),
 		CompressedFrom: entityIDs,
-		CompressedAt:   core.TimePtr(time.Now()),
+		CompressedAt:   domain.TimePtr(time.Now()),
 		Confidence:     averageConfidence(entities),
 		Provenance:     fmt.Sprintf("compressed from %d entities at %s", len(entityIDs), time.Now().Format(time.RFC3339)),
 		Generation:     1,
@@ -119,7 +119,7 @@ func (cp *Compressor) Recompress(ctx context.Context, summaryID string) (*Summar
 		ID:             fmt.Sprintf("summary-%s", id),
 		Content:        formatSummary(result),
 		CompressedFrom: sourceIDs,
-		CompressedAt:   core.TimePtr(time.Now()),
+		CompressedAt:   domain.TimePtr(time.Now()),
 		Confidence:     existing.Confidence,
 		Provenance:     provenance,
 		Generation:     existing.Generation + 1,
@@ -165,7 +165,7 @@ func (cp *Compressor) Regenerate(ctx context.Context, summaryID string) (*Summar
 
 	existing.Content = newContent
 	existing.RegeneratedAt = &now
-	existing.CompressedAt = core.TimePtr(time.Now())
+	existing.CompressedAt = domain.TimePtr(time.Now())
 	if cp.metrics != nil {
 		cp.metrics.IncRegenerate()
 		cp.metrics.ObserveCompressDuration(time.Since(start))
@@ -184,7 +184,7 @@ func markSuperseded(ctx context.Context, db *sql.DB, oldID, newID string) error 
 	return nil
 }
 
-func (cp *Compressor) loadEntities(ctx context.Context, ids []string) ([]core.Entity, error) {
+func (cp *Compressor) loadEntities(ctx context.Context, ids []string) ([]domain.Entity, error) {
 	phs, args := store.InClauseArgs(ids)
 	query := fmt.Sprintf("SELECT id, category, content, confidence FROM entities WHERE id IN (%s)", phs)
 	rows, err := cp.db.QueryContext(ctx, query, args...)
@@ -193,9 +193,9 @@ func (cp *Compressor) loadEntities(ctx context.Context, ids []string) ([]core.En
 	}
 	defer rows.Close()
 
-	var entities []core.Entity
+	var entities []domain.Entity
 	for rows.Next() {
-		var e core.Entity
+		var e domain.Entity
 		var conf sql.NullFloat64
 		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &conf); err != nil {
 			return nil, fmt.Errorf("scan entity: %w", err)
@@ -211,7 +211,7 @@ func (cp *Compressor) loadEntities(ctx context.Context, ids []string) ([]core.En
 	return entities, nil
 }
 
-func buildCompressionDialog(entities []core.Entity) string {
+func buildCompressionDialog(entities []domain.Entity) string {
 	var b strings.Builder
 	for _, e := range entities {
 		fmt.Fprintf(&b, "[%s] %s\n", e.Category, e.Content)
@@ -219,7 +219,7 @@ func buildCompressionDialog(entities []core.Entity) string {
 	return b.String()
 }
 
-func formatSummary(result *core.ExtractionResult) string {
+func formatSummary(result *domain.ExtractionResult) string {
 	if result == nil || len(result.Entities) == 0 {
 		return "(no entities extracted)"
 	}
@@ -230,7 +230,7 @@ func formatSummary(result *core.ExtractionResult) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func averageConfidence(entities []core.Entity) float32 {
+func averageConfidence(entities []domain.Entity) float32 {
 	if len(entities) == 0 {
 		return 0
 	}

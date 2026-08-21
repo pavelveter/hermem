@@ -20,7 +20,6 @@ import (
 	apiv1 "github.com/pavelveter/hermem/api/v1"
 
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
@@ -174,7 +173,7 @@ func (s *HTTPService) HandleQueryTemporal(w http.ResponseWriter, r *http.Request
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.TemporalQueryRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.TemporalQueryRequest](w, r)
 	if err != nil {
 		return err
 	}

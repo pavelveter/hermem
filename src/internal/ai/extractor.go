@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // OllamaLLMExtractor implements extraction.LLMExtractor against the Ollama /api/chat endpoint.
@@ -56,7 +56,7 @@ type chatResponse struct {
 	Message struct{ Content string } `json:"message"`
 }
 
-func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
+func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
 	prompt := buildExtractionPrompt(dialog)
 	req := chatRequest{
 		Model:    e.Model,
@@ -69,7 +69,7 @@ func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string)
 	if err := e.http.doPOST(ctx, "/api/chat", req, &cr); err != nil {
 		return nil, fmt.Errorf("ollama extract: %w", err)
 	}
-	var result core.ExtractionResult
+	var result domain.ExtractionResult
 	if err := json.Unmarshal([]byte(cr.Message.Content), &result); err != nil {
 		return nil, fmt.Errorf("parse extraction result: %w", err)
 	}
@@ -80,7 +80,7 @@ func (e *OllamaLLMExtractor) ExtractEntities(ctx context.Context, dialog string)
 //
 // Same double-decode pattern as Ollama: doPOST decodes the outer chat envelope
 // into a local struct, then json.Unmarshal on cr.Choices[0].Message.Content
-// produces *core.ExtractionResult.
+// produces *domain.ExtractionResult.
 type OpenAILLMExtractor struct {
 	BaseURL     string
 	APIKey      string
@@ -108,7 +108,7 @@ func NewOpenAILLMExtractor(baseURL, apiKey, model string, temperature float32, t
 	}
 }
 
-func (e *OpenAILLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
+func (e *OpenAILLMExtractor) ExtractEntities(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
 	prompt := buildExtractionPrompt(dialog)
 	body := map[string]interface{}{
 		"model":           e.Model,
@@ -129,7 +129,7 @@ func (e *OpenAILLMExtractor) ExtractEntities(ctx context.Context, dialog string)
 	if len(cr.Choices) == 0 {
 		return nil, fmt.Errorf("openai extract: no choices")
 	}
-	var result core.ExtractionResult
+	var result domain.ExtractionResult
 	if err := json.Unmarshal([]byte(cr.Choices[0].Message.Content), &result); err != nil {
 		return nil, fmt.Errorf("parse extraction result: %w", err)
 	}

@@ -5,11 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// LifecycleManager orchestrates the start/stop of registered core.Component
+// LifecycleManager orchestrates the start/stop of registered Component
 // instances. Components are started in registration order and stopped
 // in reverse order, mirroring stack semantics.
 //
@@ -23,8 +21,8 @@ import (
 //	mgr.Stop(context.Background())
 type LifecycleManager struct {
 	mu         sync.Mutex
-	components []core.Component
-	started    []core.Component // subset that successfully Start'd
+	components []Component
+	started    []Component // subset that successfully Start'd
 }
 
 // NewLifecycleManager constructs an empty LifecycleManager.
@@ -35,7 +33,7 @@ func NewLifecycleManager() *LifecycleManager {
 // Register adds a component to the manager. Panics if called after
 // Start — use the returned error from Start to decide whether to
 // register more components.
-func (m *LifecycleManager) Register(c core.Component) {
+func (m *LifecycleManager) Register(c Component) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.components = append(m.components, c)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -73,7 +74,7 @@ func NewIndex(backend string, db *sql.DB, dim int) core.VectorIndex {
 }
 
 // SearchByVector finds the topK entities most similar to queryEmbedding and hydrates from DB.
-func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEmbedding []float32, topK int) ([]core.SearchResult, error) {
+func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEmbedding []float32, topK int) ([]domain.SearchResult, error) {
 	if len(queryEmbedding) == 0 {
 		return nil, fmt.Errorf("empty query embedding")
 	}
@@ -97,9 +98,9 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEm
 		return nil, fmt.Errorf("fetch entities: %w", err)
 	}
 	defer rows.Close()
-	var results []core.SearchResult
+	var results []domain.SearchResult
 	for rows.Next() {
-		var e core.Entity
+		var e domain.Entity
 		var embBytes []byte
 		var lastAcc sql.NullTime
 		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &embBytes, &e.UpdatedAt, &lastAcc); err != nil {
@@ -114,7 +115,7 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEm
 				sim = CosineSimilarity(queryEmbedding, emb)
 			}
 		}
-		results = append(results, core.SearchResult{Entity: e, Similarity: sim})
+		results = append(results, domain.SearchResult{Entity: e, Similarity: sim})
 	}
 	if len(results) > topK {
 		results = results[:topK]
@@ -134,7 +135,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi spi.VectorStore, 
 			if err != nil {
 				return fmt.Errorf("embed placeholder %q: %w", id, err)
 			}
-			if err := store.StoreEntityWithEmbedding(ctx, db, vi, core.DefaultSchemaConfig(false), core.Entity{
+			if err := store.StoreEntityWithEmbedding(ctx, db, vi, domain.DefaultSchemaConfig(false), domain.Entity{
 				ID: id, Category: "world", Content: id, Embedding: embedding,
 			}); err != nil {
 				return fmt.Errorf("store placeholder %q: %w", id, err)

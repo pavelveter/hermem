@@ -20,7 +20,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -42,7 +42,7 @@ func New(db *sql.DB) *Service {
 // Status transitions a goal's status (e.g. pending → running → completed).
 // Delegates to store.SetStatus which enforces category membership and
 // valid-state ordering via the schema.
-func (s *Service) Status(_ context.Context, id, newStatus string, schema core.SchemaConfig) error {
+func (s *Service) Status(_ context.Context, id, newStatus string, schema domain.SchemaConfig) error {
 	if id == "" || newStatus == "" {
 		return fmt.Errorf("goal: Status: id and new status required")
 	}
@@ -56,20 +56,20 @@ func (s *Service) Status(_ context.Context, id, newStatus string, schema core.Sc
 // subtree root. Empty filters mean "no filter on that dimension".
 // Nil→empty slice normalization promotes the downstream envelope
 // contract (JSON `[]` not `null`).
-func (s *Service) List(_ context.Context, status, goalID string, schema core.SchemaConfig) ([]core.Task, error) {
+func (s *Service) List(_ context.Context, status, goalID string, schema domain.SchemaConfig) ([]domain.Task, error) {
 	return store.ListTasks(s.db, schema, status, goalID)
 }
 
 // Get returns a single goal entity by ID. Returns an error wrapping
 // the store-level "task not found" message so callers can
 // errors.Is-check the sentinel if needed.
-func (s *Service) Get(_ context.Context, id string, schema core.SchemaConfig) (core.Task, error) {
+func (s *Service) Get(_ context.Context, id string, schema domain.SchemaConfig) (domain.Task, error) {
 	if id == "" {
-		return core.Task{}, fmt.Errorf("goal: Get: id required")
+		return domain.Task{}, fmt.Errorf("goal: Get: id required")
 	}
 	t, err := store.GetTaskByID(s.db, schema, id)
 	if err != nil {
-		return core.Task{}, fmt.Errorf("goal: Get: %w", err)
+		return domain.Task{}, fmt.Errorf("goal: Get: %w", err)
 	}
 	return t, nil
 }

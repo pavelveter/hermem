@@ -11,8 +11,8 @@ import (
 
 	"gopkg.in/ini.v1"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/auth"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
@@ -122,9 +122,9 @@ func defaultConfig() *Config {
 			RunInterval:     1 * time.Hour,
 			DeleteBatchSize: 500,
 		},
-		Ranking:         core.RankingWeight{},
+		Ranking:         domain.RankingWeight{},
 		RerankerTimeout: 30 * time.Second,
-		Schema:          core.DefaultSchemaConfig(false),
+		Schema:          domain.DefaultSchemaConfig(false),
 		// §4 audit closure: production defaults to refusing to boot
 		// against an out-of-date schema; operator must run
 		// `./hermem db migrate apply` (recommended in a K8s InitContainer
@@ -377,7 +377,7 @@ func (c *Config) ValidateState(category, status string) error {
 func (c *Config) AllowedCategories() map[string]bool {
 	schema := c.Schema
 	if schema.AllowedCategories == nil {
-		schema = core.DefaultSchemaConfig(false)
+		schema = domain.DefaultSchemaConfig(false)
 	}
 	out := make(map[string]bool, len(schema.AllowedCategories)+len(c.ExtraCategories))
 	for k := range schema.AllowedCategories {
@@ -396,7 +396,7 @@ func (c *Config) AllowedCategories() map[string]bool {
 func (c *Config) AllowedRelationTypes() map[string]bool {
 	schema := c.Schema
 	if schema.AllowedRelations == nil {
-		schema = core.DefaultSchemaConfig(false)
+		schema = domain.DefaultSchemaConfig(false)
 	}
 	out := make(map[string]bool, len(schema.AllowedRelations)+len(c.ExtraRelationTypes))
 	for k := range schema.AllowedRelations {
@@ -469,7 +469,7 @@ func SortedKeys(m map[string]bool) []string {
 }
 
 // FirstStatefulCategory returns the alphabetically first stateful category.
-func FirstStatefulCategory(schema core.SchemaConfig) string {
+func FirstStatefulCategory(schema domain.SchemaConfig) string {
 	keys := SortedKeys(schema.StatefulCategories)
 	if len(keys) == 0 {
 		return ""

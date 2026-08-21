@@ -4,7 +4,7 @@ package aitest
 import (
 	"context"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
@@ -25,13 +25,13 @@ func (f *FakeEmbedder) Ping(_ context.Context) error { return nil }
 
 // FakeExtractor returns fixed entities for any input.
 type FakeExtractor struct {
-	Entities []core.ExtractedEntity
+	Entities []domain.ExtractedEntity
 	Calls    int
 }
 
-func (f *FakeExtractor) ExtractEntities(_ context.Context, _ string) (*core.ExtractionResult, error) {
+func (f *FakeExtractor) ExtractEntities(_ context.Context, _ string) (*domain.ExtractionResult, error) {
 	f.Calls++
-	return &core.ExtractionResult{Entities: f.Entities}, nil
+	return &domain.ExtractionResult{Entities: f.Entities}, nil
 }
 
 // FakeReranker returns facts unchanged.

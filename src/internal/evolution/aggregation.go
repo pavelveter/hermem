@@ -1,6 +1,6 @@
 package evolution
 
-import "github.com/pavelveter/hermem/src/internal/core"
+import "github.com/pavelveter/hermem/pkg/domain"
 
 // Aggregator selects the aggregation strategy for evidence strengths.
 type Aggregator int
@@ -15,7 +15,7 @@ const (
 // records. evidence.Evidence satisfies this interface, so callers can
 // pass []*evidence.Evidence directly.
 type EvidenceItem interface {
-	GetPolarity() core.Polarity
+	GetPolarity() domain.Polarity
 	GetStrength() float64
 }
 
@@ -23,13 +23,13 @@ type EvidenceItem interface {
 // strength values using the given selector. Returns 0 for a polarity
 // group when no evidence of that type exists.
 func AggregateEvidence(all []EvidenceItem, selector Aggregator) (support, refute float64) {
-	support = aggregatePolarity(all, core.PolaritySupport, selector)
-	refute = aggregatePolarity(all, core.PolarityRefute, selector)
+	support = aggregatePolarity(all, domain.PolaritySupport, selector)
+	refute = aggregatePolarity(all, domain.PolarityRefute, selector)
 	return
 }
 
 // aggregatePolarity computes the aggregate strength for a single polarity.
-func aggregatePolarity(all []EvidenceItem, pol core.Polarity, selector Aggregator) float64 {
+func aggregatePolarity(all []EvidenceItem, pol domain.Polarity, selector Aggregator) float64 {
 	var sum float64
 	var count int
 	var min float64

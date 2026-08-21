@@ -2,8 +2,6 @@ package logging
 
 import (
 	"sync"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // CapturedMessage is a single log call recorded by TestLogger.
@@ -94,5 +92,5 @@ func (tl *TestLogger) record(level, msg string, args []any) {
 	})
 }
 
-// Compile-time check: TestLogger implements core.Logger.
-var _ core.Logger = (*TestLogger)(nil)
+// Compile-time check: TestLogger implements Logger.
+var _ Logger = (*TestLogger)(nil)

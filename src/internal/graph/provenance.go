@@ -7,7 +7,7 @@ package graph
 import (
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // Source mirrors the metadata a deleted-from-the-DB provenance row
@@ -53,7 +53,7 @@ type LineageEntry struct {
 //
 // Time complexity: O(n). Memory cost: one LineageEntry per input node —
 // pre-allocated to len(nodes) so the loop never reallocates the slice.
-func WalkLineage(nodes []core.Entity) []LineageEntry {
+func WalkLineage(nodes []domain.Entity) []LineageEntry {
 	out := make([]LineageEntry, 0, len(nodes))
 	for _, n := range nodes {
 		tag := SafeSourceLabel(&Source{ID: n.Source, Label: n.Source})

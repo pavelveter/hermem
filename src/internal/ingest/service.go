@@ -25,8 +25,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/ingestion"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
@@ -73,7 +73,7 @@ func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, extractor extrac
 // forwarding the call (server/ingest + cli/memory/ingest) keep their
 // call shape — they just call ingest.Service.Ingest instead of
 // memory.Service.Ingest.
-func (s *Service) Ingest(ctx context.Context, dialog string, dedupThreshold float32, schema core.SchemaConfig) error {
+func (s *Service) Ingest(ctx context.Context, dialog string, dedupThreshold float32, schema domain.SchemaConfig) error {
 	if dialog == "" {
 		return fmt.Errorf("ingest: dialog required")
 	}

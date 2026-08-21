@@ -4,19 +4,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"gopkg.in/ini.v1"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // DefaultSchemaConfig returns a SchemaConfig with built-in defaults.
-// Delegates to core.DefaultSchemaConfig for the canonical definition.
-func DefaultSchemaConfig(stateful bool) core.SchemaConfig {
-	return core.DefaultSchemaConfig(stateful)
+// Delegates to domain.DefaultSchemaConfig for the canonical definition.
+func DefaultSchemaConfig(stateful bool) domain.SchemaConfig {
+	return domain.DefaultSchemaConfig(stateful)
 }
 
 // ValidateSchema checks a SchemaConfig for internal consistency.
-func ValidateSchema(s core.SchemaConfig) error {
+func ValidateSchema(s domain.SchemaConfig) error {
 	if len(s.AllowedCategories) == 0 {
 		return fmt.Errorf("allowed_categories must not be empty")
 	}
@@ -45,7 +44,7 @@ func ValidateSchema(s core.SchemaConfig) error {
 }
 
 // ParseSchemaSection parses the [schema] section of hermem.ini with detailed error messages.
-func ParseSchemaSection(section *ini.Section, path string) (core.SchemaConfig, error) {
+func ParseSchemaSection(section *ini.Section, path string) (domain.SchemaConfig, error) {
 	allowedKeys := map[string]bool{
 		"allowed_categories":  true,
 		"allowed_relations":   true,
@@ -61,7 +60,7 @@ func ParseSchemaSection(section *ini.Section, path string) (core.SchemaConfig, e
 			continue
 		}
 		if !allowedKeys[name] {
-			return core.SchemaConfig{}, fmt.Errorf("%s:%d: unknown [schema] key %q", path, FindConfigLine(path, k.Name()), k.Name())
+			return domain.SchemaConfig{}, fmt.Errorf("%s:%d: unknown [schema] key %q", path, FindConfigLine(path, k.Name()), k.Name())
 		}
 	}
 	schema := DefaultSchemaConfig(true)
@@ -75,12 +74,12 @@ func ParseSchemaSection(section *ini.Section, path string) (core.SchemaConfig, e
 	if v := ParseCSVList(section.Key("allowed_categories").String()); len(v) > 0 {
 		schema.AllowedCategories = BoolMap(v)
 	} else {
-		return core.SchemaConfig{}, fmt.Errorf("%s:%d: [schema].allowed_categories must not be empty", path, FindConfigLine(path, "allowed_categories"))
+		return domain.SchemaConfig{}, fmt.Errorf("%s:%d: [schema].allowed_categories must not be empty", path, FindConfigLine(path, "allowed_categories"))
 	}
 	if v := ParseCSVList(section.Key("allowed_relations").String()); len(v) > 0 {
 		schema.AllowedRelations = BoolMap(v)
 	} else {
-		return core.SchemaConfig{}, fmt.Errorf("%s:%d: [schema].allowed_relations must not be empty", path, FindConfigLine(path, "allowed_relations"))
+		return domain.SchemaConfig{}, fmt.Errorf("%s:%d: [schema].allowed_relations must not be empty", path, FindConfigLine(path, "allowed_relations"))
 	}
 	stateful := ParseCSVList(section.Key("stateful_categories").String())
 	schema.StatefulCategories = BoolMap(stateful)
@@ -88,11 +87,11 @@ func ParseSchemaSection(section *ini.Section, path string) (core.SchemaConfig, e
 	schema.ValidStateOrder = states
 	schema.ValidStates = BoolMap(states)
 	if len(stateful) > 0 && len(states) == 0 {
-		return core.SchemaConfig{}, fmt.Errorf("%s:%d: [schema].valid_states required when stateful_categories is set", path, FindConfigLine(path, "valid_states"))
+		return domain.SchemaConfig{}, fmt.Errorf("%s:%d: [schema].valid_states required when stateful_categories is set", path, FindConfigLine(path, "valid_states"))
 	}
 	for category := range schema.StatefulCategories {
 		if !schema.AllowedCategories[category] {
-			return core.SchemaConfig{}, fmt.Errorf("%s:%d: stateful category %q is not in allowed_categories", path, FindConfigLine(path, "stateful_categories"), category)
+			return domain.SchemaConfig{}, fmt.Errorf("%s:%d: stateful category %q is not in allowed_categories", path, FindConfigLine(path, "stateful_categories"), category)
 		}
 	}
 	if v := strings.TrimSpace(section.Key("relation_blocking").String()); v != "" {
@@ -106,11 +105,11 @@ func ParseSchemaSection(section *ini.Section, path string) (core.SchemaConfig, e
 	}
 	for _, rel := range []string{schema.RelationBlocking, schema.RelationRecovery} {
 		if rel != "" && !schema.AllowedRelations[rel] {
-			return core.SchemaConfig{}, fmt.Errorf("%s:%d: schema relation %q is not in allowed_relations", path, FindConfigLine(path, rel), rel)
+			return domain.SchemaConfig{}, fmt.Errorf("%s:%d: schema relation %q is not in allowed_relations", path, FindConfigLine(path, rel), rel)
 		}
 	}
 	if schema.StateUnblocking != "" && len(schema.ValidStates) > 0 && !schema.ValidStates[schema.StateUnblocking] {
-		return core.SchemaConfig{}, fmt.Errorf("%s:%d: state_unblocking %q is not in valid_states", path, FindConfigLine(path, "state_unblocking"), schema.StateUnblocking)
+		return domain.SchemaConfig{}, fmt.Errorf("%s:%d: state_unblocking %q is not in valid_states", path, FindConfigLine(path, "state_unblocking"), schema.StateUnblocking)
 	}
 	return schema, nil
 }

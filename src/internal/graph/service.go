@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/pavelveter/hermem/pkg/domain"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/graph/community"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -68,7 +67,7 @@ func (s *Service) Communities(ctx context.Context, maxIter int) ([]domain.Commun
 // vector dimensionality — any entity whose BLOB length does not match
 // dim*4 bytes is flagged. Returns a VerifyReport whose Pass() method
 // controls CLI exit-1 semantics.
-func (s *Service) Verify(ctx context.Context, schema core.SchemaConfig, vectorDim int) (domain.VerifyReport, error) {
+func (s *Service) Verify(ctx context.Context, schema domain.SchemaConfig, vectorDim int) (domain.VerifyReport, error) {
 	var report domain.VerifyReport
 
 	orphanEdges, err := store.VerifyOrphanEdges(ctx, s.db)

@@ -22,8 +22,9 @@ import (
 	"strings"
 	"time"
 
+	apiv1 "github.com/pavelveter/hermem/api/v1"
+
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // MaxBodyBytes caps request bodies on local POST handlers.
@@ -47,7 +48,7 @@ func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 
 // WriteError writes a JSON error response.
 func WriteError(w http.ResponseWriter, status int, msg string) {
-	WriteJSON(w, status, core.ErrorResponse{Error: msg})
+	WriteJSON(w, status, apiv1.ErrorResponse{Error: msg})
 }
 
 // WriteErrorWithCode writes a structured JSON error response from err.
@@ -77,7 +78,7 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 func WriteErrorWithCode(w http.ResponseWriter, status int, err error) {
 	var de *apperr.DomainError
 	if errors.As(err, &de) {
-		WriteJSON(w, status, core.ErrorResponse{
+		WriteJSON(w, status, apiv1.ErrorResponse{
 			Error: err.Error(),
 			Code:  de.Code,
 			Field: de.Field,

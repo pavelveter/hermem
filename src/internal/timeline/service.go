@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // Service is the transport-agnostic timeline read API. Read-only — db
@@ -68,13 +68,13 @@ func (s *Service) Timeline(ctx context.Context, limit int) ([]TimelineEntry, err
 	if limit < 0 {
 		limit = 0
 	}
-	// Defensive reference to core.DefaultSchemaConfig(false) pattern:
+	// Defensive reference to domain.DefaultSchemaConfig(false) pattern:
 	// timeline does not validate categories against SchemaConfig because
 	// it is a read-only surface (a category must exist in entities
 	// before it can be returned). Stored in _ to compile-time check
 	// that we haven't accidentally dropped the core import; remove
 	// the underscore if a future schema-gated timeline variant lands.
-	_ = core.DefaultSchemaConfig
+	_ = domain.DefaultSchemaConfig
 
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, category, content, created_at, source, source_type, conversation_id, message_id FROM entities WHERE archived = 0 AND created_at IS NOT NULL ORDER BY created_at DESC LIMIT ?`,

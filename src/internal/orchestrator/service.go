@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/pkg/domain"
-	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -32,7 +31,7 @@ func New(db *sql.DB) *Service {
 // Uses exponential backoff (50ms → 1s) when no tasks are ready, instead of
 // a fixed 500ms busy-wait. The loop breaks immediately once all tasks are
 // done or the context is cancelled.
-func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalID string, execFunc func(context.Context, core.Entity) error) error {
+func (s *Service) AgentLoop(ctx context.Context, schema domain.SchemaConfig, goalID string, execFunc func(context.Context, domain.Entity) error) error {
 	const (
 		initBackoff = 50 * time.Millisecond
 		maxBackoff  = 1 * time.Second
@@ -67,7 +66,7 @@ func (s *Service) AgentLoop(ctx context.Context, schema core.SchemaConfig, goalI
 
 // executeTask runs execFunc for a single task, recovers panics, and
 // transitions the task to failed or unblocking status.
-func (s *Service) executeTask(ctx context.Context, schema core.SchemaConfig, task core.Task, execFunc func(context.Context, core.Entity) error) error {
+func (s *Service) executeTask(ctx context.Context, schema domain.SchemaConfig, task domain.Task, execFunc func(context.Context, domain.Entity) error) error {
 	execFailed := false
 	func() {
 		defer func() {
@@ -93,14 +92,14 @@ func (s *Service) executeTask(ctx context.Context, schema core.SchemaConfig, tas
 }
 
 // ExecutionPlan returns executable tasks for a goal in topological order.
-func (s *Service) ExecutionPlan(ctx context.Context, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
+func (s *Service) ExecutionPlan(ctx context.Context, schema domain.SchemaConfig, goalID string) ([]domain.Task, error) {
 	return s.resolveExecutableTasks(ctx, schema, goalID)
 }
 
 // resolveExecutableTasks queries the task domain for tasks that are
 // unblocked and ready to execute. PHASE 2.4 redirection: previously
 // called retrieval.GetExecutableTasks (now in taskdomain.Service.Executable).
-func (s *Service) resolveExecutableTasks(ctx context.Context, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
+func (s *Service) resolveExecutableTasks(ctx context.Context, schema domain.SchemaConfig, goalID string) ([]domain.Task, error) {
 	// taskdomain.NewService requires an embedder + vi; AgentLoop +
 	// ExecutionPlan don't read either, so we pass nil. Service.Executable
 	// never touches embedder or vi internally.

@@ -6,14 +6,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // GetExecutableTasks returns tasks that are pending with no unfinished
 // blockers. goalID narrows the search to a subtree; empty means global.
-func GetExecutableTasks(ctx context.Context, db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
+func GetExecutableTasks(ctx context.Context, db *sql.DB, schema domain.SchemaConfig, goalID string) ([]domain.Task, error) {
 	if !schema.StatefulEnabled || len(schema.StatefulCategories) == 0 || len(schema.ValidStateOrder) == 0 {
-		return []core.Task{}, nil
+		return []domain.Task{}, nil
 	}
 	if goalID != "" {
 		return getExecutableForGoal(ctx, db, schema, goalID)
@@ -40,7 +40,7 @@ func GetExecutableTasks(ctx context.Context, db *sql.DB, schema core.SchemaConfi
 // in the processing state with no caller to claim it. A future
 // iteration should either wrap the UPDATE in an explicit tx + ROLLBACK
 // on ctx.Err(), or gate the claim on a follow-up ownership heartbeat.
-func ClaimNextTask(ctx context.Context, db *sql.DB, schema core.SchemaConfig, goalID string) (*core.Task, error) {
+func ClaimNextTask(ctx context.Context, db *sql.DB, schema domain.SchemaConfig, goalID string) (*domain.Task, error) {
 	if !schema.StatefulEnabled || len(schema.StatefulCategories) == 0 || len(schema.ValidStateOrder) == 0 {
 		return nil, nil
 	}
@@ -125,7 +125,7 @@ func ClaimNextTask(ctx context.Context, db *sql.DB, schema core.SchemaConfig, go
 		args = append(args, schema.StateUnblocking)
 	}
 
-	var task core.Task
+	var task domain.Task
 	err := db.QueryRowContext(ctx, query, args...).Scan(
 		&task.ID, &task.Category, &task.Content, &task.Status, &task.Priority,
 	)
@@ -138,7 +138,7 @@ func ClaimNextTask(ctx context.Context, db *sql.DB, schema core.SchemaConfig, go
 	return &task, nil
 }
 
-func getExecutableForGoal(ctx context.Context, db *sql.DB, schema core.SchemaConfig, goalID string) ([]core.Task, error) {
+func getExecutableForGoal(ctx context.Context, db *sql.DB, schema domain.SchemaConfig, goalID string) ([]domain.Task, error) {
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{goalID}, catArgs...)
 	args = append(args, schema.RelationBlocking)
@@ -153,7 +153,7 @@ func getExecutableForGoal(ctx context.Context, db *sql.DB, schema core.SchemaCon
 	return ScanTaskEntities(rows)
 }
 
-func getExecutableGlobal(ctx context.Context, db *sql.DB, schema core.SchemaConfig) ([]core.Task, error) {
+func getExecutableGlobal(ctx context.Context, db *sql.DB, schema domain.SchemaConfig) ([]domain.Task, error) {
 	catPH, catArgs := BoolMapInClause(schema.StatefulCategories)
 	args := append([]interface{}{}, catArgs...)
 	args = append(args, schema.ValidStateOrder[0], schema.RelationBlocking, schema.StateUnblocking)

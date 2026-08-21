@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // AddEdge inserts an edge between two existing entities.
@@ -156,16 +156,16 @@ func PurgeEntity(ctx context.Context, db *sql.DB, vi spi.VectorStore, entityID s
 	return nil
 }
 
-// QueryEdges runs a query and scans all rows into a core.Edge slice.
-func QueryEdges(db *sql.DB, query string, args ...interface{}) ([]core.Edge, error) {
+// QueryEdges runs a query and scans all rows into a domain.Edge slice.
+func QueryEdges(db *sql.DB, query string, args ...interface{}) ([]domain.Edge, error) {
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []core.Edge
+	var out []domain.Edge
 	for rows.Next() {
-		var ed core.Edge
+		var ed domain.Edge
 		if err := rows.Scan(&ed.SourceID, &ed.TargetID, &ed.RelationType, &ed.Weight); err != nil {
 			return nil, fmt.Errorf("scan edge: %w", err)
 		}

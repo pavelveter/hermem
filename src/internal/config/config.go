@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/auth"
 	"github.com/pavelveter/hermem/src/internal/extraction"
 
 	"github.com/pavelveter/hermem/src/internal/ai"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
@@ -43,13 +43,13 @@ type Config struct {
 	ExtraCategories    []string
 	ExtraRelationTypes []string
 	Retention          retention.Policy
-	Ranking            core.RankingWeight
+	Ranking            domain.RankingWeight
 	RerankerProvider   string
 	RerankerURL        string
 	RerankerModel      string
 	RerankerKey        string
 	RerankerTimeout    time.Duration
-	Schema             core.SchemaConfig
+	Schema             domain.SchemaConfig
 	// AutoMigrate gates InitDB's auto-apply-migrations path. When false
 	// (the production default after §4 closure), InitDB refuses to boot
 	// if the DB has pending migrations or integrity mismatches and

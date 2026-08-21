@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 const defaultCascadeLimit = 4096
@@ -23,8 +23,8 @@ var ErrCascadeLimit = errors.New("cascade rollback limit exceeded")
 // A cycle in the recovers_via graph is broken at the second visit to any task
 // by explicitly checking visited[rollbackID] before each append — prevents
 // looping a→b→c→a from re-including the failed task `a` at the tail.
-func GenerateRecoveryPlan(db *sql.DB, schema core.SchemaConfig, failedTaskID string) ([]core.Task, error) {
-	plan := make([]core.Task, 0)
+func GenerateRecoveryPlan(db *sql.DB, schema domain.SchemaConfig, failedTaskID string) ([]domain.Task, error) {
+	plan := make([]domain.Task, 0)
 	visited := make(map[string]bool)
 	current := failedTaskID
 	for current != "" && !visited[current] {
@@ -51,7 +51,7 @@ func GenerateRecoveryPlan(db *sql.DB, schema core.SchemaConfig, failedTaskID str
 
 // FindRollbackTask looks up the recovers_via edge from a failed task.
 // (kept here for clarity — recovery logic + its primitive in one place.)
-func FindRollbackTask(db *sql.DB, schema core.SchemaConfig, failedTaskID string) (string, error) {
+func FindRollbackTask(db *sql.DB, schema domain.SchemaConfig, failedTaskID string) (string, error) {
 	var targetID string
 	err := db.QueryRow(`SELECT ed.target_id FROM edges ed WHERE ed.source_id = ? AND ed.relation_type = ? LIMIT 1`, failedTaskID, schema.RelationRecovery).Scan(&targetID)
 	if err == sql.ErrNoRows {
@@ -78,14 +78,14 @@ func FindRollbackTask(db *sql.DB, schema core.SchemaConfig, failedTaskID string)
 // Returns the list of tasks that were rolled back (root + dependents).
 // Partial failure does not abort the cascade — errored branches are
 // skipped and the partial result is returned alongside the first error.
-func CascadeRollback(db *sql.DB, schema core.SchemaConfig, id, errorContext string) ([]core.Task, error) {
+func CascadeRollback(db *sql.DB, schema domain.SchemaConfig, id, errorContext string) ([]domain.Task, error) {
 	limit := schema.CascadeLimit
 	if limit <= 0 {
 		limit = defaultCascadeLimit
 	}
 
 	visited := make(map[string]bool)
-	var result []core.Task
+	var result []domain.Task
 	var firstErr error
 
 	// BFS queue — replaces recursive calls.

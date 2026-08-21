@@ -8,8 +8,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -42,7 +42,7 @@ func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder) *Service {
 }
 
 // Search embeds the query and returns top-K nearest neighbours.
-func (s *Service) Search(ctx context.Context, query string, topK int) ([]core.SearchResult, error) {
+func (s *Service) Search(ctx context.Context, query string, topK int) ([]domain.SearchResult, error) {
 	if query == "" {
 		return nil, fmt.Errorf("search: query required")
 	}
@@ -229,7 +229,7 @@ func (s *Service) ExplainNode(ctx context.Context, id, queryText string) (*Score
 // Provenance queries entities by provenance triple (conversation_id,
 // message_id, source). Empty triple + non-positive limit returns a
 // reasonable default.
-func (s *Service) Provenance(ctx context.Context, convID, msgID, source string, limit int) ([]core.Entity, error) {
+func (s *Service) Provenance(ctx context.Context, convID, msgID, source string, limit int) ([]domain.Entity, error) {
 	if limit <= 0 {
 		limit = DefaultProvenanceLimit
 	}

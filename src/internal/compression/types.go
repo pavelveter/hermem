@@ -3,12 +3,12 @@ package compression
 import (
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // SummaryNode carries the compressed-blob meta-block for a Fact.
 //
-// §8 NOTE: not enriched with core.Fact embed (unlike Task/Goal/Episode/Belief/Evidence).
+// §8 NOTE: not enriched with domain.Fact embed (unlike Task/Goal/Episode/Belief/Evidence).
 // Reason: SummaryNode declares its own ID/Content fields, and Go's
 // anonymous-field-promotion rule rejects the `SummaryNode{ID: "x"}` literal
 // form because the promoted Fact.ID would shadow the outer one. Deferred
@@ -27,8 +27,8 @@ type SummaryNode struct {
 	RegeneratedAt  *time.Time `json:"regenerated_at,omitempty"`
 }
 
-func (n SummaryNode) AsEntity() core.Entity {
-	return core.Entity{
+func (n SummaryNode) AsEntity() domain.Entity {
+	return domain.Entity{
 		ID:        n.ID,
 		Category:  "summary",
 		Content:   n.Content,

@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // HashSchema produces a deterministic SHA-256 fingerprint of the schema config.
 // Used to detect SIGHUP-triggered schema drift between disk and DB.
-func HashSchema(schema core.SchemaConfig) string {
+func HashSchema(schema domain.SchemaConfig) string {
 	rep := map[string]interface{}{
 		"categories": SortedKeys(schema.AllowedCategories),
 		"relations":  SortedKeys(schema.AllowedRelations),
@@ -28,7 +28,7 @@ func HashSchema(schema core.SchemaConfig) string {
 
 // CheckSchemaFingerprint compares current vs stored schema fingerprint.
 // On first run (no row) it inserts the current fingerprint and returns stored="".
-func CheckSchemaFingerprint(db *sql.DB, schema core.SchemaConfig) (stored, current string, err error) {
+func CheckSchemaFingerprint(db *sql.DB, schema domain.SchemaConfig) (stored, current string, err error) {
 	current = HashSchema(schema)
 	err = db.QueryRow("SELECT value FROM meta WHERE key = 'schema_fingerprint'").Scan(&stored)
 	if err == sql.ErrNoRows {
@@ -44,7 +44,7 @@ func CheckSchemaFingerprint(db *sql.DB, schema core.SchemaConfig) (stored, curre
 }
 
 // StoreSchemaFingerprint overwrites the stored schema fingerprint with the current one.
-func StoreSchemaFingerprint(db *sql.DB, schema core.SchemaConfig) error {
+func StoreSchemaFingerprint(db *sql.DB, schema domain.SchemaConfig) error {
 	_, err := db.Exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_fingerprint', ?)", HashSchema(schema))
 	return err
 }

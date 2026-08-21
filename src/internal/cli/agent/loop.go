@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/orchestrator"
 )
 
@@ -56,7 +56,7 @@ Examples:
 			slog.Info("agent loop started", "goal_id", req.GoalID)
 			svc := orchestrator.New(env.DB)
 			err := svc.AgentLoop(env.Ctx, env.Cfg.Schema, req.GoalID,
-				func(_ context.Context, task core.Entity) error {
+				func(_ context.Context, task domain.Entity) error {
 					fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s  [%s]\n",
 						task.ID, task.Content, task.Category)
 					return nil

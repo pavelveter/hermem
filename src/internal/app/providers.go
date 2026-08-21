@@ -9,9 +9,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/spiadapter"
 )
@@ -212,14 +212,14 @@ func legacyExtractorFromPublic(public spi.Extractor) extraction.LLMExtractor {
 
 type publicExtractorAdapter struct{ public spi.Extractor }
 
-func (a *publicExtractorAdapter) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
+func (a *publicExtractorAdapter) ExtractEntities(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
 	response, err := a.public.Extract(ctx, spi.ExtractRequest{Dialog: dialog})
 	if err != nil {
 		return nil, err
 	}
-	result := &core.ExtractionResult{}
+	result := &domain.ExtractionResult{}
 	for _, entity := range response.Entities {
-		result.Entities = append(result.Entities, core.ExtractedEntity{Category: entity.Category, Content: entity.Content})
+		result.Entities = append(result.Entities, domain.ExtractedEntity{Category: entity.Category, Content: entity.Content})
 	}
 	return result, nil
 }

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // StoreEntityWithEmbedding persists an entity to SQLite and mirrors its embedding into the vector index.
-func StoreEntityWithEmbedding(ctx context.Context, db *sql.DB, vi spi.VectorStore, schema core.SchemaConfig, entity core.Entity) error {
+func StoreEntityWithEmbedding(ctx context.Context, db *sql.DB, vi spi.VectorStore, schema domain.SchemaConfig, entity domain.Entity) error {
 	var embeddingBytes []byte
 	hasEmbedding := len(entity.Embedding) > 0
 	if hasEmbedding {
@@ -57,7 +57,7 @@ func OrNullTime(t *time.Time) interface{} {
 }
 
 // SetStatus updates a stateful entity's status column.
-func SetStatus(db *sql.DB, schema core.SchemaConfig, id, status string) error {
+func SetStatus(db *sql.DB, schema domain.SchemaConfig, id, status string) error {
 	if !schema.ValidStates[status] {
 		return fmt.Errorf("invalid status: %s", status)
 	}
@@ -115,11 +115,11 @@ func BoolMapInClause(values map[string]bool) (string, []interface{}) {
 }
 
 // GetExplainEntity fetches entity data needed for ScoreBreakdown computation.
-// Returns the core.Entity, its decoded embedding, and the node degree
+// Returns the domain.Entity, its decoded embedding, and the node degree
 // (edge count from the edges table where source_id or target_id = id).
 // Returns sql.ErrNoRows if the entity doesn't exist.
-func GetExplainEntity(db *sql.DB, id string) (core.Entity, []float32, int, error) {
-	var e core.Entity
+func GetExplainEntity(db *sql.DB, id string) (domain.Entity, []float32, int, error) {
+	var e domain.Entity
 	var embBytes []byte
 	var updatedAt, createdAt sql.NullTime
 	err := db.QueryRow(

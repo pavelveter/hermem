@@ -5,11 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
-// SlogLogger adapts slog.Handler to the core.Logger interface.
+// SlogLogger adapts slog.Handler to the Logger interface.
 // It is the production default — zero-allocation wrappers over the
 // standard library structured logger.
 type SlogLogger struct {
@@ -29,7 +27,7 @@ func NewSlogLogger(level slog.Level, w io.Writer) *SlogLogger {
 
 // NewDefaultLogger returns a Logger using the global slog default logger.
 // This is the transitional default — services that haven't been migrated
-// to DI yet can use this to get a core.Logger that delegates to the
+// to DI yet can use this to get a Logger that delegates to the
 // global slog instance.
 func NewDefaultLogger() *SlogLogger {
 	return &SlogLogger{logger: slog.Default()}
@@ -39,21 +37,21 @@ func NewDefaultLogger() *SlogLogger {
 // the global slog default. Intended for constructor defaulting:
 //
 //	if l == nil { l = logging.SlogOrFallback(l) }
-func SlogOrFallback(l core.Logger) core.Logger {
+func SlogOrFallback(l Logger) Logger {
 	if l != nil {
 		return l
 	}
 	return NewDefaultLogger()
 }
 
-// PrefixedLogger wraps a core.Logger and prepends "[component]" to every
+// PrefixedLogger wraps a Logger and prepends "[component]" to every
 // message. Use it to give each service its own logger identity without
 // duplicating the underlying handler:
 //
 //	logger := logging.PrefixedLogger{Logger: l, Component: "task"}
 //	logger.Info("created", "id", id) // [task] created id=t-1
 type PrefixedLogger struct {
-	Logger    core.Logger
+	Logger    Logger
 	Component string
 }
 
