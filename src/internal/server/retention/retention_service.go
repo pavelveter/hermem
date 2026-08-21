@@ -15,7 +15,6 @@ package retention
 import (
 	"net/http"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retention"
@@ -31,14 +30,14 @@ import (
 // behaviour inside server.Server.Serve.
 type HTTPService struct {
 	Svc           *retention.Service
-	DefaultPolicy core.RetentionPolicy
+	DefaultPolicy retention.Policy
 	shared.BaseHTTPService
 }
 
 // New constructs the retention HTTP shell. DefaultPolicy is the snapshot
 // taken at boot from cfg.Retention; cli/serve.go threads it from
 // env.Cfg.Retention.
-func New(svc *retention.Service, m *metrics.Metrics, refs *serverstate.Ref, defaultPolicy core.RetentionPolicy) *HTTPService {
+func New(svc *retention.Service, m *metrics.Metrics, refs *serverstate.Ref, defaultPolicy retention.Policy) *HTTPService {
 	return &HTTPService{
 		Svc:           svc,
 		DefaultPolicy: defaultPolicy,

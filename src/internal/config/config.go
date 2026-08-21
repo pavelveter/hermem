@@ -12,6 +12,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/ai"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
 // Config holds all runtime configuration parsed from hermem.ini.
@@ -39,7 +40,7 @@ type Config struct {
 	ExtractTimeout     time.Duration
 	ExtraCategories    []string
 	ExtraRelationTypes []string
-	Retention          core.RetentionPolicy
+	Retention          retention.Policy
 	Ranking            core.RankingWeight
 	RerankerProvider   string
 	RerankerURL        string

@@ -13,6 +13,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/auth"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
 // LoadConfig parses hermem.ini from path. A missing file returns defaults (no error).
@@ -116,7 +117,7 @@ func defaultConfig() *Config {
 		VectorDim:          768,
 		EmbedderTimeout:    30 * time.Second,
 		ExtractTimeout:     300 * time.Second,
-		Retention: core.RetentionPolicy{
+		Retention: retention.Policy{
 			ObservationTTL:  90 * 24 * time.Hour,
 			RunInterval:     1 * time.Hour,
 			DeleteBatchSize: 500,

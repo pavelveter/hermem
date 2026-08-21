@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retention"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -84,7 +83,7 @@ func TestService_RunOnce_HappyPath_ArchivesExpiredObservation(t *testing.T) {
 	seedObservation(t, db, "obs-stale-1", time.Now().Add(-2*time.Hour))
 	seedObservation(t, db, "obs-fresh-1", time.Now().Add(-1*time.Minute)) // not stale
 
-	pol := core.RetentionPolicy{
+	pol := retention.Policy{
 		ObservationTTL:  1 * time.Hour,
 		RunInterval:     1 * time.Hour,
 		DeleteBatchSize: 50,
@@ -114,7 +113,7 @@ func TestService_RunOnce_ZeroCandidates_ReturnsZeroSwept(t *testing.T) {
 	vi := &stubVI{}
 	svc := retention.New(db, vi)
 
-	pol := core.RetentionPolicy{
+	pol := retention.Policy{
 		ObservationTTL:  1 * time.Hour,
 		RunInterval:     1 * time.Hour,
 		DeleteBatchSize: 50,
@@ -151,7 +150,7 @@ func TestService_RunOnce_TTL_AlreadyExpired_ArchivesImmediately(t *testing.T) {
 	// everything older than now is archived. The row qualifies by 1 ns.
 	seedObservation(t, db, "obs-edge", time.Now().Add(-1*time.Nanosecond))
 
-	pol := core.RetentionPolicy{
+	pol := retention.Policy{
 		ObservationTTL:  0,
 		RunInterval:     1 * time.Hour,
 		DeleteBatchSize: 50,
@@ -178,7 +177,7 @@ func TestService_RunOnce_CancelledContext_ReturnsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel BEFORE call
 
-	pol := core.RetentionPolicy{
+	pol := retention.Policy{
 		ObservationTTL:  1 * time.Hour,
 		RunInterval:     1 * time.Hour,
 		DeleteBatchSize: 50,
@@ -203,7 +202,7 @@ func TestService_Run_RespectsContextCancel(t *testing.T) {
 	svc := retention.New(db, vi)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	pol := core.RetentionPolicy{
+	pol := retention.Policy{
 		ObservationTTL:  24 * time.Hour,
 		RunInterval:     10 * time.Millisecond,
 		DeleteBatchSize: 50,

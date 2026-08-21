@@ -3,7 +3,6 @@ package components
 import (
 	"context"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retention"
 	"github.com/pavelveter/hermem/src/internal/util/safego"
 )
@@ -23,11 +22,11 @@ import (
 // lived worker: bare `go fn(...)` for a worker MUST NOT appear here.
 type GCComponent struct {
 	svc    *retention.Service
-	policy core.RetentionPolicy
+	policy retention.Policy
 }
 
 // NewGCComponent creates a Component that runs the retention sweep loop.
-func NewGCComponent(svc *retention.Service, policy core.RetentionPolicy) *GCComponent {
+func NewGCComponent(svc *retention.Service, policy retention.Policy) *GCComponent {
 	return &GCComponent{svc: svc, policy: policy}
 }
 

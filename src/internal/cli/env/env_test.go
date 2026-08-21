@@ -8,6 +8,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
 // validCfg returns a minimally-valid Config that passes the new
@@ -29,7 +30,7 @@ func validCfg() *config.Config {
 		ExtractModel:      "qwen2.5-coder:7b",
 		ExtractProvider:   "ollama",
 		ExtractURL:        "http://localhost:11434",
-		Retention:         core.RetentionPolicy{},
+		Retention:         retention.Policy{},
 		Schema:            core.DefaultSchemaConfig(false),
 	}
 }

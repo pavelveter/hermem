@@ -60,7 +60,7 @@ func New(db *sql.DB, vi core.VectorIndex) *Service {
 // src/internal/server/server.go Serve) wires Run into a goroutine that is
 // cancelled before close, matching the drain order:
 // HTTP → GC cancel → DB close.
-func (s *Service) Run(ctx context.Context, policy core.RetentionPolicy) {
+func (s *Service) Run(ctx context.Context, policy Policy) {
 	ticker := time.NewTicker(policy.RunInterval)
 	defer ticker.Stop()
 	for {
@@ -96,7 +96,7 @@ func (s *Service) Run(ctx context.Context, policy core.RetentionPolicy) {
 // local GCReport + deferred stamp, which produced a zero FinishedAt on
 // every early-return path because the defer mutated the local copy
 // AFTER the return value had already been captured by the caller.
-func (s *Service) RunOnce(ctx context.Context, policy core.RetentionPolicy) (rep GCReport, err error) {
+func (s *Service) RunOnce(ctx context.Context, policy Policy) (rep GCReport, err error) {
 	rep.StartedAt = time.Now()
 	defer func() {
 		rep.FinishedAt = time.Now()

@@ -132,7 +132,7 @@ func newTestFixture(t *testing.T) *testFixture {
 	// policy matches the production defaults so the lightweight
 	// archive sweep is benign on the integration test critical path.
 	retentionDom := retentiondomain.New(db, vi)
-	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
+	retentionPolicy := retentiondomain.Policy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	retentionShell := retention.New(retentionDom, metrics, refs, retentionPolicy)
 	// PHASE 3.6 fixture: reembed HTTPService holds domain Service
 	// + metrics only (no Refs — reembed reads all entities directly
@@ -688,7 +688,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// HTTPService threaded into NewServer to keep the call shape
 	// consistent with the production sign call site.
 	retentionDom := retentiondomain.New(db, vi)
-	retentionPolicy := core.RetentionPolicy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
+	retentionPolicy := retentiondomain.Policy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	// PHASE 3.6: API-key auth fixture also needs the reembed
 	// HTTPService threaded into NewServer.
 	reembedDom := reembeddomain.New(db, vi, embed)

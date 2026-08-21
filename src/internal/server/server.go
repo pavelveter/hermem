@@ -189,7 +189,7 @@ func (s *Server) Mux() *http.ServeMux { return s.mux }
 type ServeConfig struct {
 	DB        *sql.DB
 	VI        core.VectorIndex
-	Retention core.RetentionPolicy
+	Retention retentiondomain.Policy
 	APIKey    string
 	Port      string
 	Env       *clienv.Env
