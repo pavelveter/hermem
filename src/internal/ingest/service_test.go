@@ -10,7 +10,6 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/ingest"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -38,7 +37,7 @@ func newIngestFixture(t *testing.T) (*sql.DB, spi.VectorStore) {
 		t.Fatalf("MemDB: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	return db, vi
 }
 

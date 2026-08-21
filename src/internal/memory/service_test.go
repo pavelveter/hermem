@@ -10,7 +10,6 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -49,7 +48,7 @@ func newMemFixture(t *testing.T) *memFixture {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := New(db, vi, stubEmbedder{})
 	return &memFixture{svc: svc, db: db, vi: vi}
 }
@@ -67,7 +66,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := New(db, vi, stubEmbedder{})
 	if svc == nil {
 		t.Fatal("New returned nil Service")

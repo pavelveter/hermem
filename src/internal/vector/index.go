@@ -11,25 +11,14 @@ import (
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
-// Sentinel errors returned by VectorIndex implementations when the
-// supplied query dimension or the in-memory matrix layout is inconsistent
-// with the index's contracted shape. Callers MUST check for these via
-// errors.Is before any other recovery; the in-function bounds-bump panic
-// in BatchDotProducts remains as a last-line defensive check.
-var (
-	ErrInvalidQueryDim = errors.New("vector: query dimension mismatch with index")
-	ErrMatrixCorrupted = errors.New("vector: flat matrix size != N * dim")
-)
-
-// maxSearchLimit caps the per-call result count accepted by Search and
-// SearchBatch. Callers MUST validate against this before any allocation
-// sized by a user-controlled limit; the CodeQL `go/uncontrolled-allocation-size`
-// rule conservatively flags `make([]T, limit)` where `limit` is a function
-// parameter.
+// maxSearchLimit caps the per-call result count accepted by searches over
+// user-controlled limits. Callers MUST validate against this before any
+// allocation sized by a user-controlled limit; the CodeQL
+// `go/uncontrolled-allocation-size` rule conservatively flags
+// `make([]T, limit)` where `limit` is a function parameter.
 //
 // SearchByVector's `if topK > maxSearchLimit { topK = maxSearchLimit }`
-// reads from this constant, unifying the cap across Search, SearchBatch,
-// and SearchByVector. Suite-wide consumers (e.g.
+// reads from this constant. Suite-wide consumers (e.g.
 // retrieval/service.go's DefaultSearchTopK) keep independent defaults
 // and are NOT auto-raised when this constant changes — audit those
 // call-sites if you bump it.
@@ -44,43 +33,10 @@ const maxSearchLimit = 500
 // which the cap matters.
 const MaxResultsCap = maxSearchLimit
 
-// ErrLimitOutOfRange is returned by Search/SearchBatch when the caller-supplied
-// limit is negative or exceeds maxSearchLimit. Wrap with fmt.Errorf("%w: ...") so
-// the actual offending value is visible in the error chain.
+// ErrLimitOutOfRange is returned by VectorStore implementations when the
+// caller-supplied search limit is negative (the public-contract stores
+// have no upper bound; SearchByVector clamps topK to MaxResultsCap instead).
 var ErrLimitOutOfRange = errors.New("vector: search limit out of range")
-
-// NewIndex creates a VectorIndex for the given backend.
-// Currently supports:
-//   - "in-memory" (default): brute-force cosine similarity in memory
-//   - "sqlite-vec": sqlite-vec extension (requires the extension to be loaded)
-//
-// Unknown backends fall back to in-memory with a warning logged by the caller.
-// NewIndex constructs the configured backend. It returns the legacy
-// IDs-only index; composition layers that need the public contract wrap
-// the result with spiadapter.VectorStore.
-// Index is the legacy IDs-only vector contract implemented by the raw
-// backends. It was formerly core.VectorIndex; composition wraps it with
-// spiadapter.VectorStore to obtain the public contract.
-type Index interface {
-	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
-	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
-	Store(ctx context.Context, id string, vec []float32) error
-	Remove(ctx context.Context, ids []string) error
-}
-
-func NewIndex(backend string, db *sql.DB, dim int) Index {
-	switch backend {
-	case "sqlite-vec":
-		idx, err := NewSQLiteVecIndex(db, dim)
-		if err != nil {
-			// Fall back to in-memory if sqlite-vec is not available.
-			return NewInMemoryVectorIndex(db)
-		}
-		return idx
-	default: // "in-memory" or ""
-		return NewInMemoryVectorIndex(db)
-	}
-}
 
 // SearchByVector finds the topK entities most similar to queryEmbedding and hydrates from DB.
 func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEmbedding []float32, topK int) ([]domain.SearchResult, error) {

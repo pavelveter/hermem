@@ -31,7 +31,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -213,7 +212,12 @@ func (e *Env) ensureDBInternal(skipSchemaCheck bool) error {
 	metrics.InitMetricsDB(db)
 	e.Worker = metrics.InitMetricsWorker(db)
 	e.DB = db
-	e.VI = spiadapter.VectorStore(vector.NewIndex(e.Cfg.VectorBackend, db, e.Cfg.VectorDim))
+	vi, viErr := vector.NewStore(e.Cfg.VectorBackend, db, e.Cfg.VectorDim)
+	if viErr != nil {
+		e.initErr = fmt.Errorf("init vector store: %w", viErr)
+		return e.initErr
+	}
+	e.VI = vi
 	// Initialise the request-counters Metrics if main.go did not.
 	// main.go sets env.Metrics eagerly (BEFORE EnsureDB) so server
 	// handlers can reach it via the env-captured closure at request time;

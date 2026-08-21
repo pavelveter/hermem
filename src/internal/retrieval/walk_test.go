@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -407,7 +406,15 @@ func TestMultiHopRetrieveContext_DiscoversDisconnectedSubgraph(t *testing.T) {
 		"gamma": {0, 0, 1},
 		"delta": {1, 0, 0},
 	}}
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
+	// The public in-memory store starts empty (no DB preload); mirror the
+	// vectors the legacy index used to pull from SQLite at construction.
+	if err := vi.Upsert(t.Context(), []spi.VectorRecord{
+		{Namespace: spi.DefaultNamespace, ID: "a", Vector: []float32{1, 0, 0}},
+		{Namespace: spi.DefaultNamespace, ID: "d", Vector: []float32{1, 0, 0}},
+	}); err != nil {
+		t.Fatalf("seed vectors: %v", err)
+	}
 
 	res, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:       1,
@@ -466,7 +473,15 @@ func TestMultiHopRetrieveContext_NoContentReEmbedded(t *testing.T) {
 		"a-content": {1, 0, 0},
 		"d-content": {1, 0, 0},
 	}}
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
+	// The public store starts empty (no DB preload); mirror the seeded
+	// entity embeddings so the vector jump can discover d.
+	if err := vi.Upsert(t.Context(), []spi.VectorRecord{
+		{Namespace: spi.DefaultNamespace, ID: "a", Vector: []float32{1, 0, 0}},
+		{Namespace: spi.DefaultNamespace, ID: "d", Vector: []float32{1, 0, 0}},
+	}); err != nil {
+		t.Fatalf("seed vectors: %v", err)
+	}
 
 	if _, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, RetrieveContextOptions{
 		MaxDepth:      1,
@@ -531,7 +546,7 @@ func TestMultiHopRetrieveContext_RequiresIndexAndEmbedderWhenCountGTE2(t *testin
 	if _, err := MultiHopRetrieveContext(db, nil, &stubEmbedder{}, []string{"a"}, RetrieveContextOptions{MultiHopCount: 2}); err == nil {
 		t.Fatal("expected error on nil vi when MultiHopCount=2")
 	}
-	if _, err := MultiHopRetrieveContext(db, spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db)), nil, []string{"a"}, RetrieveContextOptions{MultiHopCount: 2}); err == nil {
+	if _, err := MultiHopRetrieveContext(db, vector.NewInMemoryVectorStore(db, 0), nil, []string{"a"}, RetrieveContextOptions{MultiHopCount: 2}); err == nil {
 		t.Fatal("expected error on nil embedder when MultiHopCount=2")
 	}
 }
@@ -1195,7 +1210,7 @@ func TestHopEmbedFacts_Error(t *testing.T) {
 
 func TestHopVectorSearch(t *testing.T) {
 	db := openTestDB(t)
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	vecs := [][]float32{{0.1, 0.2, 0.3}}
 	hits, err := hopVectorSearch(t.Context(), vi, vecs, 3, 1)
 	if err != nil {

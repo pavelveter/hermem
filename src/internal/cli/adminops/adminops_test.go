@@ -160,7 +160,7 @@ func TestOpsRebuildIndex_DryRun(t *testing.T) {
 	seedOpsTestDB(t, env)
 	// Ensure Embedder is set (needed by rebuild-index command type-assertion)
 	env.Embedder = &fakeEmbedder{dim: 3}
-	// VI is set by EnsureDB via vector.NewIndex
+	// VI is set by EnsureDB via vector.NewStore
 
 	cmd := newRebuildIndexCmd(env)
 	out, err := executeCmd(cmd, []string{"--dry-run"})

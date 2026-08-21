@@ -23,14 +23,14 @@
 
 ## 4. Production caller migration
 
-> Progress: production tree is facade-free outside the legacy-vector compat
-> surface ({spiadapter, vector} hold `core.VectorIndex` until 6.4/6.5).
-> All service/shell/MCP/CLI signatures speak canonical contracts
-> (`pkg/domain`, `pkg/spi`, `api/v1`, owning internals); test fixtures
-> migrated (5.1). Remaining core content: deprecated aliases consumed by
-> its own wire-pin tests (6.1 relocation), transport DTOs pinned by
-> `server/compat_test.go` (deleted at 6.3), `NormalizeSlice`,
-> `Component`/`Logger` natives, and `VectorIndex`.
+> Progress: `src/internal/core` is deleted (6.5) with zero imports repo-wide
+> (guard in strict mode). All service/shell/MCP/CLI signatures speak canonical
+> contracts (`pkg/domain`, `pkg/spi`, `api/v1`, owning internals); composition
+> roots (`clienv.EnsureDB`, `app.New`) build stores via `vector.NewStore`;
+> test fixtures migrated (5.1). Legacy-vector compat surface deleted at 6.4:
+> `vector.Index`/`NewIndex`/`InMemoryVectorIndex`, spiadapter vector/embedder
+> bridges. Sole remaining compat surface: the ADR-035-coupled extractor
+> bridge (`spiadapter.NewExtractor` over `extraction.LLMExtractor`, task 3.1).
 
 - [x] 4.1 Migrate provider implementations and `spiadapter` callers to public SPI contracts; retain adapters only for explicitly tracked compatibility tests.
 - [x] 4.2 Migrate repositories, vector consumers, and persistence boundaries to `pkg/domain` and `spi.VectorStore` or owning internal interfaces.
@@ -46,14 +46,14 @@
 - [x] 5.2 Add a repository-wide production import check proving no non-test caller depends on `src/internal/core`. (`scripts/check-zero-core-imports.sh` two-mode gate — compat allowlist {spiadapter, vector} now, hard-zero after removal; wired into `.githooks/pre-push`)
 - [x] 5.3 Run HTTP golden and OpenAPI contract tests against the migrated implementation and compare with the recorded baseline. (api/openapi byte-snapshot + server golden/integration suites green post-migration — 177 tests; no intentional wire deltas)
 - [x] 5.4 Run MCP, CLI, persistence, provider, external-like package, and SDK integration suites through the migrated wiring. (mcp + cli + e2e/persistence + pkg/spi external-provider + Go SDK suites green under race — 140 tests)
-- [ ] 5.5 Confirm all compatibility adapters have zero runtime and test references except the final removal task. (embedder bridges: zero-ref, DELETED; extractor bridges: referenced by app/providers wiring; vector wrap: referenced by env/app composition + admin write-only path — both clear at 6.4)
+- [x] 5.5 Confirm all compatibility adapters have zero runtime and test references except the final removal task. (post-6.4 verification: embedder + vector bridges and reverse `NewLegacyExtractor` DELETED with zero refs; sole survivor is `spiadapter.NewExtractor` used by app/providers wiring, pending ADR-035 per 3.1; guard script strict-mode green)
 
 ## 6. Breaking removal implementation
 
 - [x] 6.1 Delete deprecated domain aliases and projection wrappers after their ownership inventory entries are migrated. (10 wire-pin/projection test files relocated to pkg/domain incl. split fuzz targets; all alias decls + slim files + Compose delegate deleted; pre-push fuzz path updated)
 - [x] 6.2 Delete legacy `VectorIndex`, `Embedder`, `LLMExtractor`, `Reranker`, and unreplaced `Retriever` facade interfaces after the ADR-037 gate. (all five gone from the removed package: Reranker/Retriever/Embedder retired in earlier increments; VectorIndex contract now owned by spiadapter (`LegacyVectorIndex`) + vector (`Index`) until 6.4; LLMExtractor owned by `extraction` pending ADR-035)
 - [x] 6.3 Delete core HTTP/task DTO aliases and extraction compatibility result types after all transport/CLI/MCP callers use replacements. (entire DTO family + ErrorResponse deleted; compat pin retired — wire guarantee rests on golden/OpenAPI suites; StoreRequest fuzz retargeted to api/v1. Extraction-compat types stay until ADR-035, documented)
-- [ ] 6.4 Delete `spiadapter` legacy constructors and the IDs-only vector adapter after zero-reference verification.
+- [x] 6.4 Delete `spiadapter` legacy constructors and the IDs-only vector adapter after zero-reference verification. (deleted: spiadapter vector bridge + `LegacyVectorIndex` + embedder bridges + reverse `NewLegacyExtractor`; `vector.Index`/`NewIndex`/`InMemoryVectorIndex` + compat tests. Kept: `SQLiteVecIndex` as internal engine behind `NewStore`; `spiadapter.NewExtractor` pending ADR-035 per 3.1. Limit-validation security regressions retargeted to the public store)
 - [x] 6.5 Remove the remaining `src/internal/core` package and update imports, package docs, and generated references. (package deleted; fsutil → internal/fsutil; fuzz corpus → pkg/domain/testdata)
 - [x] 6.6 Invert CI guardrails from “no new imports” to “facade directory and imports must not exist.” (check-zero-core-imports.sh strict mode wired into ci.yml guardrails + pre-push)
 

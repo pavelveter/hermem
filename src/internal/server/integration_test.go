@@ -41,7 +41,6 @@ import (
 	tasksvc "github.com/pavelveter/hermem/src/internal/server/task"
 	"github.com/pavelveter/hermem/src/internal/server/timeline"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 	timelinedomain "github.com/pavelveter/hermem/src/internal/timeline"
@@ -85,7 +84,7 @@ func newTestFixture(t *testing.T) *testFixture {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	embed := &stubEmbedder{}
 
 	schema := domain.DefaultSchemaConfig(false)
@@ -669,7 +668,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	embed := &stubEmbedder{}
 	refs := serverstate.NewRef(serverstate.New(domain.DefaultSchemaConfig(false), 0, 100,
 		domain.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))

@@ -16,7 +16,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -78,7 +77,10 @@ func New(_ context.Context, cfg *config.Config, build BuildInfo) (*Application, 
 	// --- Vector index ---
 	// The legacy backend returns the IDs-only index; the application
 	// boundary holds the canonical public VectorStore view of it.
-	vi := spiadapter.VectorStore(vector.NewIndex(cfg.VectorBackend, db, cfg.VectorDim))
+	vi, err := vector.NewStore(cfg.VectorBackend, db, cfg.VectorDim)
+	if err != nil {
+		return nil, fmt.Errorf("app: init vector store: %w", err)
+	}
 
 	// --- Tracer ---
 	tracer := tracing.NewTracerFromEnv()

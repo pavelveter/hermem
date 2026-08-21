@@ -6,27 +6,17 @@ import (
 	"fmt"
 )
 
-// Compile-time interface assertion.
-var _ Index = (*SQLiteVecIndex)(nil)
-
-// SQLiteVecIndex is an optional VectorIndex implementation backed by
-// the sqlite-vec SQLite extension. It uses SQL-native vector similarity
-// search instead of the in-memory brute-force approach.
+// SQLiteVecIndex is the raw sqlite-vec-backed storage engine. It is an
+// internal implementation detail of NewStore's public VectorStore view
+// (sqliteVecVectorStore), not a standalone contract: callers must go
+// through spi.VectorStore.
 //
-// Architecture:
-//
-//	vector.Index (interface)
-//	  ├── InMemoryVectorIndex  (default, brute-force cosine)
-//	  └── SQLiteVecIndex       (sqlite-vec extension, ANN search)
-//
-// Future implementations can follow this same pattern:
+// Future backends follow the same pattern — a raw engine adapted to
+// spi.VectorStore inside provider.go:
 //   - HNSWIndex (github.com/hypermodeinc/hnswlib)
 //   - QdrantIndex (Qdrant HTTP API)
 //   - PGVectorIndex (pgvector SQL extension)
 //   - FAISSIndex (Facebook FAISS via CGo)
-//
-// IMPORTANT: Retrieval logic must NOT be coupled to SQLiteVecIndex.
-// All code depends only on vector.Index.
 //
 // To enable: set vector_backend = "sqlite-vec" in hermem.ini.
 // Requires the sqlite-vec SQLite extension to be loaded at runtime.
@@ -40,7 +30,7 @@ type SQLiteVecIndex struct {
 // must already be loaded into the DB connection pool.
 //
 // Returns an error if the sqlite-vec module is not available, so
-// callers can fall back to InMemoryVectorIndex gracefully.
+// callers can fall back to the in-memory VectorStore gracefully.
 func NewSQLiteVecIndex(db *sql.DB, dim int) (*SQLiteVecIndex, error) {
 	// Verify sqlite-vec is available by checking for the vec_version function.
 	var version string
@@ -67,22 +57,6 @@ func (idx *SQLiteVecIndex) Search(ctx context.Context, queryEmbedding []float32,
 	_ = queryEmbedding
 	_ = limit
 	return nil, fmt.Errorf("sqlite-vec Search: not yet implemented — use in-memory backend")
-}
-
-// SearchBatch performs batch vector search via sqlite-vec.
-func (idx *SQLiteVecIndex) SearchBatch(ctx context.Context, queries [][]float32, limit int) ([][]string, error) {
-	if !idx.loaded {
-		return nil, fmt.Errorf("sqlite-vec index not loaded")
-	}
-	out := make([][]string, len(queries))
-	for i, q := range queries {
-		ids, err := idx.Search(ctx, q, limit)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = ids
-	}
-	return out, nil
 }
 
 // Store adds or updates a vector in the sqlite-vec index.

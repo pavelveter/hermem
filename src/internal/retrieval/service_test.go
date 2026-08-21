@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -58,7 +57,7 @@ func newSvcFixture(t *testing.T) *svcFixture {
 		t.Fatalf("memdb: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := New(db, vi, svcStubEmbedder{})
 	return &svcFixture{svc: svc, db: db}
 }
@@ -87,7 +86,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := New(db, vi, svcStubEmbedder{})
 	if svc == nil {
 		t.Fatal("NewService returned nil")
@@ -137,7 +136,7 @@ func TestService_Search_PropagatesEmbedError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := New(db, vi, &svcErrEmbedder{msg: "embed-down"})
 
 	_, err = svc.Search(t.Context(), "hello", 5)
@@ -225,7 +224,7 @@ func TestService_Query_PropagatesEmbedError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := New(db, vi, &svcErrEmbedder{msg: "query-embed-fail"})
 	_, err = svc.Query(t.Context(), "anything", 0, RetrieveContextOptions{})
 	if err == nil {
@@ -272,7 +271,7 @@ func TestService_Explain_SwallowsEmbedError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := New(db, vi, &svcErrEmbedder{msg: "explain-embed-fail"})
 
 	result, err := svc.Explain(t.Context(), "anything", 0, RetrieveContextOptions{})

@@ -38,10 +38,6 @@ type memoryRecord struct {
 // spi.VectorStore: namespace-scoped brute-force cosine search with
 // metadata filters, sticky per-namespace dimensions, explicit capacity
 // reporting (no silent eviction), and partial-batch failure semantics.
-//
-// It is deliberately independent of the legacy InMemoryVectorIndex: the
-// legacy index remains the compatibility facade's IDs-only view, while
-// this type implements the full public contract from the start.
 type inMemoryVectorStore struct {
 	mu   sync.RWMutex
 	max  int
@@ -228,4 +224,61 @@ func parseFloat(s string) (float64, error) {
 		return 0, fmt.Errorf("non-finite numeric metadata")
 	}
 	return f, nil
+}
+
+// sqliteVecVectorStore adapts the sqlite-vec backend to the canonical
+// public contract. Filters are unsupported (equality/range metadata is a
+// public-contract concept the extension does not evaluate); namespace is
+// fixed to spi.DefaultNamespace, matching the single-tenant runtime.
+type sqliteVecVectorStore struct {
+	idx *SQLiteVecIndex
+}
+
+var _ spi.VectorStore = (*sqliteVecVectorStore)(nil)
+
+func (s *sqliteVecVectorStore) Search(ctx context.Context, req spi.SearchRequest) ([]spi.Hit, error) {
+	ids, err := s.idx.Search(ctx, req.Vector, req.Limit)
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]spi.Hit, 0, len(ids))
+	for _, id := range ids {
+		hits = append(hits, spi.Hit{ID: id})
+	}
+	return hits, nil
+}
+
+func (s *sqliteVecVectorStore) Upsert(ctx context.Context, records []spi.VectorRecord) error {
+	for _, record := range records {
+		if err := s.idx.Store(ctx, record.ID, record.Vector); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sqliteVecVectorStore) Delete(ctx context.Context, req spi.DeleteRequest) error {
+	return s.idx.Remove(ctx, req.IDs)
+}
+
+func (s *sqliteVecVectorStore) Stats(_ context.Context, namespace string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, spi.ErrUnsupported
+}
+
+// NewStore constructs the configured backend's public VectorStore view.
+// It is the composition entry point that replaces the former
+// spiadapter.VectorStore(vector.NewIndex(...)) wrap.
+func NewStore(backend string, db *sql.DB, dim int) (spi.VectorStore, error) {
+	switch backend {
+	case "sqlite-vec":
+		idx, err := NewSQLiteVecIndex(db, dim)
+		if err != nil {
+			// Preserve the historical degrade: extension unavailable →
+			// fall back to the in-memory backend.
+			return NewInMemoryVectorStore(db, 0), nil
+		}
+		return &sqliteVecVectorStore{idx: idx}, nil
+	default: // "in-memory" or ""
+		return NewInMemoryVectorStore(db, 0), nil
+	}
 }

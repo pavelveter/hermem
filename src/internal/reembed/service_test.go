@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/pavelveter/hermem/src/internal/reembed"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -32,7 +31,7 @@ func newReembedFixture(t *testing.T) (*reembed.Service, *sql.DB) {
 		t.Fatalf("memdb: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := reembed.New(db, vi, stubEmbedder{})
 	return svc, db
 }
@@ -57,7 +56,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	vi := vector.NewInMemoryVectorStore(db, 0)
 	svc := reembed.New(db, vi, stubEmbedder{})
 	if svc == nil {
 		t.Fatal("New returned nil Service")

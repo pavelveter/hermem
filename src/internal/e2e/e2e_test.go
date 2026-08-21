@@ -10,7 +10,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/graph/community"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
-	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 	"github.com/pavelveter/hermem/src/internal/testutil"
@@ -23,7 +22,7 @@ func openTestDB(t *testing.T) *sql.DB {
 }
 
 func newVectorIndex(db *sql.DB) spi.VectorStore {
-	return spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
+	return vector.NewInMemoryVectorStore(db, 0)
 }
 
 type stubEmbedder struct{}
