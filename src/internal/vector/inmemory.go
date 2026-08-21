@@ -125,8 +125,14 @@ func NewInMemoryVectorIndexWithCap(db *sql.DB, maxVectors int) *InMemoryVectorIn
 
 // load pulls every non-archived entity from the DB on startup.
 // Vectors are normalized on load so Search can skip per-row norm division.
+// A nil DB (registry composition and unit tests) skips preloading.
 func (idx *InMemoryVectorIndex) load() {
 	start := time.Now()
+
+	if idx.db == nil {
+		slog.Info("vector index loaded", "vectors", 0, "dim", 0, "duration", time.Since(start).Round(time.Millisecond))
+		return
+	}
 
 	// Pre-count rows to right-size slices and avoid repeated reallocations.
 	var count int
