@@ -7,7 +7,6 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/edge"
-	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 )
 
 func newEdgeCmd(env *cli.Env) *cobra.Command {
@@ -53,7 +52,7 @@ Examples:
 			// six-pointer assignment) so the CLI plugin doesn't need a new
 			// field on cli.Env. Extractor is no longer required (the edge
 			// domain has no LLM hook).
-			edgeSvc := edgedomain.New(env.DB, env.VI, env.Embedder)
+			edgeSvc := edge.New(env.DB, env.VI, env.Embedder)
 			if err := edgeSvc.AddEdge(env.Ctx, req, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("edge: %w", err)
 			}

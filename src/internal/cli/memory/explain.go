@@ -9,7 +9,6 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
-	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
 func newExplainCmd(env *cli.Env) *cobra.Command {
@@ -53,7 +52,7 @@ Examples:
 			if req.Query == "" {
 				return fmt.Errorf("query required")
 			}
-			svc := retdomain.New(env.DB, env.VI, env.Embedder)
+			svc := retrieval.New(env.DB, env.VI, env.Embedder)
 			opts := retrieval.RetrieveContextOptions{
 				MaxDepth:          2,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,

@@ -23,9 +23,9 @@ func newRebuildIndexCmd(env *cli.Env) *cobra.Command {
 		Long: `Re-generates embeddings and re-indexes entities matching the filter.
 Use --dry-run to preview without changes.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			vi, ok := env.VI.(admin.VectorIndex)
-			if !ok || vi == nil {
-				return fmt.Errorf("vector index not available (VI is nil or does not implement admin.VectorIndex)")
+			vi := env.VI
+			if vi == nil {
+				return fmt.Errorf("vector index not available (VI is nil)")
 			}
 			em := env.Embedder
 			if em == nil {

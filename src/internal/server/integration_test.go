@@ -27,7 +27,6 @@ import (
 	reembeddomain "github.com/pavelveter/hermem/src/internal/reembed"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
-	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	"github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
@@ -92,7 +91,7 @@ func newTestFixture(t *testing.T) *testFixture {
 	refs := serverstate.NewRef(state)
 
 	metrics := metricspkg.New()
-	retDom := retdomain.New(db, vi, embed)
+	retDom := retrieval.New(db, vi, embed)
 	retSvc := ret.New(retDom, metrics, refs)
 	taskDom := taskdomain.New(db, embed, vi)
 	taskSvc := tasksvc.New(taskDom, metrics, refs)
@@ -673,7 +672,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	refs := serverstate.NewRef(serverstate.New(domain.DefaultSchemaConfig(false), 0, 100,
 		domain.RankingWeight{}.WithDefaults(), &ai.NoopReranker{}))
 	metrics := metricspkg.New()
-	retDom := retdomain.New(db, vi, embed)
+	retDom := retrieval.New(db, vi, embed)
 	memDom := memdomain.New(db, vi, embed)
 	cndDom := contradictdomain.New(db)
 	taskDom := taskdomain.New(db, embed, vi)

@@ -8,7 +8,6 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
-	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
 func newRetrieveCmd(env *cli.Env) *cobra.Command {
@@ -53,9 +52,9 @@ Examples:
 				return fmt.Errorf("seed_ids required")
 			}
 			if req.MaxDepth <= 0 {
-				req.MaxDepth = retdomain.DefaultRetrieveMaxDepth
+				req.MaxDepth = retrieval.DefaultRetrieveMaxDepth
 			}
-			svc := retdomain.New(env.DB, env.VI, env.Embedder)
+			svc := retrieval.New(env.DB, env.VI, env.Embedder)
 			opts := retrieval.RetrieveContextOptions{
 				MaxDepth:          req.MaxDepth,
 				DepthCeiling:      env.Cfg.MaxDepthCeiling,

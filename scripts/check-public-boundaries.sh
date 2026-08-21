@@ -11,12 +11,12 @@ check_forbidden() {
   fi
 }
 
-check_forbidden pkg/domain 'pkg/spi|src/internal|/api(/|\")' 'domain must not depend on SPI, internal, or transport'
-check_forbidden pkg/spi 'src/internal|/api(/|\")' 'SPI must not depend on internal or transport'
-check_forbidden api/v1 'src/internal/core|src/internal/' 'v1 DTOs must not depend on internal packages'
-# The legacy interfaces remain defined for the compatibility release. The
-# guard is intentionally limited to public-package direction and provider
-# composition; removing the facade is a later breaking-release gate.
+# Patterns match quoted import paths only, so prose comments that mention
+# internal package names (e.g. migration notes) do not trip the gate.
+MOD='github\.com/pavelveter/hermem'
+check_forbidden pkg/domain "\"$MOD/pkg/spi\"|\"$MOD/src/internal|\"$MOD/api/" 'domain must not depend on SPI, internal, or transport'
+check_forbidden pkg/spi "\"$MOD/src/internal|\"$MOD/api/" 'SPI must not depend on internal or transport'
+check_forbidden api/v1 "\"$MOD/src/internal" 'v1 DTOs must not depend on internal packages'
 
 if grep -RInE '(^|[^[:alnum:]_])init\(\)' src/internal/app src/internal/vector --include='*.go' >/dev/null 2>&1; then
   echo 'boundary violation: provider composition must not rely on init()' >&2

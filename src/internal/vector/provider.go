@@ -237,7 +237,9 @@ type sqliteVecVectorStore struct {
 var _ spi.VectorStore = (*sqliteVecVectorStore)(nil)
 
 func (s *sqliteVecVectorStore) Search(ctx context.Context, req spi.SearchRequest) ([]spi.Hit, error) {
+	//nolint:staticcheck // SA4023: the sqlite-vec engine is currently a stub that always errors; keep the plumbing for the real implementation
 	ids, err := s.idx.Search(ctx, req.Vector, req.Limit)
+	//nolint:staticcheck // SA4023: the sqlite-vec engine is currently a stub that always errors; keep the plumbing for the real implementation
 	if err != nil {
 		return nil, err
 	}
@@ -250,6 +252,7 @@ func (s *sqliteVecVectorStore) Search(ctx context.Context, req spi.SearchRequest
 
 func (s *sqliteVecVectorStore) Upsert(ctx context.Context, records []spi.VectorRecord) error {
 	for _, record := range records {
+		//nolint:staticcheck // SA4023: see Search — stub engine, real implementation keeps this check meaningful
 		if err := s.idx.Store(ctx, record.ID, record.Vector); err != nil {
 			return err
 		}

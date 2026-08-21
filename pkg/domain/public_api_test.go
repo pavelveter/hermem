@@ -56,7 +56,7 @@ func checkStructLeaks(t *testing.T, typ reflect.Type) {
 }
 
 func elemType(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice {
+	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {
 		t = t.Elem()
 	}
 	return t

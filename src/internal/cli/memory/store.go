@@ -7,7 +7,6 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/memory"
-	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 )
 
 func newStoreCmd(env *cli.Env) *cobra.Command {
@@ -59,7 +58,7 @@ Examples:
 			}
 			// Construct per-call (three pointer assignments; cheap) so
 			// CLI never holds onto a stale Service ref between commands.
-			memSvc := memdomain.New(env.DB, env.VI, env.Embedder)
+			memSvc := memory.New(env.DB, env.VI, env.Embedder)
 			if err := memSvc.Store(env.Ctx, req, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("store: %w", err)
 			}

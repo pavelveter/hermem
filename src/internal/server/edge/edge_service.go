@@ -12,7 +12,6 @@ import (
 	apiv1 "github.com/pavelveter/hermem/api/v1"
 	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/edge"
-	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/server/shared"
@@ -25,14 +24,14 @@ import (
 // HTTPService + PHASE 3.3 retention's HTTPService + PHASE 3.4
 // ingest's HTTPService).
 type HTTPService struct {
-	Svc *edgedomain.Service
+	Svc *edge.Service
 	shared.BaseHTTPService
 }
 
 // New constructs an edge HTTPService. The Svc field is required (no
 // fallback): callers that want a 405 without a domain touch wire a
 // nil Svc and the handler returns 500 to be safe.
-func New(svc *edgedomain.Service, m *metrics.Metrics, refs *serverstate.Ref) *HTTPService {
+func New(svc *edge.Service, m *metrics.Metrics, refs *serverstate.Ref) *HTTPService {
 	return &HTTPService{
 		Svc: svc,
 		BaseHTTPService: shared.BaseHTTPService{

@@ -17,7 +17,6 @@ import (
 	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/memory"
-	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/server/shared"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -30,7 +29,7 @@ import (
 // write extractor hook (post-PHASE 3.4 the value is unused on this
 // shell — ingest upstream uses its own copy).
 type HTTPService struct {
-	Svc            *memdomain.Service
+	Svc            *memory.Service
 	DedupThreshold float32
 	shared.BaseHTTPService
 }
@@ -38,7 +37,7 @@ type HTTPService struct {
 // New constructs an HTTPService. DedupThreshold is captured at boot —
 // unused after PHASE 3.4 (ingest owns its own copy); signature kept
 // for caller-parity with the pre-PHASE-3.4 shell.
-func New(svc *memdomain.Service, m *metrics.Metrics, refs *serverstate.Ref, dedupThreshold float32) *HTTPService {
+func New(svc *memory.Service, m *metrics.Metrics, refs *serverstate.Ref, dedupThreshold float32) *HTTPService {
 	return &HTTPService{
 		Svc:            svc,
 		DedupThreshold: dedupThreshold,
@@ -62,7 +61,7 @@ func (s *HTTPService) Routes() map[string]http.HandlerFunc {
 
 // HandleStore — POST /store. Persists one entity with a caller-supplied
 // embedding, then fires the HTTP-only AutoLinkEdges side effect via
-// memdomain.Service.StoreAndLink (/store only — CLI /store preserves
+// memory.Service.StoreAndLink (/store only — CLI /store preserves
 // its historical non-linking behaviour). After PHASE 3.4 + 3.5 this is
 // the one handler left on the memory shell.
 //
