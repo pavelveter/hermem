@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/id"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
@@ -38,7 +37,7 @@ Examples:
   echo '{"content":"Write tests","context_ids":["g1"]}' | hermem task create`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.TaskCreateRequest
+			var req TaskCreateRequest
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}

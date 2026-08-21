@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -41,7 +40,7 @@ Examples:
   echo '{"id":"t2","status":"in_progress"}' | hermem task status`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.TaskStatusRequest
+			var req TaskStatusRequest
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}

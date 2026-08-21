@@ -11,8 +11,8 @@ import (
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	contradictiondomain "github.com/pavelveter/hermem/src/internal/contradiction"
-	"github.com/pavelveter/hermem/src/internal/core"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
 	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
@@ -214,10 +214,10 @@ type MemoryExplainInput struct {
 }
 
 // schema returns the current schema config from server state.
-func (s *Server) schema() core.SchemaConfig {
+func (s *Server) schema() domain.SchemaConfig {
 	state := s.deps.Refs.Load()
 	if state == nil {
-		return core.DefaultSchemaConfig(false)
+		return domain.DefaultSchemaConfig(false)
 	}
 	return state.Schema
 }
@@ -294,7 +294,7 @@ func (s *Server) registerResources() {
 // handleGraphVerifyResource returns the current graph integrity report.
 func (s *Server) handleGraphVerifyResource(ctx context.Context, _ *gomcp.ReadResourceRequest) (*gomcp.ReadResourceResult, error) {
 	state := s.deps.Refs.Load()
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	dim := s.deps.VectorDim
 	if state != nil {
 		schema = state.Schema
@@ -313,7 +313,7 @@ func (s *Server) handleGraphVerifyResource(ctx context.Context, _ *gomcp.ReadRes
 // handleTasksActiveResource returns currently-executable tasks.
 func (s *Server) handleTasksActiveResource(ctx context.Context, _ *gomcp.ReadResourceRequest) (*gomcp.ReadResourceResult, error) {
 	state := s.deps.Refs.Load()
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	if state != nil {
 		schema = state.Schema
 	}

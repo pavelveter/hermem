@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -61,7 +60,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("executable: %w", err)
 			}
-			return cli.WriteJSON(cmd.OutOrStdout(), core.TaskExecutableResponse{Tasks: tasks})
+			return cli.WriteJSON(cmd.OutOrStdout(), TaskExecutableResponse{Tasks: tasks})
 		},
 	}
 }

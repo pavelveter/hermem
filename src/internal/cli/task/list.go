@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -33,7 +32,7 @@ Examples:
   echo '{"goal_id":"g1","status":"done"}' | hermem task list | jq '.tasks | length'`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.TaskListRequest
+			var req TaskListRequest
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
@@ -42,7 +41,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("list: %w", err)
 			}
-			return cli.WriteJSON(cmd.OutOrStdout(), core.TaskExecutableResponse{Tasks: tasks})
+			return cli.WriteJSON(cmd.OutOrStdout(), TaskExecutableResponse{Tasks: tasks})
 		},
 	}
 }

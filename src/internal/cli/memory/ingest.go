@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	ingestdomain "github.com/pavelveter/hermem/src/internal/ingest"
 )
 
@@ -41,7 +40,9 @@ Examples:
   cat conversation.txt | python3 -c "import sys,json; print(json.dumps({'dialog':sys.stdin.read()}))" | hermem memory ingest`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.IngestRequest
+			var req struct {
+				Dialog string `json:"dialog"`
+			}
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}

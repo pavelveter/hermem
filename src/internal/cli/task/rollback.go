@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -36,7 +35,7 @@ Examples:
   echo '{"id":"t1"}' | hermem task rollback | jq -r '.rollback_task_id'`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.TaskRollbackRequest
+			var req TaskRollbackRequest
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
@@ -48,7 +47,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("rollback: %w", err)
 			}
-			return cli.WriteJSON(cmd.OutOrStdout(), core.TaskRollbackResponse{RollbackTaskID: rollbackID})
+			return cli.WriteJSON(cmd.OutOrStdout(), TaskRollbackResponse{RollbackTaskID: rollbackID})
 		},
 	}
 }

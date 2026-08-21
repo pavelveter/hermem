@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 )
@@ -43,7 +42,10 @@ Examples:
   echo '{"seed_ids":["e1","e2"],"max_depth":2}' | hermem memory retrieve`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.RetrieveRequest
+			var req struct {
+				SeedIDs  []string `json:"seed_ids"`
+				MaxDepth int      `json:"max_depth"`
+			}
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}

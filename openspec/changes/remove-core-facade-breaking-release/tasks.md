@@ -45,7 +45,7 @@
 - [x] 4.3 Migrate ingestion, memory, edge, re-embedding, health, retention, and task services away from core types. (`spi.Embedder` + `spi.VectorStore` constructors/wiring; legacy extractor contract owned by `extraction` pkg pending ADR-035; all value types canonical)
 - [x] 4.4 Migrate application composition, lifecycle ownership, server state, and factory wiring away from core capability interfaces. (extended: `retrieval.Reranker` is now `type Reranker = spi.Reranker`; app/lifecycle/server-state/factory all hold canonical SPI handles; `retrieval.NewLegacyReranker` + `retrieval/legacy.go` removed completely)
 - [x] 4.5 Migrate HTTP shells to `api/v1` DTOs and mappers while preserving routes, status codes, JSON fields, omission rules, and error envelopes. (all DecodeJSON sites on apiv1; services own their command inputs (`memory.StoreInput`, `edge.AddEdgeInput`, task/ingest/retrieval take plain args); wire verified by golden + CLI integration suites)
-- [ ] 4.6 Migrate MCP and CLI adapters to public domain values or command-local DTOs without importing HTTP DTOs for sharing.
+- [x] 4.6 Migrate MCP and CLI adapters to public domain values or command-local DTOs without importing HTTP DTOs for sharing. (cli/task owns its payload structs; cli/memory carriers are inline command locals or service-owned inputs; MCP speaks domain values + spi handles)
 - [ ] 4.7 Migrate examples, benchmarks, generated fixtures, and plugin/test packages that still depend on the facade.
 
 ## 5. Zero-reference and compatibility verification

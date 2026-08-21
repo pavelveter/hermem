@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -40,7 +39,7 @@ Examples:
   echo '{"goal_id":"g1"}' | hermem task tree | head -20`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.TaskTreeRequest
+			var req TaskTreeRequest
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}

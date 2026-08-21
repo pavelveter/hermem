@@ -6,7 +6,7 @@ import (
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/id"
 	"github.com/pavelveter/hermem/src/internal/memory"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
@@ -262,7 +262,7 @@ func (s *Server) handleGraphCommunities(ctx context.Context, _ *gomcp.CallToolRe
 // handleGraphVerify runs graph integrity checks via the graph service.
 func (s *Server) handleGraphVerify(ctx context.Context, _ *gomcp.CallToolRequest, _ GraphVerifyInput) (*gomcp.CallToolResult, any, error) {
 	state := s.deps.Refs.Load()
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	dim := s.deps.VectorDim
 	if state != nil {
 		schema = state.Schema
@@ -288,7 +288,7 @@ func (s *Server) handleTaskTree(ctx context.Context, _ *gomcp.CallToolRequest, i
 	}
 
 	state := s.deps.Refs.Load()
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	if state != nil {
 		schema = state.Schema
 	}
@@ -310,7 +310,7 @@ func (s *Server) handleTaskRollback(ctx context.Context, _ *gomcp.CallToolReques
 	}
 
 	state := s.deps.Refs.Load()
-	schema := core.DefaultSchemaConfig(false)
+	schema := domain.DefaultSchemaConfig(false)
 	if state != nil {
 		schema = state.Schema
 	}

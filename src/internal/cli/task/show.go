@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -35,7 +34,7 @@ Examples:
   echo '{"id":"t1"}' | hermem task show | jq '.blocked_by'`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.TaskShowRequest
+			var req TaskShowRequest
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
@@ -47,7 +46,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("show: %w", err)
 			}
-			return cli.WriteJSON(cmd.OutOrStdout(), core.TaskShowResponse{
+			return cli.WriteJSON(cmd.OutOrStdout(), TaskShowResponse{
 				Entity:      showResult.Task,
 				BlockedBy:   showResult.BlockedBy,
 				RecoversVia: showResult.RecoversVia,
