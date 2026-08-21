@@ -9,12 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
 // Compile-time interface assertions.
-var _ core.VectorIndex = (*InMemoryVectorIndex)(nil)
+var _ Index = (*InMemoryVectorIndex)(nil)
 
 // maxSearchN caps the per-call entries returned by Search. Pool slots are
 // sized to this ceiling so the underlying []float32 and []int arrays are

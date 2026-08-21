@@ -52,7 +52,7 @@ import "os"
 //     replace the package-local writeConfig/writeOwnerOnly function
 //     blocks with a delegation to fsutil.WriteOwnerOnly. Delete the
 //     local duplicates.
-//  3. Add `import "github.com/pavelveter/hermem/src/internal/core/fsutil"`
+//  3. Add `import "github.com/pavelveter/hermem/src/internal/fsutil"`
 //     to whichever new caller landed.//   4. Divergence rule: if the third caller needs different
 //     semantics (different post-write narrow mode, different
 //     error-channel wrap, atomic-rename sequencing, etc.), fork

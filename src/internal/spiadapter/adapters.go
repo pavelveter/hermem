@@ -8,7 +8,6 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/extraction"
 )
 
@@ -90,7 +89,7 @@ func (a *legacyExtractorAdapter) ExtractEntities(ctx context.Context, dialog str
 // VectorIndex contract. The legacy namespace is fixed because old callers
 // cannot express namespaces, filters, or scores. New semantics are not
 // fabricated or inferred.
-func NewLegacyVectorIndex(public spi.VectorStore) core.VectorIndex {
+func NewLegacyVectorIndex(public spi.VectorStore) LegacyVectorIndex {
 	return &legacyVectorIndexAdapter{public: public, namespace: legacyNamespace}
 }
 
@@ -151,5 +150,5 @@ func (a *legacyVectorIndexAdapter) Remove(ctx context.Context, ids []string) err
 var (
 	_ spi.Extractor           = (*extractorAdapter)(nil)
 	_ extraction.LLMExtractor = (*legacyExtractorAdapter)(nil)
-	_ core.VectorIndex        = (*legacyVectorIndexAdapter)(nil)
+	_ LegacyVectorIndex       = (*legacyVectorIndexAdapter)(nil)
 )

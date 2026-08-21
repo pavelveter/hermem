@@ -4,11 +4,20 @@ import (
 	"context"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
+// LegacyVectorIndex is the IDs-only vector contract the compatibility
+// backends implement. It was formerly core.VectorIndex; spiadapter owns it
+// until task 6.4 deletes the bridge along with the backends' legacy view.
+type LegacyVectorIndex interface {
+	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
+	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
+	Store(ctx context.Context, id string, vec []float32) error
+	Remove(ctx context.Context, ids []string) error
+}
+
 // VectorStore accepts the canonical public contract and, during the
-// compatibility release, legacy core.VectorIndex values used by tests and
+// compatibility release, legacy LegacyVectorIndex values used by tests and
 // callers that have not migrated yet. Production wiring should pass a
 // spi.VectorStore directly.
 func VectorStore(value any) spi.VectorStore {
@@ -17,7 +26,7 @@ func VectorStore(value any) spi.VectorStore {
 		return nil
 	case spi.VectorStore:
 		return v
-	case core.VectorIndex:
+	case LegacyVectorIndex:
 		return NewVectorStore(v)
 	case interface {
 		Store(context.Context, string, []float32) error
@@ -66,12 +75,12 @@ func (a *writeOnlyVectorStore) Stats(context.Context, string) (spi.VectorStats, 
 // NewVectorStore adapts a legacy index to the public contract. This is a
 // temporary boundary; it preserves IDs-only behavior and therefore cannot
 // provide meaningful filters or backend-native namespaces.
-func NewVectorStore(legacy core.VectorIndex) spi.VectorStore {
+func NewVectorStore(legacy LegacyVectorIndex) spi.VectorStore {
 	return &legacyToPublicVectorStore{legacy: legacy}
 }
 
 type legacyToPublicVectorStore struct {
-	legacy core.VectorIndex
+	legacy LegacyVectorIndex
 }
 
 func (a *legacyToPublicVectorStore) SearchBatch(ctx context.Context, vectors [][]float32, limit int) ([][]string, error) {

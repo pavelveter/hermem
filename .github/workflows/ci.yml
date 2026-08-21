@@ -54,6 +54,10 @@ jobs:
           fi
           echo "No exported mutable state violations — OK"
 
+      - name: Forbid core facade imports (facade removed)
+        run: |
+          bash scripts/check-zero-core-imports.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

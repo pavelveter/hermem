@@ -4,12 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // Compile-time interface assertion.
-var _ core.VectorIndex = (*SQLiteVecIndex)(nil)
+var _ Index = (*SQLiteVecIndex)(nil)
 
 // SQLiteVecIndex is an optional VectorIndex implementation backed by
 // the sqlite-vec SQLite extension. It uses SQL-native vector similarity
@@ -17,7 +15,7 @@ var _ core.VectorIndex = (*SQLiteVecIndex)(nil)
 //
 // Architecture:
 //
-//	core.VectorIndex (interface)
+//	vector.Index (interface)
 //	  ├── InMemoryVectorIndex  (default, brute-force cosine)
 //	  └── SQLiteVecIndex       (sqlite-vec extension, ANN search)
 //
@@ -28,7 +26,7 @@ var _ core.VectorIndex = (*SQLiteVecIndex)(nil)
 //   - FAISSIndex (Facebook FAISS via CGo)
 //
 // IMPORTANT: Retrieval logic must NOT be coupled to SQLiteVecIndex.
-// All code depends only on core.VectorIndex.
+// All code depends only on vector.Index.
 //
 // To enable: set vector_backend = "sqlite-vec" in hermem.ini.
 // Requires the sqlite-vec SQLite extension to be loaded at runtime.

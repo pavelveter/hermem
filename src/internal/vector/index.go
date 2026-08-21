@@ -8,7 +8,6 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -59,7 +58,17 @@ var ErrLimitOutOfRange = errors.New("vector: search limit out of range")
 // NewIndex constructs the configured backend. It returns the legacy
 // IDs-only index; composition layers that need the public contract wrap
 // the result with spiadapter.VectorStore.
-func NewIndex(backend string, db *sql.DB, dim int) core.VectorIndex {
+// Index is the legacy IDs-only vector contract implemented by the raw
+// backends. It was formerly core.VectorIndex; composition wraps it with
+// spiadapter.VectorStore to obtain the public contract.
+type Index interface {
+	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
+	SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error)
+	Store(ctx context.Context, id string, vec []float32) error
+	Remove(ctx context.Context, ids []string) error
+}
+
+func NewIndex(backend string, db *sql.DB, dim int) Index {
 	switch backend {
 	case "sqlite-vec":
 		idx, err := NewSQLiteVecIndex(db, dim)

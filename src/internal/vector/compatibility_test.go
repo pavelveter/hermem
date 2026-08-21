@@ -3,13 +3,11 @@ package vector
 import (
 	"context"
 	"testing"
-
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // This compile-time assertion is intentionally against the old interface:
 // compatibility requires preserving its method set, not extending it.
-var _ core.VectorIndex = (*InMemoryVectorIndex)(nil)
+var _ Index = (*InMemoryVectorIndex)(nil)
 
 func TestLegacyVectorIndexRemainsSingleNamespaceCompatibilityView(t *testing.T) {
 	index := NewInMemoryVectorIndex(nil)
