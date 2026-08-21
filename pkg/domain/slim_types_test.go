@@ -1,13 +1,13 @@
-package core_test
+package domain_test
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
-// §8 Type-Prep wire-shape pin. Anonymous embed of core.Fact in the 5
+// §8 Type-Prep wire-shape pin. Anonymous embed of domain.Fact in the 5
 // domain slim types (Task / Goal / Episode / Belief / Evidence) promotes
 // Fact's JSON tags to top-level keys. These regression tests assert the
 // JSON marshal + unmarshal round-trip carries both the embedded Fact
@@ -16,15 +16,15 @@ import (
 // /task/list, /goal/list, /episode, /belief, /evidence response shapes.
 
 func TestTask_JSONWireRoundtripsSlimType(t *testing.T) {
-	inp := core.Task{
-		Fact:   core.Fact{ID: "t1", Category: "world", Content: "y"},
+	inp := domain.Task{
+		Fact:   domain.Fact{ID: "t1", Category: "world", Content: "y"},
 		Status: "pending",
 	}
 	data, err := json.Marshal(inp)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out core.Task
+	var out domain.Task
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -37,15 +37,15 @@ func TestTask_JSONWireRoundtripsSlimType(t *testing.T) {
 }
 
 func TestGoal_JSONWireRoundtripsSlimType(t *testing.T) {
-	inp := core.Goal{
-		Fact:   core.Fact{ID: "g1", Category: "goal", Content: "ship it"},
+	inp := domain.Goal{
+		Fact:   domain.Fact{ID: "g1", Category: "goal", Content: "ship it"},
 		Status: "completed",
 	}
 	data, err := json.Marshal(inp)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out core.Goal
+	var out domain.Goal
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -58,15 +58,15 @@ func TestGoal_JSONWireRoundtripsSlimType(t *testing.T) {
 }
 
 func TestEpisode_JSONWireRoundtripsSlimType(t *testing.T) {
-	inp := core.Episode{
-		Fact:           core.Fact{ID: "ep1", Content: "hello"},
+	inp := domain.Episode{
+		Fact:           domain.Fact{ID: "ep1", Content: "hello"},
 		ConversationID: "conv-7",
 	}
 	data, err := json.Marshal(inp)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out core.Episode
+	var out domain.Episode
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -79,8 +79,8 @@ func TestEpisode_JSONWireRoundtripsSlimType(t *testing.T) {
 }
 
 func TestBelief_JSONWireRoundtripsSlimType(t *testing.T) {
-	inp := core.Belief{
-		Fact:     core.Fact{ID: "b1", Content: "I think"},
+	inp := domain.Belief{
+		Fact:     domain.Fact{ID: "b1", Content: "I think"},
 		Degree:   3,
 		Archived: false,
 	}
@@ -88,7 +88,7 @@ func TestBelief_JSONWireRoundtripsSlimType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out core.Belief
+	var out domain.Belief
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -101,8 +101,8 @@ func TestBelief_JSONWireRoundtripsSlimType(t *testing.T) {
 }
 
 func TestEvidence_JSONWireRoundtripsSlimType(t *testing.T) {
-	inp := core.Evidence{
-		Fact:       core.Fact{ID: "ev1", Content: "source"},
+	inp := domain.Evidence{
+		Fact:       domain.Fact{ID: "ev1", Content: "source"},
 		Confidence: 0.85,
 		Source:     "wikipedia",
 	}
@@ -110,7 +110,7 @@ func TestEvidence_JSONWireRoundtripsSlimType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out core.Evidence
+	var out domain.Evidence
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

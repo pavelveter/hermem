@@ -50,7 +50,7 @@
 
 ## 6. Breaking removal implementation
 
-- [ ] 6.1 Delete deprecated domain aliases and projection wrappers after their ownership inventory entries are migrated.
+- [x] 6.1 Delete deprecated domain aliases and projection wrappers after their ownership inventory entries are migrated. (10 wire-pin/projection test files relocated to pkg/domain incl. split fuzz targets; all alias decls + slim files + Compose delegate deleted; pre-push fuzz path updated)
 - [ ] 6.2 Delete legacy `VectorIndex`, `Embedder`, `LLMExtractor`, `Reranker`, and unreplaced `Retriever` facade interfaces after the ADR-037 gate.
 - [ ] 6.3 Delete core HTTP/task DTO aliases and extraction compatibility result types after all transport/CLI/MCP callers use replacements.
 - [ ] 6.4 Delete `spiadapter` legacy constructors and the IDs-only vector adapter after zero-reference verification.

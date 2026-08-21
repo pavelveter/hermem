@@ -13,38 +13,6 @@ import (
 	"github.com/pavelveter/hermem/pkg/spi"
 )
 
-// Entity is the central domain object — a fact, opinion, experience, or observation.
-//
-// Deprecated: alias to the canonical pkg/domain.Entity.
-type Entity = domain.Entity
-
-// Edge is a directed relation between two entities.
-//
-// Deprecated: alias to the canonical pkg/domain.Edge.
-type Edge = domain.Edge
-
-// SchemaConfig defines the allowed categories, relations, and state machine.
-//
-// Deprecated: alias to the canonical pkg/domain.SchemaConfig.
-type SchemaConfig = domain.SchemaConfig
-
-// DefaultSchemaConfig returns a SchemaConfig with built-in defaults.
-//
-// Deprecated: call domain.DefaultSchemaConfig directly.
-func DefaultSchemaConfig(stateful bool) SchemaConfig { return domain.DefaultSchemaConfig(stateful) }
-
-// RankingWeight holds tunable parameters for the composite ranker.
-// Zero fields are treated as "unset" — call WithDefaults to resolve a
-// zero-means-unset struct into one safe to feed the ranker.
-//
-// Deprecated: alias to the canonical pkg/domain.RankingWeight.
-type RankingWeight = domain.RankingWeight
-
-// SearchResult pairs an entity with its cosine similarity to a query.
-//
-// Deprecated: alias to the canonical pkg/domain.SearchResult.
-type SearchResult = domain.SearchResult
-
 // VectorIndex is the interface for vector similarity search and storage.
 type VectorIndex interface {
 	Search(ctx context.Context, vec []float32, limit int) ([]string, error)
@@ -58,50 +26,6 @@ type VectorIndex interface {
 // Deprecated: alias to the canonical pkg/spi.Embedder. Health checks use
 // an optional spi.Pinger assertion instead of a required Ping method.
 type Embedder = spi.Embedder
-
-// Relation — a typed connection extracted from dialog.
-//
-// Deprecated: alias to the canonical pkg/domain.Relation.
-type Relation = domain.Relation
-
-// ExtractedEntity is one entity extracted from a dialog by an LLM.
-//
-// Deprecated: alias to the canonical pkg/domain.ExtractedEntity.
-type ExtractedEntity = domain.ExtractedEntity
-
-// ExtractionResult is the full output of an LLM extraction call.
-//
-// Deprecated: alias to the canonical pkg/domain.ExtractionResult.
-type ExtractionResult = domain.ExtractionResult
-
-// Provenance records where an ingested entity came from.
-//
-// Deprecated: alias to the canonical pkg/domain.Provenance.
-type Provenance = domain.Provenance
-
-// MemoryMessage is a dialog to be processed by the ingestion pipeline.
-// JSON tags normalize the surface so the pending.jsonl drain file
-// (written by MemoryWorkerResilient § 4.2) is readable by Go AND
-// by any external producer/language that consumes it on restart.
-//
-// Deprecated: alias to the canonical pkg/domain.MemoryMessage.
-type MemoryMessage = domain.MemoryMessage
-
-// Polarity represents whether evidence supports or refutes a belief.
-//
-// Deprecated: alias to the canonical pkg/domain.Polarity.
-type Polarity = domain.Polarity
-
-const (
-	PolaritySupport = domain.PolaritySupport
-	PolarityRefute  = domain.PolarityRefute
-)
-
-// TimePtr returns a pointer to t. Convenience helper for constructing
-// *time.Time fields in struct literals.
-//
-// Deprecated: call domain.TimePtr directly.
-var TimePtr = domain.TimePtr
 
 // ErrorResponse carries a human message plus optional code/field.
 type ErrorResponse struct {
@@ -155,7 +79,7 @@ type TaskStatusRequest struct {
 }
 
 type TaskExecutableResponse struct {
-	Tasks []Task `json:"tasks"`
+	Tasks []domain.Task `json:"tasks"`
 }
 
 type TaskListRequest struct {
@@ -168,9 +92,9 @@ type TaskShowRequest struct {
 }
 
 type TaskShowResponse struct {
-	Entity      Task   `json:"entity"`
-	BlockedBy   []Edge `json:"blocked_by"`
-	RecoversVia []Edge `json:"recovers_via"`
+	Entity      domain.Task   `json:"entity"`
+	BlockedBy   []domain.Edge `json:"blocked_by"`
+	RecoversVia []domain.Edge `json:"recovers_via"`
 }
 
 type TaskDepRequest struct {

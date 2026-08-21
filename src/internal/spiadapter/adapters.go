@@ -59,7 +59,7 @@ func NewLegacyExtractor(public spi.Extractor) extraction.LLMExtractor {
 
 type legacyExtractorAdapter struct{ public spi.Extractor }
 
-func (a *legacyExtractorAdapter) ExtractEntities(ctx context.Context, dialog string) (*core.ExtractionResult, error) {
+func (a *legacyExtractorAdapter) ExtractEntities(ctx context.Context, dialog string) (*domain.ExtractionResult, error) {
 	if a == nil || a.public == nil {
 		return nil, fmt.Errorf("spiadapter: nil public extractor")
 	}
@@ -67,16 +67,16 @@ func (a *legacyExtractorAdapter) ExtractEntities(ctx context.Context, dialog str
 	if err != nil {
 		return nil, err
 	}
-	result := &core.ExtractionResult{Entities: make([]core.ExtractedEntity, 0, len(response.Entities))}
+	result := &domain.ExtractionResult{Entities: make([]domain.ExtractedEntity, 0, len(response.Entities))}
 	for index, entity := range response.Entities {
-		relations := make([]core.Relation, 0, len(entity.Relations))
+		relations := make([]domain.Relation, 0, len(entity.Relations))
 		for _, relation := range entity.Relations {
-			relations = append(relations, core.Relation{
+			relations = append(relations, domain.Relation{
 				TargetID:     relation.TargetRef,
 				RelationType: relation.RelationType,
 			})
 		}
-		result.Entities = append(result.Entities, core.ExtractedEntity{
+		result.Entities = append(result.Entities, domain.ExtractedEntity{
 			ID:        fmt.Sprintf("spi-%d", index),
 			Category:  entity.Category,
 			Content:   entity.Content,

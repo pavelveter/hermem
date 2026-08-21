@@ -100,7 +100,7 @@ ok "go test -p 1 ./tests/e2e/... (E2E)"
 section "Fuzz tests (10s each)"
 go test -fuzz=FuzzSplitSQL -fuzztime=10s ./src/internal/store/... 2>&1 && ok "Fuzz FuzzSplitSQL" || warn "Fuzz FuzzSplitSQL skipped or failed"
 go test -fuzz=FuzzCosineSimilarity -fuzztime=10s ./src/internal/vector/... 2>&1 && ok "Fuzz FuzzCosineSimilarity" || warn "Fuzz FuzzCosineSimilarity skipped or failed"
-go test -fuzz=FuzzEntityJSONRoundTrip -fuzztime=10s ./src/internal/core/... 2>&1 && ok "Fuzz FuzzEntityJSONRoundTrip" || warn "Fuzz FuzzEntityJSONRoundTrip skipped or failed"
+go test -fuzz=FuzzEntityJSONRoundTrip -fuzztime=10s ./pkg/domain/... 2>&1 && ok "Fuzz FuzzEntityJSONRoundTrip" || warn "Fuzz FuzzEntityJSONRoundTrip skipped or failed"
 go test -fuzz=FuzzStoreRequestJSONRoundTrip -fuzztime=10s ./src/internal/core/... 2>&1 && ok "Fuzz FuzzStoreRequestJSONRoundTrip" || warn "Fuzz FuzzStoreRequestJSONRoundTrip skipped or failed"
 
 # 8. govulncheck — only if installed locally. CI installs it.
