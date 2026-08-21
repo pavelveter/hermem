@@ -28,15 +28,21 @@
 > `TimePtr`/`RankingWeight`/`SearchResult`/slim projections are now aliases to
 > `pkg/domain`; `NewTaskID`→`id`, `RetentionPolicy`→`retention.Policy`,
 > `MigrationStatus/Mismatch/Migrator`→`migration` are deleted from `core`.
-> **Embedder is fully migrated**: service constructors, `app`/`clienv.Env`
-> fields, and the retrieval pipeline all hold `spi.Embedder`; `core.Embedder`
-> is a deprecated alias; both spiadapter embedder bridges are gone.
-> Remaining in these packages: constructor-level `VectorIndex`/
-> `LLMExtractor` and transport request DTOs — tracked by 4.5/4.6 and 6.x.
+> **Embedder + VectorStore are fully migrated**: service constructors,
+> `app`/`clienv.Env` fields, and the retrieval pipeline all hold
+> `spi.Embedder`; `core.Embedder` is a deprecated alias; both spiadapter
+> embedder bridges are gone. Every service and wiring point holds
+> `spi.VectorStore` (namespace = `spi.DefaultNamespace`, single-query
+> searches replace the legacy batch call); the raw backend keeps its
+> legacy IDs-only view behind `vector.NewIndex`, wrapped once at
+> composition.
+> Remaining in these packages: `LLMExtractor` constructor params
+> (blocked on ADR-035 ID semantics) and transport request DTOs —
+> tracked by 4.5/4.6 and 6.x.
 
 - [x] 4.1 Migrate provider implementations and `spiadapter` callers to public SPI contracts; retain adapters only for explicitly tracked compatibility tests.
 - [x] 4.2 Migrate repositories, vector consumers, and persistence boundaries to `pkg/domain` and `spi.VectorStore` or owning internal interfaces.
-- [ ] 4.3 Migrate ingestion, memory, edge, re-embedding, health, retention, and task services away from core types. (value types + `Embedder` done: all constructors/fields are `spi.Embedder`, Ping sites assert `spi.Pinger`, embedder bridges deleted after zero-ref check; remaining: `VectorIndex`/`LLMExtractor` constructor params)
+- [ ] 4.3 Migrate ingestion, memory, edge, re-embedding, health, retention, and task services away from core types. (value types + `Embedder` + `VectorIndex` done: constructors/fields hold `spi.Embedder` and `spi.VectorStore`; wiring wraps the legacy backend once via `spiadapter.VectorStore`; SearchBatch fan-outs became per-query namespaced searches; remaining: `LLMExtractor` params, blocked on ADR-035 ID semantics)
 - [x] 4.4 Migrate application composition, lifecycle ownership, server state, and factory wiring away from core capability interfaces. (extended: `retrieval.Reranker` is now `type Reranker = spi.Reranker`; app/lifecycle/server-state/factory all hold canonical SPI handles; `retrieval.NewLegacyReranker` + `retrieval/legacy.go` removed completely)
 - [ ] 4.5 Migrate HTTP shells to `api/v1` DTOs and mappers while preserving routes, status codes, JSON fields, omission rules, and error envelopes.
 - [ ] 4.6 Migrate MCP and CLI adapters to public domain values or command-local DTOs without importing HTTP DTOs for sharing.

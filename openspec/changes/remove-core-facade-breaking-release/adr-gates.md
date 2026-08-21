@@ -5,6 +5,40 @@ This record captures the verification and ownership-move outcomes for the
 removal. It is kept in the change directory so the release reviewer can see
 exactly what moved, what was verified, and what is deliberately deferred.
 
+## VectorStore capability completion (task 4.3 slice)
+
+Every production service, helper, and wiring point now holds the canonical
+`spi.VectorStore` contract instead of `core.VectorIndex`:
+
+- **Constructors/fields flipped:** memory, edge, reembed, retention (+ its
+  confidence lifecycle), task, ingest, ingestion (`IngestionWorker`, both
+  memory workers, `applyVIOps`, `IngestionWorkerConfig`/`MemoryWorkerConfig`),
+  retrieval (`Service`, `Retriever`, `MultiHopRetrieveContext`,
+  `hopVectorSearch`, `GenerateResponse`), health probes, admin
+  `RebuildIndex` (its local write-only subset interface became an alias of
+  `spi.VectorStore`), store helpers (`StoreEntityWithEmbedding`,
+  `PurgeEntity`), vector helpers (`SearchByVector`, `AddEdgeWithAutoCreate`,
+  `AutoLinkEdges`).
+- **Wiring adapts once at composition:** `clienv.Env.EnsureDB` and
+  `app.New` wrap the raw backend with `spiadapter.VectorStore(...)`;
+  `Env.VI`, `app.Application.VI`, and `ServeConfig.VI` are public-contract
+  handles. The legacy backends keep their IDs-only view behind
+  `vector.NewIndex`.
+- **Namespace semantics:** all service-side searches/upserts/deletes target
+  `spi.DefaultNamespace`, byte-equivalent to the legacy bridge's fixed
+  namespace.
+- **Batch → per-query:** `spi.VectorStore` has no batch method; the two
+  batch fan-outs (ingestion dedup top-1-per-item, multi-hop neighbour
+  expansion) became explicit per-query loops with unchanged result shapes.
+  Store/Remove call sites map to single-record `Upsert` / `Delete`.
+- **Test mocks ported:** `failingVIRecord`, `vecSpy`, `fakeVI`, `stubVI`,
+  admin + health mocks now implement `spi.VectorStore`; real-index fixtures
+  construct through the same wrap as production.
+
+Remaining group-4 interface work: `core.LLMExtractor` constructor params —
+blocked on ADR-035 ID semantics (the legacy shape carries LLM-minted
+entity IDs that ingestion persists), not on types.
+
 ## Embedder capability completion (task 4.3 slice)
 
 The `Embedder` capability is now genuinely migrated — this closes the gap
