@@ -4,6 +4,7 @@ import (
 	"database/sql"
 
 	"github.com/pavelveter/hermem/pkg/domain"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
@@ -14,7 +15,7 @@ type IngestionWorkerConfig struct {
 	DB             *sql.DB
 	VectorIndex    core.VectorIndex
 	Extractor      core.LLMExtractor
-	Embedder       core.Embedder
+	Embedder       spi.Embedder
 	DedupThreshold float32
 	Schema         domain.SchemaConfig
 	Detector       contradiction.ContradictionDetector
@@ -48,7 +49,7 @@ type MemoryWorkerConfig struct {
 	DB             *sql.DB
 	VectorIndex    core.VectorIndex
 	Extractor      core.LLMExtractor
-	Embedder       core.Embedder
+	Embedder       spi.Embedder
 	DedupThreshold float32
 	Schema         domain.SchemaConfig
 	CkptPath       string

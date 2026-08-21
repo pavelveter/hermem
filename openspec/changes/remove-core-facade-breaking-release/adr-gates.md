@@ -5,6 +5,32 @@ This record captures the verification and ownership-move outcomes for the
 removal. It is kept in the change directory so the release reviewer can see
 exactly what moved, what was verified, and what is deliberately deferred.
 
+## Embedder capability completion (task 4.3 slice)
+
+The `Embedder` capability is now genuinely migrated — this closes the gap
+where earlier notes claimed a state the tree did not have:
+
+- **`core.Embedder` is a deprecated alias of `spi.Embedder`** (single-method
+  contract). Health checking moved to the optional `spi.Pinger` assertion;
+  the one production Ping site (`cli/serve.go` startup check) asserts and
+  degrades gracefully when absent.
+- **All production signatures hold `spi.Embedder`**: memory, edge, reembed,
+  ingest, ingestion (worker/config/dialog/resilient), task, episodic
+  retrieval, admin rebuild-index, health probes, vector auto-link helpers,
+  the retrieval pipeline (`Service`, `Retriever`, walk/response internals),
+  `ai.Factory.NewEmbedder`, `config.NewEmbedder`, `app.Application.Embedder`,
+  and `clienv.Env.Embedder`.
+- **Both spiadapter embedder bridges deleted** after zero-reference
+  verification (`NewEmbedder`, `NewLegacyEmbedder`, their adapters, tests,
+  and builtin assertions). The extractor/vector bridges remain.
+- ai compile-time assertions now pin `spi.Embedder` + `spi.Pinger` per
+  provider; `LocalEmbedder` (both build variants) satisfies both.
+
+Remaining group-4 interface work: `core.VectorIndex` constructor params
+(method-set mismatch with `spi.VectorStore` — needs per-service call-site
+rewrites) and `core.LLMExtractor` (blocked on ADR-035 ID semantics, not
+types).
+
 ## Resume increment (post-interruption): alias sweep + ownership completion
 
 The working tree had been interrupted mid-migration: new homes existed

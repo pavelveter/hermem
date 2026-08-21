@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -337,7 +338,7 @@ func topBreakdownForLog(facts []core.RetrievedFact) map[string]float32 {
 // Returned *RetrievalResult comes from the FINAL RetrieveContext call, so
 // its scoring semantics match a single-hop retrieval exactly. The discovery
 // loop only contributes additional seeds.
-func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
 	// Empty-seeds short-circuit: matches RetrieveContext's early-return so
 	// nil vi/embedder are tolerated when there's nothing to walk.
 	if len(seedIDs) == 0 {
@@ -523,7 +524,7 @@ func topKFromResult(res *core.RetrievalResult, k int, includeSeedContents bool) 
 }
 
 // hopEmbedFacts embeds each fact's content and returns the resulting vectors.
-func hopEmbedFacts(ctx context.Context, embedder core.Embedder, facts []core.RetrievedFact, hop int) ([][]float32, error) {
+func hopEmbedFacts(ctx context.Context, embedder spi.Embedder, facts []core.RetrievedFact, hop int) ([][]float32, error) {
 	vecs := make([][]float32, 0, len(facts))
 	for _, f := range facts {
 		emb, err := embedder.Embed(ctx, f.Content)

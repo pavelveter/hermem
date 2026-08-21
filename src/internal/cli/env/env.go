@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
@@ -53,7 +54,7 @@ type Env struct {
 	Cfg       *config.Config
 	DB        *sql.DB
 	VI        core.VectorIndex
-	Embedder  core.Embedder
+	Embedder  spi.Embedder
 	Extractor core.LLMExtractor
 	Reranker  core.Reranker
 	Retriever core.Retriever
@@ -341,7 +342,7 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 		Cancel:     newCancel,
 		DB:         safeGet(prev, func(e *Env) *sql.DB { return e.DB }),
 		VI:         safeGet(prev, func(e *Env) core.VectorIndex { return e.VI }),
-		Embedder:   safeGet(prev, func(e *Env) core.Embedder { return e.Embedder }),
+		Embedder:   safeGet(prev, func(e *Env) spi.Embedder { return e.Embedder }),
 		Extractor:  safeGet(prev, func(e *Env) core.LLMExtractor { return e.Extractor }),
 		Reranker:   safeGet(prev, func(e *Env) core.Reranker { return e.Reranker }),
 		Metrics:    safeGet(prev, func(e *Env) *metrics.Metrics { return e.Metrics }),

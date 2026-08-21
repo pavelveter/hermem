@@ -25,6 +25,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingestion"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
@@ -40,7 +41,7 @@ import (
 type Service struct {
 	db        *sql.DB
 	vi        core.VectorIndex
-	embedder  core.Embedder
+	embedder  spi.Embedder
 	extractor core.LLMExtractor
 }
 
@@ -50,7 +51,7 @@ type Service struct {
 //
 // Parameter order matches memory.Service.New so callers (cli + HTTP
 // fixture) can keep their reference shape: db, vi, embedder, extractor.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder, extractor core.LLMExtractor) *Service {
+func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, extractor core.LLMExtractor) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder, extractor: extractor}
 }
 

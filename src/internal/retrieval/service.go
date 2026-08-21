@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -30,13 +31,13 @@ const (
 type Service struct {
 	db       *sql.DB
 	vi       core.VectorIndex
-	embedder core.Embedder
+	embedder spi.Embedder
 }
 
 // New constructs a Service. embedder is required (Search/Query/
 // Response/Explain all reach for it); pass a no-op stub in tests that
 // don't exercise the embedding path.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
+func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 
@@ -83,7 +84,7 @@ func (s *Service) RetrieveContext(ctx context.Context, seedIDs []string, opts co
 
 // MultiHopRetrieveContext satisfies core.Retriever by delegating to the
 // package-level MultiHopRetrieveContext function.
-func (s *Service) MultiHopRetrieveContext(ctx context.Context, vi core.VectorIndex, embedder core.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func (s *Service) MultiHopRetrieveContext(ctx context.Context, vi core.VectorIndex, embedder spi.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
 	if opts.Ctx == nil {
 		opts.Ctx = ctx
 	}

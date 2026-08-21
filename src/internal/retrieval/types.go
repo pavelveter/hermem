@@ -108,7 +108,7 @@ type Reranker = spi.Reranker
 // ADR-037 retires them (task 6.2).
 type Retriever interface {
 	RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
-	MultiHopRetrieveContext(ctx context.Context, vi core.VectorIndex, embedder core.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
+	MultiHopRetrieveContext(ctx context.Context, vi core.VectorIndex, embedder spi.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
 }
 
 // RankingWeight is a cross-package config value (config/ini parses the

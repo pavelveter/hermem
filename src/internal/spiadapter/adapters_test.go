@@ -2,28 +2,12 @@ package spiadapter
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
-
-type testLegacyEmbedder struct {
-	pinged bool
-}
-
-func (e *testLegacyEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
-	if text == "" {
-		return nil, errors.New("empty text")
-	}
-	return []float32{1, 2}, nil
-}
-func (e *testLegacyEmbedder) Ping(_ context.Context) error {
-	e.pinged = true
-	return nil
-}
 
 type testLegacyExtractor struct{}
 
@@ -56,17 +40,8 @@ func (s *testVectorStore) Stats(context.Context, string) (spi.VectorStats, error
 	return spi.VectorStats{}, nil
 }
 
-func TestNewEmbedder_PreservesLegacyEmbedding(t *testing.T) {
-	legacy := &testLegacyEmbedder{}
-	public := NewEmbedder(legacy)
-	got, err := public.Embed(context.Background(), "text")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(got, []float32{1, 2}) {
-		t.Fatalf("embedding = %v", got)
-	}
-}
+// Embedder bridges were deleted after zero-reference verification —
+// providers satisfy spi.Embedder directly (see builtins_test.go).
 
 func TestNewExtractor_DropsModelID(t *testing.T) {
 	public := NewExtractor(testLegacyExtractor{})
@@ -89,16 +64,6 @@ func TestNewExtractor_DropsModelID(t *testing.T) {
 
 // type testLegacyReranker and bridging were removed in 4.3; kept as
 // blank placeholder so the test layout remains stable.
-
-func TestNewLegacyEmbedder_ProvidesPingCompatibility(t *testing.T) {
-	legacy := NewLegacyEmbedder(&testLegacyEmbedder{})
-	if err := legacy.Ping(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := legacy.Embed(context.Background(), "text"); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestNewLegacyVectorIndex_PreservesIDsOnlySemantics(t *testing.T) {
 	store := &testVectorStore{}

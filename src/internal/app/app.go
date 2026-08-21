@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/metrics"
@@ -36,7 +37,7 @@ type Application struct {
 	DB        *sql.DB
 	VI        core.VectorIndex
 	Worker    *metrics.AsyncMetricsWorker
-	Embedder  core.Embedder
+	Embedder  spi.Embedder
 	Extractor core.LLMExtractor
 	Reranker  core.Reranker
 	Retriever core.Retriever

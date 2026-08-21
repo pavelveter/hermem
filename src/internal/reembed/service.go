@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -28,13 +29,13 @@ type embedWork struct {
 type Service struct {
 	db       *sql.DB
 	vi       core.VectorIndex
-	embedder core.Embedder
+	embedder spi.Embedder
 }
 
 // New constructs a reembed Service. All three deps are required;
 // a nil embedder would cause every batch item to fail — the caller
 // MUST pass a non-nil embedder.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
+func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 

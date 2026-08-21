@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -115,7 +116,7 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi core.VectorIndex, queryE
 }
 
 // AddEdgeWithAutoCreate creates an edge, auto-creating missing entities with id-as-content placeholder embeddings.
-func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, src, dst, rel string) error {
+func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, src, dst, rel string) error {
 	for _, id := range []string{src, dst} {
 		var exists bool
 		if err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM entities WHERE id = ?)", id).Scan(&exists); err != nil {
@@ -137,7 +138,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi core.VectorIndex,
 }
 
 // AutoLinkEdges links a new entity to its top-3 closest neighbors with similarity > 0.85.
-func AutoLinkEdges(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder core.Embedder, newID string, newEmbedding []float32) error {
+func AutoLinkEdges(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, newID string, newEmbedding []float32) error {
 	if len(newEmbedding) == 0 {
 		return fmt.Errorf("empty embedding for %s", newID)
 	}

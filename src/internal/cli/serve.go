@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pavelveter/hermem/api"
+	"github.com/pavelveter/hermem/pkg/spi"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
@@ -56,11 +57,17 @@ func runServe(env *clienv.Env, port string, skipEmbedderCheck bool) error {
 	)
 
 	// Validate embedder availability before accepting traffic.
+	// spi.Embedder carries no Ping; embedders that can reach a remote
+	// endpoint expose it through the optional spi.Pinger capability.
 	if env.Embedder != nil && !skipEmbedderCheck {
-		if err := env.Embedder.Ping(env.Ctx); err != nil {
+		pinger, ok := env.Embedder.(spi.Pinger)
+		if !ok {
+			slog.Info("embedder OK (no ping capability)")
+		} else if err := pinger.Ping(env.Ctx); err != nil {
 			return fmt.Errorf("embedder health check failed: %w", err)
+		} else {
+			slog.Info("embedder OK")
 		}
-		slog.Info("embedder OK")
 	}
 
 	refs := serverstate.NewRef(buildState(env.Cfg, env.Reranker))

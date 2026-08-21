@@ -29,6 +29,7 @@ import (
 	"fmt"
 
 	"github.com/pavelveter/hermem/pkg/domain"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -54,7 +55,7 @@ import (
 type Service struct {
 	db       *sql.DB
 	vi       core.VectorIndex
-	embedder core.Embedder
+	embedder spi.Embedder
 }
 
 // New constructs a Service. db + vi + embedder are the only deps
@@ -62,7 +63,7 @@ type Service struct {
 // The LLM extractor is no longer threaded through here — the
 // dialog-pipeline extractor wiring lives in src/internal/ingest/,
 // where it's actually consumed.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
+func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 

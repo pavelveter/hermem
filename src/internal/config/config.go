@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/auth"
 
 	"github.com/pavelveter/hermem/src/internal/ai"
@@ -77,7 +78,7 @@ type Config struct {
 
 // NewEmbedder creates an embedder from config.
 // Delegates to ai.Factory for construction.
-func (c *Config) NewEmbedder() core.Embedder {
+func (c *Config) NewEmbedder() spi.Embedder {
 	return c.aiFactory().NewEmbedder()
 }
 

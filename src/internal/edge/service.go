@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/pavelveter/hermem/pkg/domain"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -35,7 +36,7 @@ import (
 type Service struct {
 	db       *sql.DB
 	vi       core.VectorIndex
-	embedder core.Embedder
+	embedder spi.Embedder
 }
 
 // New constructs an edge Service. All three deps are required:
@@ -45,7 +46,7 @@ type Service struct {
 //   - On the non-auto-create path vi + embedder are unused but the
 //     constructor still requires them at boot so caller-side wiring
 //     fails fast at daemon startup if any dep is nil.
-func New(db *sql.DB, vi core.VectorIndex, embedder core.Embedder) *Service {
+func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 

@@ -23,7 +23,7 @@ var llamaBinary []byte
 //go:embed bin/llama-libs
 var llamaLibFS embed.FS
 
-// LocalEmbedder implements core.Embedder by invoking the llama-embedding binary.
+// LocalEmbedder implements spi.Embedder (plus the optional spi.Pinger capability) by invoking the llama-embedding binary.
 // The binary and its dylibs are embedded via go:embed and extracted to a temp
 // directory on first use. Thread-safe: concurrent Embed calls serialize via mutex.
 type LocalEmbedder struct {

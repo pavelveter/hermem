@@ -9,15 +9,11 @@ import (
 
 var (
 	// Embedders implement spi.Embedder directly (task 4.1); the legacy
-	// bridges remain only for compatibility tests until task 6.4.
+	// bridges were deleted after zero-reference verification.
 	_ spi.Embedder = (*ai.NoopEmbedder)(nil)
 	_ spi.Embedder = (*ai.OllamaEmbedder)(nil)
 	_ spi.Embedder = (*ai.OpenAIEmbedder)(nil)
 	_ spi.Embedder = (*ai.LocalEmbedder)(nil)
-	_ spi.Embedder = spiadapter.NewEmbedder((*ai.NoopEmbedder)(nil))
-	_ spi.Embedder = spiadapter.NewEmbedder((*ai.OllamaEmbedder)(nil))
-	_ spi.Embedder = spiadapter.NewEmbedder((*ai.OpenAIEmbedder)(nil))
-	_ spi.Embedder = spiadapter.NewEmbedder((*ai.LocalEmbedder)(nil))
 
 	// Extractors still expose the legacy LLM-ID-bearing shape; the
 	// public Extract method is adapted through spiadapter until the

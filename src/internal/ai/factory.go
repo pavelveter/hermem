@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
@@ -60,7 +61,7 @@ func NewFactory(cfg Config) *Factory {
 }
 
 // NewEmbedder creates an embedder from the factory config.
-func (f *Factory) NewEmbedder() core.Embedder {
+func (f *Factory) NewEmbedder() spi.Embedder {
 	provider := f.cfg.EmbedderProvider
 	if provider == "" {
 		provider = f.cfg.Provider

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/pavelveter/hermem/pkg/domain"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -23,7 +24,7 @@ import (
 //
 // Three deps, all required, all passed by pointer at construction time:
 //   - db       : *sql.DB      — every task store fn hits SQL
-//   - embedder : core.Embedder — Create embeds new task content
+//   - embedder : spi.Embedder — Create embeds new task content
 //   - vi       : core.VectorIndex — Create + AutoLinkEdges need to write
 //     the task's embedding into the cosine index so the
 //     related_to auto-discovery links it to neighbours
@@ -33,14 +34,14 @@ import (
 // reaches into either.
 type Service struct {
 	db       *sql.DB
-	embedder core.Embedder
+	embedder spi.Embedder
 	vi       core.VectorIndex
 }
 
 // New constructs a Service. All three deps are required; passing
 // nil embedder makes Create fail with a domain error that the HTTP
 // shell maps to 500.
-func New(db *sql.DB, embedder core.Embedder, vi core.VectorIndex) *Service {
+func New(db *sql.DB, embedder spi.Embedder, vi core.VectorIndex) *Service {
 	return &Service{db: db, embedder: embedder, vi: vi}
 }
 

@@ -8,7 +8,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/store"
 	hermemtime "github.com/pavelveter/hermem/src/internal/util/time"
 )
@@ -25,7 +25,7 @@ type EpisodeFilter struct {
 }
 
 // RetrievalService searches the episodes table. Optional semantic
-// ranking via a core.Embedder — when an embedder is wired and the
+// ranking via a spi.Embedder — when an embedder is wired and the
 // caller passes a non-empty query, episodes that carry an
 // `embedding` entry in their metadata JSON are ranked by cosine
 // similarity to the query embedding. Episodes without a stored
@@ -35,13 +35,13 @@ type EpisodeFilter struct {
 // Flat-package + stateless pattern, same as the rest of episodic.
 type RetrievalService struct {
 	db       *sql.DB
-	embedder core.Embedder // optional; nil disables semantic ranking
+	embedder spi.Embedder // optional; nil disables semantic ranking
 }
 
 // NewRetrievalService constructs a RetrievalService. embedder may
 // be nil — callers that don't need semantic ranking can pass nil
 // and the service falls back to pure SQL filtering.
-func NewRetrievalService(db *sql.DB, embedder core.Embedder) *RetrievalService {
+func NewRetrievalService(db *sql.DB, embedder spi.Embedder) *RetrievalService {
 	return &RetrievalService{db: db, embedder: embedder}
 }
 

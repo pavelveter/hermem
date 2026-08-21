@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
@@ -41,7 +42,7 @@ func VectorIndexProbe(vi core.VectorIndex, opts ...int) Check {
 	}
 }
 
-func EmbedderProbe(em core.Embedder) Check {
+func EmbedderProbe(em spi.Embedder) Check {
 	return Check{
 		Name: "embedder",
 		Probe: func(ctx context.Context) error {

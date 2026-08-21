@@ -6,16 +6,20 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/spi"
 )
 
-// Compile-time interface assertions.
+// Compile-time interface assertions: every network embedder satisfies the
+// public spi.Embedder contract plus the optional spi.Pinger health-check
+// capability. core.Embedder is a deprecated alias of spi.Embedder.
 var (
-	_ core.Embedder = (*OllamaEmbedder)(nil)
-	_ core.Embedder = (*OpenAIEmbedder)(nil)
+	_ spi.Embedder = (*OllamaEmbedder)(nil)
+	_ spi.Pinger   = (*OllamaEmbedder)(nil)
+	_ spi.Embedder = (*OpenAIEmbedder)(nil)
+	_ spi.Pinger   = (*OpenAIEmbedder)(nil)
 )
 
-// OllamaEmbedder implements core.Embedder against the Ollama /api/embeddings endpoint.
+// OllamaEmbedder implements spi.Embedder against the Ollama /api/embeddings endpoint.
 type OllamaEmbedder struct {
 	BaseURL string
 	Model   string
@@ -66,7 +70,7 @@ func (e *OllamaEmbedder) Ping(ctx context.Context) error {
 	return nil
 }
 
-// OpenAIEmbedder implements core.Embedder against the OpenAI /v1/embeddings endpoint.
+// OpenAIEmbedder implements spi.Embedder against the OpenAI /v1/embeddings endpoint.
 type OpenAIEmbedder struct {
 	BaseURL string
 	APIKey  string

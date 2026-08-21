@@ -13,23 +13,6 @@ import (
 
 const legacyNamespace = spi.DefaultNamespace
 
-// NewEmbedder adapts a legacy core embedder to the public SPI. Ping remains a
-// legacy health concern and is intentionally not exposed by spi.Embedder.
-func NewEmbedder(legacy core.Embedder) spi.Embedder {
-	return &embedderAdapter{legacy: legacy}
-}
-
-type embedderAdapter struct {
-	legacy core.Embedder
-}
-
-func (a *embedderAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
-	if a == nil || a.legacy == nil {
-		return nil, fmt.Errorf("spiadapter: nil legacy embedder")
-	}
-	return a.legacy.Embed(ctx, text)
-}
-
 // NewExtractor adapts the current LLM extractor result into identity-free
 // public domain drafts. Prompt version and schema are retained for future
 // providers but cannot be forwarded to the legacy extractor yet.
@@ -55,10 +38,11 @@ func (a *extractorAdapter) Extract(ctx context.Context, req spi.ExtractRequest) 
 // Reranker (spi → retrieval) bridge lives in src/internal/retrieval/legacy.go
 // to avoid an spiadapter ↔ retrieval cycle. The retrieval package owns the
 // value types and the bridge that adapts them.
-
-// NewLegacyEmbedder adapts a public embedder for existing callers that still
-// require the legacy Ping method. A public embedder may optionally provide a
-// Ping method; otherwise Ping succeeds without adding a new public contract.
+//
+// The embedder bridges (NewEmbedder / NewLegacyEmbedder) were deleted after
+// zero-reference verification: every provider implements spi.Embedder
+// directly and health checks use the optional spi.Pinger assertion, so
+// neither direction needs an adapter anymore.
 
 // NewLegacyExtractor adapts a public spi.Extractor to the legacy
 // core.LLMExtractor shape that the ingestion, compression, and contradiction
@@ -99,34 +83,6 @@ func (a *legacyExtractorAdapter) ExtractEntities(ctx context.Context, dialog str
 		})
 	}
 	return result, nil
-}
-
-// NewLegacyEmbedder adapts a public embedder for existing callers that still
-// require the legacy Ping method. A public embedder may optionally provide a
-// Ping method; otherwise Ping succeeds without adding a new public contract.
-func NewLegacyEmbedder(public spi.Embedder) core.Embedder {
-	return &legacyEmbedderAdapter{public: public}
-}
-
-type legacyEmbedderAdapter struct {
-	public spi.Embedder
-}
-
-func (a *legacyEmbedderAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
-	if a == nil || a.public == nil {
-		return nil, fmt.Errorf("spiadapter: nil public embedder")
-	}
-	return a.public.Embed(ctx, text)
-}
-
-func (a *legacyEmbedderAdapter) Ping(ctx context.Context) error {
-	if a == nil || a.public == nil {
-		return fmt.Errorf("spiadapter: nil public embedder")
-	}
-	if pinger, ok := a.public.(interface{ Ping(context.Context) error }); ok {
-		return pinger.Ping(ctx)
-	}
-	return nil
 }
 
 // NewLegacyVectorIndex adapts a public VectorStore to the old IDs-only
@@ -192,9 +148,7 @@ func (a *legacyVectorIndexAdapter) Remove(ctx context.Context, ids []string) err
 }
 
 var (
-	_ spi.Embedder      = (*embedderAdapter)(nil)
 	_ spi.Extractor     = (*extractorAdapter)(nil)
-	_ core.Embedder     = (*legacyEmbedderAdapter)(nil)
 	_ core.LLMExtractor = (*legacyExtractorAdapter)(nil)
 	_ core.VectorIndex  = (*legacyVectorIndexAdapter)(nil)
 )

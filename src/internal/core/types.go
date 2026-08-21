@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/pkg/domain"
+	"github.com/pavelveter/hermem/pkg/spi"
 )
 
 // Entity is the central domain object — a fact, opinion, experience, or observation.
@@ -54,12 +55,10 @@ type VectorIndex interface {
 }
 
 // Embedder converts text to a float32 embedding vector.
-type Embedder interface {
-	Embed(ctx context.Context, content string) ([]float32, error)
-	// Ping checks whether the embedding provider is reachable.
-	// Returns nil if healthy, error otherwise.
-	Ping(ctx context.Context) error
-}
+//
+// Deprecated: alias to the canonical pkg/spi.Embedder. Health checks use
+// an optional spi.Pinger assertion instead of a required Ping method.
+type Embedder = spi.Embedder
 
 // Retriever performs graph-walk retrieval from seed IDs.
 type Retriever interface {
