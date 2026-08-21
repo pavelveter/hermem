@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/migration"
 )
 
@@ -146,7 +145,7 @@ Examples:
 			// already-applied migrations don't inflate the count if
 			// a future refactor makes `Run` permissive about pristine
 			// state).
-			var applied []core.MigrationStatus
+			var applied []migration.Status
 			for _, m := range post {
 				if !m.Applied {
 					continue
