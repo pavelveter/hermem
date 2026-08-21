@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/core"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
@@ -75,7 +76,7 @@ func (s *Service) executeTask(ctx context.Context, schema core.SchemaConfig, tas
 				execFailed = true
 			}
 		}()
-		if err := execFunc(ctx, core.ComposeFromTask(task)); err != nil {
+		if err := execFunc(ctx, domain.ComposeFromTask(task)); err != nil {
 			slog.Error("agent loop: exec", "task_id", task.ID, "error", err)
 			execFailed = true
 		}

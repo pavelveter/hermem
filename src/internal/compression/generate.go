@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/id"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -45,7 +46,7 @@ func (cp *Compressor) Compress(ctx context.Context, entityIDs []string) (*Summar
 		return nil, fmt.Errorf("compression: extract: %w", err)
 	}
 
-	id := core.NewTaskID()
+	id := id.NewTaskID()
 	summary := &SummaryNode{
 		ID:             fmt.Sprintf("summary-%s", id),
 		Content:        formatSummary(result),
@@ -109,7 +110,7 @@ func (cp *Compressor) Recompress(ctx context.Context, summaryID string) (*Summar
 		return nil, fmt.Errorf("compression: recompress extract: %w", err)
 	}
 
-	id := core.NewTaskID()
+	id := id.NewTaskID()
 	provenance := fmt.Sprintf("recompressed from %s (gen %d) + %d entities at %s",
 		summaryID, existing.Generation, len(existing.CompressedFrom), time.Now().Format(time.RFC3339))
 

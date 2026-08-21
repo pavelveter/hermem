@@ -7,6 +7,7 @@ import (
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/id"
 )
 
 // checkRateLimit returns a rate-limit error if the limiter is exhausted.
@@ -116,7 +117,7 @@ func (s *Server) handleTaskCreate(ctx context.Context, _ *gomcp.CallToolRequest,
 	}
 
 	state := s.deps.Refs.Load()
-	id := core.NewTaskID()
+	id := id.NewTaskID()
 
 	newID, err := s.deps.Task.Create(ctx, id, in.Content, in.ContextIDs, state.Schema)
 	if err != nil {

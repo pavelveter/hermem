@@ -19,6 +19,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
+	"github.com/pavelveter/hermem/src/internal/id"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/server/shared"
 	"github.com/pavelveter/hermem/src/internal/serverstate"
@@ -304,7 +305,7 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 		return nil
 	}
 	if req.ID == "" {
-		req.ID = core.NewTaskID()
+		req.ID = id.NewTaskID()
 	}
 	state := s.Refs.Load()
 	newID, err := s.Svc.Create(r.Context(), req.ID, req.Content, req.ContextIDs, state.Schema)

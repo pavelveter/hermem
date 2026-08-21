@@ -7,6 +7,7 @@ import (
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/id"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 )
 
@@ -45,7 +46,7 @@ Examples:
 				return fmt.Errorf("content required")
 			}
 			if req.ID == "" {
-				req.ID = core.NewTaskID()
+				req.ID = id.NewTaskID()
 			}
 			svc := taskdomain.New(env.DB, env.Embedder, env.VI)
 			// Service.Create handles embed + store + context_id edges +
