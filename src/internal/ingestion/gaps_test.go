@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-sqlite3"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/contradiction"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -60,42 +61,40 @@ func newVecSpy(searchToReturn [][]string) *vecSpy {
 	}
 }
 
-func (v *vecSpy) Search(_ context.Context, _ []float32, _ int) ([]string, error) {
+func (v *vecSpy) Search(_ context.Context, _ spi.SearchRequest) ([]spi.Hit, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if len(v.searchBatchResults) == 0 {
 		return nil, nil
 	}
-	return v.searchBatchResults[0], nil
-}
-
-func (v *vecSpy) SearchBatch(_ context.Context, vecs [][]float32, _ int) ([][]string, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	out := make([][]string, len(vecs))
-	for i := range out {
-		if i < len(v.searchBatchResults) {
-			out[i] = v.searchBatchResults[i]
-		}
+	hits := make([]spi.Hit, 0, len(v.searchBatchResults[0]))
+	for _, id := range v.searchBatchResults[0] {
+		hits = append(hits, spi.Hit{ID: id})
 	}
-	return out, nil
+	return hits, nil
 }
 
-func (v *vecSpy) Store(_ context.Context, id string, vec []float32) error {
+func (v *vecSpy) Upsert(_ context.Context, records []spi.VectorRecord) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	cp := make([]float32, len(vec))
-	copy(cp, vec)
-	v.storedByID[id] = cp
-	v.storeOrder = append(v.storeOrder, id)
+	for _, record := range records {
+		cp := make([]float32, len(record.Vector))
+		copy(cp, record.Vector)
+		v.storedByID[record.ID] = cp
+		v.storeOrder = append(v.storeOrder, record.ID)
+	}
 	return nil
 }
 
-func (v *vecSpy) Remove(_ context.Context, ids []string) error {
+func (v *vecSpy) Delete(_ context.Context, req spi.DeleteRequest) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.removes = append(v.removes, ids...)
+	v.removes = append(v.removes, req.IDs...)
 	return nil
+}
+
+func (v *vecSpy) Stats(context.Context, string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, nil
 }
 
 // stored returns the recorded vec for `id` (or nil, false if absent).
@@ -186,16 +185,14 @@ func (f failingExtractor) ExtractEntities(_ context.Context, _ string) (*core.Ex
 // search: %w" branch in ProcessDialogWithProvenance).
 type failingVIForBatch struct{ err error }
 
-func (f failingVIForBatch) SearchBatch(_ context.Context, _ [][]float32, _ int) ([][]string, error) {
+func (f failingVIForBatch) Search(_ context.Context, _ spi.SearchRequest) ([]spi.Hit, error) {
 	return nil, f.err
 }
-func (f failingVIForBatch) Search(_ context.Context, _ []float32, _ int) ([]string, error) {
-	return nil, nil
+func (f failingVIForBatch) Upsert(context.Context, []spi.VectorRecord) error { return nil }
+func (f failingVIForBatch) Delete(context.Context, spi.DeleteRequest) error  { return nil }
+func (f failingVIForBatch) Stats(context.Context, string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, nil
 }
-func (f failingVIForBatch) Store(_ context.Context, _ string, _ []float32) error {
-	return nil
-}
-func (f failingVIForBatch) Remove(_ context.Context, _ []string) error { return nil }
 
 // TestProcessDialog_VISearchBatchErrorIsWrapped — when SearchBatch
 // returns an error (the vi layer is sick), ProcessDialogWithProvenance

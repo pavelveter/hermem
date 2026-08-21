@@ -40,7 +40,7 @@ import (
 // surface, ingest.Service.Ingest uses them for the dialog pipeline.
 type Service struct {
 	db        *sql.DB
-	vi        core.VectorIndex
+	vi        spi.VectorStore
 	embedder  spi.Embedder
 	extractor core.LLMExtractor
 }
@@ -51,7 +51,7 @@ type Service struct {
 //
 // Parameter order matches memory.Service.New so callers (cli + HTTP
 // fixture) can keep their reference shape: db, vi, embedder, extractor.
-func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, extractor core.LLMExtractor) *Service {
+func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, extractor core.LLMExtractor) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder, extractor: extractor}
 }
 

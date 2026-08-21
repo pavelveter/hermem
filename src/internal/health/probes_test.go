@@ -7,26 +7,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/health"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
 type mockVectorIndex struct {
-	searchFunc func(ctx context.Context, vec []float32, limit int) ([]string, error)
+	searchFunc func(req spi.SearchRequest) ([]spi.Hit, error)
 }
 
-func (m *mockVectorIndex) Search(ctx context.Context, vec []float32, limit int) ([]string, error) {
-	return m.searchFunc(ctx, vec, limit)
+func (m *mockVectorIndex) Search(_ context.Context, req spi.SearchRequest) ([]spi.Hit, error) {
+	return m.searchFunc(req)
 }
-func (m *mockVectorIndex) SearchBatch(ctx context.Context, vecs [][]float32, limit int) ([][]string, error) {
-	return nil, nil
-}
-func (m *mockVectorIndex) Store(ctx context.Context, id string, vec []float32) error {
-	return nil
-}
-func (m *mockVectorIndex) Remove(ctx context.Context, ids []string) error {
-	return nil
+func (m *mockVectorIndex) Upsert(context.Context, []spi.VectorRecord) error { return nil }
+func (m *mockVectorIndex) Delete(context.Context, spi.DeleteRequest) error  { return nil }
+func (m *mockVectorIndex) Stats(context.Context, string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, nil
 }
 
 type mockEmbedder struct {
@@ -76,9 +73,7 @@ func TestDBProbe_ClosedDB(t *testing.T) {
 
 func TestVectorIndexProbe_OK(t *testing.T) {
 	vi := &mockVectorIndex{
-		searchFunc: func(ctx context.Context, vec []float32, limit int) ([]string, error) {
-			return []string{}, nil
-		},
+		searchFunc: func(spi.SearchRequest) ([]spi.Hit, error) { return []spi.Hit{}, nil },
 	}
 	svc := health.New(health.VectorIndexProbe(vi, 3))
 	st := svc.Ready(t.Context())
@@ -90,9 +85,7 @@ func TestVectorIndexProbe_OK(t *testing.T) {
 
 func TestVectorIndexProbe_Error(t *testing.T) {
 	vi := &mockVectorIndex{
-		searchFunc: func(ctx context.Context, vec []float32, limit int) ([]string, error) {
-			return nil, errors.New("index unavailable")
-		},
+		searchFunc: func(spi.SearchRequest) ([]spi.Hit, error) { return nil, errors.New("index unavailable") },
 	}
 	svc := health.New(health.VectorIndexProbe(vi, 3))
 	st := svc.Ready(t.Context())

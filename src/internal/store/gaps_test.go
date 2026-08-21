@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
@@ -328,16 +329,16 @@ type fakeVI struct {
 	removedIDs []string
 }
 
-func (f *fakeVI) Search(_ context.Context, _ []float32, _ int) ([]string, error) {
+func (f *fakeVI) Search(_ context.Context, _ spi.SearchRequest) ([]spi.Hit, error) {
 	return nil, nil
 }
-func (f *fakeVI) SearchBatch(_ context.Context, _ [][]float32, _ int) ([][]string, error) {
-	return nil, nil
-}
-func (f *fakeVI) Store(_ context.Context, _ string, _ []float32) error { return nil }
-func (f *fakeVI) Remove(_ context.Context, ids []string) error {
-	f.removedIDs = append(f.removedIDs, ids...)
+func (f *fakeVI) Upsert(_ context.Context, _ []spi.VectorRecord) error { return nil }
+func (f *fakeVI) Delete(_ context.Context, req spi.DeleteRequest) error {
+	f.removedIDs = append(f.removedIDs, req.IDs...)
 	return f.removeErr
+}
+func (f *fakeVI) Stats(context.Context, string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, nil
 }
 
 func (f *fakeVI) removed() []string {

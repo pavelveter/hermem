@@ -16,6 +16,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -35,7 +36,7 @@ type BuildInfo struct {
 // (including SIGHUP hot-reload) in serve.go.
 type Application struct {
 	DB        *sql.DB
-	VI        core.VectorIndex
+	VI        spi.VectorStore
 	Worker    *metrics.AsyncMetricsWorker
 	Embedder  spi.Embedder
 	Extractor core.LLMExtractor
@@ -75,7 +76,9 @@ func New(_ context.Context, cfg *config.Config, build BuildInfo) (*Application, 
 	m := metrics.New()
 
 	// --- Vector index ---
-	vi := vector.NewIndex(cfg.VectorBackend, db, cfg.VectorDim)
+	// The legacy backend returns the IDs-only index; the application
+	// boundary holds the canonical public VectorStore view of it.
+	vi := spiadapter.VectorStore(vector.NewIndex(cfg.VectorBackend, db, cfg.VectorDim))
 
 	// --- Tracer ---
 	tracer := tracing.NewTracerFromEnv()

@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/domain"
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/graph/community"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	taskdomain "github.com/pavelveter/hermem/src/internal/task"
 	"github.com/pavelveter/hermem/src/internal/testutil"
@@ -20,8 +23,8 @@ func openTestDB(t *testing.T) *sql.DB {
 	return testutil.OpenTestDBSimple(t)
 }
 
-func newVectorIndex(db *sql.DB) *vector.InMemoryVectorIndex {
-	return vector.NewInMemoryVectorIndex(db)
+func newVectorIndex(db *sql.DB) spi.VectorStore {
+	return spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 }
 
 type stubEmbedder struct{}
@@ -93,16 +96,16 @@ func TestE2E_StoreEdgeRetrieve(t *testing.T) {
 	}
 
 	// Vector search
-	results, err := vi.Search(ctx, []float32{1, 0, 0}, 5)
+	hits, err := vi.Search(ctx, spi.SearchRequest{Namespace: spi.DefaultNamespace, Vector: []float32{1, 0, 0}, Limit: 5})
 	if err != nil {
 		t.Fatalf("vector search: %v", err)
 	}
-	if len(results) == 0 {
+	if len(hits) == 0 {
 		t.Fatal("vector search returned no results")
 	}
 
 	// Remove
-	if err := vi.Remove(ctx, []string{"e2e-a"}); err != nil {
+	if err := vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: []string{"e2e-a"}}); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 }
@@ -230,11 +233,13 @@ func TestE2E_ProvenanceAndContradictions(t *testing.T) {
 	}
 
 	// Sync vector index
-	if err := vi.Store(context.Background(), "p1", []float32{1, 0, 0}); err != nil {
-		t.Fatalf("vi store p1: %v", err)
-	}
-	if err := vi.Store(context.Background(), "p2", []float32{0, 1, 0}); err != nil {
-		t.Fatalf("vi store p2: %v", err)
+	for _, rec := range []spi.VectorRecord{
+		{Namespace: spi.DefaultNamespace, ID: "p1", Vector: []float32{1, 0, 0}},
+		{Namespace: spi.DefaultNamespace, ID: "p2", Vector: []float32{0, 1, 0}},
+	} {
+		if err := vi.Upsert(context.Background(), []spi.VectorRecord{rec}); err != nil {
+			t.Fatalf("vi upsert %s: %v", rec.ID, err)
+		}
 	}
 
 	// Query by provenance
@@ -337,7 +342,7 @@ func TestE2E_GraphIntegrity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("communities load graph: %v", err)
 	}
-	var communities []core.Community
+	var communities []domain.Community
 	if g != nil {
 		communities, _ = community.DetectCommunities(g, 10)
 	}
@@ -421,7 +426,7 @@ func TestE2E_AgentLoop(t *testing.T) {
 
 // --- Helpers ---
 
-func storeEntity(t *testing.T, db *sql.DB, vi *vector.InMemoryVectorIndex, schema core.SchemaConfig, e core.Entity) {
+func storeEntity(t *testing.T, db *sql.DB, vi spi.VectorStore, schema core.SchemaConfig, e core.Entity) {
 	t.Helper()
 	if err := store.StoreEntityWithEmbedding(t.Context(), db, vi, schema, e); err != nil {
 		t.Fatalf("store %s: %v", e.ID, err)

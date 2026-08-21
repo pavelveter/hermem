@@ -25,7 +25,7 @@ import (
 // Three deps, all required, all passed by pointer at construction time:
 //   - db       : *sql.DB      — every task store fn hits SQL
 //   - embedder : spi.Embedder — Create embeds new task content
-//   - vi       : core.VectorIndex — Create + AutoLinkEdges need to write
+//   - vi       : spi.VectorStore — Create + AutoLinkEdges need to write
 //     the task's embedding into the cosine index so the
 //     related_to auto-discovery links it to neighbours
 //
@@ -35,13 +35,13 @@ import (
 type Service struct {
 	db       *sql.DB
 	embedder spi.Embedder
-	vi       core.VectorIndex
+	vi       spi.VectorStore
 }
 
 // New constructs a Service. All three deps are required; passing
 // nil embedder makes Create fail with a domain error that the HTTP
 // shell maps to 500.
-func New(db *sql.DB, embedder spi.Embedder, vi core.VectorIndex) *Service {
+func New(db *sql.DB, embedder spi.Embedder, vi spi.VectorStore) *Service {
 	return &Service{db: db, embedder: embedder, vi: vi}
 }
 

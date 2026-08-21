@@ -20,7 +20,7 @@ import (
 // userQuery is the raw text query; opts carries depth/ranking settings,
 // opts.QueryEmbedding/QueryText/Ctx are populated here so the inner walk
 // re-uses the same query vector for re-ranking consistency.
-func GenerateResponse(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, opts core.RetrieveContextOptions, userQuery string) (string, error) {
+func GenerateResponse(ctx context.Context, db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, opts core.RetrieveContextOptions, userQuery string) (string, error) {
 	if userQuery == "" {
 		return "", fmt.Errorf("userQuery is required")
 	}
@@ -28,9 +28,13 @@ func GenerateResponse(ctx context.Context, db *sql.DB, vi core.VectorIndex, embe
 	if err != nil {
 		return "", fmt.Errorf("failed to embed query: %w", err)
 	}
-	seedIDs, err := vi.Search(ctx, queryEmbedding, 3)
+	hits, err := vi.Search(ctx, spi.SearchRequest{Namespace: spi.DefaultNamespace, Vector: queryEmbedding, Limit: 3})
 	if err != nil {
 		return "", fmt.Errorf("failed to search: %w", err)
+	}
+	seedIDs := make([]string, 0, len(hits))
+	for _, hit := range hits {
+		seedIDs = append(seedIDs, hit.ID)
 	}
 
 	// Safe mutation: opts is the value-type copy owned by GenerateResponse,

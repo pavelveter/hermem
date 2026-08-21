@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -23,19 +22,31 @@ type embedWork struct {
 	id, content string
 }
 
+// ReEmbedResult is the output of ReEmbedAll.
+type ReEmbedResult struct {
+	TotalEntities int    `json:"total_entities"`
+	ReEmbedded    int    `json:"re_embedded"`
+	Skipped       int    `json:"skipped"`
+	Failed        int    `json:"failed"`
+	Elapsed       string `json:"elapsed"`
+	OldDim        int    `json:"old_dim"`
+	NewDim        int    `json:"new_dim"`
+	Batches       int    `json:"batches"`
+}
+
 // Service is the transport-agnostic re-embedding orchestrator.
 // Holds db, vi, embedder. Batch size + model name are per-call args
 // because they change with every re-embed invocation.
 type Service struct {
 	db       *sql.DB
-	vi       core.VectorIndex
+	vi       spi.VectorStore
 	embedder spi.Embedder
 }
 
 // New constructs a reembed Service. All three deps are required;
 // a nil embedder would cause every batch item to fail — the caller
 // MUST pass a non-nil embedder.
-func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder) *Service {
+func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 
@@ -56,9 +67,9 @@ func (s *Service) NeedsReEmbed(ctx context.Context, configuredDim int) (needs bo
 // ReEmbedAll re-embeds all entities with the current embedder.
 // The function signature takes per-call args: configuredDim,
 // batchSize, modelName.
-func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize int, modelName string) (core.ReEmbedResult, error) {
+func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize int, modelName string) (ReEmbedResult, error) {
 	start := time.Now()
-	result := core.ReEmbedResult{NewDim: configuredDim}
+	result := ReEmbedResult{NewDim: configuredDim}
 
 	oldDim := configuredDim
 	if err := s.db.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'embedding_dim'").Scan(&oldDim); err != nil && err != sql.ErrNoRows {
@@ -108,7 +119,7 @@ func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize i
 
 // processReEmbedBatch is the private per-batch worker.
 // The only caller is ReEmbedAll.
-func (s *Service) processReEmbedBatch(ctx context.Context, items []embedWork, dim int, result *core.ReEmbedResult) error {
+func (s *Service) processReEmbedBatch(ctx context.Context, items []embedWork, dim int, result *ReEmbedResult) error {
 	result.Batches++
 	for _, item := range items {
 		emb, err := s.embedder.Embed(ctx, item.content)
@@ -129,7 +140,7 @@ func (s *Service) processReEmbedBatch(ctx context.Context, items []embedWork, di
 			slog.Warn("re-embed update", "id", item.id, "err", err)
 			continue
 		}
-		s.vi.Store(ctx, item.id, emb) //nolint:errcheck // vector drift corrected on next sweep
+		s.vi.Upsert(ctx, []spi.VectorRecord{{Namespace: spi.DefaultNamespace, ID: item.id, Vector: emb}}) //nolint:errcheck // vector drift corrected on next sweep
 		result.ReEmbedded++
 	}
 	return nil

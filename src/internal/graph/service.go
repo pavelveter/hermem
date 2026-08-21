@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/graph/community"
 	"github.com/pavelveter/hermem/src/internal/store"
@@ -36,7 +37,7 @@ func New(db *sql.DB) *Service {
 // size ≥ minSize. minSize ≤ 0 means "no filter". Returns
 // `[]ConnectedComponent{}` (not nil) on empty result so envelope
 // serialization emits `[]` not `null`.
-func (s *Service) Components(_ context.Context, minSize int) ([]core.ConnectedComponent, error) {
+func (s *Service) Components(_ context.Context, minSize int) ([]domain.ConnectedComponent, error) {
 	return store.FindConnectedComponents(s.db, minSize)
 }
 
@@ -47,17 +48,17 @@ func (s *Service) Components(_ context.Context, minSize int) ([]core.ConnectedCo
 // side-by-side.
 //
 // Returns `[]Community{}` (not nil) on empty result.
-func (s *Service) Communities(ctx context.Context, maxIter int) ([]core.Community, float64, error) {
+func (s *Service) Communities(ctx context.Context, maxIter int) ([]domain.Community, float64, error) {
 	g, err := community.LoadGraph(ctx, s.db)
 	if err != nil {
 		return nil, 0, fmt.Errorf("communities: %w", err)
 	}
 	if g == nil {
-		return make([]core.Community, 0), 0, nil
+		return make([]domain.Community, 0), 0, nil
 	}
 	comms, globalQ := community.DetectCommunities(g, maxIter)
 	if comms == nil {
-		comms = make([]core.Community, 0)
+		comms = make([]domain.Community, 0)
 	}
 	return comms, globalQ, nil
 }
@@ -67,8 +68,8 @@ func (s *Service) Communities(ctx context.Context, maxIter int) ([]core.Communit
 // vector dimensionality — any entity whose BLOB length does not match
 // dim*4 bytes is flagged. Returns a VerifyReport whose Pass() method
 // controls CLI exit-1 semantics.
-func (s *Service) Verify(ctx context.Context, schema core.SchemaConfig, vectorDim int) (core.VerifyReport, error) {
-	var report core.VerifyReport
+func (s *Service) Verify(ctx context.Context, schema core.SchemaConfig, vectorDim int) (domain.VerifyReport, error) {
+	var report domain.VerifyReport
 
 	orphanEdges, err := store.VerifyOrphanEdges(ctx, s.db)
 	if err != nil {

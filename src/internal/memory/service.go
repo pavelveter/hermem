@@ -54,7 +54,7 @@ import (
 // (no memory-domain method calls it ).
 type Service struct {
 	db       *sql.DB
-	vi       core.VectorIndex
+	vi       spi.VectorStore
 	embedder spi.Embedder
 }
 
@@ -63,7 +63,7 @@ type Service struct {
 // The LLM extractor is no longer threaded through here — the
 // dialog-pipeline extractor wiring lives in src/internal/ingest/,
 // where it's actually consumed.
-func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder) *Service {
+func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 

@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -19,7 +21,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, &fixedEmbedder{}, vi)
 	if svc == nil {
 		t.Fatal("NewService returned nil")
@@ -213,7 +215,7 @@ func TestService_RecoveryPlan_RejectsEmptyID(t *testing.T) {
 type svcFixture struct {
 	svc *Service
 	db  *sql.DB
-	vi  *vector.InMemoryVectorIndex
+	vi  spi.VectorStore
 }
 
 // fixedEmbedder returns a deterministic 3-dim vector for any input.
@@ -234,7 +236,7 @@ func newSvcFixture(t *testing.T) *svcFixture {
 		t.Fatalf("memdb: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, fixedEmbedder{}, vi)
 	return &svcFixture{svc: svc, db: db, vi: vi}
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -53,7 +54,7 @@ type Env struct {
 	Cancel    context.CancelFunc
 	Cfg       *config.Config
 	DB        *sql.DB
-	VI        core.VectorIndex
+	VI        spi.VectorStore
 	Embedder  spi.Embedder
 	Extractor core.LLMExtractor
 	Reranker  core.Reranker
@@ -211,7 +212,7 @@ func (e *Env) ensureDBInternal(skipSchemaCheck bool) error {
 	metrics.InitMetricsDB(db)
 	e.Worker = metrics.InitMetricsWorker(db)
 	e.DB = db
-	e.VI = vector.NewIndex(e.Cfg.VectorBackend, db, e.Cfg.VectorDim)
+	e.VI = spiadapter.VectorStore(vector.NewIndex(e.Cfg.VectorBackend, db, e.Cfg.VectorDim))
 	// Initialise the request-counters Metrics if main.go did not.
 	// main.go sets env.Metrics eagerly (BEFORE EnsureDB) so server
 	// handlers can reach it via the env-captured closure at request time;
@@ -341,7 +342,7 @@ func (m *EnvManager) Reload(cfg *config.Config) (*Env, error) {
 		Ctx:        newCtx,
 		Cancel:     newCancel,
 		DB:         safeGet(prev, func(e *Env) *sql.DB { return e.DB }),
-		VI:         safeGet(prev, func(e *Env) core.VectorIndex { return e.VI }),
+		VI:         safeGet(prev, func(e *Env) spi.VectorStore { return e.VI }),
 		Embedder:   safeGet(prev, func(e *Env) spi.Embedder { return e.Embedder }),
 		Extractor:  safeGet(prev, func(e *Env) core.LLMExtractor { return e.Extractor }),
 		Reranker:   safeGet(prev, func(e *Env) core.Reranker { return e.Reranker }),

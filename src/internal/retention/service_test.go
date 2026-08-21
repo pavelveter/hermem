@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/retention"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -23,18 +24,18 @@ type stubVI struct {
 	removed []string
 }
 
-func (s *stubVI) Search(_ context.Context, _ []float32, _ int) ([]string, error) {
+func (s *stubVI) Search(_ context.Context, _ spi.SearchRequest) ([]spi.Hit, error) {
 	return nil, nil
 }
-func (s *stubVI) SearchBatch(_ context.Context, _ [][]float32, _ int) ([][]string, error) {
-	return nil, nil
-}
-func (s *stubVI) Store(_ context.Context, _ string, _ []float32) error { return nil }
-func (s *stubVI) Remove(_ context.Context, ids []string) error {
+func (s *stubVI) Upsert(_ context.Context, _ []spi.VectorRecord) error { return nil }
+func (s *stubVI) Delete(_ context.Context, req spi.DeleteRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.removed = append(s.removed, ids...)
+	s.removed = append(s.removed, req.IDs...)
 	return nil
+}
+func (s *stubVI) Stats(context.Context, string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, nil
 }
 
 func (s *stubVI) snapshotRemoved() []string {

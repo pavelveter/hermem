@@ -13,7 +13,7 @@ import (
 // IngestionWorkerConfig holds all dependencies for creating an IngestionWorker.
 type IngestionWorkerConfig struct {
 	DB             *sql.DB
-	VectorIndex    core.VectorIndex
+	VectorIndex    spi.VectorStore
 	Extractor      core.LLMExtractor
 	Embedder       spi.Embedder
 	DedupThreshold float32
@@ -47,7 +47,7 @@ func NewIngestionWorkerFromConfig(cfg IngestionWorkerConfig) *IngestionWorker {
 // MemoryWorkerConfig holds all dependencies for MemoryWorker and MemoryWorkerResilient.
 type MemoryWorkerConfig struct {
 	DB             *sql.DB
-	VectorIndex    core.VectorIndex
+	VectorIndex    spi.VectorStore
 	Extractor      core.LLMExtractor
 	Embedder       spi.Embedder
 	DedupThreshold float32

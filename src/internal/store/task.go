@@ -9,6 +9,14 @@ import (
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
+// TreeNode represents a node in the task tree produced by GetTaskTree.
+type TreeNode struct {
+	ID       string
+	Content  string
+	Status   string
+	Children []*TreeNode
+}
+
 // ListTasks returns tasks (slim core.Task) filtered by optional status and goal subtree.
 func ListTasks(db *sql.DB, schema core.SchemaConfig, status, goalID string) ([]core.Task, error) {
 	var wheres []string
@@ -176,7 +184,7 @@ func GetRootTasks(db *sql.DB, schema core.SchemaConfig) ([]core.Task, error) {
 }
 
 // GetTaskTree builds a tree of tasks starting from rootID.
-func GetTaskTree(db *sql.DB, schema core.SchemaConfig, rootID string) ([]*core.TreeNode, error) {
+func GetTaskTree(db *sql.DB, schema core.SchemaConfig, rootID string) ([]*TreeNode, error) {
 	if rootID != "" {
 		if _, err := GetTaskByID(db, schema, rootID); err != nil {
 			return nil, err
@@ -185,13 +193,13 @@ func GetTaskTree(db *sql.DB, schema core.SchemaConfig, rootID string) ([]*core.T
 		if err != nil {
 			return nil, err
 		}
-		return []*core.TreeNode{node}, nil
+		return []*TreeNode{node}, nil
 	}
 	roots, err := GetRootTasks(db, schema)
 	if err != nil {
 		return nil, err
 	}
-	var out []*core.TreeNode
+	var out []*TreeNode
 	for _, root := range roots {
 		node, err := BuildNode(db, schema, root.ID, nil)
 		if err != nil {
@@ -203,7 +211,7 @@ func GetTaskTree(db *sql.DB, schema core.SchemaConfig, rootID string) ([]*core.T
 }
 
 // BuildNode iteratively walks the task subtree rooted at id using a work-
-// stack (DFS pre-order) and returns a *core.TreeNode.
+// stack (DFS pre-order) and returns a *TreeNode.
 //
 // Stays compatible with the recursive signature so callers don't change,
 // but actually walks the tree iteratively so deeply-nested dependency
@@ -214,7 +222,7 @@ func GetTaskTree(db *sql.DB, schema core.SchemaConfig, rootID string) ([]*core.T
 // kidIDs are sorted by source_id so child order is stable across runs;
 // Go map iteration over edges is randomized and the prior recursive
 // version inherited that variance.
-func BuildNode(db *sql.DB, schema core.SchemaConfig, id string, visited map[string]bool) (*core.TreeNode, error) {
+func BuildNode(db *sql.DB, schema core.SchemaConfig, id string, visited map[string]bool) (*TreeNode, error) {
 	if visited == nil {
 		visited = make(map[string]bool)
 	}
@@ -224,11 +232,11 @@ func BuildNode(db *sql.DB, schema core.SchemaConfig, id string, visited map[stri
 	// Doing the check BEFORE the GetTaskByID call preserves that contract
 	// for tests like TestBuildNode_CycleAvoidedWithMarker.
 	if visited[id] {
-		return &core.TreeNode{ID: id, Content: "(cycle)", Status: "cycle"}, nil
+		return &TreeNode{ID: id, Content: "(cycle)", Status: "cycle"}, nil
 	}
 
 	type frame struct {
-		tree  *core.TreeNode
+		tree  *TreeNode
 		kids  []string // blocked_by child source IDs (sorted)
 		kidIx int      // next kid to process
 	}
@@ -243,7 +251,7 @@ func BuildNode(db *sql.DB, schema core.SchemaConfig, id string, visited map[stri
 	if err != nil {
 		return nil, err
 	}
-	root := &core.TreeNode{ID: rootEntity.ID, Content: rootEntity.Content, Status: rootEntity.Status}
+	root := &TreeNode{ID: rootEntity.ID, Content: rootEntity.Content, Status: rootEntity.Status}
 	stack := []frame{
 		{tree: root, kids: blockedEdgesToSourceIDs(rootBlocked), kidIx: 0},
 	}
@@ -264,7 +272,7 @@ func BuildNode(db *sql.DB, schema core.SchemaConfig, id string, visited map[stri
 			// Cycle sentinel — exact same shape the recursive version
 			// used so existing tooling (rendering, CLI output) still
 			// recognises it.
-			top.tree.Children = append(top.tree.Children, &core.TreeNode{
+			top.tree.Children = append(top.tree.Children, &TreeNode{
 				ID: cid, Content: "(cycle)", Status: "cycle",
 			})
 			continue
@@ -275,7 +283,7 @@ func BuildNode(db *sql.DB, schema core.SchemaConfig, id string, visited map[stri
 		if err != nil {
 			return nil, err
 		}
-		childNode := &core.TreeNode{ID: e.ID, Content: e.Content, Status: e.Status}
+		childNode := &TreeNode{ID: e.ID, Content: e.Content, Status: e.Status}
 		top.tree.Children = append(top.tree.Children, childNode)
 
 		childBlocked, err := GetBlockedBy(db, schema, cid)
@@ -328,7 +336,7 @@ func ScanTaskEntities(rows *sql.Rows) ([]core.Task, error) {
 }
 
 // RenderTaskTree returns a human-readable tree representation.
-func RenderTaskTree(nodes []*core.TreeNode, prefix string) string {
+func RenderTaskTree(nodes []*TreeNode, prefix string) string {
 	var sb strings.Builder
 	for i, node := range nodes {
 		status := ""
@@ -343,7 +351,7 @@ func RenderTaskTree(nodes []*core.TreeNode, prefix string) string {
 			} else {
 				childPrefix += "│   "
 			}
-			sb.WriteString(RenderTaskTree([]*core.TreeNode{child}, childPrefix))
+			sb.WriteString(RenderTaskTree([]*TreeNode{child}, childPrefix))
 		}
 	}
 	return sb.String()

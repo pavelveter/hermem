@@ -22,7 +22,7 @@ func DBProbe(db *sql.DB) Check {
 	}
 }
 
-func VectorIndexProbe(vi core.VectorIndex, opts ...int) Check {
+func VectorIndexProbe(vi spi.VectorStore, opts ...int) Check {
 	dim := 768
 	if len(opts) > 0 && opts[0] > 0 {
 		dim = opts[0]
@@ -34,7 +34,7 @@ func VectorIndexProbe(vi core.VectorIndex, opts ...int) Check {
 				return errors.New("vector index is nil")
 			}
 			vec := make([]float32, dim)
-			_, err := vi.Search(ctx, vec, 1)
+			_, err := vi.Search(ctx, spi.SearchRequest{Namespace: spi.DefaultNamespace, Vector: vec, Limit: 1})
 			return err
 		},
 		Timeout:  5 * time.Second,

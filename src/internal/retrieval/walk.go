@@ -338,7 +338,7 @@ func topBreakdownForLog(facts []core.RetrievedFact) map[string]float32 {
 // Returned *RetrievalResult comes from the FINAL RetrieveContext call, so
 // its scoring semantics match a single-hop retrieval exactly. The discovery
 // loop only contributes additional seeds.
-func MultiHopRetrieveContext(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
+func MultiHopRetrieveContext(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts core.RetrieveContextOptions) (*core.RetrievalResult, error) {
 	// Empty-seeds short-circuit: matches RetrieveContext's early-return so
 	// nil vi/embedder are tolerated when there's nothing to walk.
 	if len(seedIDs) == 0 {
@@ -536,11 +536,21 @@ func hopEmbedFacts(ctx context.Context, embedder spi.Embedder, facts []core.Retr
 	return vecs, nil
 }
 
-// hopVectorSearch queries the vector index for neighbours of the given query vectors.
-func hopVectorSearch(ctx context.Context, vi core.VectorIndex, queryVecs [][]float32, topK, hop int) ([][]string, error) {
-	hits, err := vi.SearchBatch(ctx, queryVecs, topK)
-	if err != nil {
-		return nil, fmt.Errorf("multihop vector search hop=%d: %w", hop, err)
+// hopVectorSearch queries the vector store for neighbours of the given
+// query vectors. The public contract has no batch method, so each hop
+// query runs as its own namespaced top-K search.
+func hopVectorSearch(ctx context.Context, vi spi.VectorStore, queryVecs [][]float32, topK, hop int) ([][]string, error) {
+	hits := make([][]string, 0, len(queryVecs))
+	for i, vec := range queryVecs {
+		results, err := vi.Search(ctx, spi.SearchRequest{Namespace: spi.DefaultNamespace, Vector: vec, Limit: topK})
+		if err != nil {
+			return nil, fmt.Errorf("multihop vector search hop=%d query=%d: %w", hop, i, err)
+		}
+		ids := make([]string, 0, len(results))
+		for _, hit := range results {
+			ids = append(ids, hit.ID)
+		}
+		hits = append(hits, ids)
 	}
 	return hits, nil
 }

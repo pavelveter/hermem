@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -35,7 +37,7 @@ func (stubEmbedder) Ping(_ context.Context) error {
 type memFixture struct {
 	svc *Service
 	db  *sql.DB
-	vi  *vector.InMemoryVectorIndex
+	vi  spi.VectorStore
 }
 
 func newMemFixture(t *testing.T) *memFixture {
@@ -46,7 +48,7 @@ func newMemFixture(t *testing.T) *memFixture {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, stubEmbedder{})
 	return &memFixture{svc: svc, db: db, vi: vi}
 }
@@ -64,7 +66,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, stubEmbedder{})
 	if svc == nil {
 		t.Fatal("New returned nil Service")

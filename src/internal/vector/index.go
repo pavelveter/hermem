@@ -55,6 +55,9 @@ var ErrLimitOutOfRange = errors.New("vector: search limit out of range")
 //   - "sqlite-vec": sqlite-vec extension (requires the extension to be loaded)
 //
 // Unknown backends fall back to in-memory with a warning logged by the caller.
+// NewIndex constructs the configured backend. It returns the legacy
+// IDs-only index; composition layers that need the public contract wrap
+// the result with spiadapter.VectorStore.
 func NewIndex(backend string, db *sql.DB, dim int) core.VectorIndex {
 	switch backend {
 	case "sqlite-vec":
@@ -70,16 +73,20 @@ func NewIndex(backend string, db *sql.DB, dim int) core.VectorIndex {
 }
 
 // SearchByVector finds the topK entities most similar to queryEmbedding and hydrates from DB.
-func SearchByVector(ctx context.Context, db *sql.DB, vi core.VectorIndex, queryEmbedding []float32, topK int) ([]core.SearchResult, error) {
+func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEmbedding []float32, topK int) ([]core.SearchResult, error) {
 	if len(queryEmbedding) == 0 {
 		return nil, fmt.Errorf("empty query embedding")
 	}
 	if topK > maxSearchLimit {
 		topK = maxSearchLimit
 	}
-	ids, err := vi.Search(ctx, queryEmbedding, topK)
+	hits, err := vi.Search(ctx, spi.SearchRequest{Namespace: spi.DefaultNamespace, Vector: queryEmbedding, Limit: topK})
 	if err != nil {
 		return nil, err
+	}
+	ids := make([]string, 0, len(hits))
+	for _, hit := range hits {
+		ids = append(ids, hit.ID)
 	}
 	if len(ids) == 0 {
 		return nil, nil
@@ -116,7 +123,7 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi core.VectorIndex, queryE
 }
 
 // AddEdgeWithAutoCreate creates an edge, auto-creating missing entities with id-as-content placeholder embeddings.
-func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, src, dst, rel string) error {
+func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, src, dst, rel string) error {
 	for _, id := range []string{src, dst} {
 		var exists bool
 		if err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM entities WHERE id = ?)", id).Scan(&exists); err != nil {
@@ -138,7 +145,7 @@ func AddEdgeWithAutoCreate(ctx context.Context, db *sql.DB, vi core.VectorIndex,
 }
 
 // AutoLinkEdges links a new entity to its top-3 closest neighbors with similarity > 0.85.
-func AutoLinkEdges(ctx context.Context, db *sql.DB, vi core.VectorIndex, embedder spi.Embedder, newID string, newEmbedding []float32) error {
+func AutoLinkEdges(ctx context.Context, db *sql.DB, vi spi.VectorStore, embedder spi.Embedder, newID string, newEmbedding []float32) error {
 	if len(newEmbedding) == 0 {
 		return fmt.Errorf("empty embedding for %s", newID)
 	}

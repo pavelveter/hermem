@@ -252,18 +252,18 @@ func TestBuildNode_CycleAvoidedWithMarker(t *testing.T) {
 }
 
 func TestRenderTaskTree_BasicShape(t *testing.T) {
-	root := &core.TreeNode{
+	root := &TreeNode{
 		ID: "root", Content: "root task",
-		Children: []*core.TreeNode{
+		Children: []*TreeNode{
 			{ID: "leaf-a", Content: "leaf a"},
 			{ID: "leaf-b", Content: "leaf b",
-				Children: []*core.TreeNode{
+				Children: []*TreeNode{
 					{ID: "deep", Content: "deep"},
 				},
 			},
 		},
 	}
-	got := RenderTaskTree([]*core.TreeNode{root}, "")
+	got := RenderTaskTree([]*TreeNode{root}, "")
 	if !strings.Contains(got, "[root] root task") {
 		t.Fatalf("missing root line: %q", got)
 	}

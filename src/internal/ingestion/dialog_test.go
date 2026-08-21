@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -144,14 +145,14 @@ type fannedOp struct {
 	id   string
 }
 
-// failingVIRecord implements core.VectorIndex. It records every Store
-// / Remove call (with the operation id), the order in which they
+// failingVIRecord implements spi.VectorStore. It records every Upsert
+// / Delete call (with the operation id), the order in which they
 // fired, and can be configured to fail every Nth call so the § 3.1
 // atomicity contract is regressable.
 //
-// callOrder is the union of Store + Remove events in arrival order;
-// tests assertions like "Remove(incoming-id) fired before
-// Store(existing-id)" can read it directly.
+// callOrder is the union of Upsert + Delete events in arrival order;
+// tests assertions like "Delete(incoming-id) fired before
+// Upsert(existing-id)" can read it directly.
 type failingVIRecord struct {
 	mu sync.Mutex
 
@@ -159,64 +160,62 @@ type failingVIRecord struct {
 	removes   []string
 	callOrder []fannedOp
 
-	failStoreEveryN  int // if > 0, every Nth Store returns errVIOpInjected
+	failStoreEveryN  int // if > 0, every Nth Upsert returns errVIOpInjected
 	failRemoveEveryN int
 	storeCount       int
 	removeCount      int
 
-	// searchBatchResults is the canned SearchBatch result. When nil,
-	// SearchBatch returns an empty result per query so
-	// processOneItemOnce treats every item as NEW.
-	searchBatchResults [][]string
+	// searchResults is the canned per-query search result. When nil,
+	// Search returns an empty result so processOneItemOnce treats
+	// every item as NEW.
+	searchResults []string
 }
 
 var errVIOpInjected = errors.New("failing_vi_record: injected failure")
 
-func (v *failingVIRecord) Search(_ context.Context, _ []float32, _ int) ([]string, error) {
+func (v *failingVIRecord) Search(_ context.Context, _ spi.SearchRequest) ([]spi.Hit, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if len(v.searchBatchResults) == 0 {
+	if len(v.searchResults) == 0 {
 		return nil, nil
 	}
-	return v.searchBatchResults[0], nil
-}
-
-func (v *failingVIRecord) SearchBatch(_ context.Context, vecs [][]float32, _ int) ([][]string, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	out := make([][]string, len(vecs))
-	for i := range out {
-		if i < len(v.searchBatchResults) {
-			out[i] = v.searchBatchResults[i]
-		}
+	hits := make([]spi.Hit, 0, len(v.searchResults))
+	for _, id := range v.searchResults {
+		hits = append(hits, spi.Hit{ID: id})
 	}
-	return out, nil
+	return hits, nil
 }
 
-func (v *failingVIRecord) Store(_ context.Context, id string, _ []float32) error {
+func (v *failingVIRecord) Upsert(_ context.Context, records []spi.VectorRecord) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.storeCount++
-	v.stores = append(v.stores, id)
-	v.callOrder = append(v.callOrder, fannedOp{kind: "store", id: id})
-	if v.failStoreEveryN > 0 && v.storeCount%v.failStoreEveryN == 0 {
-		return errVIOpInjected
+	for _, record := range records {
+		v.storeCount++
+		v.stores = append(v.stores, record.ID)
+		v.callOrder = append(v.callOrder, fannedOp{kind: "store", id: record.ID})
+		if v.failStoreEveryN > 0 && v.storeCount%v.failStoreEveryN == 0 {
+			return errVIOpInjected
+		}
 	}
 	return nil
 }
 
-func (v *failingVIRecord) Remove(_ context.Context, ids []string) error {
+func (v *failingVIRecord) Delete(_ context.Context, req spi.DeleteRequest) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.removeCount++
-	v.removes = append(v.removes, ids...)
-	for _, id := range ids {
+	v.removes = append(v.removes, req.IDs...)
+	for _, id := range req.IDs {
 		v.callOrder = append(v.callOrder, fannedOp{kind: "remove", id: id})
 	}
 	if v.failRemoveEveryN > 0 && v.removeCount%v.failRemoveEveryN == 0 {
 		return errVIOpInjected
 	}
 	return nil
+}
+
+func (v *failingVIRecord) Stats(context.Context, string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, nil
 }
 
 // viSnapshot returns copies of stores/removes/callOrder under the
@@ -252,7 +251,7 @@ func newFreshEntityWorker(t *testing.T, embedVec []float32, searchToReturn []str
 	}
 	spy := &failingVIRecord{}
 	if len(searchToReturn) > 0 {
-		spy.searchBatchResults = [][]string{searchToReturn}
+		spy.searchResults = searchToReturn
 	}
 	extract := &stubExtractor{
 		result: &core.ExtractionResult{
@@ -376,7 +375,7 @@ func TestProcessDialogWithProvenance_MergeComposesRemoveBeforeStore(t *testing.T
 	// findMatch reads it (and the dedup threshold passes because of
 	// cosine ≈ 1.0).
 	spy := &failingVIRecord{
-		searchBatchResults: [][]string{{existingID}},
+		searchResults: []string{existingID},
 	}
 
 	extract := &stubExtractor{
@@ -458,7 +457,7 @@ func TestProcessDialogWithProvenance_LowConfContradictionArchivesAtomically(t *t
 	}
 
 	spy := &failingVIRecord{
-		searchBatchResults: [][]string{{existingID}},
+		searchResults: []string{existingID},
 	}
 
 	extract := &stubExtractor{

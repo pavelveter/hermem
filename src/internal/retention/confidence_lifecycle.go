@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/spi"
 )
 
 // ConfidenceLifecycleConfig controls the confidence-based cleanup behavior.
@@ -51,11 +51,11 @@ type ConfidenceLifecycleReport struct {
 // Set Enabled=true in config to activate.
 type ConfidenceLifecycle struct {
 	db *sql.DB
-	vi core.VectorIndex
+	vi spi.VectorStore
 }
 
 // NewConfidenceLifecycle constructs a ConfidenceLifecycle.
-func NewConfidenceLifecycle(db *sql.DB, vi core.VectorIndex) *ConfidenceLifecycle {
+func NewConfidenceLifecycle(db *sql.DB, vi spi.VectorStore) *ConfidenceLifecycle {
 	return &ConfidenceLifecycle{db: db, vi: vi}
 }
 
@@ -164,7 +164,7 @@ func (cl *ConfidenceLifecycle) RunOnce(ctx context.Context, cfg ConfidenceLifecy
 
 	// Clean up ghost vectors from the in-memory index AFTER successful commit.
 	if cl.vi != nil {
-		if verr := cl.vi.Remove(ctx, ids); verr != nil {
+		if verr := cl.vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: ids}); verr != nil {
 			slog.Warn("confidence lifecycle: vi.Remove post-commit fault", "count", len(ids), "err", verr)
 		}
 	}

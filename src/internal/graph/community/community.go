@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // Graph holds the in-memory adjacency representation of the entity graph.
@@ -103,7 +103,7 @@ func LoadGraph(ctx context.Context, db *sql.DB) (*Graph, error) {
 // g.IDs, g.Adj, g.NodeIndex, g.TotalWeight, and g.NodeWeight — it
 // never mutates the graph. All mutable state (community assignments,
 // commInternal, commTotal) lives in stack-local slices/maps.
-func DetectCommunities(g *Graph, maxIterations int) ([]core.Community, float64) {
+func DetectCommunities(g *Graph, maxIterations int) ([]domain.Community, float64) {
 	n := len(g.IDs)
 	if n == 0 {
 		return nil, 0
@@ -199,17 +199,17 @@ func communityIDString(commID int) string {
 }
 
 // buildResult maps community IDs to member lists and returns sorted communities.
-func buildResult(g *Graph, community []int) []core.Community {
+func buildResult(g *Graph, community []int) []domain.Community {
 	commMembers := make(map[int][]string)
 	for i, comm := range community {
 		commMembers[comm] = append(commMembers[comm], g.IDs[i])
 	}
 
-	var communities []core.Community
+	var communities []domain.Community
 	for commID, members := range commMembers {
 		sort.Strings(members)
 		q := computeCommunityModularity(g, community, members)
-		communities = append(communities, core.Community{
+		communities = append(communities, domain.Community{
 			ID:         communityIDString(commID),
 			Members:    members,
 			Size:       len(members),

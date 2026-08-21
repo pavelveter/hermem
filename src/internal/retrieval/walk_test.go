@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/tracing"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -406,7 +407,7 @@ func TestMultiHopRetrieveContext_DiscoversDisconnectedSubgraph(t *testing.T) {
 		"gamma": {0, 0, 1},
 		"delta": {1, 0, 0},
 	}}
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 
 	res, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, core.RetrieveContextOptions{
 		MaxDepth:       1,
@@ -465,7 +466,7 @@ func TestMultiHopRetrieveContext_NoContentReEmbedded(t *testing.T) {
 		"a-content": {1, 0, 0},
 		"d-content": {1, 0, 0},
 	}}
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 
 	if _, err := MultiHopRetrieveContext(db, vi, emb, []string{"a"}, core.RetrieveContextOptions{
 		MaxDepth:      1,
@@ -530,7 +531,7 @@ func TestMultiHopRetrieveContext_RequiresIndexAndEmbedderWhenCountGTE2(t *testin
 	if _, err := MultiHopRetrieveContext(db, nil, &stubEmbedder{}, []string{"a"}, core.RetrieveContextOptions{MultiHopCount: 2}); err == nil {
 		t.Fatal("expected error on nil vi when MultiHopCount=2")
 	}
-	if _, err := MultiHopRetrieveContext(db, vector.NewInMemoryVectorIndex(db), nil, []string{"a"}, core.RetrieveContextOptions{MultiHopCount: 2}); err == nil {
+	if _, err := MultiHopRetrieveContext(db, spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db)), nil, []string{"a"}, core.RetrieveContextOptions{MultiHopCount: 2}); err == nil {
 		t.Fatal("expected error on nil embedder when MultiHopCount=2")
 	}
 }
@@ -1194,7 +1195,7 @@ func TestHopEmbedFacts_Error(t *testing.T) {
 
 func TestHopVectorSearch(t *testing.T) {
 	db := openTestDB(t)
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	vecs := [][]float32{{0.1, 0.2, 0.3}}
 	hits, err := hopVectorSearch(t.Context(), vi, vecs, 3, 1)
 	if err != nil {

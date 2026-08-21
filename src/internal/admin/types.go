@@ -1,15 +1,14 @@
 package admin
 
 import (
-	"context"
 	"time"
+
+	"github.com/pavelveter/hermem/pkg/spi"
 )
 
-// VectorIndex is the subset of core.VectorIndex needed by RebuildIndex.
-type VectorIndex interface {
-	Store(ctx context.Context, id string, vec []float32) error
-	Remove(ctx context.Context, ids []string) error
-}
+// RebuildIndex consumes the canonical public VectorStore contract; the
+// write-only subset interface it previously defined is gone.
+type VectorIndex = spi.VectorStore
 
 type RebuildOpts struct {
 	Category     string

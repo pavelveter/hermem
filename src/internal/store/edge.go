@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
@@ -100,7 +101,7 @@ var ErrPurgeEntityNotFound = errors.New("purge entity: id does not exist")
 // in production a missing vi means orphaned vector entries (drift)
 // that the next search will surface. The DB is the source of truth;
 // vi.Remove runs AFTER tx.Commit returns nil, never before.
-func PurgeEntity(ctx context.Context, db *sql.DB, vi core.VectorIndex, entityID string) error {
+func PurgeEntity(ctx context.Context, db *sql.DB, vi spi.VectorStore, entityID string) error {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("purge entity: begin tx: %w", err)
@@ -133,9 +134,9 @@ func PurgeEntity(ctx context.Context, db *sql.DB, vi core.VectorIndex, entityID 
 		return fmt.Errorf("purge entity: commit: %w", err)
 	}
 
-	// Step 4: vi.Remove. log but do not fail.
+	// Step 4: vector delete. log but do not fail.
 	if vi != nil {
-		if err := vi.Remove(ctx, []string{entityID}); err != nil {
+		if err := vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: []string{entityID}}); err != nil {
 			// Log but don't roll back the DB delete; caller can rebuild
 			// the vector index from DB embeddings via algo.ReEmbedAll.
 			// Returning an error here would mislead downstream callers

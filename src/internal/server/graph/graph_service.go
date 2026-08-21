@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	graphsvc "github.com/pavelveter/hermem/src/internal/graph"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
@@ -90,7 +90,7 @@ func (s *HTTPService) HandleCommunities(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
-	filtered := make([]core.Community, 0, len(all))
+	filtered := make([]domain.Community, 0, len(all))
 	for _, c := range all {
 		if c.Size >= minSize {
 			filtered = append(filtered, c)

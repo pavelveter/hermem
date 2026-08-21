@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/lifecycle"
 	"github.com/pavelveter/hermem/src/internal/lifecycle/components"
@@ -188,7 +188,7 @@ func (s *Server) Mux() *http.ServeMux { return s.mux }
 // addition to the wired *Server (GC scope, auth key, listen port).
 type ServeConfig struct {
 	DB        *sql.DB
-	VI        core.VectorIndex
+	VI        spi.VectorStore
 	Retention retentiondomain.Policy
 	APIKey    string
 	Port      string

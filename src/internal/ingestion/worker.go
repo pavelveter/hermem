@@ -17,7 +17,7 @@ import (
 // IngestionWorker handles the extraction→embed→store pipeline.
 type IngestionWorker struct {
 	db          *sql.DB
-	vi          core.VectorIndex
+	vi          spi.VectorStore
 	extractor   core.LLMExtractor
 	embedder    spi.Embedder
 	dedupThresh float32
@@ -29,7 +29,7 @@ type IngestionWorker struct {
 // NewIngestionWorker creates a worker.
 //
 // Deprecated: Use NewIngestionWorkerFromConfig instead.
-func NewIngestionWorker(db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, detector contradiction.ContradictionDetector) *IngestionWorker {
+func NewIngestionWorker(db *sql.DB, vi spi.VectorStore, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, detector contradiction.ContradictionDetector) *IngestionWorker {
 	return NewIngestionWorkerFromConfig(IngestionWorkerConfig{
 		DB:             db,
 		VectorIndex:    vi,

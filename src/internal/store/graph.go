@@ -6,11 +6,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // GetContradictions returns contradicts edges, optionally filtered by entity ID.
-func GetContradictions(db *sql.DB, entityID string) ([]core.ContradictionPair, error) {
+func GetContradictions(db *sql.DB, entityID string) ([]domain.ContradictionPair, error) {
 	var rows *sql.Rows
 	var err error
 	if entityID != "" {
@@ -22,9 +23,9 @@ func GetContradictions(db *sql.DB, entityID string) ([]core.ContradictionPair, e
 		return nil, fmt.Errorf("query contradictions: %w", err)
 	}
 	defer rows.Close()
-	out := make([]core.ContradictionPair, 0)
+	out := make([]domain.ContradictionPair, 0)
 	for rows.Next() {
-		var p core.ContradictionPair
+		var p domain.ContradictionPair
 		if err := rows.Scan(&p.SourceID, &p.SourceContent, &p.TargetID, &p.TargetContent); err != nil {
 			return nil, fmt.Errorf("scan contradiction: %w", err)
 		}
@@ -99,7 +100,7 @@ func GetEntitiesByProvenance(db *sql.DB, conversationID, messageID, source strin
 }
 
 // FindConnectedComponents finds all connected components via BFS.
-func FindConnectedComponents(db *sql.DB, minSize int) ([]core.ConnectedComponent, error) {
+func FindConnectedComponents(db *sql.DB, minSize int) ([]domain.ConnectedComponent, error) {
 	rows, err := db.Query(`SELECT e.id FROM entities e WHERE e.archived = 0`)
 	if err != nil {
 		return nil, fmt.Errorf("find components: read entities: %w", err)
@@ -129,7 +130,7 @@ func FindConnectedComponents(db *sql.DB, minSize int) ([]core.ConnectedComponent
 		adj[dst] = append(adj[dst], src)
 	}
 	visited := make(map[string]bool)
-	components := make([]core.ConnectedComponent, 0, len(allIDs))
+	components := make([]domain.ConnectedComponent, 0, len(allIDs))
 	for _, id := range allIDs {
 		if visited[id] {
 			continue
@@ -152,7 +153,7 @@ func FindConnectedComponents(db *sql.DB, minSize int) ([]core.ConnectedComponent
 		}
 		if len(comp) >= minSize {
 			avgDeg := float64(totalDegree) / float64(len(comp))
-			components = append(components, core.ConnectedComponent{IDs: comp, Size: len(comp), AvgDegree: avgDeg})
+			components = append(components, domain.ConnectedComponent{IDs: comp, Size: len(comp), AvgDegree: avgDeg})
 		}
 	}
 	sort.Slice(components, func(i, j int) bool { return components[i].Size > components[j].Size })

@@ -35,7 +35,7 @@ import (
 // vector.AddEdgeWithAutoCreate without constructor branching.
 type Service struct {
 	db       *sql.DB
-	vi       core.VectorIndex
+	vi       spi.VectorStore
 	embedder spi.Embedder
 }
 
@@ -46,7 +46,7 @@ type Service struct {
 //   - On the non-auto-create path vi + embedder are unused but the
 //     constructor still requires them at boot so caller-side wiring
 //     fails fast at daemon startup if any dep is nil.
-func New(db *sql.DB, vi core.VectorIndex, embedder spi.Embedder) *Service {
+func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder) *Service {
 	return &Service{db: db, vi: vi, embedder: embedder}
 }
 

@@ -6,7 +6,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -39,7 +39,7 @@ func New(db *sql.DB) *Service {
 // against large graphs); the current SQL is fast enough that explicit
 // threading isn't required. Passing-through ctx here is cheap and keeps
 // the signature parity with retrieval.Service.
-func (s *Service) List(_ context.Context, entityID string) ([]core.ContradictionPair, error) {
+func (s *Service) List(_ context.Context, entityID string) ([]domain.ContradictionPair, error) {
 	pairs, err := store.GetContradictions(s.db, entityID)
 	if err != nil {
 		return nil, err

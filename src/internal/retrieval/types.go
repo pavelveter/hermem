@@ -17,7 +17,6 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
-	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // SearchResult pairs an entity with its cosine similarity to a query.
@@ -108,7 +107,7 @@ type Reranker = spi.Reranker
 // ADR-037 retires them (task 6.2).
 type Retriever interface {
 	RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
-	MultiHopRetrieveContext(ctx context.Context, vi core.VectorIndex, embedder spi.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
+	MultiHopRetrieveContext(ctx context.Context, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
 }
 
 // RankingWeight is a cross-package config value (config/ini parses the

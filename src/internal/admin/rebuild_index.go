@@ -65,12 +65,12 @@ func (r *RebuildIndex) Run(ctx context.Context, opts RebuildOpts) (*RebuildRepor
 			continue
 		}
 
-		if err := r.vi.Remove(ctx, []string{id}); err != nil {
+		if err := r.vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: []string{id}}); err != nil {
 			report.Failed++
 			report.Errors = append(report.Errors, fmt.Sprintf("remove %s: %v", id, err))
 			continue
 		}
-		if err := r.vi.Store(ctx, id, vec); err != nil {
+		if err := r.vi.Upsert(ctx, []spi.VectorRecord{{Namespace: spi.DefaultNamespace, ID: id, Vector: vec}}); err != nil {
 			report.Failed++
 			report.Errors = append(report.Errors, fmt.Sprintf("store %s: %v", id, err))
 			continue

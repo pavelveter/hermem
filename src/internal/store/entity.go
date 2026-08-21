@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 )
 
 // StoreEntityWithEmbedding persists an entity to SQLite and mirrors its embedding into the vector index.
-func StoreEntityWithEmbedding(ctx context.Context, db *sql.DB, vi core.VectorIndex, schema core.SchemaConfig, entity core.Entity) error {
+func StoreEntityWithEmbedding(ctx context.Context, db *sql.DB, vi spi.VectorStore, schema core.SchemaConfig, entity core.Entity) error {
 	var embeddingBytes []byte
 	hasEmbedding := len(entity.Embedding) > 0
 	if hasEmbedding {
@@ -20,7 +21,7 @@ func StoreEntityWithEmbedding(ctx context.Context, db *sql.DB, vi core.VectorInd
 	}
 
 	if hasEmbedding {
-		if err := vi.Store(ctx, entity.ID, entity.Embedding); err != nil {
+		if err := vi.Upsert(ctx, []spi.VectorRecord{{Namespace: spi.DefaultNamespace, ID: entity.ID, Vector: entity.Embedding}}); err != nil {
 			return fmt.Errorf("vector index store: %w", err)
 		}
 	}
@@ -30,7 +31,7 @@ func StoreEntityWithEmbedding(ctx context.Context, db *sql.DB, vi core.VectorInd
 		entity.ID, entity.Category, entity.Content, embeddingBytes, NullString(entity.Status))
 	if err != nil {
 		if hasEmbedding {
-			if rmErr := vi.Remove(ctx, []string{entity.ID}); rmErr != nil {
+			if rmErr := vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: []string{entity.ID}}); rmErr != nil {
 				slog.Warn("vector index rollback after sqlite failure", "event", "vector_rollback_fail", "entity_id", entity.ID, "rm_err", rmErr)
 			}
 		}

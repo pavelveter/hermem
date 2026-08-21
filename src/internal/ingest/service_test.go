@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/ingest"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -29,14 +31,14 @@ func (s *stubExtractor) ExtractEntities(_ context.Context, _ string) (*core.Extr
 // newIngestFixture opens a fresh in-memory DB + vector index so
 // per-test isolation holds. Mirrors the memory.Service + task.Service
 // test fixture pattern.
-func newIngestFixture(t *testing.T) (*sql.DB, *vector.InMemoryVectorIndex) {
+func newIngestFixture(t *testing.T) (*sql.DB, spi.VectorStore) {
 	t.Helper()
 	db, err := store.MemDB()
 	if err != nil {
 		t.Fatalf("MemDB: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	return db, vi
 }
 

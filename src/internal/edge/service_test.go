@@ -9,6 +9,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/edge"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -39,7 +40,7 @@ func newEdgeFixture(t *testing.T) (*edge.Service, *sql.DB) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := edge.New(db, vi, stubEmbedder{})
 	return svc, db
 }
@@ -65,7 +66,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := edge.New(db, vi, stubEmbedder{})
 	if svc == nil {
 		t.Fatal("New returned nil Service")

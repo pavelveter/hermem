@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/spiadapter"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -57,7 +59,7 @@ func newSvcFixture(t *testing.T) *svcFixture {
 		t.Fatalf("memdb: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, svcStubEmbedder{})
 	return &svcFixture{svc: svc, db: db}
 }
@@ -73,8 +75,8 @@ func seedSvcEntity(t *testing.T, svc *Service, id, content string) {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := svc.vi.Store(t.Context(), id, emb); err != nil {
-		t.Fatalf("vi.Store: %v", err)
+	if err := svc.vi.Upsert(t.Context(), []spi.VectorRecord{{Namespace: spi.DefaultNamespace, ID: id, Vector: emb}}); err != nil {
+		t.Fatalf("vi.Upsert: %v", err)
 	}
 }
 
@@ -86,7 +88,7 @@ func TestNewService_Success(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, svcStubEmbedder{})
 	if svc == nil {
 		t.Fatal("NewService returned nil")
@@ -136,7 +138,7 @@ func TestService_Search_PropagatesEmbedError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, &svcErrEmbedder{msg: "embed-down"})
 
 	_, err = svc.Search(t.Context(), "hello", 5)
@@ -224,7 +226,7 @@ func TestService_Query_PropagatesEmbedError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, &svcErrEmbedder{msg: "query-embed-fail"})
 	_, err = svc.Query(t.Context(), "anything", 0, core.RetrieveContextOptions{})
 	if err == nil {
@@ -271,7 +273,7 @@ func TestService_Explain_SwallowsEmbedError(t *testing.T) {
 		t.Fatalf("memdb: %v", err)
 	}
 	defer db.Close()
-	vi := vector.NewInMemoryVectorIndex(db)
+	vi := spiadapter.VectorStore(vector.NewInMemoryVectorIndex(db))
 	svc := New(db, vi, &svcErrEmbedder{msg: "explain-embed-fail"})
 
 	result, err := svc.Explain(t.Context(), "anything", 0, core.RetrieveContextOptions{})

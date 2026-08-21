@@ -229,7 +229,7 @@ func appliedMigrations(db *sql.DB) (map[string]bool, error) {
 //
 // JSON tags added in PHASE 3.2 so the migration HTTP shell can
 // write the type as the envelope directly — same precedent as
-// core.ContradictionPair / core.ConnectedComponent / core.Community.
+// domain.ContradictionPair / domain.ConnectedComponent / domain.Community.
 // omitempty on AppliedAt matches the CLI's per-row print contract
 // (non-applied rows omit the field rather than render as "").
 type MigStatus struct {

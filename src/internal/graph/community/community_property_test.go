@@ -3,7 +3,7 @@ package community
 import (
 	"testing"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/domain"
 )
 
 // makeGraph constructs an in-memory Graph from adjacency data for testing.
@@ -160,5 +160,5 @@ func TestProperty_DetectCommunities_communityIDString(t *testing.T) {
 	}
 }
 
-// Verify that core.Community is the expected output type.
-var _ core.Community
+// Verify that domain.Community is the expected output type.
+var _ domain.Community

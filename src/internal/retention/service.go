@@ -23,7 +23,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/pkg/spi"
 )
 
 // GCReport is the envelope returned by RunOnce. Simpler than 's
@@ -43,14 +43,14 @@ type GCReport struct {
 // around RunOnce; per-call policy keeps the constructor minimal.
 type Service struct {
 	db *sql.DB
-	vi core.VectorIndex
+	vi spi.VectorStore
 }
 
 // NewService constructs a retention Service. Both db and vi are required
 // (RunOnce removes from vi after every successful archive sweep). The DB's
 // MaxOpenConns constraint must be 1 (set by store.InitDB) so the BEGIN
 // IMMEDIATE writer-lock serializes against parallel ingest transactions.
-func New(db *sql.DB, vi core.VectorIndex) *Service {
+func New(db *sql.DB, vi spi.VectorStore) *Service {
 	return &Service{db: db, vi: vi}
 }
 
@@ -183,7 +183,7 @@ func (s *Service) RunOnce(ctx context.Context, policy Policy) (rep GCReport, err
 	// capture that into `verr` and log it, but we do NOT fail the sweep
 	// because the DB state is already committed. Ghost vectors from a
 	// failed removal persist until manual cleanup (no auto GC).
-	if verr := s.vi.Remove(ctx, ids); verr != nil {
+	if verr := s.vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: ids}); verr != nil {
 		slog.Warn("retention: vi.Remove post-commit fault", "count", len(ids), "err", verr)
 	}
 	rep.Swept = len(ids)

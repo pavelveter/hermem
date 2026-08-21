@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pavelveter/hermem/pkg/spi"
 )
 
 type mockEmbedder struct {
@@ -34,12 +35,20 @@ type mockVectorIndex struct {
 	removeErr       error
 }
 
-func (m *mockVectorIndex) Store(_ context.Context, id string, vec []float32) error {
-	atomic.AddInt64(&m.storeCallCount, 1)
+func (m *mockVectorIndex) Search(context.Context, spi.SearchRequest) ([]spi.Hit, error) {
+	return nil, nil
+}
+
+func (m *mockVectorIndex) Stats(context.Context, string) (spi.VectorStats, error) {
+	return spi.VectorStats{}, nil
+}
+
+func (m *mockVectorIndex) Upsert(_ context.Context, records []spi.VectorRecord) error {
+	atomic.AddInt64(&m.storeCallCount, int64(len(records)))
 	return m.storeErr
 }
 
-func (m *mockVectorIndex) Remove(_ context.Context, ids []string) error {
+func (m *mockVectorIndex) Delete(_ context.Context, req spi.DeleteRequest) error {
 	atomic.AddInt64(&m.removeCallCount, 1)
 	return m.removeErr
 }

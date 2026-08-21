@@ -55,7 +55,7 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 	for i, it := range items {
 		embeddings[i] = it.embedding
 	}
-	allIDs, err := w.vi.SearchBatch(ctx, embeddings, 1)
+	allIDs, err := searchTopOneEach(ctx, w.vi, embeddings)
 	if err != nil {
 		return fmt.Errorf("batch search: %w", err)
 	}
@@ -109,19 +109,39 @@ type viOp struct {
 	vec  []float32
 }
 
-func applyVIOps(ctx context.Context, vi core.VectorIndex, ops []viOp) {
+func applyVIOps(ctx context.Context, vi spi.VectorStore, ops []viOp) {
 	for _, op := range ops {
 		switch op.kind {
 		case viOpStore:
-			if err := vi.Store(ctx, op.id, op.vec); err != nil {
-				slog.Warn("post-commit vi.Store failed", "event", "vi_drift", "entity_id", op.id, "err", err)
+			if err := vi.Upsert(ctx, []spi.VectorRecord{{Namespace: spi.DefaultNamespace, ID: op.id, Vector: op.vec}}); err != nil {
+				slog.Warn("post-commit vector upsert failed", "event", "vi_drift", "entity_id", op.id, "err", err)
 			}
 		case viOpRemove:
-			if err := vi.Remove(ctx, []string{op.id}); err != nil {
-				slog.Warn("post-commit vi.Remove failed", "event", "vi_drift", "entity_id", op.id, "err", err)
+			if err := vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: []string{op.id}}); err != nil {
+				slog.Warn("post-commit vector delete failed", "event", "vi_drift", "entity_id", op.id, "err", err)
 			}
 		}
 	}
+}
+
+// searchTopOneEach runs a top-1 namespace search per query vector. The
+// public VectorStore contract has no batch method; dedup fan-out is small
+// (one query per extracted item) so per-query calls are the faithful
+// translation of the legacy SearchBatch(embeddings, 1).
+func searchTopOneEach(ctx context.Context, vi spi.VectorStore, embeddings [][]float32) ([][]string, error) {
+	out := make([][]string, len(embeddings))
+	for i, vec := range embeddings {
+		hits, err := vi.Search(ctx, spi.SearchRequest{Namespace: spi.DefaultNamespace, Vector: vec, Limit: 1})
+		if err != nil {
+			return nil, fmt.Errorf("query %d: %w", i, err)
+		}
+		ids := make([]string, 0, len(hits))
+		for _, hit := range hits {
+			ids = append(ids, hit.ID)
+		}
+		out[i] = ids
+	}
+	return out, nil
 }
 
 func (w *IngestionWorker) processOneItemOnce(ctx context.Context, prov domain.Provenance, it processInput, similarIDs []string, selfID string) error {
@@ -279,7 +299,7 @@ func IsIngestionContradiction(a, b string) bool {
 }
 
 // MemoryWorker processes MemoryMessage channel items without durability.
-func MemoryWorker(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ch <-chan domain.MemoryMessage) {
+func MemoryWorker(ctx context.Context, db *sql.DB, vi spi.VectorStore, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ch <-chan domain.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	const maxParallel = 1
 	sem := make(chan struct{}, maxParallel)
@@ -432,7 +452,7 @@ func MemoryWorkerResilientFromConfig(ctx context.Context, cfg MemoryWorkerConfig
 
 // MemoryWorkerResilient is the production-grade ingest entry point.
 // Deprecated: Use MemoryWorkerResilientFromConfig instead.
-func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi core.VectorIndex, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan domain.MemoryMessage) {
+func MemoryWorkerResilient(ctx context.Context, db *sql.DB, vi spi.VectorStore, extractor core.LLMExtractor, embedder spi.Embedder, dedupThreshold float32, schema domain.SchemaConfig, ckptPath, pendingPath, workerID string, ch <-chan domain.MemoryMessage) {
 	worker := NewIngestionWorker(db, vi, extractor, embedder, dedupThreshold, schema, detectors.NewLexicalDetector())
 	resilientLoop(ctx, resilientConfig{
 		worker:      worker,

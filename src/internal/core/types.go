@@ -66,7 +66,7 @@ type Retriever interface {
 	RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
 	// MultiHopRetrieveContext runs multiple hops of discovery, expanding seeds
 	// via vector search at each hop.
-	MultiHopRetrieveContext(ctx context.Context, vi VectorIndex, embedder Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
+	MultiHopRetrieveContext(ctx context.Context, vi spi.VectorStore, embedder Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
 }
 
 // Relation — a typed connection extracted from dialog.
@@ -190,61 +190,6 @@ type Provenance = domain.Provenance
 // Deprecated: alias to the canonical pkg/domain.MemoryMessage.
 type MemoryMessage = domain.MemoryMessage
 
-// ReEmbedResult is the output of ReEmbedAll.
-type ReEmbedResult struct {
-	TotalEntities int    `json:"total_entities"`
-	ReEmbedded    int    `json:"re_embedded"`
-	Skipped       int    `json:"skipped"`
-	Failed        int    `json:"failed"`
-	Elapsed       string `json:"elapsed"`
-	OldDim        int    `json:"old_dim"`
-	NewDim        int    `json:"new_dim"`
-	Batches       int    `json:"batches"`
-}
-
-// VerifyReport summarises the results of VerifyGraph.
-type VerifyReport struct {
-	Issues []string `json:"issues"`
-}
-
-// Pass returns true if there are no issues.
-func (r *VerifyReport) Pass() bool { return len(r.Issues) == 0 }
-
-// String returns a human-readable report.
-func (r *VerifyReport) String() string {
-	if r.Pass() {
-		return "Graph integrity verified: no issues found.\n"
-	}
-	s := ""
-	for _, issue := range r.Issues {
-		s += "  - " + issue + "\n"
-	}
-	return "Graph integrity issues found:\n" + s
-}
-
-// Community is the result of Louvain community detection.
-type Community struct {
-	ID         string   `json:"id"`
-	Members    []string `json:"members"`
-	Size       int      `json:"size"`
-	Modularity float64  `json:"modularity"`
-}
-
-// ContradictionPair is one directed contradicts edge.
-type ContradictionPair struct {
-	SourceID      string `json:"source_id"`
-	SourceContent string `json:"source_content"`
-	TargetID      string `json:"target_id"`
-	TargetContent string `json:"target_content"`
-}
-
-// ConnectedComponent is a group of mutually reachable entity IDs.
-type ConnectedComponent struct {
-	IDs       []string `json:"ids"`
-	Size      int      `json:"size"`
-	AvgDegree float64  `json:"avg_degree"`
-}
-
 // Polarity represents whether evidence supports or refutes a belief.
 //
 // Deprecated: alias to the canonical pkg/domain.Polarity.
@@ -260,14 +205,6 @@ const (
 //
 // Deprecated: call domain.TimePtr directly.
 var TimePtr = domain.TimePtr
-
-// TreeNode represents a node in the task tree.
-type TreeNode struct {
-	ID       string
-	Content  string
-	Status   string
-	Children []*TreeNode
-}
 
 // ErrorResponse carries a human message plus optional code/field.
 type ErrorResponse struct {
