@@ -9,8 +9,9 @@ package ingest
 import (
 	"net/http"
 
+	apiv1 "github.com/pavelveter/hermem/api/v1"
+
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/ingest"
 	"github.com/pavelveter/hermem/src/internal/metrics"
@@ -68,7 +69,7 @@ func (h *HTTPService) HandleIngest(w http.ResponseWriter, r *http.Request) error
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.IngestRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.IngestRequest](w, r)
 	if err != nil {
 		return err
 	}

@@ -13,9 +13,10 @@ package memory
 import (
 	"net/http"
 
+	apiv1 "github.com/pavelveter/hermem/api/v1"
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
+	"github.com/pavelveter/hermem/src/internal/memory"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/server/shared"
@@ -75,10 +76,11 @@ func (s *HTTPService) HandleStore(w http.ResponseWriter, r *http.Request) error 
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.StoreRequest](w, r)
+	wire, err := httputil.DecodeJSON[apiv1.StoreRequest](w, r)
 	if err != nil {
 		return err
 	}
+	req := memory.StoreInput{ID: wire.ID, Category: wire.Category, Content: wire.Content, Embedding: wire.Embedding}
 	if req.ID == "" || req.Category == "" || req.Content == "" {
 		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "id, category, content required", Field: ""})
 		return nil

@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"net/http"
 
+	apiv1 "github.com/pavelveter/hermem/api/v1"
+
 	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
@@ -86,7 +88,7 @@ func (s *HTTPService) HandleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, httputil.MaxBodyBytes)
-	var req core.TaskStatusRequest
+	var req apiv1.TaskStatusRequest
 	if code, field, msg, ok := httputil.DecodeStrict(r.Body, &req); !ok {
 		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: code, Message: msg, Field: field})
 		return
@@ -120,7 +122,7 @@ func (s *HTTPService) HandleTaskExecutable(w http.ResponseWriter, r *http.Reques
 		return err
 	}
 	s.Metrics.IncTaskExec()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskExecutableResponse{Tasks: tasks})
+	httputil.WriteJSON(w, http.StatusOK, apiv1.TaskExecutableResponse{Tasks: tasks})
 	return nil
 }
 
@@ -143,11 +145,11 @@ func (s *HTTPService) HandleTaskClaimNext(w http.ResponseWriter, r *http.Request
 		return err
 	}
 	if task == nil {
-		httputil.WriteJSON(w, http.StatusOK, core.TaskClaimResponse{Task: nil})
+		httputil.WriteJSON(w, http.StatusOK, apiv1.TaskClaimResponse{Task: nil})
 		return nil
 	}
 	s.Metrics.IncTaskExec()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskClaimResponse{Task: task})
+	httputil.WriteJSON(w, http.StatusOK, apiv1.TaskClaimResponse{Task: task})
 	return nil
 }
 
@@ -159,7 +161,7 @@ func (s *HTTPService) HandleTaskList(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.TaskListRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.TaskListRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -172,7 +174,7 @@ func (s *HTTPService) HandleTaskList(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	s.Metrics.IncTaskList()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskExecutableResponse{Tasks: tasks})
+	httputil.WriteJSON(w, http.StatusOK, apiv1.TaskExecutableResponse{Tasks: tasks})
 	return nil
 }
 
@@ -187,7 +189,7 @@ func (s *HTTPService) HandleTaskShow(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.TaskShowRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.TaskShowRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -201,7 +203,7 @@ func (s *HTTPService) HandleTaskShow(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	s.Metrics.IncTaskShow()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskShowResponse{Entity: showResult.Task, BlockedBy: showResult.BlockedBy, RecoversVia: showResult.RecoversVia})
+	httputil.WriteJSON(w, http.StatusOK, apiv1.TaskShowResponse{Entity: showResult.Task, BlockedBy: showResult.BlockedBy, RecoversVia: showResult.RecoversVia})
 	return nil
 }
 
@@ -215,7 +217,7 @@ func (s *HTTPService) HandleTaskDep(w http.ResponseWriter, r *http.Request) erro
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.TaskDepRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.TaskDepRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -248,7 +250,7 @@ func (s *HTTPService) HandleTaskRollback(w http.ResponseWriter, r *http.Request)
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.TaskRollbackRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.TaskRollbackRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -261,7 +263,7 @@ func (s *HTTPService) HandleTaskRollback(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	s.Metrics.IncTaskRollback()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskRollbackResponse{RollbackTaskID: rollbackID})
+	httputil.WriteJSON(w, http.StatusOK, apiv1.TaskRollbackResponse{RollbackTaskID: rollbackID})
 	return nil
 }
 
@@ -273,7 +275,7 @@ func (s *HTTPService) HandleTaskTree(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.TaskTreeRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.TaskTreeRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -282,7 +284,7 @@ func (s *HTTPService) HandleTaskTree(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	s.Metrics.IncTaskTree()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskTreeResponse{Tree: tree})
+	httputil.WriteJSON(w, http.StatusOK, apiv1.TaskTreeResponse{Tree: tree})
 	return nil
 }
 
@@ -297,7 +299,7 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.TaskCreateRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.TaskCreateRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -314,7 +316,7 @@ func (s *HTTPService) HandleTaskCreate(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 	s.Metrics.IncTaskCreate()
-	httputil.WriteJSON(w, http.StatusOK, core.TaskCreateResponse{ID: newID, Status: "ok"})
+	httputil.WriteJSON(w, http.StatusOK, apiv1.TaskCreateResponse{ID: newID, Status: "ok"})
 	return nil
 }
 

@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"time"
 
+	apiv1 "github.com/pavelveter/hermem/api/v1"
+
 	"github.com/pavelveter/hermem/src/internal/apperr"
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/httputil"
@@ -88,7 +90,7 @@ func (s *HTTPService) HandleSearch(w http.ResponseWriter, r *http.Request) error
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.SearchRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.SearchRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -113,7 +115,7 @@ func (s *HTTPService) HandleRetrieve(w http.ResponseWriter, r *http.Request) err
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.RetrieveRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.RetrieveRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -144,7 +146,7 @@ func (s *HTTPService) HandleQuery(w http.ResponseWriter, r *http.Request) error 
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.SearchRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.SearchRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -252,7 +254,7 @@ func (s *HTTPService) HandleQueryExplain(w http.ResponseWriter, r *http.Request)
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.SearchRequest](w, r)
+	req, err := httputil.DecodeJSON[apiv1.SearchRequest](w, r)
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/id"
+	"github.com/pavelveter/hermem/src/internal/memory"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
 )
 
@@ -61,7 +62,7 @@ func (s *Server) handleMemoryStore(ctx context.Context, _ *gomcp.CallToolRequest
 		return toolError(fmt.Sprintf("unknown category: %s", in.Category))
 	}
 
-	err := s.deps.Memory.Store(ctx, core.StoreRequest{
+	err := s.deps.Memory.Store(ctx, memory.StoreInput{
 		ID:       in.ID,
 		Category: in.Category,
 		Content:  in.Content,

@@ -9,8 +9,9 @@ package edge
 import (
 	"net/http"
 
+	apiv1 "github.com/pavelveter/hermem/api/v1"
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/edge"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/metrics"
@@ -70,10 +71,11 @@ func (h *HTTPService) HandleEdge(w http.ResponseWriter, r *http.Request) error {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return nil
 	}
-	req, err := httputil.DecodeJSON[core.EdgeRequest](w, r)
+	wire, err := httputil.DecodeJSON[apiv1.EdgeRequest](w, r)
 	if err != nil {
 		return err
 	}
+	req := edge.AddEdgeInput{SourceID: wire.SourceID, TargetID: wire.TargetID, RelationType: wire.RelationType, AutoCreate: wire.AutoCreate, Weight: wire.Weight}
 	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
 		httputil.WriteErrorWithCode(w, http.StatusUnprocessableEntity, &apperr.DomainError{Code: apperr.CodeInvalidInput, Message: "source_id, target_id, relation_type required", Field: ""})
 		return nil

@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/edge"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 )
 
@@ -39,7 +39,7 @@ Examples:
   echo '{"source_id":"a","target_id":"c","relation_type":"extends","auto_create":true}' | hermem memory edge`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.EdgeRequest
+			var req edge.AddEdgeInput
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}

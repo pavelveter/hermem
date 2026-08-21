@@ -22,7 +22,6 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -58,7 +57,16 @@ func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder) *Service {
 // with Field="relation_type". Both branches (auto_create true/false)
 // resolve through SchemaConfig.AllowedRelations before touching the DB
 // so a malformed request cannot bypass write-side guards.
-func (s *Service) AddEdge(ctx context.Context, req core.EdgeRequest, schema domain.SchemaConfig) error {
+// AddEdgeInput is the add-edge command payload owned by this service.
+type AddEdgeInput struct {
+	SourceID     string  `json:"source_id"`
+	TargetID     string  `json:"target_id"`
+	RelationType string  `json:"relation_type"`
+	AutoCreate   bool    `json:"auto_create,omitempty"`
+	Weight       float32 `json:"weight,omitempty"`
+}
+
+func (s *Service) AddEdge(ctx context.Context, req AddEdgeInput, schema domain.SchemaConfig) error {
 	if req.SourceID == "" || req.TargetID == "" || req.RelationType == "" {
 		return fmt.Errorf("edge: source_id, target_id, relation_type required")
 	}

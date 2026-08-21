@@ -31,7 +31,6 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/apperr"
-	"github.com/pavelveter/hermem/src/internal/core"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
 )
@@ -79,7 +78,15 @@ func New(db *sql.DB, vi spi.VectorStore, embedder spi.Embedder) *Service {
 // with Field="category" so HTTP can map to 422 and CLI can print the
 // diagnostic. The DB unique-key constraint and a nil-embedding edge
 // case are inherited from store.StoreEntityWithEmbedding.
-func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema domain.SchemaConfig) error {
+// StoreInput is the store command payload owned by this service.
+type StoreInput struct {
+	ID        string    `json:"id"`
+	Category  string    `json:"category"`
+	Content   string    `json:"content"`
+	Embedding []float32 `json:"embedding,omitempty"`
+}
+
+func (s *Service) Store(ctx context.Context, req StoreInput, schema domain.SchemaConfig) error {
 	if req.ID == "" || req.Category == "" || req.Content == "" {
 		return fmt.Errorf("store: id, category, content required")
 	}
@@ -107,7 +114,7 @@ func (s *Service) Store(ctx context.Context, req core.StoreRequest, schema domai
 // on empty. This matches HTTP shell behavior exactly:
 // whatever embedding the caller supplied (possibly nil) is what
 // AutoLinkEdges sees.
-func (s *Service) StoreAndLink(ctx context.Context, req core.StoreRequest, schema domain.SchemaConfig) error {
+func (s *Service) StoreAndLink(ctx context.Context, req StoreInput, schema domain.SchemaConfig) error {
 	if err := s.Store(ctx, req, schema); err != nil {
 		return err
 	}

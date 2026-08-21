@@ -80,7 +80,7 @@ func TestEdgeService_AddEdge_OK(t *testing.T) {
 	svc, db := newEdgeFixture(t)
 	seedEntity(t, db, "edge-src-ok", "world", "src")
 	seedEntity(t, db, "edge-tgt-ok", "world", "tgt")
-	req := core.EdgeRequest{SourceID: "edge-src-ok", TargetID: "edge-tgt-ok", RelationType: "related_to", Weight: 1.0}
+	req := edge.AddEdgeInput{SourceID: "edge-src-ok", TargetID: "edge-tgt-ok", RelationType: "related_to", Weight: 1.0}
 	if err := svc.AddEdge(t.Context(), req, core.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestEdgeService_AddEdge_AutoCreate_OK(t *testing.T) {
 	// succeeding because the endpoints already exist).
 	seedEntity(t, db, "edge-ac-src", "world", "src")
 	seedEntity(t, db, "edge-ac-tgt", "world", "tgt")
-	req := core.EdgeRequest{SourceID: "edge-ac-src", TargetID: "edge-ac-tgt", RelationType: "related_to", AutoCreate: true}
+	req := edge.AddEdgeInput{SourceID: "edge-ac-src", TargetID: "edge-ac-tgt", RelationType: "related_to", AutoCreate: true}
 	if err := svc.AddEdge(t.Context(), req, core.DefaultSchemaConfig(false)); err != nil {
 		t.Fatalf("AddEdge AutoCreate: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestEdgeService_AddEdge_RejectsUnknownRelation(t *testing.T) {
 	svc, db := newEdgeFixture(t)
 	seedEntity(t, db, "edge-r-src", "world", "src")
 	seedEntity(t, db, "edge-r-tgt", "world", "tgt")
-	req := core.EdgeRequest{SourceID: "edge-r-src", TargetID: "edge-r-tgt", RelationType: "nonexistent"}
+	req := edge.AddEdgeInput{SourceID: "edge-r-src", TargetID: "edge-r-tgt", RelationType: "nonexistent"}
 	err := svc.AddEdge(t.Context(), req, core.DefaultSchemaConfig(false))
 	if err == nil {
 		t.Fatal("expected DomainError, got nil")
@@ -138,7 +138,7 @@ func TestEdgeService_AddEdge_RejectsUnknownRelation(t *testing.T) {
 
 func TestEdgeService_AddEdge_RejectsMissingFields(t *testing.T) {
 	svc, _ := newEdgeFixture(t)
-	cases := []core.EdgeRequest{
+	cases := []edge.AddEdgeInput{
 		{SourceID: "", TargetID: "t", RelationType: "related_to"},
 		{SourceID: "s", TargetID: "", RelationType: "related_to"},
 		{SourceID: "s", TargetID: "t", RelationType: ""},

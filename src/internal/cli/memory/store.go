@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cli "github.com/pavelveter/hermem/src/internal/cli/env"
-	"github.com/pavelveter/hermem/src/internal/core"
+	"github.com/pavelveter/hermem/src/internal/memory"
 	memdomain "github.com/pavelveter/hermem/src/internal/memory"
 )
 
@@ -39,7 +39,7 @@ Examples:
   hermem memory ingest < dialog.txt   # bulk store via ingest`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var req core.StoreRequest
+			var req memory.StoreInput
 			if err := cli.DecodeStdin(&req); err != nil {
 				return err
 			}
