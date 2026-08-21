@@ -76,13 +76,13 @@ func (s *Service) Retrieve(ctx context.Context, seedIDs []string, opts RetrieveC
 	return result, nil
 }
 
-// RetrieveContext satisfies core.Retriever by delegating to the package-level
+// RetrieveContext satisfies Retriever by delegating to the package-level
 // RetrieveContext function.
 func (s *Service) RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	return s.Retrieve(ctx, seedIDs, opts)
 }
 
-// MultiHopRetrieveContext satisfies core.Retriever by delegating to the
+// MultiHopRetrieveContext satisfies Retriever by delegating to the
 // package-level MultiHopRetrieveContext function.
 func (s *Service) MultiHopRetrieveContext(ctx context.Context, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error) {
 	if opts.Ctx == nil {

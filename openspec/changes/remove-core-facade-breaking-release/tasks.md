@@ -16,7 +16,7 @@
 ## 3. Dependent ADR gates and internal ownership
 
 - [ ] 3.1 Complete ADR-035 identity generation and remove all production reliance on LLM-selected persistent IDs. (identity home done: all 5 `NewTaskID` callers now use `id.NewTaskID`, `core.NewTaskID` deleted; full ADR-035 strategy deferred — see adr-gates.md)
-- [ ] 3.2 Complete ADR-037 retrieval-stage contracts and migrate callers away from the legacy `core.Retriever` construction-dependency shape. (blocked by task 4.x capability migration — see adr-gates.md)
+- [x] 3.2 Complete ADR-037 retrieval-stage contracts and migrate callers away from the legacy `core.Retriever` construction-dependency shape. (blocker cleared: 4.x migrated retrieval capabilities to spi; `Retriever` + all read-side values owned by `src/internal/retrieval` with canonical spi params; full ADR-037 pipeline-SPI/hybrid-channel redesign remains a separate scale-triggered project — see adr-gates.md §3.2/L2)
 - [x] 3.3 Verify ADR-030 tenancy/namespace decisions and ADR-032 ingestion decisions do not require core-owned contracts.
 - [x] 3.4 Move remaining core-owned policy/config values such as ranking, retrieval options, migration values, and internal errors to explicit owning packages. (retention → `retention.Policy`; migration values → `migration`; `RankingWeight`/retrieval options/score types → `retrieval`; misc graph/task/reembed values → owners; legacy wire-error contract → `apperr` verbatim — typed `domain.Error` adoption deferred to the semantic release, see adr-gates.md)
 - [x] 3.5 Add migration tests proving each moved policy type preserves current defaults and behavior.

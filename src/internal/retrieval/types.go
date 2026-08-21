@@ -102,9 +102,9 @@ type Reranker = spi.Reranker
 
 // Retriever is the read-side application contract owned by the retrieval
 // package. Implementations consume the local RetrieveContext /
-// RetrieveResult / RetrievedFact shapes; the capability parameters
-// (VectorIndex, Embedder) remain in core for the multit-hop path until
-// ADR-037 retires them (task 6.2).
+// RetrieveResult / RetrievedFact shapes; the capability parameters are the
+// canonical pkg/spi contracts. The full ADR-037 pipeline-SPI/hybrid-channel
+// redesign remains a separate project.
 type Retriever interface {
 	RetrieveContext(ctx context.Context, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
 	MultiHopRetrieveContext(ctx context.Context, vi spi.VectorStore, embedder spi.Embedder, seedIDs []string, opts RetrieveContextOptions) (*RetrievalResult, error)
