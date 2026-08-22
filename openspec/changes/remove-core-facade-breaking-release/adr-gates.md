@@ -12,6 +12,16 @@
 
 ## Release gates A–D — sign-off evidence (task 7.6)
 
+> **Scope addendum (2026-08-22, post-initial sign-off):** ADR-035 was
+> accepted by release-manager decision and pulled into v0.4.0 (task 3.1).
+> Gate C's ADR-035 deferral is thereby resolved: identity generation is
+> implemented (ULID task IDs, content-addressed entity IDs, LLM no longer
+> mints persistent IDs, `hermem id inspect`), with the legacy-row re-key
+> explicitly remaining under ADR-033. The full validation matrix below was
+> re-run green on the final tree before tagging; the ID-format changes are
+> documented as intentional breaking deltas in `docs/MIGRATION-v0.4.0.md`
+> §8 and the CHANGELOG.
+
 Recorded from the validation session of 2026-08-21 (HEAD `75b9044`):
 
 - **Gate A (public contract freeze): PASS.** Public-API snapshot tests
