@@ -9,6 +9,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
+	"github.com/pavelveter/hermem/src/internal/id"
 	"github.com/pavelveter/hermem/src/internal/store"
 )
 
@@ -243,6 +244,13 @@ func (v *failingVIRecord) snapshot() viSnapshot {
 // MemDBRandom (vector_dim=3) with a stub embedder whose vec is
 // already unit-length so normalize is a no-op. Returns the open DB
 // plus the spy so tests can defer db.Close + assert on the snapshot.
+// entID returns the ADR-035 content-addressed ID under which an
+// extracted entity with this category/content is persisted (the
+// ingestion pipeline rewrites LLM-chosen draft IDs before storing).
+func entID(category, content string) string {
+	return id.ContentEntityID(category, content)
+}
+
 func newFreshEntityWorker(t *testing.T, embedVec []float32, searchToReturn []string) (*sql.DB, *failingVIRecord, *IngestionWorker) {
 	t.Helper()
 	db, err := store.MemDBRandom()
@@ -295,7 +303,7 @@ func TestProcessDialogWithProvenance_VIOpFailureDoesNotFailCommit(t *testing.T) 
 	// DB row must exist — proves commit succeeded even though vi.Store
 	// returned errVIOpInjected (post-commit branch).
 	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "fresh-test-entity").Scan(&count); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, entID("world", "test content")).Scan(&count); err != nil {
 		t.Fatalf("query db for entity row: %v", err)
 	}
 	if count != 1 {
@@ -306,7 +314,7 @@ func TestProcessDialogWithProvenance_VIOpFailureDoesNotFailCommit(t *testing.T) 
 	if len(snap.stores) != 1 {
 		t.Fatalf("want exactly 1 Store call recorded, got %d (slice=%v)", len(snap.stores), snap.stores)
 	}
-	if snap.stores[0] != "fresh-test-entity" {
+	if snap.stores[0] != entID("world", "test content") {
 		t.Fatalf("want Store for fresh-test-entity; got %q", snap.stores[0])
 	}
 	if len(snap.removes) != 0 {
@@ -332,7 +340,7 @@ func TestProcessDialogWithProvenance_FreshEntityStoresExactlyOnce(t *testing.T) 
 	}
 
 	snap := spy.snapshot()
-	if len(snap.stores) != 1 || snap.stores[0] != "fresh-test-entity" {
+	if len(snap.stores) != 1 || snap.stores[0] != entID("world", "test content") {
 		t.Fatalf("want exactly one Store for fresh-test-entity; got stores=%v removes=%v", snap.stores, snap.removes)
 	}
 	if len(snap.removes) != 0 {
@@ -401,7 +409,7 @@ func TestProcessDialogWithProvenance_MergeComposesRemoveBeforeStore(t *testing.T
 	if len(snap.callOrder) == 0 {
 		t.Fatalf("want >=1 viOp observed; got empty callOrder")
 	}
-	if snap.callOrder[0].kind != "remove" || snap.callOrder[0].id != incomingID {
+	if snap.callOrder[0].kind != "remove" || snap.callOrder[0].id != entID("world", "merged content") {
 		t.Fatalf("callOrder[0] want remove(%q); got %+v", incomingID, snap.callOrder[0])
 	}
 
@@ -494,7 +502,7 @@ func TestProcessDialogWithProvenance_LowConfContradictionArchivesAtomically(t *t
 			if op.kind == "remove" {
 				sawRemoveExisting = true
 			}
-		case incomingID:
+		case entID("world", "User hates X"):
 			if op.kind == "store" {
 				sawStoreIncoming = true
 			}

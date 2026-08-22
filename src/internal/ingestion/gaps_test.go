@@ -350,11 +350,11 @@ func TestMemoryWorker_ChannelClosedProcessesAllMessages(t *testing.T) {
 	// per dialog. With the merge path N is also the spy stores count
 	// (each merge re-Stores the merged entity). The SQL row count for
 	// id="x" stays at 1 because INSERT OR REPLACE upserts on PK.
-	if got := viCount(vi, "x"); got != N {
+	if got := viCount(vi, entID("world", "c")); got != N {
 		t.Errorf("want %d vi.Store observations for id='x' (1 per dialog merged); got %d", N, got)
 	}
 	var rows int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "x").Scan(&rows); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, entID("world", "c")).Scan(&rows); err != nil {
 		t.Fatalf("audit db rowcount: %v", err)
 	}
 	if rows != 1 {
@@ -682,7 +682,7 @@ func TestConcurrentIngest_IdenticalDialog_FileBacked_ExactlyOneRowPerEntity(t *t
 
 	// SQL audit: exactly one row for the shared id.
 	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "race-id-1").Scan(&n); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, entID("world", "shared content")).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {
@@ -952,7 +952,7 @@ func TestCreateEdgesInTx_UnknownRelationType_ReturnsError(t *testing.T) {
 	// (This locks the rollback contract: an unknown relation drops
 	// the entity, not just the edge.)
 	var entityCount, edgeCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "illegal-rel-e").Scan(&entityCount); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, entID("world", "x")).Scan(&entityCount); err != nil {
 		t.Fatalf("entity count: %v", err)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM edges`).Scan(&edgeCount); err != nil {
@@ -987,7 +987,7 @@ func TestCreateEntityInTx_ProvenanceFieldsPersisted(t *testing.T) {
 	var convID, msgID, source, sourceType sql.NullString
 	if err := db.QueryRow(
 		`SELECT conversation_id, message_id, source, source_type FROM entities WHERE id = ?`,
-		"fresh-test-entity",
+		entID("world", "test content"),
 	).Scan(&convID, &msgID, &source, &sourceType); err != nil {
 		t.Fatalf("provenance audit: %v", err)
 	}
@@ -1091,7 +1091,7 @@ func TestProcessDialog_NoProvenance_DefaultsExtractedFromToDialog(t *testing.T) 
 	// no-provenance default in dialog.go:19).
 	var extractedFrom string
 	if err := db.QueryRow(
-		`SELECT extracted_from FROM entities WHERE id = ?`, "fresh-test-entity",
+		`SELECT extracted_from FROM entities WHERE id = ?`, entID("world", "test content"),
 	).Scan(&extractedFrom); err != nil {
 		t.Fatalf("audit extracted_from: %v", err)
 	}
@@ -1106,7 +1106,7 @@ func TestProcessDialog_NoProvenance_DefaultsExtractedFromToDialog(t *testing.T) 
 	// assert the String field rather than Valid.
 	var convID, msgID sql.NullString
 	if err := db.QueryRow(
-		`SELECT conversation_id, message_id FROM entities WHERE id = ?`, "fresh-test-entity",
+		`SELECT conversation_id, message_id FROM entities WHERE id = ?`, entID("world", "test content"),
 	).Scan(&convID, &msgID); err != nil {
 		t.Fatalf("audit conv/msg ids: %v", err)
 	}
@@ -1278,7 +1278,7 @@ func TestReloadSchema_SwapsSchemaField_DomainRelationSet(t *testing.T) {
 	// Audit e1 ("calls"): row committed normally because the relation
 	// is in the domain set.
 	var callsCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "reload-domain-e1").Scan(&callsCount); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, entID("code", "func foo")).Scan(&callsCount); err != nil {
 		t.Fatalf("calls entity audit: %v", err)
 	}
 	if callsCount != 1 {
@@ -1288,7 +1288,7 @@ func TestReloadSchema_SwapsSchemaField_DomainRelationSet(t *testing.T) {
 	// branch aborted createEdgesInTx → executeItemTx rolled back the
 	// entire tx (entity INSERT included).
 	var usesCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, "reload-domain-e2").Scan(&usesCount); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entities WHERE id = ?`, entID("code", "func bar")).Scan(&usesCount); err != nil {
 		t.Fatalf("uses entity audit: %v", err)
 	}
 	if usesCount != 0 {

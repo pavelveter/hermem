@@ -164,6 +164,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		newCompletionCmd(env),
 		newConfigCmd(env),
 		newDocsCmd(env),
+		newIDCmd(env),
 		newMCPCmd(env),
 		admin.NewCmd(env),
 		memory.NewCmd(env),

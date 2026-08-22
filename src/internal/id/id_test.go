@@ -1,53 +1,142 @@
 package id
 
 import (
-	"fmt"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
-func TestNewTaskIDUniqueWithinProcess(t *testing.T) {
-	const n = 1000
-	seen := make(map[string]bool, n)
-	for i := 0; i < n; i++ {
-		id := NewTaskID()
-		if seen[id] {
-			t.Fatalf("duplicate task id %q", id)
-		}
-		seen[id] = true
+// TestNewTaskID_Grammar pins the ADR-035 format: "task-" + 26 Crockford
+// base32 chars (ULID). The legacy "task-<counter>" format is gone; its
+// process-local collision risk was the ADR's motivating bug.
+func TestNewTaskID_Grammar(t *testing.T) {
+	got := NewTaskID()
+	if !strings.HasPrefix(got, "task-") {
+		t.Fatalf("want task- prefix, got %q", got)
+	}
+	if len(got) != len("task-")+26 {
+		t.Fatalf("want 26-char body, got %q (%d)", got, len(got))
+	}
+	if !Validate(got) {
+		t.Fatalf("Validate rejected generated ID %q", got)
 	}
 }
 
-func TestNewTaskIDConcurrent(t *testing.T) {
-	const goroutines = 32
-	const per = 100
-	seen := sync.Map{}
+func TestNewTaskID_UniqueUnderConcurrency(t *testing.T) {
+	const n = 10_000
+	ids := make(chan string, n)
 	var wg sync.WaitGroup
-	wg.Add(goroutines)
-	for g := 0; g < goroutines; g++ {
+	for range 8 {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < per; i++ {
-				id := NewTaskID()
-				if _, dup := seen.LoadOrStore(id, struct{}{}); dup {
-					t.Errorf("duplicate task id under concurrency: %q", id)
-				}
+			for range n / 8 {
+				ids <- NewTaskID()
 			}
 		}()
 	}
 	wg.Wait()
+	close(ids)
+	seen := make(map[string]struct{}, n)
+	for id := range ids {
+		if _, dup := seen[id]; dup {
+			t.Fatalf("duplicate ID %q across goroutines", id)
+		}
+		seen[id] = struct{}{}
+	}
+	if len(seen) != n {
+		t.Fatalf("want %d unique IDs, got %d", n, len(seen))
+	}
 }
 
-func TestNewTaskIDFormat(t *testing.T) {
-	// Format is the historical process-local counter: task-<n>. The
-	// ADR-035 upgrade path may change this; this test pins the current
-	// compatibility behavior so the facade removal doesn't silently
-	// alter identity shape.
-	first := NewTaskID()
-	if len(first) < len("task-1") || first[:5] != "task-" {
-		t.Fatalf("unexpected task id format: %q", first)
+// TestNewTaskID_TimeOrdered verifies that IDs minted in later
+// milliseconds sort after earlier ones (ULID timestamp prefix).
+func TestNewTaskID_TimeOrdered(t *testing.T) {
+	early := NewTaskID()
+	time.Sleep(5 * time.Millisecond)
+	later := NewTaskID()
+	if early >= later {
+		t.Fatalf("time ordering broken: early=%q later=%q", early, later)
 	}
-	if _, err := fmt.Sscanf(first, "task-%d", new(uint64)); err != nil {
-		t.Fatalf("task id %q is not task-<uint>: %v", first, err)
+}
+
+func TestInspect_TaskID_DecodesTimestamp(t *testing.T) {
+	before := time.Now().Add(-time.Second)
+	got := NewTaskID()
+	after := time.Now().Add(time.Second)
+
+	info, err := Inspect(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Kind != "task" || info.Time == "" {
+		t.Fatalf("info = %+v", info)
+	}
+	ts, err := time.Parse(time.RFC3339, info.Time)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts.Before(before) || ts.After(after) {
+		t.Fatalf("decoded time %v outside [%v, %v]", ts, before, after)
+	}
+}
+
+// TestContentEntityID_Deterministic pins ADR-035 decision 2: same
+// normalized content + category ⇒ same ID, regardless of case or
+// whitespace noise.
+func TestContentEntityID_Deterministic(t *testing.T) {
+	a := ContentEntityID("world", "Pavel likes   coffee")
+	b := ContentEntityID("world", "pavel likes coffee")
+	if a != b {
+		t.Fatalf("normalized inputs diverged: %q vs %q", a, b)
+	}
+	c := ContentEntityID("world", "pavel likes coffee")
+	if a != c {
+		t.Fatalf("non-deterministic: %q vs %q", a, c)
+	}
+	if !strings.HasPrefix(a, "ent-") || len(a) != len("ent-")+26 {
+		t.Fatalf("bad shape: %q", a)
+	}
+	if !Validate(a) {
+		t.Fatalf("Validate rejected %q", a)
+	}
+}
+
+func TestContentEntityID_ScopeSensitivity(t *testing.T) {
+	base := ContentEntityID("world", "same content")
+	otherCategory := ContentEntityID("person", "same content")
+	if base == otherCategory {
+		t.Fatal("category must participate in the hash")
+	}
+	info, err := Inspect(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Kind != "ent" || info.Time != "" {
+		t.Fatalf("ent IDs carry no clock: %+v", info)
+	}
+}
+
+func TestInspect_RejectsGarbage(t *testing.T) {
+	for _, bad := range []string{"", "task-1", "task-", "ent-short", "nope-0123456789ABCDEFGHJKMNPQ", "task-0123456789ABCDEFGHIJKLMNOP"} {
+		if _, err := Inspect(bad); !errors.Is(err, ErrBadID) {
+			t.Errorf("Inspect(%q) err = %v, want ErrBadID", bad, err)
+		}
+		if Validate(bad) {
+			t.Errorf("Validate(%q) = true, want false", bad)
+		}
+	}
+}
+
+func TestNormalizeContent_VersionLock(t *testing.T) {
+	// Pin the v1 normalizer exactly: NFC, lowercase, collapsed internal
+	// whitespace, trimmed edges. Changing behavior requires bumping
+	// contentScheme, so this test guards accidental drift.
+	got := normalizeContent("  Ünïcode\t\tTEXT\r\nwith   spaces  ")
+	want := "ünïcode text with spaces"
+	if got != want {
+		t.Fatalf("normalizeContent v1 drift: got %q want %q", got, want)
 	}
 }

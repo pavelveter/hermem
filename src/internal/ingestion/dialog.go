@@ -15,6 +15,7 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/extraction"
+	"github.com/pavelveter/hermem/src/internal/id"
 	"github.com/pavelveter/hermem/src/internal/ingestion/detectors"
 	"github.com/pavelveter/hermem/src/internal/store"
 	"github.com/pavelveter/hermem/src/internal/vector"
@@ -38,8 +39,10 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 	if err != nil {
 		return fmt.Errorf("extract entities: %w", err)
 	}
-	items := make([]processInput, 0, len(result.Entities))
-	for _, entity := range result.Entities {
+	entities := assignIdentity(result)
+
+	items := make([]processInput, 0, len(entities))
+	for _, entity := range entities {
 		embedding, err := w.embedder.Embed(ctx, entity.Content)
 		if err != nil {
 			slog.Error("entity embed failed", "entity_id", entity.ID, "err", err)
@@ -70,6 +73,50 @@ func (w *IngestionWorker) ProcessDialogWithProvenance(ctx context.Context, dialo
 		}
 	}
 	return nil
+}
+
+// assignIdentity implements ADR-035 decision 3: the LLM never mints
+// persistent IDs for extracted entities. Every draft gets a deterministic
+// content-addressed ID ("ent-" + hash of normalized content | category |
+// scope). Relation targets that reference another draft in the SAME
+// result are remapped to its assigned ID; targets that do not match any
+// draft are kept verbatim — they are treated as explicit references to
+// existing persisted entities and remain guarded by the FK constraint.
+//
+// The input result is never mutated (extraction results may be shared
+// across concurrent callers); a rewritten copy is returned.
+func assignIdentity(result *domain.ExtractionResult) []domain.ExtractedEntity {
+	if result == nil {
+		return nil
+	}
+	out := make([]domain.ExtractedEntity, len(result.Entities))
+	copy(out, result.Entities)
+
+	remap := make(map[string]string, len(out))
+	for i := range out {
+		if out[i].Content == "" {
+			continue
+		}
+		legacyID := out[i].ID
+		out[i].ID = id.ContentEntityID(out[i].Category, out[i].Content)
+		if legacyID != "" && legacyID != out[i].ID {
+			remap[legacyID] = out[i].ID
+		}
+	}
+	for i := range out {
+		if len(out[i].Relations) == 0 {
+			continue
+		}
+		rels := make([]domain.Relation, len(out[i].Relations))
+		copy(rels, out[i].Relations)
+		for j := range rels {
+			if mapped, ok := remap[rels[j].TargetID]; ok {
+				rels[j].TargetID = mapped
+			}
+		}
+		out[i].Relations = rels
+	}
+	return out
 }
 
 func (w *IngestionWorker) processOneItem(ctx context.Context, prov domain.Provenance, it processInput, similarIDs []string, selfID string) error {
