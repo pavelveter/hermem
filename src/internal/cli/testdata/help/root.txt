@@ -45,6 +45,7 @@ Available Commands:
   graph       Graph algorithms (plan / recovery-plan / components / communities / verify / contradictions / provenance)
   health      Health probe (pings the DB; mirrors /health/ready)
   help        Help about any command
+  id          Identifier utilities (ADR-035)
   mcp         Start the MCP server (stdio transport for AI assistants)
   memory      Knowledge CRUD and retrieval (store / search / retrieve / query / response / edge / ingest / explain / re-embed / quantize)
   metrics     Prometheus exposition (mirrors GET /metrics)
