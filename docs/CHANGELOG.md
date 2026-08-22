@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.0] — BREAKING
+
+> **⚠️ Breaking release.** The deprecated `src/internal/core` compatibility
+> facade is removed. Code importing it fails to compile; migrate to
+> `pkg/domain`, `pkg/spi`, `api/v1`, or the documented owning internal
+> packages using the guide at
+> [`docs/MIGRATION-v0.4.0.md`](MIGRATION-v0.4.0.md). HTTP, MCP, CLI and
+> persistence behavior is preserved except for the identity-format changes
+> below. `v0.3.1` remains the supported rollback target (`compat/v0.3.x`).
+
+### Removed (BREAKING)
+
+- **`src/internal/core` facade deleted** — legacy capability interfaces
+  (`VectorIndex`, `Embedder`, `LLMExtractor`, `Reranker`, `Retriever`),
+  domain aliases/projections, transport DTO aliases, policy values and all
+  compatibility-only adapters are gone. CI now fails if the directory or any
+  import of it exists.
+- **Legacy IDs-only vector contract** — `vector.Index`/`NewIndex`/
+  `InMemoryVectorIndex` and the spiadapter vector/embedder/reverse-extractor
+  bridges removed; composition builds public-contract stores via
+  `vector.NewStore`.
+
+### Changed (BREAKING)
+
+- **ADR-035 identity strategy**:
+  - Task IDs are time-ordered ULIDs (`task-<26 Crockford base32>`) —
+    cross-process unique; replaces the process-local `task-<counter>` that
+    could collide across server/CLI/MCP writers.
+  - Extracted entities receive deterministic content-addressed IDs
+    (`ent-<hash of normalized content | category | scope>`); the extraction
+    model never mints persistent IDs. Existing rows keep their IDs; re-key
+    migration is governed by ADR-033.
+  - New command: `hermem id inspect <id>...` validates grammar and decodes
+    embedded creation timestamps.
+
+### Added
+
+- `spi.Pinger` optional health-check capability (single-method `spi.Embedder`
+  stays frozen).
+- Public-contract in-memory vector store with metadata filters, sticky
+  namespace dimensions, explicit capacity reporting and partial-batch errors.
+- Release-candidate gates recorded per `docs/release-core-facade-removal.md`
+  (Gates A–D) in the change's `adr-gates.md`.
+
+### Compatibility
+
+- HTTP routes/status codes/JSON envelopes, OpenAPI byte-snapshot, MCP tool
+  behavior, CLI output contracts and persistence semantics are unchanged
+  versus v0.3.1 (golden + integration suites green).
+
 ### Historical Context (moved from code comments)
 
 - **PHASE 2.2**: Introduced `retrieval.Service` struct for transport-agnostic API. Before PHASE 2.2, callers reached package-level functions directly (RetrieveContext, GenerateResponse, FormatContextMarkdown, etc.). The Service struct was added so HTTP handlers and CLI subcommands share a uniform pointer-based API without changing domain semantics.

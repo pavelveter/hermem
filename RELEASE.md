@@ -10,6 +10,24 @@ Hermem follows Semantic Versioning (SemVer):
 - **MINOR**: Backwards-compatible functionality additions
 - **PATCH**: Backwards-compatible bug fixes
 
+### Breaking releases during 0.x
+
+While the project is on the 0.x line, breaking changes ship in a **MINOR**
+bump (e.g. `v0.3.1` → `v0.4.0`) rather than a MAJOR bump; server and all
+SDKs move to the same version in lockstep, and the release MUST publish a
+migration guide (`docs/MIGRATION-v<version>.md`) with a prominent
+breaking-change warning in `CHANGELOG.md` and `README.md`.
+
+### Compatibility (rollback) branch
+
+For every breaking release:
+
+1. Before tagging, create/maintain the previous line's support branch from
+   its tag — e.g. `compat/v0.3.x` at tag `v0.3.1`.
+2. Reference the branch in the migration guide so users on the old line know
+   where fixes land during the documented support window.
+3. Never retag or force-push a released tag (see Rollback).
+
 ## Release Steps
 
 ### 1. Prepare the Release

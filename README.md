@@ -31,6 +31,13 @@ SQLite. Embeddings. Graph traversal. One binary.
 > Hermem gives AI agents something they've been missing since day one:
 > **persistent, searchable, structured memory.**
 
+> [!WARNING]
+> **v0.4.0 is a breaking release.** The deprecated `internal/core` facade is
+> removed — migrate imports to `pkg/domain`, `pkg/spi`, and `api/v1`, and
+> review the new ADR-035 identifier formats before upgrading.
+> **Migration guide: [`docs/MIGRATION-v0.4.0.md`](docs/MIGRATION-v0.4.0.md)** ·
+> Previous release (`v0.3.1`) remains available on branch `compat/v0.3.x`.
+
 Modern language models are stateless. Every conversation starts from zero. Every session forgets who you are. Every brilliant insight disappears forever once the context window scrolls away. Most AI applications solve this by sending bigger prompts. Some solve it by adding a vector database. Others invent five microservices, two queues, a cache layer, Kubernetes, and a distributed existential crisis. Hermem takes a different approach. It continuously extracts knowledge from conversations, stores it as a graph, enriches it with vector embeddings, tracks provenance, detects contradictions, understands temporal relationships, and retrieves only the information an LLM actually needs. No prompt archaeology. No copy-pasting previous conversations. No "please remember this."
 
 ---
