@@ -11,6 +11,7 @@ hermem
 
 # Output of the go coverage tool
 *.out
+sdk/typescript/coverage/
 
 # Dependency directories
 vendor/
