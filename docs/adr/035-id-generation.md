@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed (scale trigger: multi-process writers, cross-deployment federation, second ID-format incident)
+Accepted (2026-08-22 — pulled into the v0.4.0 facade-removal release by
+release-manager decision; the legacy-ID re-key/alias-table migration remains
+governed by ADR-033 as a follow-up)
 
 ## Context
 
