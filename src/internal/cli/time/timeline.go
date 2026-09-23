@@ -11,10 +11,11 @@ import (
 )
 
 func newTimelineCmd(env *cli.Env) *cobra.Command {
-	return &cobra.Command{
+	limit := 50
+	cmd := &cobra.Command{
 		Use:   "timeline",
-		Short: "Most-recent 50 entities (created_at DESC, archived=0)",
-		Long: `Show the 50 most recently created entities in the knowledge graph.
+		Short: "Most-recent entities (created_at DESC, archived=0)",
+		Long: `Show the most recently created entities in the knowledge graph.
 
 No input required — this is a direct database query.
 
@@ -24,18 +25,21 @@ Output (text, one entity per line):
 Entities are sorted by created_at descending (newest first). Only
 non-archived entities are included.
 
-Use this for a quick overview of what's in the graph, or to verify
-that recent ingestion worked correctly.
+Use --limit to control how many entities are returned.
 
 Examples:
   hermem time timeline
+  hermem time timeline --limit 10
   hermem time timeline | head -5`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if limit < 0 {
+				return fmt.Errorf("limit must be non-negative")
+			}
 			rows, err := env.DB.QueryContext(env.Ctx,
 				`SELECT id, category, content, created_at FROM entities
 				 WHERE archived = 0 AND created_at IS NOT NULL
-				 ORDER BY created_at DESC LIMIT 50`)
+				 ORDER BY created_at DESC LIMIT ?`, limit)
 			if err != nil {
 				return fmt.Errorf("query: %w", err)
 			}
@@ -52,4 +56,6 @@ Examples:
 			return rows.Err()
 		},
 	}
+	cmd.Flags().IntVar(&limit, "limit", 50, "maximum number of entities to return")
+	return cmd
 }

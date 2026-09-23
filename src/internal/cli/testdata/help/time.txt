@@ -35,7 +35,7 @@ group usage; "hermem --help" prints the full tree.
 
 Available Commands:
   temporal    Time-bounded retrieval (time_from / time_to in RFC3339)
-  timeline    Most-recent 50 entities (created_at DESC, archived=0)
+  timeline    Most-recent entities (created_at DESC, archived=0)
 
 Flags:
   -h, --help   help for time

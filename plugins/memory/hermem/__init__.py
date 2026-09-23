@@ -43,6 +43,8 @@ _CLI_PATH_MAP = {
     "timeline": "time/timeline",
     "contradictions": "graph/contradictions",
 }
+_CLI_TEXT_PATHS = frozenset({"timeline", "contradictions"})
+_HTTP_GET_PATHS = frozenset({"timeline", "contradictions"})
 
 
 # ---------------------------------------------------------------------------
@@ -76,10 +78,15 @@ def _cli_args(path: str) -> Sequence[str]:
     return [_get_bin_path()] + [seg for seg in cli_path.split("/") if seg]
 
 
-def _cli(path: str, data: dict) -> Optional[dict]:
+def _cli(path: str, data: dict) -> Optional[Any]:
     try:
+        args = list(_cli_args(path))
+        if path == "timeline":
+            args.extend(["--limit", str(max(0, int(data.get("limit", 50))))])
+        if path == "contradictions" and data.get("id"):
+            args.append(str(data["id"]))
         proc = subprocess.run(
-            _cli_args(path),
+            args,
             input=json.dumps(data),
             capture_output=True,
             text=True,
@@ -89,7 +96,9 @@ def _cli(path: str, data: dict) -> Optional[dict]:
             logger.warning("hermem %s failed: %s", path, proc.stderr)
             return None
         if not proc.stdout.strip():
-            return None
+            return {"text": ""} if path in _CLI_TEXT_PATHS else None
+        if path in _CLI_TEXT_PATHS:
+            return {"text": proc.stdout.rstrip()}
         return json.loads(proc.stdout)
     except FileNotFoundError:
         logger.warning("hermem binary not found")
@@ -102,11 +111,30 @@ def _cli(path: str, data: dict) -> Optional[dict]:
         return None
 
 
-def _http(path: str, data: dict) -> Optional[dict]:
+def _http_url(path: str) -> str:
+    return f"{HERMEM_URL.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _http(path: str, data: dict) -> Optional[Any]:
     try:
         import requests
-        r = requests.post(f"{HERMEM_URL}{path}", json=data, timeout=_DEFAULT_HTTP_TIMEOUT_S)
-        if r.status_code == 200:
+        url = _http_url(path)
+        if path in _HTTP_GET_PATHS:
+            params = {key: value for key, value in data.items() if value not in (None, "")}
+            r = requests.get(
+                url,
+                params=params,
+                timeout=_DEFAULT_HTTP_TIMEOUT_S,
+            )
+        else:
+            r = requests.post(
+                url,
+                json=data,
+                timeout=_DEFAULT_HTTP_TIMEOUT_S,
+            )
+        if 200 <= r.status_code < 300:
+            if not r.content:
+                return {}
             return r.json()
         if r.status_code in (400, 422):
             logger.info("hermem %s rejected: %d %s", path, r.status_code, r.text[:200])
@@ -140,7 +168,7 @@ class HermemProvider(MemoryProvider):
         if HERMEM_URL:
             try:
                 import requests
-                r = requests.get(f"{HERMEM_URL}/health", timeout=2)
+                r = requests.get(_http_url("health"), timeout=2)
                 return r.status_code == 200
             except Exception:
                 return False
@@ -442,7 +470,7 @@ class HermemProvider(MemoryProvider):
         pass
 
 
-def _json_result(resp: Optional[dict], default_error: str) -> str:
+def _json_result(resp: Optional[Any], default_error: str) -> str:
     """Coerce a `_call` response into the JSON-string contract expected by
     Hermes Agent. None → error envelope; otherwise pass through."""
     if resp is None:
