@@ -40,10 +40,14 @@ mkdir -p "$HERMEM_PLUGIN_DIR"
 cp plugins/memory/hermem/__init__.py "$HERMEM_PLUGIN_DIR/"
 cp plugins/memory/hermem/plugin.yaml "$HERMEM_PLUGIN_DIR/"
 
-# Install config (don't overwrite)
+# Install config when a local template is available (defaults otherwise).
 if [ ! -f "$HERMEM_CONFIG" ]; then
-    echo "Installing config to $HERMEM_CONFIG..."
-    cp hermem.ini "$HERMEM_CONFIG"
+    if [ -f hermem.ini ]; then
+        echo "Installing config to $HERMEM_CONFIG..."
+        cp hermem.ini "$HERMEM_CONFIG"
+    else
+        echo "No hermem.ini template found; using Hermem defaults."
+    fi
 else
     echo "Config exists at $HERMEM_CONFIG, skipping..."
 fi
@@ -77,5 +81,5 @@ echo "  2. Verify: hermes memory"
 echo "  3. Configure embedder: edit $HERMEM_CONFIG"
 echo ""
 echo "CLI usage:"
-echo "  echo '{\"query\":\"test\"}' | hermem query"
+echo "  echo '{\"query\":\"test\"}' | hermem memory query"
 echo "  hermem serve 8420"

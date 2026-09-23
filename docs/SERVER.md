@@ -478,7 +478,7 @@ $ curl -s -X POST localhost:8420/store -d '{"id":"a","category":"world","content
 CLI shows the human message and exits non-zero:
 
 ```bash
-$ echo '{"query":"x","topK":3}' | ./hermem search
+$ echo '{"query":"x","topK":3}' | ./hermem memory search
 2025/... invalid request: unknown field: topK
 # (exit 1)
 ```

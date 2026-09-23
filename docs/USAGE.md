@@ -169,7 +169,7 @@ relation_recovery   = recovers_via  # relation name for recovery edges
 
 1. `hermem.ini` next to the binary executable (resolved via
    `os.Executable()` → `filepath.Dir(exe)` → joined with
-   `hermem.ini`). Both `hermem store` and `hermem serve` read from
+   `hermem.ini`). Both `hermem memory store` and `hermem serve` read from
    this location regardless of the caller's working directory, so a
    deployed `~/.hermes/bin/hermem` finds its config the same way from
    `~`, from a cron job's CWD, or from a fresh shell.
@@ -206,7 +206,7 @@ same database corrupts cosine math silently (e.g. 768-dim
 a DB). Either:
 
 - Use **one model per DB**, or
-- Migrate by writing a new DB and re-ingesting (`hermem ingest` of
+- Migrate by writing a new DB and re-ingesting (`hermem memory ingest` of
   every dialog is enough).
 
 See §5.
@@ -236,7 +236,7 @@ silently produce wrong cosine scores.
 2. Rename or move `hermem.db` aside (`mv hermem.db hermem.db.v1`).
 3. Update `[embedder] model` (and provider, if applicable) in
    `hermem.ini`.
-4. Re-ingest every dialog you have on hand (`hermem ingest`).
+4. Re-ingest every dialog you have on hand (`hermem memory ingest`).
 5. The new `hermem.db` is consistent with the new stride.
 
 ---
