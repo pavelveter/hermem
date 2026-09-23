@@ -32,6 +32,18 @@ HERMEM_URL = os.environ.get("HERMEM_URL", "")
 _DEFAULT_CLI_TIMEOUT_S = 10
 _DEFAULT_HTTP_TIMEOUT_S = 5
 
+# The HTTP API keeps flat endpoint paths, while the CLI uses grouped commands.
+_CLI_PATH_MAP = {
+    "query": "memory/query",
+    "ingest": "memory/ingest",
+    "search": "memory/search",
+    "store": "memory/store",
+    "edge": "memory/edge",
+    "retrieve": "memory/retrieve",
+    "timeline": "time/timeline",
+    "contradictions": "graph/contradictions",
+}
+
 
 # ---------------------------------------------------------------------------
 # Transport helpers
@@ -55,11 +67,13 @@ def _get_bin_path() -> str:
 
 
 def _cli_args(path: str) -> Sequence[str]:
-    """Translate `memory store`-style or `task/create`-style path into the
-    cobra nested command form. `path` is `/`-separated; each segment
-    becomes a positional argument to the binary.
+    """Translate provider paths into the cobra nested command form.
+
+    Provider paths remain flat for the HTTP API; only CLI arguments use the
+    grouped command names introduced by the current Hermem CLI.
     """
-    return [_get_bin_path()] + [seg for seg in path.split("/") if seg]
+    cli_path = _CLI_PATH_MAP.get(path, path)
+    return [_get_bin_path()] + [seg for seg in cli_path.split("/") if seg]
 
 
 def _cli(path: str, data: dict) -> Optional[dict]:
