@@ -14,18 +14,16 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26.6"
+  GO_VERSION: "1.26"
 
 jobs:
   bench:
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -39,7 +37,7 @@ jobs:
             -run='^$' ./src/... | tee bench_results.txt
 
       - name: Install benchstat
-        run: go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260615155930-9e4b9ddef5b6
+        run: go install golang.org/x/perf/cmd/benchstat@latest
 
       - name: Compare against baseline
         if: hashFiles('bench/baseline/baseline.txt') != ''
@@ -74,11 +72,11 @@ jobs:
       - name: Compute slash-safe artifact name
         id: bench-name
         run: |
-          SAFE_REF=$(printf '%s' "${GITHUB_REF_NAME}" | tr -c 'A-Za-z0-9._-' '-')
+          SAFE_REF="${GITHUB_REF_NAME//\//-}"
           echo "name=benchmark-results-${SAFE_REF}" >> "$GITHUB_OUTPUT"
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.bench-name.outputs.name }}
           path: bench_results.txt
