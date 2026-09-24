@@ -6,6 +6,20 @@
 /src/internal/store/ @pavelveter
 /src/internal/retrieval/ @pavelveter
 
+# Security-sensitive paths (explicit mapping so future collaborators and
+# branch protection (require_code_owner_reviews) can gate them precisely).
+# Today this maps to @pavelveter via the catch-all `*` line above; the
+# explicit lines below document the security-review intent + make
+# delegation trivial when collaborators join (edit @-handles here;
+# Scorecard's CodeReview check passes via the combined effect of this
+# file + branch protection's required_pull_request_reviews block).
+/src/internal/auth/ @pavelveter
+/src/internal/server/ @pavelveter
+/api/ @pavelveter
+/ops/ @pavelveter
+/docker-compose.yml @pavelveter
+/Dockerfile @pavelveter
+
 # AI and ingestion
 /src/internal/ai/ @pavelveter
 /src/internal/ingestion/ @pavelveter
