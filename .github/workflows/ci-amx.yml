@@ -27,7 +27,7 @@ on:
       - 'src/internal/vector/**'
       - '.github/workflows/ci-amx.yml'
 
-# Match the Go version pinned in go.mod (1.26.5).
+# Match the Go version pinned in go.mod (1.26.6).
 #
 # Previously this workflow hardcoded go-version '1.24' which compiled fine
 # while setup-go silently reconciled the mismatch with go.mod. After the
@@ -35,7 +35,7 @@ on:
 #   go: go.mod requires go >= 1.26.5 (running go 1.24.13; GOTOOLCHAIN=local)
 # so the runtime pin must equal (or, as here, derive from) the module pin.
 env:
-  GO_VERSION: "1.26.5"
+  GO_VERSION: "1.26.6"
 
 jobs:
   amx-guard:
@@ -51,7 +51,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
