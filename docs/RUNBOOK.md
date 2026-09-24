@@ -12,7 +12,7 @@ For CLI reference, see [CLI.md](CLI.md). For server endpoints, see
 ## Operational notes
 
 - **Config is binary-directory relative.** `hermem.ini` is resolved via
-  `os.Executable()`, not `os.Getwd()`, so `~/.hermes/bin/hermem store` works
+  `os.Executable()`, not `os.Getwd()`, so `~/.hermes/bin/hermem memory store` works
   the same from any working directory. The ini lives next to the binary.
 - **Concurrency.** The HTTP server is fine for dozens of
   concurrent requests, but the underlying SQLite write path is
@@ -42,7 +42,7 @@ For CLI reference, see [CLI.md](CLI.md). For server endpoints, see
   relations update atomically across all in-flight handlers.
 - **`store` saying "id required" when you have an id.** Almost
   always a shell-escaping bug in single-quoted JSON. Pipe through a
-  file (`./hermem store < req.json`) or use `jq -c … | hermem…`.
+  file (`./hermem memory store < req.json`) or use `jq -c … | hermem…`.
 - **`search` always returns the same top result.** Either the
   embedder model is misconfigured (check `slog` for
   `embedding_dim`), or the DB has fewer than K similar entities.
@@ -127,7 +127,7 @@ visibility. To change the schema, write a new migration file and
 re-build.
 
 For full embedder-model switches, write a new `hermem.db` and
-re-ingest (`hermem ingest` against every persisted dialog is
+re-ingest (`hermem memory ingest` against every persisted dialog is
 sufficient; the embedded text regenerates).
 
 ---

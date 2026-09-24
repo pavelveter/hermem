@@ -353,7 +353,7 @@ func TestCLI_TaskExecutable(t *testing.T) {
 
 func TestCLI_TimeTimeline(t *testing.T) {
 	env := testEnv(t)
-	out, err := executeCmd(t, env, []string{"time", "timeline"}, nil)
+	out, err := executeCmd(t, env, []string{"time", "timeline", "--limit", "1"}, nil)
 	if err != nil {
 		t.Fatalf("time timeline: %v\noutput: %s", err, out)
 	}

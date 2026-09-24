@@ -127,6 +127,9 @@ jobs:
       - name: Run tests
         run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic -timeout 10m $(go list ./... | grep -v tests/e2e)
 
+      - name: Run Hermem provider tests
+        run: python3 -m unittest tests.test_hermem_provider
+
       # Fails the build if total coverage drops below the threshold. The
       # current threshold (50.0%) is a no-regression guard — it sits
       # ~2.6% below today's measured coverage (52.6%) so a single
