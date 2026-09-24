@@ -8,13 +8,12 @@ version = "0.4.0"
 description = "Official Python SDK for the Hermem API"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -34,4 +33,4 @@ include = ["hermem*"]
 # `.github/workflows/sdk.yml::python-sdk` uploads as a workflow
 # artifact. Without pytest-cov, the matrix job would still run
 # but coverage upload would be a no-op.
-dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+dev = ["pytest>=9.0.3", "pytest-cov>=4.0"]

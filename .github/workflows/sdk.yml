@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # pyproject.toml declares requires-python = ">=3.9"; matrix
+      # pyproject.toml declares requires-python = ">=3.10"; matrix
       # covers 3.11 (first 3.x with full typing) and 3.12 (latest
       # stable). Future bump: append newer versions here.
       matrix:
