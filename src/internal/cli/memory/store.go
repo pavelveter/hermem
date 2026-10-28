@@ -48,16 +48,10 @@ Examples:
 			if err := env.Cfg.ValidateCategory(req.Category); err != nil {
 				return fmt.Errorf("invalid: %w", err)
 			}
-			if len(req.Embedding) == 0 && env.Embedder != nil {
-				emb, err := env.Embedder.Embed(env.Ctx, req.Content)
-				if err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: embed failed (%v), storing without embedding\n", err)
-				} else {
-					req.Embedding = emb
-				}
-			}
 			// Construct per-call (three pointer assignments; cheap) so
 			// CLI never holds onto a stale Service ref between commands.
+			// memory.Service embeds the content when no embedding was
+			// supplied, so CLI / HTTP / MCP share one write path.
 			memSvc := memory.New(env.DB, env.VI, env.Embedder)
 			if err := memSvc.Store(env.Ctx, req, env.Cfg.Schema); err != nil {
 				return fmt.Errorf("store: %w", err)

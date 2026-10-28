@@ -170,6 +170,9 @@ Remove: `hermes mcp remove hermem`
 }
 ```
 
+The content is embedded with the configured embedder before storage, so the
+new memory is reachable through `memory_search` straight away.
+
 ### memory_retrieve
 
 ```json

@@ -218,6 +218,17 @@ func (e *Env) ensureDBInternal(skipSchemaCheck bool) error {
 		return e.initErr
 	}
 	e.VI = vi
+	// The in-memory vector backend starts empty in every process, so a
+	// fresh CLI / MCP / daemon invocation must reload the embeddings
+	// already persisted in `entities` before any search can see them.
+	ctx := e.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, _, warmErr := vector.Warm(ctx, db, vi, e.Cfg.VectorDim); warmErr != nil {
+		e.initErr = fmt.Errorf("warm vector index: %w", warmErr)
+		return e.initErr
+	}
 	// Initialise the request-counters Metrics if main.go did not.
 	// main.go sets env.Metrics eagerly (BEFORE EnsureDB) so server
 	// handlers can reach it via the env-captured closure at request time;
