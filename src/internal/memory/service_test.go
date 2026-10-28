@@ -170,3 +170,58 @@ func TestMemoryService_StoreAndLink_OK(t *testing.T) {
 // TestMemoryService_Store_RejectsUnknownCategory) so the Error() string
 // is implicitly covered. If a future refactor reintroduces a category
 // field here, add the test back.
+
+// --- Store: embedding resolution ---
+
+// TestMemoryService_Store_EmbedsWhenCallerSuppliesNone is a regression test:
+// a write with no embedding used to persist a row without a vector record,
+// which left the entity permanently invisible to memory_search / retrieval
+// (search asks the vector index for candidate IDs first).
+func TestMemoryService_Store_EmbedsWhenCallerSuppliesNone(t *testing.T) {
+	f := newMemFixture(t)
+	req := StoreInput{ID: "e-embed", Category: "world", Content: "prefers uv over pip"}
+	if err := f.svc.Store(t.Context(), req, domain.DefaultSchemaConfig(false)); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	var blob []byte
+	if err := f.db.QueryRow(`SELECT embedding FROM entities WHERE id = ?`, "e-embed").Scan(&blob); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(blob) == 0 {
+		t.Fatal("entity stored without embedding: invisible to search")
+	}
+
+	// stubEmbedder returns {0.1, 0.2, 0.3} for any non-empty content.
+	results, err := vector.SearchByVector(t.Context(), f.db, f.vi, []float32{0.1, 0.2, 0.3}, 5)
+	if err != nil {
+		t.Fatalf("SearchByVector: %v", err)
+	}
+	if len(results) != 1 || results[0].Entity.ID != "e-embed" {
+		t.Fatalf("want the stored entity to be searchable, got %+v", results)
+	}
+}
+
+// TestMemoryService_Store_KeepsCallerEmbedding guards the other half of the
+// contract: an embedding supplied by the caller must not be recomputed.
+func TestMemoryService_Store_KeepsCallerEmbedding(t *testing.T) {
+	f := newMemFixture(t)
+	supplied := []float32{1, 0, 0}
+	if err := f.svc.Store(t.Context(), StoreInput{
+		ID: "e-supplied", Category: "world", Content: "explicit vector", Embedding: supplied,
+	}, domain.DefaultSchemaConfig(false)); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	var blob []byte
+	if err := f.db.QueryRow(`SELECT embedding FROM entities WHERE id = ?`, "e-supplied").Scan(&blob); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	got, err := store.DecodeVector(blob, len(supplied))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != len(supplied) || got[0] != supplied[0] || got[2] != supplied[2] {
+		t.Fatalf("want supplied embedding %v, got %v", supplied, got)
+	}
+}

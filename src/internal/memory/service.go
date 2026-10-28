@@ -27,6 +27,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
@@ -93,6 +94,7 @@ func (s *Service) Store(ctx context.Context, req StoreInput, schema domain.Schem
 	if !schema.AllowedCategories[req.Category] {
 		return apperr.NewInvalidSchemaError("category", req.Category)
 	}
+	s.ensureEmbedding(ctx, &req)
 	entity := domain.Entity{
 		ID:        req.ID,
 		Category:  req.Category,
@@ -105,16 +107,36 @@ func (s *Service) Store(ctx context.Context, req StoreInput, schema domain.Schem
 	return nil
 }
 
+// ensureEmbedding fills req.Embedding when the caller supplied none.
+//
+// Every write path (CLI, HTTP, MCP) persists a row in `entities` plus a
+// record in the vector index; search asks the index for candidate IDs first,
+// so an entity stored without a vector is permanently invisible to
+// memory_search / retrieval. A failed embed is logged and the entity is still
+// stored without a vector, so an embedder outage degrades retrieval instead of
+// rejecting writes.
+func (s *Service) ensureEmbedding(ctx context.Context, req *StoreInput) {
+	if len(req.Embedding) > 0 || s.embedder == nil {
+		return
+	}
+	emb, err := s.embedder.Embed(ctx, req.Content)
+	if err != nil {
+		slog.Warn("store: embed failed, storing without vector", "event", "store_embed_fail", "entity_id", req.ID, "err", err)
+		return
+	}
+	req.Embedding = emb
+}
+
 // StoreAndLink is Store followed by vector.AutoLinkEdges. HTTP shell
 // calls this for `/store` so the new entity surfaces in the related_to
 // graph without a second HTTP hop. CLI /store continues to call plain
 // Store ( behavior preserved: CLI never auto-linked).
 //
-// AutoLinkEdges is called with req.Embedding verbatim — no auto-embed
-// on empty. This matches HTTP shell behavior exactly:
-// whatever embedding the caller supplied (possibly nil) is what
-// AutoLinkEdges sees.
+// The embedding is resolved before Store so AutoLinkEdges links against the
+// vector that was actually persisted, including the one Store computed for a
+// caller that supplied none.
 func (s *Service) StoreAndLink(ctx context.Context, req StoreInput, schema domain.SchemaConfig) error {
+	s.ensureEmbedding(ctx, &req)
 	if err := s.Store(ctx, req, schema); err != nil {
 		return err
 	}
