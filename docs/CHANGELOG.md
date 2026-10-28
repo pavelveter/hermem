@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.1]
+
+### Fixed
+
+- **Vector search warm-up**: `hermem memory search` now sees persisted
+  embeddings instead of returning `null` (in-memory index is warmed from
+  the database on open).
+- **Auto-embedding on store**: `memory_store` (CLI/MCP) embeds content
+  before storage, so new memories are immediately searchable.
+- **OpenCode integration**: added `plugins/opencode/hermem-habits.ts`
+  plugin that captures durable working preferences into hermem on idle and
+  injects them into every session.
+- **Go toolchain**: bumped to 1.26.10 to clear govulncheck stdlib
+  vulnerabilities (GO-2026-6809, GO-2026-6617).
+
 ## [v0.4.0] — BREAKING
 
 > **⚠️ Breaking release.** The deprecated `src/internal/core` compatibility
