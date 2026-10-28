@@ -208,6 +208,28 @@ echo '{"query":"What is Go?"}' | hermem memory query   # one-shot CLI
 For Hermes Agent integration, see [USAGE.md §2](docs/USAGE.md#2-build--install).
 Full configuration reference: [USAGE.md §3](docs/USAGE.md#3-configuration).
 
+### OpenCode integration
+
+Hermem ships an OpenCode plugin (`plugins/opencode/hermem-habits.ts`) that
+keeps a durable profile of how you work and feeds it back into every session:
+
+- on `session.idle`, captures durable preferences (e.g. "use uv, not pip")
+  into hermem as `habit:` memories (category `opinion`);
+- on `session.created`, injects them as the session instruction entry
+  `hermem-habits`, so they apply across projects without editing `AGENTS.md`;
+- also exposes the `hermem_habit_save` tool for explicit capture.
+
+Install:
+
+```bash
+make install-opencode          # copies into ~/.config/opencode/plugins
+# or manually:
+cp plugins/opencode/hermem-habits.ts ~/.config/opencode/plugins/hermem-habits.ts
+```
+
+Env overrides: `HERMEM_BIN`, `HERMEM_HABITS_MODEL`, `HERMEM_HABITS_DISABLED`,
+`HERMEM_HABITS_LOG`.
+
 ## Dependencies
 
 - Go 1.21+ with CGO enabled

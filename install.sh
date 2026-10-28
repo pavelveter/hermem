@@ -72,6 +72,19 @@ if [[ ":$PATH:" != *":$HERMEM_BIN_DIR:"* ]]; then
     echo "  export PATH=\"\$HOME/.hermes/bin:\$PATH\""
 fi
 
+# OpenCode integration (optional): install the habits plugin.
+OPENCODE_CONFIG="${OPENCODE_CONFIG:-$HOME/.config/opencode}"
+if [ -d "$OPENCODE_CONFIG" ]; then
+    echo ""
+    echo "Installing OpenCode habits plugin..."
+    mkdir -p "$OPENCODE_CONFIG/plugins"
+    if [ -f plugins/opencode/hermem-habits.ts ]; then
+        cp plugins/opencode/hermem-habits.ts "$OPENCODE_CONFIG/plugins/hermem-habits.ts"
+        echo "  Installed: $OPENCODE_CONFIG/plugins/hermem-habits.ts"
+        echo "  Restart OpenCode to activate. Set HERMEM_BIN if hermem is not on PATH."
+    fi
+fi
+
 echo ""
 echo "✓ Hermem installed successfully!"
 echo ""

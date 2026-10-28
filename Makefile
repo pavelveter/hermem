@@ -1,4 +1,4 @@
-.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install sign routes completions install-completions dev fmt vet test-coverage
+.PHONY: build build-local build-no-local clean test test-e2e benchmarks lint install install-opencode sign routes completions install-completions dev fmt vet test-coverage
 
 BIN_DIR := src/internal/ai/bin
 LLAMA_BINARY := $(BIN_DIR)/llama-embedding
@@ -77,6 +77,13 @@ install: build
 		echo "Signed: $(INSTALL_DIR)/hermem"; \
 	fi
 	@echo "Installed: $(INSTALL_DIR)/hermem"
+
+# Install the OpenCode habits plugin into ~/.config/opencode/plugins
+OPENCODE_CONFIG ?= $(HOME)/.config/opencode
+install-opencode:
+	@mkdir -p "$(OPENCODE_CONFIG)/plugins"
+	@cp plugins/opencode/hermem-habits.ts "$(OPENCODE_CONFIG)/plugins/hermem-habits.ts"
+	@echo "Installed: $(OPENCODE_CONFIG)/plugins/hermem-habits.ts"
 
 clean:
 	rm -f hermem
