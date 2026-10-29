@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
@@ -85,6 +86,10 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEm
 		}
 		results = append(results, domain.SearchResult{Entity: e, Similarity: sim})
 	}
+	// Hydration via `WHERE id IN (...)` returns rows in storage order, so the
+	// ranking produced by the vector store must be restored here: callers rely
+	// on most-similar-first. Stable keeps ties deterministic.
+	sort.SliceStable(results, func(i, j int) bool { return results[i].Similarity > results[j].Similarity })
 	if len(results) > topK {
 		results = results[:topK]
 	}
