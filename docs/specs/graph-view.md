@@ -12,7 +12,9 @@ filterable by node type and relation, with a detail view per node.
 
 1. `hermem view` starts a local HTTP server on `127.0.0.1` (default port
    `8421`, `--port/-p` overrides it), prints the URL, and blocks until
-   Ctrl-C. Exit code 0 on Ctrl-C.
+   Ctrl-C. Ctrl-C exits with the repo-wide SIGINT convention (130, set by
+   `signalExitCode` in `src/main.go`; `hermem serve` behaves the same), so
+   the listener shuts down gracefully instead of dumping an error.
 2. The browser opens automatically unless `--no-open` is passed; a
    failure to launch a browser is a warning, never a command failure.
 3. The page renders the entities of the active `hermem.ini` database as
