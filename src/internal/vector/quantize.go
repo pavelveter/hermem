@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"sync"
 )
 
 // QuantizedVector is an INT8 min-max quantized vector with reconstruction bounds.
@@ -12,20 +11,6 @@ type QuantizedVector struct {
 	Min   float32 `json:"min"`
 	Max   float32 `json:"max"`
 	Codes []int8  `json:"codes"`
-}
-
-// quantCodes wraps a fixed-size array so the sync.Pool boxes a pointer
-// to a stack-sized value. The previous []int8 implementation caused
-// escape analysis to push the slice header to heap on every New call,
-// defeating the pool's purpose.
-type quantCodes struct {
-	buf [1024]int8
-}
-
-var quantCodePool = sync.Pool{
-	New: func() interface{} {
-		return &quantCodes{}
-	},
 }
 
 // QuantizeVector quantizes a float32 vector to int8 using the min-max scheme.
@@ -61,10 +46,8 @@ func QuantizeVector(v []float32) QuantizedVector {
 	if math.IsNaN(float64(scale)) || math.IsInf(float64(scale), 0) {
 		scale = 1
 	}
-	// 2-index slice expression preserves the underlying array's capacity
-	// across pool reuse. The earlier 3-index `[:len(v):len(v)]` form
-	// reset cap back to len, defeating the whole point of the pool on
-	// hot paths with variable-length embeddings.
+	// Codes must be an owned slice: callers keep the QuantizedVector beyond
+	// the call, so returning pooled memory would alias later quantizations.
 	codes := make([]int8, len(v))
 	for i, x := range v {
 		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
