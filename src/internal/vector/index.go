@@ -43,6 +43,9 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEm
 	if len(queryEmbedding) == 0 {
 		return nil, fmt.Errorf("empty query embedding")
 	}
+	if topK <= 0 {
+		return nil, nil
+	}
 	if topK > maxSearchLimit {
 		topK = maxSearchLimit
 	}

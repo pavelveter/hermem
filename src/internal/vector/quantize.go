@@ -65,8 +65,7 @@ func QuantizeVector(v []float32) QuantizedVector {
 	// across pool reuse. The earlier 3-index `[:len(v):len(v)]` form
 	// reset cap back to len, defeating the whole point of the pool on
 	// hot paths with variable-length embeddings.
-	qc := quantCodePool.Get().(*quantCodes) //nolint:errcheck // sync.Pool.New() invariant
-	codes := qc.buf[:len(v)]
+	codes := make([]int8, len(v))
 	for i, x := range v {
 		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
 			codes[i] = 0
@@ -80,9 +79,7 @@ func QuantizeVector(v []float32) QuantizedVector {
 		}
 		codes[i] = int8(val)
 	}
-	q := QuantizedVector{Min: min, Max: max, Codes: codes}
-	quantCodePool.Put(qc)
-	return q
+	return QuantizedVector{Min: min, Max: max, Codes: codes}
 }
 
 // DequantizeVector inverts QuantizeVector back to float32 — approximate due to int8 precision loss.

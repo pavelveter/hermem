@@ -27,7 +27,13 @@ func StoreEntityWithEmbedding(ctx context.Context, db *sql.DB, vi spi.VectorStor
 	}
 
 	entity = entity.WithInitialStatus(schema)
-	_, err := db.ExecContext(ctx, `INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+	_, err := db.ExecContext(ctx, `INSERT INTO entities (id, category, content, embedding, updated_at, status) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			category = excluded.category,
+			content = excluded.content,
+			embedding = excluded.embedding,
+			updated_at = CURRENT_TIMESTAMP,
+			status = excluded.status`,
 		entity.ID, entity.Category, entity.Content, embeddingBytes, NullString(entity.Status))
 	if err != nil {
 		if hasEmbedding {

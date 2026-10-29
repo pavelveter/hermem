@@ -67,7 +67,20 @@ func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, enti
 	}
 	embBytes := store.EmbeddingToBytes(dbEntity.Embedding)
 	dbEntity = dbEntity.WithInitialStatus(w.schema)
-	_, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status, confidence, source, source_type, created_at, conversation_id, message_id, extracted_from) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
+	_, err := tx.ExecContext(ctx, `INSERT INTO entities (id, category, content, embedding, updated_at, status, confidence, source, source_type, created_at, conversation_id, message_id, extracted_from) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			category = excluded.category,
+			content = excluded.content,
+			embedding = excluded.embedding,
+			updated_at = CURRENT_TIMESTAMP,
+			status = excluded.status,
+			confidence = excluded.confidence,
+			source = excluded.source,
+			source_type = excluded.source_type,
+			created_at = COALESCE(entities.created_at, excluded.created_at, CURRENT_TIMESTAMP),
+			conversation_id = excluded.conversation_id,
+			message_id = excluded.message_id,
+			extracted_from = excluded.extracted_from`,
 		dbEntity.ID, dbEntity.Category, dbEntity.Content, embBytes, store.NullString(dbEntity.Status), dbEntity.Confidence, dbEntity.Source, dbEntity.SourceType, dbEntity.ConversationID, dbEntity.MessageID, dbEntity.ExtractedFrom)
 	if err != nil {
 		return fmt.Errorf("insert entity: %w", err)
@@ -84,7 +97,20 @@ func (w *IngestionWorker) createEntityInTx(ctx context.Context, tx *sql.Tx, enti
 func (w *IngestionWorker) mergeEntityInTx(ctx context.Context, tx *sql.Tx, e domain.Entity) error {
 	embBytes := store.EmbeddingToBytes(e.Embedding)
 	e = e.WithInitialStatus(w.schema)
-	_, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO entities (id, category, content, embedding, updated_at, status, confidence, source, source_type, created_at, conversation_id, message_id, extracted_from) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := tx.ExecContext(ctx, `INSERT INTO entities (id, category, content, embedding, updated_at, status, confidence, source, source_type, created_at, conversation_id, message_id, extracted_from) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			category = excluded.category,
+			content = excluded.content,
+			embedding = excluded.embedding,
+			updated_at = CURRENT_TIMESTAMP,
+			status = excluded.status,
+			confidence = excluded.confidence,
+			source = excluded.source,
+			source_type = excluded.source_type,
+			created_at = COALESCE(entities.created_at, excluded.created_at, CURRENT_TIMESTAMP),
+			conversation_id = excluded.conversation_id,
+			message_id = excluded.message_id,
+			extracted_from = excluded.extracted_from`,
 		e.ID, e.Category, e.Content, embBytes, store.NullString(e.Status), e.Confidence, e.Source, e.SourceType, store.OrNullTime(e.CreatedAt), e.ConversationID, e.MessageID, e.ExtractedFrom)
 	if err != nil {
 		return fmt.Errorf("merge entity: %w", err)
