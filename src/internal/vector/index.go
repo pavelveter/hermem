@@ -86,6 +86,9 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEm
 		}
 		results = append(results, domain.SearchResult{Entity: e, Similarity: sim})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("fetch entities rows: %w", err)
+	}
 	// Hydration via `WHERE id IN (...)` returns rows in storage order, so the
 	// ranking produced by the vector store must be restored here: callers rely
 	// on most-similar-first. Stable keeps ties deterministic.

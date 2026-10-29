@@ -75,7 +75,13 @@ func expandGraph(db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effD
 	}
 	defer rows.Close()
 
-	var nodes []scannedNode
+	// Pre-size for the common case (tens of nodes) so the walk does not
+	// repeatedly reallocate and copy the growing result slice.
+	capHint := 32
+	if opts.MaxRetrievedNodes > 0 && opts.MaxRetrievedNodes < capHint {
+		capHint = opts.MaxRetrievedNodes
+	}
+	nodes := make([]scannedNode, 0, capHint)
 	seenIDs := make(map[string]bool, len(seedIDs)*2)
 	for rows.Next() {
 		var node GraphNode
@@ -100,6 +106,9 @@ func expandGraph(db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effD
 			vec, _ = store.DecodeVector(embBlob, len(opts.QueryEmbedding)) //nolint:errcheck // load-bearing: empty vector falls back to sim=0; caller treats missing dimensions as no-match
 		}
 		nodes = append(nodes, scannedNode{node: node, vec: vec})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("graph walk rows: %w", err)
 	}
 	return nodes, nil
 }

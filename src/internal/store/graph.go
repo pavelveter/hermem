@@ -115,6 +115,9 @@ func FindConnectedComponents(db *sql.DB, minSize int) ([]domain.ConnectedCompone
 		allIDs = append(allIDs, id)
 		adj[id] = nil
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("find components: iterate entities: %w", err)
+	}
 	edgeRows, err := db.Query(`SELECT source_id, target_id FROM edges`)
 	if err != nil {
 		return nil, fmt.Errorf("find components: read edges: %w", err)
@@ -127,6 +130,9 @@ func FindConnectedComponents(db *sql.DB, minSize int) ([]domain.ConnectedCompone
 		}
 		adj[src] = append(adj[src], dst)
 		adj[dst] = append(adj[dst], src)
+	}
+	if err := edgeRows.Err(); err != nil {
+		return nil, fmt.Errorf("find components: iterate edges: %w", err)
 	}
 	visited := make(map[string]bool)
 	components := make([]domain.ConnectedComponent, 0, len(allIDs))
