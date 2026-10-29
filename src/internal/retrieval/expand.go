@@ -3,6 +3,7 @@ package retrieval
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/pavelveter/hermem/src/internal/store"
 )
@@ -36,18 +37,18 @@ func expandGraph(db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effD
 	}
 	args = append(args, effDepth)
 
-	query := fmt.Sprintf(`
+	query := `
 		WITH RECURSIVE graph_walk AS (
 			SELECT e.id, e.category, e.content, e.updated_at, e.embedding, e.degree, 0 as depth, 0.0 as path_weight, '' as parent_id, '' as relation_type, char(31) || e.id || char(31) as visited
-			FROM entities e WHERE e.id IN (%s) AND e.archived = 0%s
+			FROM entities e WHERE e.id IN (` + phs + `) AND e.archived = 0` + timeFilter + `
 			UNION ALL
 			SELECT e.id, e.category, e.content, e.updated_at, e.embedding, e.degree, gw.depth + 1, gw.path_weight + COALESCE(ed.weight, 1.0), gw.id, ed.relation_type, gw.visited || e.id || char(31)
 			FROM graph_walk gw JOIN edges ed ON (ed.source_id = gw.id OR ed.target_id = gw.id)
 			JOIN entities e ON (CASE WHEN ed.source_id = gw.id THEN ed.target_id = e.id ELSE ed.source_id = e.id END)
 			WHERE gw.depth < ? AND instr(gw.visited, char(31) || e.id || char(31)) = 0 AND e.archived = 0
 		)
-		SELECT DISTINCT id, category, content, updated_at, embedding, degree, depth, path_weight, parent_id, relation_type FROM graph_walk ORDER BY depth ASC, category ASC
-	`, phs, timeFilter)
+		SELECT DISTINCT id, category, content, unixepoch(updated_at), embedding, degree, depth, path_weight, parent_id, relation_type FROM graph_walk ORDER BY depth ASC, category ASC
+	`
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -56,12 +57,17 @@ func expandGraph(db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effD
 	defer rows.Close()
 
 	var nodes []scannedNode
-	seenIDs := make(map[string]bool)
+	seenIDs := make(map[string]bool, len(seedIDs)*2)
 	for rows.Next() {
 		var node GraphNode
+		var updatedAtUnix int64
 		var embBlob []byte
-		if err := rows.Scan(&node.Entity.ID, &node.Entity.Category, &node.Entity.Content, &node.Entity.UpdatedAt, &embBlob, &node.Entity.Degree, &node.Depth, &node.PathWeight, &node.ParentID, &node.RelationType); err != nil {
+		if err := rows.Scan(&node.Entity.ID, &node.Entity.Category, &node.Entity.Content, &updatedAtUnix, &embBlob, &node.Entity.Degree, &node.Depth, &node.PathWeight, &node.ParentID, &node.RelationType); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
+		}
+		if updatedAtUnix > 0 {
+			t := time.Unix(updatedAtUnix, 0).UTC()
+			node.Entity.UpdatedAt = &t
 		}
 		if seenIDs[node.Entity.ID] {
 			continue
@@ -70,7 +76,10 @@ func expandGraph(db *sql.DB, seedIDs []string, opts RetrieveContextOptions, effD
 		if opts.MaxRetrievedNodes > 0 && len(seenIDs) > opts.MaxRetrievedNodes {
 			break
 		}
-		vec, _ := store.DecodeVector(embBlob, len(opts.QueryEmbedding)) //nolint:errcheck // load-bearing: empty vector falls back to sim=0; caller treats missing dimensions as no-match
+		var vec []float32
+		if len(opts.QueryEmbedding) > 0 {
+			vec, _ = store.DecodeVector(embBlob, len(opts.QueryEmbedding)) //nolint:errcheck // load-bearing: empty vector falls back to sim=0; caller treats missing dimensions as no-match
+		}
 		nodes = append(nodes, scannedNode{node: node, vec: vec})
 	}
 	return nodes, nil

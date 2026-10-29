@@ -61,7 +61,7 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEm
 		return nil, nil
 	}
 	phs, args := store.InClauseArgs(ids)
-	rows, err := db.Query(fmt.Sprintf(`SELECT id, category, content, embedding, updated_at, last_accessed_at FROM entities WHERE id IN (%s) AND archived = 0`, phs), args...)
+	rows, err := db.Query(`SELECT id, category, content, embedding, updated_at, last_accessed_at FROM entities WHERE id IN (`+phs+`) AND archived = 0`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("fetch entities: %w", err)
 	}

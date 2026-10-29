@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/pavelveter/hermem/pkg/spi"
@@ -76,18 +77,24 @@ func (s *inMemoryVectorStore) Search(_ context.Context, req spi.SearchRequest) (
 	NormalizeVector(query)
 	queryNorm := VectorNorm(query)
 
-	hits := make([]spi.Hit, 0, len(s.recs[req.Namespace]))
+	ids := make([]string, 0, len(s.recs[req.Namespace]))
+	matrix := make([]float32, 0, len(s.recs[req.Namespace])*len(req.Vector))
 	for id, rec := range s.recs[req.Namespace] {
 		if !matchesFilter(rec.meta, req.Filter) {
 			continue
 		}
-		score := float32(0)
+		ids = append(ids, id)
 		if queryNorm > 0 {
-			dot := make([]float32, 1)
-			BatchDotProducts(query, rec.vec, 1, len(rec.vec), dot)
-			score = dot[0]
+			matrix = append(matrix, rec.vec...)
 		}
-		hits = append(hits, spi.Hit{ID: id, Score: score})
+	}
+	scores := make([]float32, len(ids))
+	if queryNorm > 0 && len(matrix) > 0 {
+		BatchDotProducts(query, matrix, len(ids), len(req.Vector), scores)
+	}
+	hits := make([]spi.Hit, len(ids))
+	for i, id := range ids {
+		hits[i] = spi.Hit{ID: id, Score: scores[i]}
 	}
 	sort.Slice(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
 	if req.Limit < len(hits) {
@@ -216,8 +223,8 @@ func parseFloat(s string) (float64, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty numeric metadata")
 	}
-	var f float64
-	if _, err := fmt.Sscanf(s, "%g", &f); err != nil {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
 		return 0, err
 	}
 	if math.IsNaN(f) || math.IsInf(f, 0) {
