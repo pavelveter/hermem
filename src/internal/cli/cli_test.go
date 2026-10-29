@@ -17,6 +17,7 @@ func TestNewRoot_HasExpectedCommands(t *testing.T) {
 	want := map[string]bool{
 		"serve":   false,
 		"health":  false,
+		"view":    false,
 		"metrics": false,
 		"version": false,
 		"memory":  false,

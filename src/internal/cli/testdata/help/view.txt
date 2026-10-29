@@ -1,0 +1,48 @@
+
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███╗   ███╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝████╗ ████║
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ██╔████╔██║
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝
+
+hermem houses a knowledge graph + vector store with an LLM-driven
+extraction engine.
+
+Group layout:
+  serve       Start the HTTP server (default :8420)
+  view        Interactive knowledge graph in a browser (read-only, loopback)
+  health      Health probe (pings the DB)
+  metrics     Prometheus exposition
+  version     Print build version
+  completion  Generate shell completions (bash / zsh / fish)
+  docs        Generate CLI documentation and man pages
+  mcp         MCP server for AI assistant integration (stdio)
+  memory      Knowledge CRUD and retrieval
+  task        Task lifecycle management
+  graph       Graph algorithms and analytics
+  time        Temporal queries and timeline
+  agent       Agentic flows (autonomous task execution)
+  db          Database housekeeping (migrate / rollback / verify)
+  ops         Offline DB operations (stats / integrity / vacuum / rebuild-index)
+  profile     Ad-hoc profiling (cpu / heap / goroutine / trace)
+  diagnose    Self-diagnostics on database and memory
+  admin       Admin operations (API keys, config)
+  bench       Benchmark latency percentiles
+
+All commands that take a JSON payload read it from stdin. Optional flags
+use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
+group usage; "hermem --help" prints the full tree.
+
+Flags:
+  -h, --help          help for view
+      --limit int     Maximum nodes to render (capped at 500) (default 500)
+      --no-open       Do not launch a browser
+  -p, --port string   TCP port to listen on (loopback only) (default "8421")
+
+Global Flags:
+      --config string   path to hermem.ini (overrides HERMEM_INI env and binary-dir default)
+
+Use "hermem view [command] --help" for more information about a command.
+
+Documentation: https://github.com/pavelveter/hermem

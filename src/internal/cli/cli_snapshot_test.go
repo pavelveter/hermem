@@ -25,6 +25,7 @@ func cliCommands() []string {
 		"admin",
 		"diagnose",
 		"serve",
+		"view",
 		"health",
 		"metrics",
 		"version",
