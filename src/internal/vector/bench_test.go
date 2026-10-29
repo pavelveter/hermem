@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pavelveter/hermem/pkg/spi"
+	"github.com/pavelveter/hermem/src/internal/store"
 )
 
 func BenchmarkCosineSimilarity_128(b *testing.B) {
@@ -107,5 +108,49 @@ func BenchmarkInMemorySearch(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// BenchmarkSearchByVector measures the whole hot path callers use: vector
+// search over the store plus entity hydration from SQLite.
+func BenchmarkSearchByVector(b *testing.B) {
+	const dim = 768
+	db, err := store.InitDB(":memory:", dim)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { db.Close() })
+	vi := NewInMemoryVectorStore(db, 0)
+	recs := make([]spi.VectorRecord, 1000)
+	tx, err := db.Begin()
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := range recs {
+		vec := make([]float32, dim)
+		for j := range vec {
+			vec[j] = float32((i+j)%13) / 13
+		}
+		id := fmt.Sprintf("id-%d", i)
+		if _, err := tx.Exec(`INSERT INTO entities (id, category, content, embedding) VALUES (?, 'world', 'c', ?)`, id, store.EmbeddingToBytes(vec)); err != nil {
+			b.Fatal(err)
+		}
+		recs[i] = spi.VectorRecord{Namespace: spi.DefaultNamespace, ID: id, Vector: vec}
+	}
+	if err := tx.Commit(); err != nil {
+		b.Fatal(err)
+	}
+	if err := vi.Upsert(context.Background(), recs); err != nil {
+		b.Fatal(err)
+	}
+	query := make([]float32, dim)
+	for i := range query {
+		query[i] = 0.5
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := SearchByVector(context.Background(), db, vi, query, 10); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

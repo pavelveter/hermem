@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sort"
+	"time"
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
@@ -62,39 +62,44 @@ func SearchByVector(ctx context.Context, db *sql.DB, vi spi.VectorStore, queryEm
 		return nil, nil
 	}
 	phs, args := store.InClauseArgs(ids)
-	rows, err := db.Query(`SELECT id, category, content, embedding, updated_at, last_accessed_at FROM entities WHERE id IN (`+phs+`) AND archived = 0`, args...)
+	// unixepoch() keeps the driver from parsing the DATETIME text per row:
+	// every writer stores second-resolution CURRENT_TIMESTAMP, so the integer
+	// form is lossless and time.Parse was ~8% of this call's CPU.
+	rows, err := db.Query(`SELECT id, category, content, unixepoch(updated_at), unixepoch(last_accessed_at) FROM entities WHERE id IN (`+phs+`) AND archived = 0`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("fetch entities: %w", err)
 	}
 	defer rows.Close()
-	var results []domain.SearchResult
+	byID := make(map[string]domain.Entity, len(ids))
 	for rows.Next() {
 		var e domain.Entity
-		var embBytes []byte
-		var lastAcc sql.NullTime
-		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &embBytes, &e.UpdatedAt, &lastAcc); err != nil {
+		var updatedAtUnix, lastAccUnix sql.NullInt64
+		if err := rows.Scan(&e.ID, &e.Category, &e.Content, &updatedAtUnix, &lastAccUnix); err != nil {
 			return nil, fmt.Errorf("scan entity: %w", err)
 		}
-		if lastAcc.Valid {
-			e.LastAccessedAt = &lastAcc.Time
+		if updatedAtUnix.Valid {
+			t := time.Unix(updatedAtUnix.Int64, 0).UTC()
+			e.UpdatedAt = &t
 		}
-		sim := float32(0)
-		if len(embBytes) > 0 {
-			if emb, err := store.DecodeVector(embBytes, len(queryEmbedding)); err == nil {
-				sim = CosineSimilarity(queryEmbedding, emb)
-			}
+		if lastAccUnix.Valid {
+			t := time.Unix(lastAccUnix.Int64, 0).UTC()
+			e.LastAccessedAt = &t
 		}
-		results = append(results, domain.SearchResult{Entity: e, Similarity: sim})
+		byID[e.ID] = e
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("fetch entities rows: %w", err)
 	}
 	// Hydration via `WHERE id IN (...)` returns rows in storage order, so the
-	// ranking produced by the vector store must be restored here: callers rely
-	// on most-similar-first. Stable keeps ties deterministic.
-	sort.SliceStable(results, func(i, j int) bool { return results[i].Similarity > results[j].Similarity })
-	if len(results) > topK {
-		results = results[:topK]
+	// ranking is taken from the vector store's hits, which are already ordered
+	// by descending similarity. Archived or vanished rows are simply dropped.
+	results := make([]domain.SearchResult, 0, len(byID))
+	for _, hit := range hits {
+		e, ok := byID[hit.ID]
+		if !ok {
+			continue
+		}
+		results = append(results, domain.SearchResult{Entity: e, Similarity: hit.Score})
 	}
 	return results, nil
 }
