@@ -47,7 +47,13 @@ func Handler(db *sql.DB, limit int) http.Handler {
 		// rather than serving a blank page if the embed ever breaks.
 		panic(fmt.Sprintf("view: embedded page: %v", err))
 	}
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// "/" is the catch-all pattern, so reject anything else explicitly:
+		// the viewer serves exactly two routes.
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		if _, err := w.Write(page); err != nil {

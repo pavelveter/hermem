@@ -174,4 +174,11 @@ func TestHandler_ServesPageAndSnapshot(t *testing.T) {
 	if len(g.Nodes) != 1 || g.Nodes[0].ID != "a" {
 		t.Fatalf("want node a, got %+v", g.Nodes)
 	}
+
+	// Exactly two routes exist; anything else must not silently return the page.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/other", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown path: want 404, got %d", rec.Code)
+	}
 }
