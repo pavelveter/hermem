@@ -86,13 +86,28 @@ func (w *AsyncMetricsWorker) flushLocked() {
 		slog.Warn("metrics begin tx", "err", err)
 		return
 	}
+	// One statement per flush instead of one per touched entity: the buffer
+	// holds up to batchSize IDs every flushTimeout, and each per-row Exec costs
+	// a full statement round-trip through the single pooled connection.
+	args := make([]interface{}, 0, len(w.buffer))
+	phs := make([]byte, 0, len(w.buffer)*2)
 	for id := range w.buffer {
-		if _, err := tx.Exec(`UPDATE entities SET last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
-			slog.Warn("metrics update", "id", id, "err", err)
+		if len(args) > 0 {
+			phs = append(phs, ',')
 		}
+		phs = append(phs, '?')
+		args = append(args, id)
+	}
+	if _, err := tx.Exec(`UPDATE entities SET last_accessed_at = CURRENT_TIMESTAMP WHERE id IN (`+string(phs)+`)`, args...); err != nil {
+		slog.Warn("metrics update", "count", len(args), "err", err)
+		_ = tx.Rollback()
+		return
 	}
 	if err := tx.Commit(); err != nil {
+		// Keep the buffer: the accesses are still true and the next tick
+		// retries them. Dropping them here loses activity tracking silently.
 		slog.Warn("metrics commit", "err", err)
+		return
 	}
 	w.buffer = make(map[string]struct{})
 }
