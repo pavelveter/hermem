@@ -106,12 +106,12 @@ func TestGreedyCluster_Property_Invariants(t *testing.T) {
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
 			ids := make([]string, sc.n)
-			vecs := make([][]float64, sc.n)
+			vecs := make([][]float32, sc.n)
 			for i := range ids {
 				ids[i] = fmt.Sprintf("e%d", i)
-				vecs[i] = make([]float64, sc.dim)
+				vecs[i] = make([]float32, sc.dim)
 				for j := range vecs[i] {
-					vecs[i][j] = float64(i*sc.dim+j) * 0.01
+					vecs[i][j] = float32(i*sc.dim+j) * 0.01
 				}
 			}
 

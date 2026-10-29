@@ -186,7 +186,7 @@ func markSuperseded(ctx context.Context, db *sql.DB, oldID, newID string) error 
 
 func (cp *Compressor) loadEntities(ctx context.Context, ids []string) ([]domain.Entity, error) {
 	phs, args := store.InClauseArgs(ids)
-	query := fmt.Sprintf("SELECT id, category, content, confidence FROM entities WHERE id IN (%s)", phs)
+	query := "SELECT id, category, content, confidence FROM entities WHERE id IN (" + phs + ")"
 	rows, err := cp.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -214,7 +214,11 @@ func (cp *Compressor) loadEntities(ctx context.Context, ids []string) ([]domain.
 func buildCompressionDialog(entities []domain.Entity) string {
 	var b strings.Builder
 	for _, e := range entities {
-		fmt.Fprintf(&b, "[%s] %s\n", e.Category, e.Content)
+		b.WriteByte('[')
+		b.WriteString(e.Category)
+		b.WriteString("] ")
+		b.WriteString(e.Content)
+		b.WriteByte('\n')
 	}
 	return b.String()
 }
@@ -225,7 +229,11 @@ func formatSummary(result *domain.ExtractionResult) string {
 	}
 	var b strings.Builder
 	for _, ent := range result.Entities {
-		fmt.Fprintf(&b, "- [%s] %s\n", ent.Category, ent.Content)
+		b.WriteString("- [")
+		b.WriteString(ent.Category)
+		b.WriteString("] ")
+		b.WriteString(ent.Content)
+		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

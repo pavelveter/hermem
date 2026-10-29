@@ -53,7 +53,10 @@ func LoadGraph(ctx context.Context, db *sql.DB) (*Graph, error) {
 		adj[i] = make(map[string]float64)
 	}
 
-	edgeRows, err := db.QueryContext(ctx, `SELECT source_id, target_id, COALESCE(weight, 1.0) FROM edges`)
+	edgeRows, err := db.QueryContext(ctx, `SELECT e.source_id, e.target_id, COALESCE(e.weight, 1.0)
+		FROM edges e
+		JOIN entities se ON se.id = e.source_id AND se.archived = 0
+		JOIN entities te ON te.id = e.target_id AND te.archived = 0`)
 	if err != nil {
 		return nil, fmt.Errorf("community: edges: %w", err)
 	}
@@ -114,8 +117,8 @@ func DetectCommunities(g *Graph, maxIterations int) ([]domain.Community, float64
 		community[i] = i
 	}
 
-	commInternal := make(map[int]float64)
-	commTotal := make(map[int]float64)
+	commInternal := make([]float64, n)
+	commTotal := make([]float64, n)
 
 	for i := range community {
 		comm := community[i]
@@ -127,6 +130,8 @@ func DetectCommunities(g *Graph, maxIterations int) ([]domain.Community, float64
 		}
 	}
 
+	neighbourComms := make([]float64, n)
+	touched := make([]int, 0)
 	for iter := 0; iter < maxIterations; iter++ {
 		moved := false
 		for i := 0; i < n; i++ {
@@ -134,20 +139,21 @@ func DetectCommunities(g *Graph, maxIterations int) ([]domain.Community, float64
 			bestDeltaQ := 0.0
 			bestComm := oldComm
 
-			neighbourComms := make(map[int]float64)
+			touched = touched[:0]
 			for dstStr, w := range g.Adj[i] {
 				if di, ok := g.NodeIndex[dstStr]; ok {
-					neighbourComms[community[di]] += w
+					c := community[di]
+					if neighbourComms[c] == 0 {
+						touched = append(touched, c)
+					}
+					neighbourComms[c] += w
 				}
 			}
 
 			commInternal[oldComm] -= 2 * neighbourComms[oldComm]
 			commTotal[oldComm] -= g.NodeWeight[i]
 
-			sortedComms := make([]int, 0, len(neighbourComms))
-			for c := range neighbourComms {
-				sortedComms = append(sortedComms, c)
-			}
+			sortedComms := append([]int(nil), touched...)
 			sort.Ints(sortedComms)
 			for _, newComm := range sortedComms {
 				wToComm := neighbourComms[newComm]
@@ -166,6 +172,10 @@ func DetectCommunities(g *Graph, maxIterations int) ([]domain.Community, float64
 				moved = true
 			}
 			commTotal[bestComm] += g.NodeWeight[i]
+
+			for _, c := range touched {
+				neighbourComms[c] = 0
+			}
 		}
 		if !moved {
 			break
@@ -200,13 +210,16 @@ func communityIDString(commID int) string {
 
 // buildResult maps community IDs to member lists and returns sorted communities.
 func buildResult(g *Graph, community []int) []domain.Community {
-	commMembers := make(map[int][]string)
+	commMembers := make([][]string, len(community))
 	for i, comm := range community {
 		commMembers[comm] = append(commMembers[comm], g.IDs[i])
 	}
 
 	var communities []domain.Community
 	for commID, members := range commMembers {
+		if len(members) == 0 {
+			continue
+		}
 		sort.Strings(members)
 		q := computeCommunityModularity(g, community, members)
 		communities = append(communities, domain.Community{

@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 
 	"github.com/pavelveter/hermem/src/internal/store"
-	"github.com/pavelveter/hermem/src/internal/vector"
 )
 
 type ClustererConfig struct {
@@ -45,7 +45,7 @@ func (c *Clusterer) Cluster(ctx context.Context, entityIDs []string) ([][]string
 	}
 
 	ids := make([]string, 0, len(embeddings))
-	vecs := make([][]float64, 0, len(embeddings))
+	vecs := make([][]float32, 0, len(embeddings))
 	for id, vec := range embeddings {
 		ids = append(ids, id)
 		vecs = append(vecs, vec)
@@ -57,7 +57,7 @@ func (c *Clusterer) Cluster(ctx context.Context, entityIDs []string) ([][]string
 // greedyCluster assigns entities to clusters using a greedy single-pass
 // algorithm. Each unassigned entity becomes a seed; similar entities
 // (above SimilarityThreshold) are absorbed into its cluster.
-func greedyCluster(ids []string, vecs [][]float64, cfg ClustererConfig) [][]string {
+func greedyCluster(ids []string, vecs [][]float32, cfg ClustererConfig) [][]string {
 	pool := make([]int, len(ids))
 	for i := range pool {
 		pool[i] = i
@@ -91,16 +91,16 @@ func greedyCluster(ids []string, vecs [][]float64, cfg ClustererConfig) [][]stri
 	return clusters
 }
 
-func (c *Clusterer) loadEmbeddings(ctx context.Context, ids []string) (map[string][]float64, error) {
+func (c *Clusterer) loadEmbeddings(ctx context.Context, ids []string) (map[string][]float32, error) {
 	phs, args := store.InClauseArgs(ids)
-	query := fmt.Sprintf("SELECT id, embedding FROM entities WHERE id IN (%s) AND embedding IS NOT NULL", phs)
+	query := "SELECT id, embedding FROM entities WHERE id IN (" + phs + ") AND embedding IS NOT NULL"
 	rows, err := c.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	result := make(map[string][]float64, len(ids))
+	result := make(map[string][]float32, len(ids))
 	for rows.Next() {
 		var id string
 		var blob []byte
@@ -111,24 +111,25 @@ func (c *Clusterer) loadEmbeddings(ctx context.Context, ids []string) (map[strin
 		if vec == nil {
 			continue
 		}
-		f64 := make([]float64, len(vec))
-		for i, v := range vec {
-			f64[i] = float64(v)
-		}
-		result[id] = f64
+		result[id] = vec
 	}
 	return result, rows.Err()
 }
 
-func cosineSimilarity(a, b []float64) float64 {
+func cosineSimilarity(a, b []float32) float64 {
 	if len(a) != len(b) || len(a) == 0 {
 		return 0
 	}
-	f32a := make([]float32, len(a))
-	f32b := make([]float32, len(b))
+	var dot, normA, normB float64
 	for i := range a {
-		f32a[i] = float32(a[i])
-		f32b[i] = float32(b[i])
+		x := float64(a[i])
+		y := float64(b[i])
+		dot += x * y
+		normA += x * x
+		normB += y * y
 	}
-	return float64(vector.CosineSimilarity(f32a, f32b))
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
