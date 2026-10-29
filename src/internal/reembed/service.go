@@ -106,6 +106,9 @@ func (s *Service) ReEmbedAll(ctx context.Context, configuredDim int, batchSize i
 			batch = nil
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return result, fmt.Errorf("iterate entities: %w", err)
+	}
 	if len(batch) > 0 {
 		if err := s.processReEmbedBatch(ctx, batch, configuredDim, &result); err != nil {
 			return result, err
