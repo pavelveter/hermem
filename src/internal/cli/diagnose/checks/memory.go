@@ -70,6 +70,9 @@ func CheckMemory(db *sql.DB) (MemoryReport, error) {
 		}
 		r.BeliefCounts[status] = count
 	}
+	if err := bRows.Err(); err != nil {
+		return r, fmt.Errorf("belief iterate: %w", err)
+	}
 
 	return r, nil
 }

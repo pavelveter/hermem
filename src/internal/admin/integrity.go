@@ -59,6 +59,13 @@ func (c *IntegrityChecker) checkMissingEmbeddings(ctx context.Context) []Issue {
 			Message: fmt.Sprintf("entity %q (%s) has no embedding", id, cat),
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return append(issues, Issue{
+			Code:    "MISSING_EMBEDDING_QUERY_ERR",
+			Level:   IssueWarning,
+			Message: fmt.Sprintf("iterate failed: %v", err),
+		})
+	}
 	if len(issues) == 0 {
 		return nil
 	}
@@ -103,6 +110,13 @@ func (c *IntegrityChecker) checkDanglingEdges(ctx context.Context) []Issue {
 			Message: fmt.Sprintf("edge (%s) references non-existent entity", rt),
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return append(issues, Issue{
+			Code:    "DANGLING_EDGE_QUERY_ERR",
+			Level:   IssueWarning,
+			Message: fmt.Sprintf("iterate failed: %v", err),
+		})
+	}
 	return issues
 }
 
@@ -133,6 +147,13 @@ func (c *IntegrityChecker) checkArchiveConsistency(ctx context.Context) []Issue 
 			Level:   IssueWarning,
 			Subject: id,
 			Message: fmt.Sprintf("archived entity %q still has embedding (stale vector index entry)", short),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return append(issues, Issue{
+			Code:    "ARCHIVE_CONSISTENCY_QUERY_ERR",
+			Level:   IssueWarning,
+			Message: fmt.Sprintf("iterate failed: %v", err),
 		})
 	}
 	return issues

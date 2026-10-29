@@ -33,6 +33,9 @@ func CheckSchema(db *sql.DB) (SchemaReport, error) {
 		}
 		violations = append(violations, fmt.Sprintf("%s rowid=%s → %s (%s)", table, rowid, parent, fkey))
 	}
+	if err := rows.Err(); err != nil {
+		return r, fmt.Errorf("foreign_key_check iterate: %w", err)
+	}
 	if len(violations) > 0 {
 		r.ForeignKeysOK = false
 		r.IntegrityLog = append(r.IntegrityLog, "foreign_key violations: "+fmt.Sprint(violations))
@@ -64,6 +67,9 @@ func CheckSchema(db *sql.DB) (SchemaReport, error) {
 			r.IntegrityOK = false
 			r.IntegrityLog = append(r.IntegrityLog, "integrity: "+msg)
 		}
+	}
+	if err := ir.Err(); err != nil {
+		return r, fmt.Errorf("integrity_check iterate: %w", err)
 	}
 
 	return r, nil
