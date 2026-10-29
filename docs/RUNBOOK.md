@@ -76,7 +76,7 @@ A single SQLite file with two (or three) tables. The schema lives in
 | `embedding`     | BLOB        | `len(embedding) * 4` raw little-endian float32 bytes. |
 | `updated_at`    | DATETIME    | `CURRENT_TIMESTAMP` default; refreshed on each upsert.|
 | `last_accessed_at` | DATETIME | `CURRENT_TIMESTAMP` default; GC uses this for TTL.    |
-| `archived`      | INTEGER     | 0 = active, 1 = excluded from graph walks by GC.      |
+| `archived`      | INTEGER     | 0 = active, 1 = excluded from graph walks by GC. Archived rows still bridge connected components — archiving is a visibility filter, not an edge deletion. |
 | `degree`        | INTEGER     | `0` default; auto-maintained by SQL triggers on edges INSERT/DELETE. Powers `log10(1+degree)` centrality scoring. |
 | `priority`      | INTEGER     | `0` default; `task/list` + `task/executable` + `ExecutionPlan` order by `priority DESC`. Added in migration `007_task_priorities.sql`. |
 
@@ -445,11 +445,11 @@ diagram, see **[docs/service-dependencies.md](docs/service-dependencies.md)**.
 |---------------------------------|-----------------------------------|
 | INI parsing, defaults, Validate | `src/internal/config/ini.go` + `src/internal/config/config.go` (defaults) |
 | Schema, embedding serialisation | `src/internal/store/migration.go` (migrations runner) + `src/internal/store/init.go` (DSN + PRAGMAs) |
-| VectorIndex interface, search backends (InMemory / SqliteVec) | `src/internal/vector/index.go` (interface) + `src/internal/vector/inmemory.go` + `src/internal/vector/quantize.go` |
-| Graph walk, ranking, formatting | `src/internal/retrieval/{walk,scoring,formatting,response,tasks}.go` |
+| Vector store (in-memory + search hydration) | `src/internal/vector/provider.go` (store) + `src/internal/vector/index.go` (`SearchByVector`) + `src/internal/vector/cosine.go` / `cosine_darwin.go` (BLAS) |
+| Graph walk, ranking, formatting | `src/internal/retrieval/{expand,walk,scoring,response}.go` |
 | Background worker, dedup, edges | `src/internal/ingestion/worker.go` (IngestionWorker) + `src/internal/ingestion/dialog.go` (ProcessDialog) |
 | Contradiction detection        | `src/internal/contradiction/` (domain Service) + HTTP shell in `src/internal/server/contradiction/` |
-| Community detection (Louvain)  | `src/internal/store/community.go` |
+| Community detection (Louvain)  | `src/internal/graph/community/community.go` (deprecated shim in `src/internal/store/community.go`) |
 | Background re-embedding        | `src/internal/reembed/` (domain Service) + HTTP shell in `src/internal/server/reembed/` |
 | Graph verify (integrity check) | `src/internal/graph/service.go::Verify` |
 | Agent loop + execution plan    | `src/internal/orchestrator/service.go::AgentLoop` + `::ExecutionPlan` |

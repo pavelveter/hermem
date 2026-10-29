@@ -32,13 +32,20 @@ benchstat bench/baseline/baseline.txt bench_new.txt
 
 The following functions are performance-critical and should be benchmarked on every release:
 
-| Function | Package | Why |
-|----------|---------|-----|
-| `BatchDotProducts` | `vector` | Core of all vector search operations |
-| `CosineSimilarity` | `vector` | Used in dedup and retrieval scoring |
-| `InMemoryVectorIndex.SearchBatch` | `vector` | Brute-force batch search, O(n·q) |
-| `RetrievalPipeline.Execute` | `retrieval` | Full retrieval pipeline latency |
-| `store.splitSQL` | `store` | Migration startup cost |
+| Benchmark | Package | Why |
+|-----------|---------|-----|
+| `BenchmarkBatchDot_AMX` | `vector` | Core of all vector search operations |
+| `BenchmarkCosineSimilarity_768` | `vector` | Used in dedup and retrieval scoring |
+| `BenchmarkInMemorySearch` | `vector` | Brute-force search end to end, O(n·d) |
+| `BenchmarkSearchByVector` | `vector` | Search plus `WHERE id IN (...)` hydration |
+| `BenchmarkRetrieveContext` | `retrieval` | Full retrieval pipeline latency |
+| `BenchmarkExpandGraph` / `BenchmarkExpandGraphScaling` | `retrieval` | Graph-walk CTE cost, and its growth with graph size |
+| `BenchmarkFindConnectedComponents` | `store` | Component scan over the CSR adjacency |
+| `BenchmarkDetectCommunities` / `BenchmarkLoadGraph` | `graph/community` | Louvain passes and graph loading |
+| `BenchmarkCluster` | `compression` | Pairwise-similarity clustering |
+
+`store.splitSQL` (migration startup) is intentionally absent — it is one-shot
+code, not a hot path; see `docs/perf-budgets.md`.
 
 ## Regression Gates
 

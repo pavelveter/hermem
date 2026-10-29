@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Vector search returned results out of similarity order.** `SearchByVector`
+  re-hydrated rows from `WHERE id IN (...)` in storage order, so the top-K list
+  was silently reshuffled. Ranking is now taken from the vector store's hits,
+  which are already ordered by descending similarity; archived or vanished rows
+  are dropped.
+- **Graph-edge loss on entity upsert.** The upsert used
+  `INSERT OR REPLACE INTO entities`, which SQLite implements as a delete plus an
+  insert — cascading away every edge that referenced the row. Replaced with
+  `INSERT ... ON CONFLICT DO UPDATE`.
+- **Quantized vectors aliased pooled memory.** `QuantizeVector` could return codes
+  backed by memory that the caller then returned to a shared pool. Codes are now
+  an owned slice.
+- **Truncated reads looked complete.** Row-iteration errors were dropped in the
+  graph-walk and entity-hydration reads, so a mid-scan failure surfaced as a
+  short, successful result. `rows.Err()` now propagates on the hot and
+  diagnostic read paths.
+
+### Changed — performance
+
+- **Connected components** (`store.FindConnectedComponents`) walk a dense
+  `int32` index over one CSR adjacency array instead of `map[string][]string`
+  plus a map-based visited set. 5k nodes: 8.88ms → 6.89ms, 125k → 105k allocs.
+  Archiving still only prevents a node from *seeding* a component, so an edge
+  running through an archived entity keeps joining the live entities on both
+  sides — now pinned by tests.
+- **Community detection** (`graph/community.DetectCommunities`) resolves
+  adjacency to integer indices once per call and replaces the per-node sort with
+  a linear scan that breaks ties identically. 3k nodes / 12k edges: 10.79ms →
+  4.48ms, 34k → 7k allocs, identical partition (asserted against the old
+  algorithm over 400 random graphs).
+- **Graph walk** (`retrieval.expandGraph`) writes the recursive step as two
+  `UNION ALL` branches and reuses prepared statements instead of re-preparing the
+  CTE on every call. `BenchmarkExpandGraphScaling` 18.9ms → 300μs.
+- **In-memory vector store** keeps vectors contiguous per namespace, so search
+  hands the whole matrix to BLAS with no per-query copy. 10k × 768:
+  6.3ms / 31MB → 1.0ms / 44KB.
+- **Batched writes**: the retention archive sweep, the confidence-lifecycle sweep
+  and the access-metrics flush each issue one `UPDATE ... WHERE id IN (...)` per
+  batch instead of one per row. 500 rows: 1.56ms → 0.45ms.
+- **New indexes** (migration `015_idx_entity_lookups.sql`) for the provenance
+  lookups and the retention sweep. Provenance 887μs → 95μs, retention
+  1.65ms → 4.3μs.
+
+### Added
+
+- Benchmarks: `BenchmarkInMemorySearch`, `BenchmarkSearchByVector`,
+  `BenchmarkExpandGraphScaling`, `BenchmarkFindConnectedComponents`,
+  `BenchmarkDetectCommunities`, `BenchmarkLoadGraph`.
+- Tests: vector search ordering (including the archived-drop case), statement
+  cache reuse, the provenance/retention `EXPLAIN QUERY PLAN` guard, batched
+  retention archiving, batched metrics flush, and the connected-component
+  archived-bridge contract.
+
 ## [v0.4.1]
 
 ### Fixed
