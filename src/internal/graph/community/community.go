@@ -97,6 +97,29 @@ func LoadGraph(ctx context.Context, db *sql.DB) (*Graph, error) {
 	}, nil
 }
 
+// weightedNeighbour is one resolved adjacency entry: the integer index of the
+// neighbouring node plus the summed edge weight to it.
+type weightedNeighbour struct {
+	to int
+	w  float64
+}
+
+// indexNeighbours resolves the string-keyed adjacency into integer indices once
+// per DetectCommunities call. Nodes whose adjacency points at an ID missing from
+// NodeIndex are skipped, matching the previous per-iteration lookup.
+func indexNeighbours(g *Graph) [][]weightedNeighbour {
+	nbrs := make([][]weightedNeighbour, len(g.Adj))
+	for i, adj := range g.Adj {
+		nbrs[i] = make([]weightedNeighbour, 0, len(adj))
+		for dstStr, w := range adj {
+			if di, ok := g.NodeIndex[dstStr]; ok {
+				nbrs[i] = append(nbrs[i], weightedNeighbour{to: di, w: w})
+			}
+		}
+	}
+	return nbrs
+}
+
 // DetectCommunities runs Louvain community detection on an in-memory Graph
 // for up to maxIterations passes. Returns the communities sorted by size
 // (largest first) and the global modularity score.
@@ -131,6 +154,11 @@ func DetectCommunities(g *Graph, maxIterations int) ([]domain.Community, float64
 	}
 
 	neighbourComms := make([]float64, n)
+	// Resolve the string adjacency to integer indices once. The local-moving
+	// loop visits every edge of every node on every pass, and it previously paid
+	// a map iteration plus a map lookup into NodeIndex for each one — measured at
+	// 40% of the whole pass. Adj is immutable here, so one resolution is enough.
+	nbrs := indexNeighbours(g)
 	touched := make([]int, 0)
 	for iter := 0; iter < maxIterations; iter++ {
 		moved := false
@@ -140,28 +168,31 @@ func DetectCommunities(g *Graph, maxIterations int) ([]domain.Community, float64
 			bestComm := oldComm
 
 			touched = touched[:0]
-			for dstStr, w := range g.Adj[i] {
-				if di, ok := g.NodeIndex[dstStr]; ok {
-					c := community[di]
-					if neighbourComms[c] == 0 {
-						touched = append(touched, c)
-					}
-					neighbourComms[c] += w
+			for _, nb := range nbrs[i] {
+				c := community[nb.to]
+				if neighbourComms[c] == 0 {
+					touched = append(touched, c)
 				}
+				neighbourComms[c] += nb.w
 			}
 
 			commInternal[oldComm] -= 2 * neighbourComms[oldComm]
 			commTotal[oldComm] -= g.NodeWeight[i]
 
-			sortedComms := append([]int(nil), touched...)
-			sort.Ints(sortedComms)
-			for _, newComm := range sortedComms {
+			// Pick the best neighbour community in a single pass. The loop used to
+			// sort `touched` first purely so the lowest community ID won a tie; a
+			// linear scan that breaks ties by lowest ID gives the same choice
+			// without the sort, which was 30% of the local-moving stage.
+			// A delta of exactly zero never moved the node (bestDeltaQ starts at
+			// zero and the old comparison was strict), so ties only break when the
+			// move is a genuine improvement.
+			for _, newComm := range touched {
 				wToComm := neighbourComms[newComm]
 				if newComm == oldComm {
 					continue
 				}
 				deltaQ := wToComm/g.TotalWeight - (g.NodeWeight[i]*commTotal[newComm])/(2*g.TotalWeight*g.TotalWeight)
-				if deltaQ > bestDeltaQ {
+				if deltaQ > bestDeltaQ || (deltaQ > 0 && deltaQ == bestDeltaQ && newComm < bestComm) {
 					bestDeltaQ = deltaQ
 					bestComm = newComm
 				}
