@@ -70,6 +70,34 @@ func BenchmarkExpandGraph(b *testing.B) {
 	}
 }
 
+// benchScalingNodes sizes the graph-expansion scaling fixture. The 50-node
+// fixture above is too small to expose a bad recursive-CTE plan.
+const benchScalingNodes = 1000
+
+// BenchmarkExpandGraphScaling guards the recursive CTE query plan. The walk
+// must resolve neighbours through the edges source/target indexes and entities
+// by primary key; if the entity join degenerates into a scan, this benchmark
+// jumps from sub-millisecond to ~19ms on this fixture.
+func BenchmarkExpandGraphScaling(b *testing.B) {
+	db := openTestDB(b)
+	for i := 0; i < benchScalingNodes; i++ {
+		seedEntityWithEmbedding(b, db, fmt.Sprintf("scale-%d", i), "world",
+			fmt.Sprintf("scale-fact-%d", i), []float32{float32(i%5) / 5, 0.5, 0.5})
+	}
+	for i := 0; i < benchScalingNodes; i++ {
+		for _, d := range []int{1, 7, 13} {
+			seedEdge(b, db, fmt.Sprintf("scale-%d", i), fmt.Sprintf("scale-%d", (i+d)%benchScalingNodes), "related_to")
+		}
+	}
+	seeds := []string{"scale-0", "scale-1", "scale-2"}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := expandGraph(db, seeds, RetrieveContextOptions{MaxDepth: 2}, 2); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkScoreAndRank(b *testing.B) {
 	db, seedID := benchSetup(b)
 	items := preBuiltScanned(b, db, seedID)
