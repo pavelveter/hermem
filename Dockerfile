@@ -76,7 +76,7 @@ EXPOSE 8420
 # start-period gives the binary + DB init time to settle.
 # retries=2 fails fast — orchestrators restart quickly on unhealthy.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=2 \
-    CMD curl -sf http://localhost:8420/health/live || exit 1
+    CMD ["curl", "-sf", "http://localhost:8420/health/live"]
 
 ENTRYPOINT ["hermem"]
 CMD ["serve"]
