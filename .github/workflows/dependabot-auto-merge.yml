@@ -27,14 +27,23 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   dependabot:
     runs-on: ubuntu-latest
     if: ${{ github.actor == 'dependabot[bot]' }}
     timeout-minutes: 5
+    # Per-job scope lift: `contents: read` is the workflow-level
+    # least-privilege default, so any job added later inherits read.
+    # This job specifically needs writes:
+    #   - `contents: write` — `gh pr merge --auto` backs onto the
+    #     mergePullRequest GraphQL mutation, which is rejected with
+    #     "Resource not accessible by integration" without it.
+    #   - `pull-requests: write` — approve the PR.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Dependabot metadata
         id: metadata

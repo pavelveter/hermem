@@ -23,7 +23,7 @@ make benchmarks
 go test -bench=BenchmarkCosine -benchmem -count=3 ./src/internal/vector/...
 
 # Compare against baseline
-go install golang.org/x/perf/cmd/benchstat@latest
+go install golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e
 go test -bench=. -benchmem -count=6 -run='^$' ./src/... | tee bench_new.txt
 benchstat bench/baseline/baseline.txt bench_new.txt
 ```
