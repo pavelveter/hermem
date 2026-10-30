@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.5]
+
 ### Fixed
 
 - **Vector search returned results out of similarity order.** `SearchByVector`
@@ -73,6 +75,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cache reuse, the provenance/retention `EXPLAIN QUERY PLAN` guard, batched
   retention archiving, batched metrics flush, and the connected-component
   archived-bridge contract.
+
+### CI
+
+- **Dockerfile `HEALTHCHECK` uses JSON notation.** `CMD curl -sf … || exit 1`
+  became `CMD ["curl", "-sf", …]`, clearing the `DL3025` finding that
+  hadolint ≥ v2.15.1 raises at the repo's `warning` failure threshold. The
+  `|| exit 1` was redundant — `curl -sf` already exits non-zero when the probe
+  fails. This unblocked the `hadolint-action` v3.3.0 → v3.5.0 bump.
 
 ## [v0.4.1]
 

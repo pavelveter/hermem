@@ -10,7 +10,7 @@ independent.
 
 | Server | Go SDK | Python SDK | TS SDK |
 |--------|--------|------------|--------|
-| 0.3.0  | 0.x    | 0.1.0      | 0.1.0  |
+| 0.4.5  | 0.4.5  | 0.4.5      | 0.4.5  |
 
 ## Version Header
 

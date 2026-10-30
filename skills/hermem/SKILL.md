@@ -1,7 +1,7 @@
 ---
 name: hermem
 description: Lightweight graph memory for Hermes — store facts, search by vector similarity, retrieve connected context
-version: 0.4.0
+version: 0.4.5
 metadata:
   hermes:
     tags: [memory, graph, vector-search, sqlite, task-state]
@@ -27,6 +27,7 @@ Lightweight graph memory via the Hermem CLI binary. No server is required for no
 ```bash
 # Top-level
 hermem serve [--port 8420]               HTTP server (SIGHUP reloads hermem.ini)
+hermem view [--port 8421] [--no-open] [--limit N]   Read-only browser graph view
 hermem health                            DB ping (mirrors /health/ready, exit 1 on fail)
 hermem metrics                           Prometheus exposition
 hermem version                           ldflags build metadata

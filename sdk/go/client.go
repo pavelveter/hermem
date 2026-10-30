@@ -34,7 +34,7 @@ import (
 
 // SDKVersion is the Go SDK's semantic version. Must match the server's
 // MAJOR version for compatibility.
-const SDKVersion = "0.4.1"
+const SDKVersion = "0.4.5"
 
 // Client is the Hermem API client.
 type Client struct {
