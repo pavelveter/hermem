@@ -63,6 +63,7 @@ extraction engine.
 
 Group layout:
   serve       Start the HTTP server (default :8420)
+  view        Interactive knowledge graph in a browser (read-only, loopback)
   health      Health probe (pings the DB)
   metrics     Prometheus exposition
   version     Print build version
@@ -164,6 +165,7 @@ func NewRootCommand(env *clienv.Env) *cobra.Command {
 		newCompletionCmd(env),
 		newConfigCmd(env),
 		newDocsCmd(env),
+		newViewCmd(env),
 		newIDCmd(env),
 		newMCPCmd(env),
 		admin.NewCmd(env),

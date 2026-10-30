@@ -111,6 +111,7 @@ The goal is not to build the biggest memory system. The goal is to build one tha
 ## Features
 
 - **CLI + HTTP server** — single binary, two modes
+- **Browser graph view** — `hermem view` serves a read-only interactive graph of the active database on loopback
 - **Shell completion** — `hermem completion bash|zsh|fish` for tab-completion in all major shells
 - **OpenAI-compatible** — works with Ollama or any OpenAI-compatible API
 - **Separate embedder/extractor providers** — Ollama for embeddings, OpenAI for extraction (or vice versa)

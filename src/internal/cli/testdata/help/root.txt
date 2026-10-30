@@ -11,6 +11,7 @@ extraction engine.
 
 Group layout:
   serve       Start the HTTP server (default :8420)
+  view        Interactive knowledge graph in a browser (read-only, loopback)
   health      Health probe (pings the DB)
   metrics     Prometheus exposition
   version     Print build version
@@ -55,6 +56,7 @@ Available Commands:
   task        Task lifecycle (status / list / show / dep / tree / create / rollback / next)
   time        Temporal queries (temporal / timeline)
   version     Print build version (Version / BuildDate / GitCommit)
+  view        Open the knowledge graph in a browser (local, read-only)
 
 Flags:
       --config string   path to hermem.ini (overrides HERMEM_INI env and binary-dir default)

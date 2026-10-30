@@ -2,7 +2,9 @@
 
 Full reference for the `hermem` CLI. Every command reads JSON from
 stdin and writes JSON to stdout. There is no REPL, no daemon, no IPC —
-every invocation is a one-shot read-process-print.
+every invocation is a one-shot read-process-print. The single exception
+is `hermem view` (see below), which serves a local browser page until
+Ctrl-C.
 
 For server mode, see [SERVER.md](SERVER.md). For configuration, see
 [USAGE.md](USAGE.md). For production operations, see
@@ -18,6 +20,7 @@ plus 6 subcommand groups; every group has its own `--help`.
 ```bash
 # Top-level
 hermem serve [--port 8420]                    HTTP server
+hermem view [--port 8421] [--no-open] [--limit N]   Browser graph (read-only)
 hermem health                                 DB ping (exit 1 on fail)
 hermem metrics                                Prometheus exposition
 hermem version                                Build metadata (ldflags)
@@ -272,6 +275,34 @@ from the database's `meta` table. Warns if they differ.
 # Current schema fingerprint:  a1b2c3d4e5f6g7h8
 # Stored schema fingerprint:   a1b2c3d4e5f6g7h8
 ```
+
+### `hermem view`
+
+Serves an interactive graph of the active database on loopback and opens
+it in a browser. Read-only: it never writes to the database, and the
+listener binds `127.0.0.1` only.
+
+```bash
+./hermem view                        # → http://127.0.0.1:8421/
+./hermem view --port 9000            # custom port
+./hermem view --no-open              # print the URL, do not launch a browser
+./hermem view --limit 200            # render at most 200 nodes
+```
+
+Entities are nodes (colour = category, radius = degree) and typed edges
+are links. Drag a node to pin it, drag the background to pan, scroll to
+zoom, click a node for its content and connections, and toggle node
+types / relationships in the sidebar. Refresh re-reads the database.
+The process blocks until Ctrl-C.
+
+The snapshot is capped at **500 nodes, highest degree first**, to keep the
+force simulation interactive; `--limit` can only lower that cap. Edges are
+only those with both endpoints in the snapshot. The page reports how many
+of the total nodes it is showing. For whole-database analysis use
+`hermem graph components` / `hermem graph communities`.
+
+Endpoints: `/` (the page) and `/api/graph` (the snapshot as JSON, with
+`nodes`, `edges`, `total_nodes`, `total_edges`, `truncated`).
 
 ---
 
@@ -553,6 +584,7 @@ When no rollback task is found, `rollback_task_id` is `""`.
 | Communities         | `./hermem graph communities`                           | `curl …/communities?min_size=N&max_iterations=N`      |
 | Re-embed            | `./hermem memory re-embed [--batch-size N] [--model M]`| `curl -X POST …/admin/re-embed -d '{…}'`               |
 | Health              | `./hermem health` (exit 1 on DB unreachable)             | `curl …/health/ready`                                 |
+| Graph viewer        | `./hermem view [--port 8421]` (localhost browser page)  | n/a — separate read-only loopback server              |
 | Metrics             | `./hermem metrics`                                     | `curl …/metrics`                                      |
 | Long-running        | No — one-shot per process                              | Yes — single process, multiple requests               |
 | Errors              | Exit non-zero + cobra error renderer to stderr         | `HTTP 400` + structured `ErrorResponse` body          |

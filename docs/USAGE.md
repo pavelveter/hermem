@@ -24,6 +24,9 @@ echo '{"query":"What is Go?"}' | ./hermem memory query
 # Server mode: long-running HTTP service on :8420.
 ./hermem serve --port 8420 &
 curl -s http://localhost:8420/health   # → {"status":"ok"}
+
+# Graph view: read-only interactive browser page on :8421 (Ctrl-C to stop).
+./hermem view
 ```
 
 Hermem reads `hermem.ini` from the working directory in both modes. If
