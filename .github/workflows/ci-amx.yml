@@ -42,14 +42,11 @@ jobs:
     name: Apple AMX/Accelerate runtime guard
     runs-on: macos-latest
     timeout-minutes: 10
-    # Per-job lift: workflow-level `contents: read` is the principle of
-    # least-privilege default, but `actions/upload-artifact@v7` (the
-    # bench-amx.txt step below) needs `contents: write` on github-hosted
-    # runners when the org's "Workflow permissions" setting is the
-    # read-only opt-in. Lift explicitly here so future settings changes
-    # don't silently break the AMX benchmark upload.
-    permissions:
-      contents: write
+    # No job-level scope lift is needed: `actions/upload-artifact` authenticates
+    # with the runner's internal artifact service token, not `GITHUB_TOKEN`, so
+    # the workflow-level `contents: read` default is sufficient. Requesting
+    # `contents: write` here would be an unnecessary privilege grant (and is
+    # what OpenSSF Scorecard flagged as Token-Permissions).
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenSSF Scorecard Pinned-Dependencies.** `.github/workflows/bench.yml`
+  still referenced `actions/checkout@v5`, `actions/setup-go@v7`,
+  `actions/upload-artifact@v7` and installed `benchstat` from `@latest`,
+  which the Scorecard `Pinned-Dependencies` check flagged as unpinned. All
+  four are now pinned by 40-hex commit SHA / module pseudo-version, matching
+  the rest of the workflows. `scripts/pin-actions.sh` — the repo's own
+  pinning tool — had a mangled quoting bug on its `gh` presence check that
+  made it fail to parse; fixed so it is runnable again.
+- **OpenSSF Scorecard Token-Permissions.** `dependabot-auto-merge.yml`
+  declared `contents: write` at the workflow top level, which made the whole
+  Token-Permissions check score 0 and emitted a warning alert for every
+  workflow with a job-level `contents: write`. The write scope now lives on
+  the single `dependabot` job (workflow default is `contents: read`).
+  The defensive `contents: write` lifts on the artifact-upload-only jobs
+  (`ci-amx.yml` `amx-guard`, `release.yml` `completions` / `checksums`) were
+  dropped — `actions/upload-artifact` authenticates with the runner's
+  internal artifact token, not `GITHUB_TOKEN`, which the already-green
+  `ci.yml` `coverage` upload under `contents: read` demonstrates.
+
 ## [v0.4.5]
 
 ### Fixed
