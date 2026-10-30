@@ -291,9 +291,10 @@ listener binds `127.0.0.1` only.
 
 Entities are nodes (colour = category, radius = degree) and typed edges
 are links. Drag a node to pin it, drag the background to pan, scroll to
-zoom, click a node for its content and connections, and toggle node
-types / relationships in the sidebar. Refresh re-reads the database.
-The process blocks until Ctrl-C.
+zoom, click a node for its content and connections, hover a node or an
+edge for its label, and toggle node types / relationships in the sidebar.
+Refresh re-reads the database. The process blocks until Ctrl-C, then exits
+with the repo-wide SIGINT convention (130), the same as `hermem serve`.
 
 The snapshot is capped at **500 nodes, highest degree first**, to keep the
 force simulation interactive; `--limit` can only lower that cap. Edges are

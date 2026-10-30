@@ -120,11 +120,36 @@ Only created when `[database] backend = sqlite-vec`; the default
 ### Migrations
 
 Hermem uses a versioned migration system (`schema_migrations` table).
-Each embedded SQL migration in `src/migrations/` is tracked with an
-applied-at timestamp. `InitDB` applies unapplied files in ordered
+Each embedded SQL migration in `src/internal/store/migrations/` is tracked
+with an applied-at timestamp. `InitDB` applies unapplied files in ordered
 transactions at startup; `hermem db migrate` shows status for operator
 visibility. To change the schema, write a new migration file and
 re-build.
+
+A migration is applied exactly once, keyed by filename. **Never append
+statements to a migration that has already shipped** — the file is recorded
+as applied, so the new statements never run on existing databases. Write a
+new numbered file instead. If a migration was edited after release, existing
+databases silently miss the appended columns and a later index migration that
+references them fails at startup with `no such column`.
+
+To repair a database in that state, compare its columns against a fresh one
+and add only the missing ones (SQLite cannot add a column with a non-constant
+default):
+
+```bash
+# 1. Diff the live schema against a freshly migrated database.
+hermem ops stats --json                       # sanity-check counts first
+sqlite3 hermem.db "PRAGMA table_info(entities);"
+
+# 2. Add only the missing columns, then confirm the pending migration applies.
+sqlite3 hermem.db "ALTER TABLE entities ADD COLUMN source TEXT DEFAULT '';"
+hermem db migrate                              # should report no pending files
+hermem ops integrity                           # exit 0 = OK
+```
+
+Back up `hermem.db` (and any `-wal`/`-shm` siblings) first, and run
+`PRAGMA wal_checkpoint(TRUNCATE)` so the copy is complete.
 
 For full embedder-model switches, write a new `hermem.db` and
 re-ingest (`hermem memory ingest` against every persisted dialog is

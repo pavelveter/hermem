@@ -54,6 +54,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`hermem view` — local knowledge graph viewer.** Serves an interactive
+  canvas of the active database on `127.0.0.1` (default port `8421`,
+  `--port/-p`, `--no-open`, `--limit`) and opens it in a browser. Entities are
+  nodes (colour = category, radius = degree) and typed edges are links; drag a
+  node to pin it, drag the background to pan, scroll to zoom, click a node for
+  its content/degree/relations, hover a node or an edge for its label, and
+  filter by node type and relation. Refresh re-reads the database.
+  Read-only: four SQL statements, loopback-only listener, no new Go dependency,
+  one `go:embed` page with no JS build step. The snapshot is capped at 500 nodes
+  (highest degree first) because the page runs an O(n²) force simulation;
+  `--limit` can only lower that cap. See `docs/specs/graph-view.md` and
+  `docs/CLI.md`.
 - Benchmarks: `BenchmarkInMemorySearch`, `BenchmarkSearchByVector`,
   `BenchmarkExpandGraphScaling`, `BenchmarkFindConnectedComponents`,
   `BenchmarkDetectCommunities`, `BenchmarkLoadGraph`.
