@@ -102,66 +102,19 @@ func (s *Service) RunOnce(ctx context.Context, policy Policy) (rep Report, err e
 		policy.DedupThreshold = 0.88
 	}
 
-	// Load candidate entities (low-order: observation + fact).
-	rows, qerr := s.db.QueryContext(ctx,
-		`SELECT id, category, content, embedding FROM entities WHERE archived = 0 AND category IN ('observation','fact')`)
-	if qerr != nil {
-		rep.Error = qerr.Error()
-		err = fmt.Errorf("consolidation: select: %w", qerr)
+	ents, lerr := loadCandidateEntities(ctx, s.db)
+	if lerr != nil {
+		rep.Error = lerr.Error()
+		err = lerr
 		return
 	}
-	defer rows.Close()
-
-	type cand struct {
-		id        string
-		category  string
-		content   string
-		embedding []float32
-	}
-	var cands []cand
-	for rows.Next() {
-		var c cand
-		var emb []byte
-		if serr := rows.Scan(&c.id, &c.category, &c.content, &emb); serr != nil {
-			rep.Error = serr.Error()
-			err = fmt.Errorf("consolidation: scan: %w", serr)
-			return
-		}
-		c.embedding = bytesToFloats(emb)
-		cands = append(cands, c)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		rep.Error = rerr.Error()
-		err = fmt.Errorf("consolidation: rows: %w", rerr)
+	if len(ents) < 2 {
 		return
 	}
 
-	if len(cands) < 2 {
-		return
-	}
-
-	// Convert to domain entities for clustering.
-	ents := make([]domain.Entity, len(cands))
-	for i, c := range cands {
-		ents[i] = domain.Entity{ID: c.id, Category: c.category, Content: c.content, Embedding: c.embedding}
-	}
-
-	// Load edges among candidates for graph-adjacency clustering.
-	edgeSet := map[string]bool{}
-	erows, eerr := s.db.QueryContext(ctx, `SELECT source_id, target_id FROM edges`)
-	if eerr == nil {
-		defer erows.Close()
-		for erows.Next() {
-			var src, dst string
-			if err := erows.Scan(&src, &dst); err == nil {
-				edgeSet[src+"->"+dst] = true
-				edgeSet[dst+"->"+src] = true
-			}
-		}
-	}
-
+	edgeSet := loadEdgeSet(ctx, s.db)
 	clusters := ClusterEntitiesWithEdges(ents, policy.DedupThreshold, edgeSet)
-	// Only clusters with >= 2 members are actionable.
+
 	var actionable [][]domain.Entity
 	for _, cl := range clusters {
 		if len(cl) >= 2 {
@@ -172,18 +125,15 @@ func (s *Service) RunOnce(ctx context.Context, policy Policy) (rep Report, err e
 		return
 	}
 
-	// Count clustered nodes.
 	for _, cl := range actionable {
 		rep.NodesClustered += len(cl)
 	}
 
 	if s.extractor == nil {
-		// No synthesis possible; still report clustered count.
 		return
 	}
 
 	for _, cl := range actionable {
-		// Split into chunks of ClusterSize.
 		for start := 0; start < len(cl); start += policy.ClusterSize {
 			end := start + policy.ClusterSize
 			if end > len(cl) {
@@ -193,94 +143,132 @@ func (s *Service) RunOnce(ctx context.Context, policy Policy) (rep Report, err e
 			if len(chunk) < 2 {
 				continue
 			}
-			// Build prompt.
-			prompt := BuildSynthesisPrompt(chunk)
-			res, xerr := s.extractor.ExtractEntities(ctx, prompt)
-			if xerr != nil {
-				slog.Warn("consolidation extract failed", "err", xerr)
-				continue
+			ok, archived := s.synthesizeChunk(ctx, chunk)
+			if ok {
+				rep.NodesSynthesized++
+				rep.NodesArchived += archived
 			}
-			if res == nil || len(res.Entities) == 0 {
-				continue
-			}
-			syn := res.Entities[0]
-			cat := syn.Category
-			if cat == "" || !allowedConsolidationCategory(cat) {
-				cat = "fact"
-			}
-			content := syn.Content
-			if content == "" {
-				// Fallback: concatenate.
-				var b strings.Builder
-				for _, e := range chunk {
-					b.WriteString(e.Content)
-					b.WriteString(" ")
-				}
-				content = strings.TrimSpace(b.String())
-			}
+		}
+	}
+	return
+}
 
-			// Embed content.
-			var emb []float32
-			if s.embedder != nil {
-				if e, err := s.embedder.Embed(ctx, content); err == nil {
-					emb = e
-				}
-			}
+func loadCandidateEntities(ctx context.Context, db *sql.DB) ([]domain.Entity, error) {
+	rows, qerr := db.QueryContext(ctx,
+		`SELECT id, category, content, embedding FROM entities WHERE archived = 0 AND category IN ('observation','fact')`)
+	if qerr != nil {
+		return nil, fmt.Errorf("consolidation: select: %w", qerr)
+	}
+	defer rows.Close()
 
-			newID := fmt.Sprintf("consolidated-%d", time.Now().UnixNano())
+	var ents []domain.Entity
+	for rows.Next() {
+		var id, category, content string
+		var emb []byte
+		if serr := rows.Scan(&id, &category, &content, &emb); serr != nil {
+			return nil, fmt.Errorf("consolidation: scan: %w", serr)
+		}
+		ents = append(ents, domain.Entity{ID: id, Category: category, Content: content, Embedding: bytesToFloats(emb)})
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return nil, fmt.Errorf("consolidation: rows: %w", rerr)
+	}
+	return ents, nil
+}
 
-			// Persist in transaction.
-			tx, berr := s.db.BeginTx(ctx, nil)
-			if berr != nil {
-				slog.Warn("consolidation begin tx", "err", berr)
-				continue
-			}
-			// Insert new entity.
-			embBytes := store.EmbeddingToBytes(emb)
-			_, ierr := tx.ExecContext(ctx, `INSERT INTO entities (id, category, content, embedding, updated_at, archived) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 0)`,
-				newID, cat, content, embBytes)
-			if ierr != nil {
-				tx.Rollback()
-				slog.Warn("consolidation insert", "err", ierr)
-				continue
-			}
-			// Add extracted_from edges.
-			for _, src := range chunk {
-				_, _ = tx.ExecContext(ctx, `INSERT OR IGNORE INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, 'extracted_from', 1.0)`,
-					newID, src.ID)
-			}
-			// Archive sources.
-			ids := make([]interface{}, len(chunk))
-			phs := make([]string, len(chunk))
-			for i, e := range chunk {
-				phs[i] = "?"
-				ids[i] = e.ID
-			}
-			_, _ = tx.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id IN (`+strings.Join(phs, ",")+`)`, ids...)
-			if cerr := tx.Commit(); cerr != nil {
-				tx.Rollback()
-				slog.Warn("consolidation commit", "err", cerr)
-				continue
-			}
+func loadEdgeSet(ctx context.Context, db *sql.DB) map[string]bool {
+	edgeSet := map[string]bool{}
+	erows, eerr := db.QueryContext(ctx, `SELECT source_id, target_id FROM edges`)
+	if eerr != nil {
+		return edgeSet
+	}
+	defer erows.Close()
+	for erows.Next() {
+		var src, dst string
+		if err := erows.Scan(&src, &dst); err == nil {
+			edgeSet[src+"->"+dst] = true
+			edgeSet[dst+"->"+src] = true
+		}
+	}
+	return edgeSet
+}
 
-			// Vector index updates.
-			if s.vi != nil {
-				if len(emb) > 0 {
-					_ = s.vi.Upsert(ctx, []spi.VectorRecord{{Namespace: spi.DefaultNamespace, ID: newID, Vector: emb}})
-				}
-				srcIDs := make([]string, len(chunk))
-				for i, e := range chunk {
-					srcIDs[i] = e.ID
-				}
-				_ = s.vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: srcIDs})
-			}
+func (s *Service) synthesizeChunk(ctx context.Context, chunk []domain.Entity) (bool, int) {
+	prompt := BuildSynthesisPrompt(chunk)
+	res, xerr := s.extractor.ExtractEntities(ctx, prompt)
+	if xerr != nil {
+		slog.Warn("consolidation extract failed", "err", xerr)
+		return false, 0
+	}
+	if res == nil || len(res.Entities) == 0 {
+		return false, 0
+	}
+	syn := res.Entities[0]
+	cat := syn.Category
+	if cat == "" || !allowedConsolidationCategory(cat) {
+		cat = "fact"
+	}
+	content := syn.Content
+	if content == "" {
+		var b strings.Builder
+		for _, e := range chunk {
+			b.WriteString(e.Content)
+			b.WriteString(" ")
+		}
+		content = strings.TrimSpace(b.String())
+	}
 
-			rep.NodesSynthesized++
-			rep.NodesArchived += len(chunk)
+	var emb []float32
+	if s.embedder != nil {
+		if e, err := s.embedder.Embed(ctx, content); err == nil {
+			emb = e
 		}
 	}
 
-	return
+	newID := fmt.Sprintf("consolidated-%d", time.Now().UnixNano())
+
+	tx, berr := s.db.BeginTx(ctx, nil)
+	if berr != nil {
+		slog.Warn("consolidation begin tx", "err", berr)
+		return false, 0
+	}
+	embBytes := store.EmbeddingToBytes(emb)
+	_, ierr := tx.ExecContext(ctx, `INSERT INTO entities (id, category, content, embedding, updated_at, archived) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 0)`,
+		newID, cat, content, embBytes)
+	if ierr != nil {
+		tx.Rollback()
+		slog.Warn("consolidation insert", "err", ierr)
+		return false, 0
+	}
+	for _, src := range chunk {
+		_, _ = tx.ExecContext(ctx, `INSERT OR IGNORE INTO edges (source_id, target_id, relation_type, weight) VALUES (?, ?, 'extracted_from', 1.0)`,
+			newID, src.ID)
+	}
+	ids := make([]interface{}, len(chunk))
+	phs := make([]string, len(chunk))
+	for i, e := range chunk {
+		phs[i] = "?"
+		ids[i] = e.ID
+	}
+	_, _ = tx.ExecContext(ctx, `UPDATE entities SET archived = 1 WHERE id IN (`+strings.Join(phs, ",")+`)`, ids...)
+	if cerr := tx.Commit(); cerr != nil {
+		tx.Rollback()
+		slog.Warn("consolidation commit", "err", cerr)
+		return false, 0
+	}
+
+	if s.vi != nil {
+		if len(emb) > 0 {
+			_ = s.vi.Upsert(ctx, []spi.VectorRecord{{Namespace: spi.DefaultNamespace, ID: newID, Vector: emb}})
+		}
+		srcIDs := make([]string, len(chunk))
+		for i, e := range chunk {
+			srcIDs[i] = e.ID
+		}
+		_ = s.vi.Delete(ctx, spi.DeleteRequest{Namespace: spi.DefaultNamespace, IDs: srcIDs})
+	}
+
+	return true, len(chunk)
 }
 
 func allowedConsolidationCategory(cat string) bool {
