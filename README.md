@@ -117,6 +117,7 @@ The goal is not to build the biggest memory system. The goal is to build one tha
 - **Separate embedder/extractor providers** — Ollama for embeddings, OpenAI for extraction (or vice versa)
 - **Typed DI container** — `app.Application` constructs all dependencies eagerly; no nil fields, no lazy init, explicit lifecycle ordering
 - **Pluggable vector search** — `InMemoryVectorIndex` (default, pure-Go brute-force) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
+- **Hybrid search** — `vector.HybridSearch` fuses an FTS5 lexical channel with the vector channel via Reciprocal Rank Fusion (RRF, k=60), with graceful fallback when either channel is unavailable
 - **Accelerate SIMD** — `cblas_sgemv` via CGo for AMX-optimised batch dot products on Apple Silicon
 - **Automatic retention** — configurable GC loop archives stale observation nodes
 - **Semantic consolidation** — background "graph sleep cycle" clusters redundant observations/facts, synthesizes high-order insights via LLM extraction, archives sources with provenance; `hermem memory consolidate` / `POST /admin/consolidate`

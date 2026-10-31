@@ -71,7 +71,7 @@ This document tracks planned, in-progress, and shipped features. Status indicato
 - Distributed replication
 - CRDT-based synchronization
 - Native reranker plugins
-- Hybrid lexical/vector retrieval
+- Hybrid lexical/vector retrieval — implemented via `vector.HybridSearch` (FTS5 + vector, RRF k=60)
 - Graph-aware agent planning
 - Incremental embedding updates
 
