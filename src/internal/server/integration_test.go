@@ -15,6 +15,7 @@ import (
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/ai"
+	consolidationdomain "github.com/pavelveter/hermem/src/internal/consolidation"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
@@ -27,6 +28,7 @@ import (
 	reembeddomain "github.com/pavelveter/hermem/src/internal/reembed"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
+	"github.com/pavelveter/hermem/src/internal/server/consolidation"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	"github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
@@ -135,6 +137,8 @@ func newTestFixture(t *testing.T) *testFixture {
 	retentionDom := retentiondomain.New(db, vi)
 	retentionPolicy := retentiondomain.Policy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
 	retentionShell := retention.New(retentionDom, metrics, refs, retentionPolicy)
+	consolidationDom := consolidationdomain.New(db, vi)
+	consolidationShell := consolidation.New(consolidationDom, metrics, refs, consolidationdomain.Default())
 	// PHASE 3.6 fixture: reembed HTTPService holds domain Service
 	// + metrics only (no Refs — reembed reads all entities directly
 	// from DB, no schema gates).
@@ -162,6 +166,7 @@ func newTestFixture(t *testing.T) *testFixture {
 		Graph:         graphSvc,
 		Migration:     migrSvc,
 		Retention:     retentionShell,
+		Consolidation: consolidationShell,
 		Reembed:       reembedShell,
 		Health:        healthShell,
 		Metrics:       metrics,
@@ -690,6 +695,8 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 	// consistent with the production sign call site.
 	retentionDom := retentiondomain.New(db, vi)
 	retentionPolicy := retentiondomain.Policy{ObservationTTL: 24 * time.Hour, RunInterval: 1 * time.Hour, DeleteBatchSize: 50}
+	consolidationDom := consolidationdomain.New(db, vi)
+	consolidationShell := consolidation.New(consolidationDom, metrics, refs, consolidationdomain.Default())
 	// PHASE 3.6: API-key auth fixture also needs the reembed
 	// HTTPService threaded into NewServer.
 	reembedDom := reembeddomain.New(db, vi, embed)
@@ -725,6 +732,7 @@ func TestAPIKeyAuth_RejectsWrongKey(t *testing.T) {
 		Graph:         graphSvc,
 		Migration:     migrSvc,
 		Retention:     retention.New(retentionDom, metrics, refs, retentionPolicy),
+		Consolidation: consolidationShell,
 		Reembed:       reembedShell,
 		Health:        healthShell,
 		Metrics:       metrics,

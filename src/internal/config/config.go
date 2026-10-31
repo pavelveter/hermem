@@ -14,6 +14,7 @@ import (
 	"github.com/pavelveter/hermem/src/internal/extraction"
 
 	"github.com/pavelveter/hermem/src/internal/ai"
+	"github.com/pavelveter/hermem/src/internal/consolidation"
 	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
@@ -43,6 +44,7 @@ type Config struct {
 	ExtraCategories    []string
 	ExtraRelationTypes []string
 	Retention          retention.Policy
+	Consolidation      consolidation.Policy
 	Ranking            domain.RankingWeight
 	RerankerProvider   string
 	RerankerURL        string

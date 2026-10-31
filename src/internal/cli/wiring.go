@@ -2,6 +2,7 @@ package cli
 
 import (
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
+	consolidationdomain "github.com/pavelveter/hermem/src/internal/consolidation"
 	contradictdomain "github.com/pavelveter/hermem/src/internal/contradiction"
 	edgedomain "github.com/pavelveter/hermem/src/internal/edge"
 	graphdomain "github.com/pavelveter/hermem/src/internal/graph"
@@ -13,6 +14,7 @@ import (
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
 	retdomain "github.com/pavelveter/hermem/src/internal/retrieval"
 	"github.com/pavelveter/hermem/src/internal/server"
+	cons "github.com/pavelveter/hermem/src/internal/server/consolidation"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	"github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
@@ -54,6 +56,7 @@ func wireAll(env *clienv.Env, refs *serverstate.Ref) *server.Server {
 	migrSvc := migrationdomain.New(env.DB)
 	ingestSvc := ingestdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
 	retentionSvc := retentiondomain.New(env.DB, env.VI)
+	consolidationSvc := consolidationdomain.New(env.DB, env.VI, env.Embedder, env.Extractor)
 
 	// HTTP shells + server
 	return server.NewServerFromDeps(server.ServerDeps{
@@ -68,6 +71,7 @@ func wireAll(env *clienv.Env, refs *serverstate.Ref) *server.Server {
 		Graph:         graphsrv.New(graphSvc, env.Metrics, refs, env.Cfg.VectorDim),
 		Migration:     migrsrv.New(migrSvc, env.Metrics, refs),
 		Retention:     retention.New(retentionSvc, env.Metrics, refs, env.Cfg.Retention),
+		Consolidation: cons.New(consolidationSvc, env.Metrics, refs, env.Cfg.Consolidation),
 		Reembed:       reembed.New(reembedSvc, env.Metrics),
 		Health:        healthsrv.New(healthSvc),
 		Metrics:       env.Metrics,

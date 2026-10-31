@@ -42,7 +42,8 @@ registration. Cross-reference with `api/paths.go`.
 | 30 | GET | `/db/verify` | HandleMigrationVerify | server/migration | Yes | ✅ |
 | 31 | GET | `/db/schema` | HandleSchemaFingerprint | server/migration | Yes | ✅ |
 | 32 | POST | `/admin/retention/run` | HandleRun | server/retention | Yes | ✅ |
-| 33 | POST | `/admin/re-embed` | HandleReEmbed | server/reembed | Yes | ✅ |
+| 33 | POST | `/admin/consolidate` | HandleConsolidate | server/consolidation | Yes | ✅ |
+| 34 | POST | `/admin/re-embed` | HandleReEmbed | server/reembed | Yes | ✅ |
 
 ## Infrastructure Routes (registered directly in server.go)
 

@@ -119,6 +119,7 @@ The goal is not to build the biggest memory system. The goal is to build one tha
 - **Pluggable vector search** — `InMemoryVectorIndex` (default, pure-Go brute-force) or `SqliteVecIndex` via `sqlite-vec` (indexed KNN)
 - **Accelerate SIMD** — `cblas_sgemv` via CGo for AMX-optimised batch dot products on Apple Silicon
 - **Automatic retention** — configurable GC loop archives stale observation nodes
+- **Semantic consolidation** — background "graph sleep cycle" clusters redundant observations/facts, synthesizes high-order insights via LLM extraction, archives sources with provenance; `hermem memory consolidate` / `POST /admin/consolidate`
 - **API key auth** — optional `X-API-Key` middleware; per-key scopes supported
 - **Structured logging** — `log/slog` with event fields + `request_id` tracing
 - **Request tracing** — every HTTP response gets `X-Request-ID`

@@ -35,6 +35,7 @@ use Go-style --name syntax (cobra-native). "hermem <group> --help" prints
 group usage; "hermem --help" prints the full tree.
 
 Available Commands:
+  consolidate Run semantic memory consolidation (graph sleep cycle)
   edge        Add or auto-create a relation edge between two entities (--auto-create creates missing endpoints)
   explain     Explain the reasoning path from query to retrieved entities
   ingest      Drain a dialog through the LLM extractor and ingest extracted facts

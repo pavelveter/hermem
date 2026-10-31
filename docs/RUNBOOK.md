@@ -487,6 +487,7 @@ diagram, see **[docs/service-dependencies.md](docs/service-dependencies.md)**.
 | Top-level CLI (`serve`, `health`, `metrics`, `version`) | `src/internal/cli/{serve,health,metrics,version}.go` |
 | Binary entry-point              | `src/main.go`                     |
 | Retention GC loop               | `src/internal/retention/` (domain Service) + `src/internal/server/retention/` (HTTP) |
+| Semantic consolidation          | `src/internal/consolidation/` (domain Service) + `src/internal/server/consolidation/` (HTTP) |
 | Health probes                   | `src/internal/health/` (domain Service) + `src/internal/server/health/` (HTTP) |
 | Accelerate SIMD cosine (darwin) | `src/internal/vector/cosine_darwin.go` (build-tag `darwin && cgo`) |
 | Pure-Go cosine fallback         | `src/internal/vector/cosine.go`   (build-tag `!darwin || !cgo`) |

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/pavelveter/hermem/src/internal/server/consolidation"
 	"github.com/pavelveter/hermem/src/internal/server/contradiction"
 	"github.com/pavelveter/hermem/src/internal/server/edge"
 	"github.com/pavelveter/hermem/src/internal/server/graph"
@@ -41,6 +42,7 @@ type RouteProvider interface {
 // A signature change to any shell's Routes() method (DRIFT: signature
 // drift) breaks these checks at compile time, before any request fires.
 var (
+	_ RouteProvider = (*consolidation.HTTPService)(nil)
 	_ RouteProvider = (*contradiction.HTTPService)(nil)
 	_ RouteProvider = (*edge.HTTPService)(nil)
 	_ RouteProvider = (*graph.HTTPService)(nil)

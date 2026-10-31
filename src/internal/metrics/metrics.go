@@ -125,6 +125,7 @@ type Metrics struct {
 	taskTreeCount         atomic.Int64
 	taskCreateCount       atomic.Int64
 	retentionRunCount     atomic.Int64
+	consolidationRunCount atomic.Int64
 	graphComponentsCount  atomic.Int64
 	graphCommunitiesCount atomic.Int64
 	graphVerifyCount      atomic.Int64
@@ -148,6 +149,7 @@ type Metrics struct {
 	pTaskTree         prometheus.Counter
 	pTaskCreate       prometheus.Counter
 	pRetentionRun     prometheus.Counter
+	pConsolidationRun prometheus.Counter
 	pGraphComponents  prometheus.Counter
 	pGraphCommunities prometheus.Counter
 	pGraphVerify      prometheus.Counter
@@ -249,6 +251,10 @@ func New() *Metrics {
 			Name: "hermem_retention_run_total",
 			Help: "Total retention GarbageCollector cycle runs counted.",
 		}),
+		pConsolidationRun: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "hermem_consolidation_run_total",
+			Help: "Total consolidation cycle runs counted.",
+		}),
 		pGraphComponents: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "hermem_graph_components_total",
 			Help: "Total /connected-components calls counted.",
@@ -298,6 +304,7 @@ func New() *Metrics {
 		m.pTaskStatus, m.pTaskExec, m.pTaskList, m.pTaskShow, m.pTaskDep,
 		m.pTaskRollback, m.pTaskTree, m.pTaskCreate,
 		m.pRetentionRun,
+		m.pConsolidationRun,
 		m.pGraphComponents, m.pGraphCommunities, m.pGraphVerify,
 	)
 	reg.MustRegister(
@@ -350,6 +357,7 @@ func (m *Metrics) IncTaskRollback()     { m.taskRollbackCount.Add(1); m.pTaskRol
 func (m *Metrics) IncTaskTree()         { m.taskTreeCount.Add(1); m.pTaskTree.Inc() }
 func (m *Metrics) IncTaskCreate()       { m.taskCreateCount.Add(1); m.pTaskCreate.Inc() }
 func (m *Metrics) IncRetentionRun()     { m.retentionRunCount.Add(1); m.pRetentionRun.Inc() }
+func (m *Metrics) IncConsolidationRun() { m.consolidationRunCount.Add(1); m.pConsolidationRun.Inc() }
 func (m *Metrics) IncGraphComponents()  { m.graphComponentsCount.Add(1); m.pGraphComponents.Inc() }
 func (m *Metrics) IncGraphCommunities() { m.graphCommunitiesCount.Add(1); m.pGraphCommunities.Inc() }
 func (m *Metrics) IncGraphVerify()      { m.graphVerifyCount.Add(1); m.pGraphVerify.Inc() }
@@ -484,6 +492,10 @@ func (m *Metrics) WriteExposition(w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	_, err = fmt.Fprintf(w, "# HELP hermem_consolidation_run_total Total consolidation runs\n# TYPE hermem_consolidation_run_total counter\nhermem_consolidation_run_total %d\n", m.consolidationRunCount.Load())
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "# HELP hermem_graph_components_total Total /connected-components calls\n# TYPE hermem_graph_components_total counter\nhermem_graph_components_total %d\n", m.graphComponentsCount.Load())
 	if err != nil {
 		return err
@@ -528,6 +540,7 @@ func (m *Metrics) Snapshot() map[string]uint64 {
 		"hermem_task_tree_total":         uint64(m.taskTreeCount.Load()),
 		"hermem_task_create_total":       uint64(m.taskCreateCount.Load()),
 		"hermem_retention_run_total":     uint64(m.retentionRunCount.Load()),
+		"hermem_consolidation_run_total": uint64(m.consolidationRunCount.Load()),
 		"hermem_graph_components_total":  uint64(m.graphComponentsCount.Load()),
 		"hermem_graph_communities_total": uint64(m.graphCommunitiesCount.Load()),
 		"hermem_graph_verify_total":      uint64(m.graphVerifyCount.Load()),

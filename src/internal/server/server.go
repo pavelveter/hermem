@@ -19,11 +19,13 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/spi"
 	clienv "github.com/pavelveter/hermem/src/internal/cli/env"
+	consolidationdomain "github.com/pavelveter/hermem/src/internal/consolidation"
 	"github.com/pavelveter/hermem/src/internal/httputil"
 	"github.com/pavelveter/hermem/src/internal/lifecycle"
 	"github.com/pavelveter/hermem/src/internal/lifecycle/components"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	retentiondomain "github.com/pavelveter/hermem/src/internal/retention"
+	"github.com/pavelveter/hermem/src/internal/server/consolidation"
 	cnd "github.com/pavelveter/hermem/src/internal/server/contradiction"
 	"github.com/pavelveter/hermem/src/internal/server/edge"
 	graphsrv "github.com/pavelveter/hermem/src/internal/server/graph"
@@ -68,6 +70,7 @@ type ServerDeps struct {
 	Graph         *graphsrv.HTTPService
 	Migration     *migrsrv.HTTPService
 	Retention     *retention.HTTPService
+	Consolidation *consolidation.HTTPService
 	Reembed       *reembed.HTTPService
 	Health        *healthsrv.HTTPService
 	Metrics       *metrics.Metrics
@@ -89,6 +92,7 @@ func NewServerFromDeps(deps ServerDeps) *Server {
 			{"Graph", deps.Graph},
 			{"Migration", deps.Migration},
 			{"Retention", deps.Retention},
+			{"Consolidation", deps.Consolidation},
 			{"Reembed", deps.Reembed},
 			{"Health", deps.Health},
 		},
@@ -275,6 +279,11 @@ func (s *Server) Serve(cfg ServeConfig) error {
 	mgr.Register(components.NewHTTPComponent(httpSrv))
 	gcSvc := retentiondomain.New(cfg.DB, cfg.VI)
 	mgr.Register(components.NewGCComponent(gcSvc, cfg.Retention))
+
+	if cfg.Env != nil {
+		consSvc := consolidationdomain.New(cfg.DB, cfg.VI, cfg.Env.Embedder, cfg.Env.Extractor)
+		mgr.Register(components.NewConsolidationComponent(consSvc, cfg.Env.Cfg.Consolidation))
+	}
 
 	// Block until SIGINT/SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -37,6 +37,7 @@ hermem memory ingest        < req.json        LLM-extract + dedup-merge
 hermem memory explain       < req.json        Retrieval with score breakdown
 hermem memory re-embed      [--batch-size N] [--model M]   Batch re-embed all
 hermem memory quantize      < req.json        Scalar int8 roundtrip + stats
+hermem memory consolidate                         Semantic consolidation (graph sleep cycle)
 
 # `hermem task …` — task lifecycle
 hermem task status          < req.json        Update task status
@@ -585,6 +586,7 @@ When no rollback task is found, `rollback_task_id` is `""`.
 | Connected components| `./hermem graph components`                            | `curl …/connected-components?min_size=N`              |
 | Communities         | `./hermem graph communities`                           | `curl …/communities?min_size=N&max_iterations=N`      |
 | Re-embed            | `./hermem memory re-embed [--batch-size N] [--model M]`| `curl -X POST …/admin/re-embed -d '{…}'`               |
+| Consolidate         | `./hermem memory consolidate`                          | `curl -X POST …/admin/consolidate`                     |
 | Health              | `./hermem health` (exit 1 on DB unreachable)             | `curl …/health/ready`                                 |
 | Graph viewer        | `./hermem view [--port 8421]` (localhost browser page)  | n/a — separate read-only loopback server              |
 | Metrics             | `./hermem metrics`                                     | `curl …/metrics`                                      |

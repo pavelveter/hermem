@@ -13,6 +13,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/domain"
 	"github.com/pavelveter/hermem/src/internal/auth"
+	"github.com/pavelveter/hermem/src/internal/consolidation"
 	"github.com/pavelveter/hermem/src/internal/retention"
 )
 
@@ -122,6 +123,7 @@ func defaultConfig() *Config {
 			RunInterval:     1 * time.Hour,
 			DeleteBatchSize: 500,
 		},
+		Consolidation:   consolidation.Default(),
 		Ranking:         domain.RankingWeight{},
 		RerankerTimeout: 30 * time.Second,
 		Schema:          domain.DefaultSchemaConfig(false),
@@ -247,6 +249,11 @@ func applyINIFields(cfg *Config, getStr getStrFunc, getInt getIntFunc, getFloat3
 	cfg.Retention.ObservationTTL = getDuration("retention", "observation_ttl", cfg.Retention.ObservationTTL)
 	cfg.Retention.RunInterval = getDuration("retention", "run_interval", cfg.Retention.RunInterval)
 	cfg.Retention.DeleteBatchSize = getInt("retention", "batch_size", cfg.Retention.DeleteBatchSize, 0)
+
+	// Consolidation section
+	cfg.Consolidation.Interval = getDuration("consolidation", "interval", cfg.Consolidation.Interval)
+	cfg.Consolidation.ClusterSize = getInt("consolidation", "cluster_size", cfg.Consolidation.ClusterSize, 0)
+	cfg.Consolidation.DedupThreshold = getFloat32("consolidation", "dedup_threshold", cfg.Consolidation.DedupThreshold)
 
 	// Ranking section
 	cfg.Ranking.VectorWeight = getFloat32("ranking", "vector_weight", cfg.Ranking.VectorWeight)

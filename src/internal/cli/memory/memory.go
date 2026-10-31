@@ -38,6 +38,7 @@ request schema and examples.`,
 		newExplainCmd(env),
 		newReEmbedCmd(env),
 		newQuantizeCmd(env),
+		newConsolidateCmd(env),
 	)
 	return cmd
 }

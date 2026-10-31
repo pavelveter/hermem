@@ -151,6 +151,11 @@ observation_ttl = 2160h          # age beyond which observation nodes are archiv
 run_interval    = 1h              # how often the GC loop fires
 batch_size      = 500             # max nodes archived per cycle (0 = no limit)
 
+[consolidation]
+interval        = 24h             # how often the consolidation loop fires (Go duration)
+cluster_size    = 20              # max source nodes per synthesized cluster
+dedup_threshold = 0.88            # similarity above which nodes are considered redundant
+
 [server]
 api_key =                        # X-API-Key auth (empty = disabled)
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/pavelveter/hermem/pkg/spi"
 	"github.com/pavelveter/hermem/src/internal/config"
+	"github.com/pavelveter/hermem/src/internal/consolidation"
 	"github.com/pavelveter/hermem/src/internal/extraction"
 	"github.com/pavelveter/hermem/src/internal/metrics"
 	"github.com/pavelveter/hermem/src/internal/retrieval"
@@ -34,17 +35,18 @@ type BuildInfo struct {
 // layer consumes Application but manages its own server lifecycle
 // (including SIGHUP hot-reload) in serve.go.
 type Application struct {
-	DB        *sql.DB
-	VI        spi.VectorStore
-	Worker    *metrics.AsyncMetricsWorker
-	Embedder  spi.Embedder
-	Extractor extraction.LLMExtractor
-	Reranker  spi.Reranker
-	Retriever retrieval.Retriever
-	Metrics   *metrics.Metrics
-	Tracer    tracing.Tracer
-	Cfg       *config.Config
-	Build     BuildInfo
+	DB            *sql.DB
+	VI            spi.VectorStore
+	Worker        *metrics.AsyncMetricsWorker
+	Embedder      spi.Embedder
+	Extractor     extraction.LLMExtractor
+	Reranker      spi.Reranker
+	Retriever     retrieval.Retriever
+	Consolidation *consolidation.Service
+	Metrics       *metrics.Metrics
+	Tracer        tracing.Tracer
+	Cfg           *config.Config
+	Build         BuildInfo
 
 	stopOnce sync.Once
 }
@@ -88,18 +90,22 @@ func New(_ context.Context, cfg *config.Config, build BuildInfo) (*Application, 
 	// --- Retrieval service (exposed as retrieval.Retriever interface) ---
 	retSvc := retrieval.New(db, vi, embedder)
 
+	// --- Consolidation service ---
+	consSvc := consolidation.New(db, vi, embedder, extractor)
+
 	return &Application{
-		DB:        db,
-		VI:        vi,
-		Worker:    worker,
-		Embedder:  embedder,
-		Extractor: extractor,
-		Reranker:  reranker,
-		Retriever: retSvc,
-		Metrics:   m,
-		Tracer:    tracer,
-		Cfg:       cfg,
-		Build:     build,
+		DB:            db,
+		VI:            vi,
+		Worker:        worker,
+		Embedder:      embedder,
+		Extractor:     extractor,
+		Reranker:      reranker,
+		Retriever:     retSvc,
+		Consolidation: consSvc,
+		Metrics:       m,
+		Tracer:        tracer,
+		Cfg:           cfg,
+		Build:         build,
 	}, nil
 }
 
@@ -107,11 +113,14 @@ func New(_ context.Context, cfg *config.Config, build BuildInfo) (*Application, 
 // Must be called after New(). The provided ctx controls the lifetime
 // of background goroutines — when ctx is cancelled, workers should
 // drain and exit.
-func (a *Application) Start(_ context.Context) error {
-	// Worker is already started by metrics.InitMetricsWorker;
-	// Start exists for symmetry with Stop and to allow future
-	// lazy-start patterns (e.g. starting a garbage collector
-	// goroutine) without breaking the caller.
+func (a *Application) Start(ctx context.Context) error {
+	// Worker is already started by metrics.InitMetricsWorker.
+	// Start the consolidation background loop (graph sleep cycle).
+	if a.Consolidation != nil {
+		go func() {
+			a.Consolidation.Run(ctx, a.Cfg.Consolidation)
+		}()
+	}
 	return nil
 }
 
