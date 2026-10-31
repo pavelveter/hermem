@@ -581,7 +581,6 @@ Some ideas currently being explored:
 - distributed replication
 - CRDT-based synchronization
 - native reranker plugins
-- hybrid lexical/vector retrieval
 - graph-aware agent planning
 - incremental embedding updates
 
