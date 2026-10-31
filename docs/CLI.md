@@ -15,7 +15,8 @@ For server mode, see [SERVER.md](SERVER.md). For configuration, see
 ## Command tree
 
 The CLI uses a `git`/`kubectl`-style grouped tree. Top-level commands
-plus 6 subcommand groups; every group has its own `--help`.
+plus 9 subcommand groups (memory, task, graph, time, agent, db, ops,
+profile, admin); every group has its own `--help`.
 
 ```bash
 # Top-level

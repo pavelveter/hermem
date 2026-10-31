@@ -40,7 +40,7 @@ the file is missing, all keys fall back to defaults (Ollama at
 
 ### Prerequisites
 
-- **Go 1.21+** — `go version` should report ≥ 1.21
+- **Go 1.26+** — `go version` should report ≥ 1.26
 - **CGO enabled** — required by `github.com/mattn/go-sqlite3`. On Linux
   install `gcc`; on macOS install Xcode CLT (`xcode-select --install`).
 - **One of**:

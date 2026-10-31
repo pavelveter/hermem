@@ -10,7 +10,7 @@ SQLite. Embeddings. Graph traversal. One binary.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go" alt="Go">
   <img src="https://img.shields.io/badge/SQLite-Graph%20Storage-003B57" alt="SQLite">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
   <img src="https://img.shields.io/github/actions/workflow/status/pavelveter/hermem/ci.yml" alt="Build">
@@ -168,9 +168,13 @@ cd hermem
 make build        # works with or without local embedding binary
 # or: go build -o hermem ./src   # same as make build
 
-# Inspect the command tree (top-level + 6 groups)
-./hermem --help
+# Inspect the command tree (22 top-level commands, 11 of them command groups)
+./hermem help
 ```
+
+> Careful: `./hermem --help` is intercepted by the stdlib `flag` package
+> before Cobra sees it, so it prints only the `-config` flag. The command
+> tree is `./hermem help` (or `./hermem <group> --help`).
 
 The pre-cobra default `./hermem` was a `store → query` smoke demo; it no
 longer creates a DB on its own. New smoke sequence after build:
@@ -187,7 +191,7 @@ For one-shot CLI use without a server, see [CLI.md](docs/CLI.md).
 ## Installation
 
 ```bash
-# Build (Go 1.21+, CGO enabled)
+# Build (Go 1.26+, CGO enabled)
 make build   # or: go build -o hermem ./src
 
 # Build + sign (macOS) + copy to ~/.local/bin
@@ -233,7 +237,7 @@ Env overrides: `HERMEM_BIN`, `HERMEM_HABITS_MODEL`, `HERMEM_HABITS_DISABLED`,
 
 ## Dependencies
 
-- Go 1.21+ with CGO enabled
+- Go 1.26+ with CGO enabled
 - One of: Ollama running locally, or an OpenAI API key, or a local GGUF model
 - (Optional) `sqlite-vec` — when `[database] backend = sqlite-vec`
 
@@ -265,7 +269,7 @@ See [docs/USAGE.md](docs/USAGE.md) for the complete operator manual including CL
 | [perf-budgets.md](docs/perf-budgets.md) | Accepted performance characteristics for hot paths |
 | [profiling.md](docs/profiling.md) | Benchmark protocol, hot paths, regression gates |
 | [generated/ROUTES.md](docs/generated/ROUTES.md) | Route inventory (auto-generated from OpenAPI spec) |
-| [docs/adr/](docs/adr/) | Architecture Decision Records (23 ADRs) |
+| [docs/adr/](docs/adr/) | Architecture Decision Records (38 ADRs) |
 
 ## How it works
 
@@ -310,47 +314,85 @@ total latency).
 
 ## Performance
 
-Vector search benchmark: `go test -bench=BenchmarkInMemorySearch -benchmem -count=3 ./src`.
-Graph topology as described above. Numbers are machine-dependent; re-run to refresh.
+The benchmarks are real and runnable; the numbers below are medians of 5
+runs on the machine that produced this README. Re-run them on yours — a
+benchmark you did not run is just a rumour with a decimal point.
 
-### Topology
+```bash
+# The vector benchmarks live in src/internal/vector, NOT ./src.
+# ./src is package main and has no test files: a bare `./src` prints
+# "[no test files]" and exits 0 — the most polite lie in Go.
+go test -bench=BenchmarkInMemorySearch -benchmem -count=5 -run='^$' ./src/internal/vector/
 
-Each entity has **~8 edges on average**:
-- **5 forward chain edges** to `(i+1..i+5)` when target < n,
-  relation_type `next` — gives locality along the chain
-- **3 hash-based long-range edges**, target
-  `((i+1) * mult) % n` for `mult ∈ {7, 11, 13}`, relation_type
-  `long-range` — breaks locality so fan-out grows with depth
+# All benchmarks, matching the CI harness
+make benchmarks
+```
 
-The SQLite recursive CTE walks edges bidirectionally
-(`source_id = gw.id OR target_id = gw.id`), so a forward-only
-edge is enough for the walk to find the reverse connection.
+### Fixtures
+
+There is no single "graph topology" — each benchmark seeds the shape it
+needs, and the shape is what determines the number:
+
+- **Vector search** (`benchInMemorySearch`, `src/internal/vector/bench_test.go`)
+  seeds a flat namespace of `n` 768-dim vectors (`(i+j) % 17 / 17`), no
+  edges. `N ∈ {1000, 10000}`.
+- **Search + hydration** (`BenchmarkSearchByVector`) seeds **1000** 768-dim
+  rows into SQLite and measures vector search *plus* the `WHERE id IN (...)`
+  entity hydration — the path a real caller uses.
+- **Retrieval stages** (`src/internal/retrieval/walk_bench_test.go`) seed a
+  **50-node ring** (one `uses` edge per node, `(i+1) % n`) — small enough
+  that the stage under test, not SQLite, dominates.
+- **Graph-walk scaling** (`BenchmarkExpandGraphScaling`) seeds a **1000-node
+  ring with offsets `{1, 7, 13}`** (relation `related_to`) from three seeds
+  at depth 2. It is a query-plan guard: if the entity join degenerates into
+  a scan, this jumps from ~0.3 ms to ~19 ms.
+
+If you cite a graph number, cite the fixture with it — "10K nodes" means
+nothing without "768-dim, topK=10, no edges".
 
 ### Numbers
 
-Benchmarked on Apple M1 Pro (768D embeddings, `topK=10`, 3 runs, medians):
+Apple M1 (8 cores), CGO + Accelerate enabled, Go 1.26, 768-dim vectors,
+`topK=10` (GOMAXPROCS 8, hence the `-8` suffix on every benchmark line):
 
-| N | In-Memory (flatMatrix + Accelerate) | sqlite-vec (KNN index) | B/op (mem / vec) |
-|--:|-------------------------------------:|-----------------------:|------------------:|
-| 100 | **60 µs** | 291 µs | 108 KB / 114 KB |
-| 1,000 | **170 µs** | 949 µs | 119 KB / 114 KB |
-| 5,000 | **2.1 ms** | 4.4 ms | 168 KB / 114 KB |
-| 10,000 | **1.9 ms** | 9.0 ms | 230 KB / 114 KB |
+| Benchmark | Fixture | Latency | B/op | allocs/op |
+|-----------|---------|--------:|-----:|----------:|
+| `BenchmarkCosineSimilarity_768` | one 768-dim dot | **387 ns** | 0 | 0 |
+| `BenchmarkInMemorySearch/1000` | 1K vecs, flat | **24 µs** | 7.5 KB | 3 |
+| `BenchmarkInMemorySearch/10000` | 10K vecs, flat | **0.90 ms** | 44 KB | 3 |
+| `BenchmarkSearchByVector` | 1K rows + SQLite hydrate | **47 µs** | 19 KB | 165 |
+| `BenchmarkRetrieveContext` | 50-node ring, depth 2 | **24 µs** | 13 KB | 132 |
+| `BenchmarkExpandGraphScaling` | 1000-node ring, depth 2 | **0.29 ms** | 115 KB | 1793 |
+
+`SearchByVector` costs ~2x `InMemorySearch` at the same N because after the
+vector scan it round-trips to SQLite to hydrate the rows — 47 µs, of which the
+cosine scan is ~24 µs. That gap is the price of not duplicating content into
+the index, and 47 µs is the number that matters end to end.
 
 ### Scaling
 
-- **In-Memory** (`InMemoryVectorIndex`, default) — pre-built
-  `flatMatrix` row-major in RAM, single `cblas_sgemv` call via Apple
-  Accelerate (AMX co-processor). Constant 318 allocs/op regardless
-  of N — no per-search matrix rebuild. At 10K entities ~1.9 ms.
-  Good for datasets up to ~50K entities on consumer hardware.
-- **sqlite-vec** (`SqliteVecIndex`, `[database] backend = sqlite-vec`)
-  — indexed KNN via `vec0` virtual table. Constant 363 allocs/op,
-  ~114 KB/op flat allocation. SQLite query overhead (plan, MATCH,
-  distance sort). At N < 100K in-memory is faster; sqlite-vec
-  pulls ahead at larger scales where O(N) scan becomes prohibitive.
-- **Graph walk** — dominated by SQLite recursive-CTE JOIN
-  cost over edges, scales roughly linearly with edge count.
+- **In-memory** (`inMemoryVectorStore`, the default and only working backend)
+  — vectors are stored contiguously per namespace, and one `BatchDotProducts`
+  call scores the whole namespace without copying (a metadata filter breaks
+  contiguity and is the one path that copies). The scan is O(n) per query by
+  design: brute force is the correct algorithm for *exact* cosine similarity,
+  and no sub-linear index can promise exact results. `topHits` does bounded
+  top-K insertion instead of sorting all N. Allocation is a flat **3 allocs/op**
+  for the scan, independent of N. Accepted up to ~500K vectors on the strength
+  of the SIMD constant factor (see [perf-budgets.md](docs/perf-budgets.md)).
+- **Graph walk** — dominated by the SQLite recursive-CTE join over edges,
+  roughly linear in edge count. The step is written as two `UNION ALL` branches
+  (outgoing, then incoming) rather than one `(source_id = gw.id OR target_id =
+  gw.id)` join, so SQLite resolves both neighbours by index instead of scanning
+  every edge. See [perf-budgets.md](docs/perf-budgets.md) for the rejected
+  alternatives.
+- **sqlite-vec** — *not a scaling path yet.* `SQLiteVecIndex`
+  (`src/internal/vector/sqlitevec.go`) is a **stub: every method returns
+  `not yet implemented`**. Setting `[database] backend = sqlite-vec` degrades to
+  the in-memory backend when the extension is absent, and would still return
+  errors from `Search`/`Store` even if it were present. It is plumbing for a
+  future ANN backend, not a working alternative — do not put it on a capacity
+  slide.
 
 ---
 
