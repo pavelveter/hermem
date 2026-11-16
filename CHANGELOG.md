@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Go toolchain bump to 1.26.11 (GO-2026-6859).** govulncheck started
+  failing CI after the vulndb published GO-2026-6859 — an HTTP/1 server
+  crash in `net/http` caused by a `MaxBytesReader` header race — affecting
+  the pinned go1.26.10 toolchain. Bumped the pinned toolchain to 1.26.11
+  (fixed release) in `go.mod`, `go.work`, and the `GO_VERSION` env of
+  `ci.yml`, `ci-amx.yml`, and `release.yml`.
+
+### Security
+
 - **OpenSSF Scorecard Pinned-Dependencies.** `.github/workflows/bench.yml`
   still referenced `actions/checkout@v5`, `actions/setup-go@v7`,
   `actions/upload-artifact@v7` and installed `benchstat` from `@latest`,

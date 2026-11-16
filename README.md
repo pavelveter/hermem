@@ -22,6 +22,7 @@ SQLite. Embeddings. Graph traversal. One binary.
   <a href="docs/SDK.md"><img src="https://img.shields.io/badge/Go-SDK-00ADD8?logo=go" alt="Go SDK"></a>
   <a href="docs/SDK.md"><img src="https://img.shields.io/badge/Python-SDK-3776AB?logo=python" alt="Python SDK"></a>
   <a href="docs/SDK.md"><img src="https://img.shields.io/badge/TypeScript-SDK-3178C6?logo=typescript" alt="TypeScript SDK"></a>
+  <a href="https://www.bestpractices.dev/projects/16106"><img src="https://www.bestpractices.dev/projects/16106/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
 ---
@@ -264,7 +265,7 @@ See [docs/USAGE.md](docs/USAGE.md) for the complete operator manual including CL
 | [OPENAPI.md](docs/OPENAPI.md) | OpenAPI 3.1 spec — served at `/openapi.json` and `/openapi.yaml` |
 | [MCP.md](docs/MCP.md) | MCP server — AI assistant integration (Claude Desktop / Claude Code) |
 | [SDK.md](docs/SDK.md) | Official SDKs — Go, Python, TypeScript (with version negotiation) |
-| [CHANGELOG.md](docs/CHANGELOG.md) | Release history |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
 | [ROADMAP.md](docs/ROADMAP.md) | Planned features |
 | [VISION.md](docs/VISION.md) | Long-term goals |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module dependency diagram, app.Application DI container |
