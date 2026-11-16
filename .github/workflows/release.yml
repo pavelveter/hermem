@@ -123,7 +123,7 @@ jobs:
           ./hermem completion zsh  > completions/hermem.zsh
           ./hermem completion fish > completions/hermem.fish
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: completions
           path: completions/
@@ -289,7 +289,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: ${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ steps.names.outputs.archive }}
@@ -312,7 +312,7 @@ jobs:
           cat ../checksums-sha256.txt
 
       - name: Upload checksums
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: checksums
           path: checksums-sha256.txt
