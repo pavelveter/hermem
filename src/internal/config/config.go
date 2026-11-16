@@ -57,7 +57,7 @@ type Config struct {
 	// if the DB has pending migrations or integrity mismatches and
 	// points the operator at `./hermem db migrate apply` (or opt-in
 	// via set `auto_migrate = true` in hermem.ini for dev / docker).
-	// §4 audit closure — see docs/CHANGELOG.md.
+	// §4 audit closure — see CHANGELOG.md.
 	AutoMigrate bool
 	// RateLimitEnabled gates the HTTP rate-limit middleware. When
 	// false (the default) no limiter is constructed and no per-

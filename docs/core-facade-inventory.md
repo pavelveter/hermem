@@ -136,7 +136,7 @@ copy:
 
 - HTTP/OpenAPI JSON: `api/openapi_test.go` byte-snapshot suite and
   `api/v1` golden mapper tests.
-- Wire-byte stability history: `docs/CHANGELOG.md` and `docs/adr/026-typed-entity-models.md`.
+- Wire-byte stability history: `CHANGELOG.md` and `docs/adr/026-typed-entity-models.md`.
 - Benchmark baseline: `bench/baseline/baseline.txt` and
   `docs/profiling.md`.
 - MCP behavior: `src/internal/mcp` tool contracts exercised by integration tests.
